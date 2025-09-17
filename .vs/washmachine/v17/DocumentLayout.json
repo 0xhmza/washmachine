@@ -1,31 +1,35 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\",
+  "WorkspaceRootPath": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\washmachine\\",
   "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|washmachine.csproj|c:\\users\\hamza\\desktop\\evasion\\dev\\alkesser\\washmachine\\washmachine.csproj||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|",
+      "RelativeMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|washmachine.csproj|solutionrelative:washmachine.csproj||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|"
+    },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Hamza\\AppData\\Local\\Temp\\.vsdbgsrc\\915e51501c7749ba1814a47f062efa0c8bf66d98ce128a2a2b02756495a35ade\\Form1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|AlKesser.csproj|c:\\users\\hamza\\desktop\\evasion\\dev\\alkesser\\constants.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|AlKesser.csproj|c:\\users\\hamza\\desktop\\evasion\\dev\\alkesser\\washmachine\\constants.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|AlKesser.csproj|solutionrelative:constants.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Hamza\\AppData\\Local\\Temp\\.vsdbgsrc\\cb191c86cf00d7732e96afafc6dda3b70d4d2c4445744aa32ea51deb55bfe885\\Form1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|AlKesser.csproj|C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\form1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}|Form",
+      "AbsoluteMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|AlKesser.csproj|C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\washmachine\\form1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}|Form",
       "RelativeMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|AlKesser.csproj|solutionrelative:form1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}|Form"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|AlKesser.csproj|c:\\users\\hamza\\desktop\\evasion\\dev\\alkesser\\logger.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|AlKesser.csproj|c:\\users\\hamza\\desktop\\evasion\\dev\\alkesser\\washmachine\\logger.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|AlKesser.csproj|solutionrelative:logger.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|AlKesser.csproj|c:\\users\\hamza\\desktop\\evasion\\dev\\alkesser\\compiler.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|AlKesser.csproj|c:\\users\\hamza\\desktop\\evasion\\dev\\alkesser\\washmachine\\compiler.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|AlKesser.csproj|solutionrelative:compiler.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|AlKesser.csproj|c:\\users\\hamza\\desktop\\evasion\\dev\\alkesser\\form1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|AlKesser.csproj|c:\\users\\hamza\\desktop\\evasion\\dev\\alkesser\\washmachine\\form1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|AlKesser.csproj|solutionrelative:form1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
@@ -41,23 +45,35 @@
             {
               "$type": "Document",
               "DocumentIndex": 0,
-              "Title": "Form1.cs",
-              "DocumentMoniker": "C:\\Users\\Hamza\\AppData\\Local\\Temp\\.vsdbgsrc\\915e51501c7749ba1814a47f062efa0c8bf66d98ce128a2a2b02756495a35ade\\Form1.cs",
-              "RelativeDocumentMoniker": "..\\..\\..\\..\\AppData\\Local\\Temp\\.vsdbgsrc\\915e51501c7749ba1814a47f062efa0c8bf66d98ce128a2a2b02756495a35ade\\Form1.cs",
-              "ToolTip": "C:\\Users\\Hamza\\AppData\\Local\\Temp\\.vsdbgsrc\\915e51501c7749ba1814a47f062efa0c8bf66d98ce128a2a2b02756495a35ade\\Form1.cs [Read Only]",
-              "RelativeToolTip": "..\\..\\..\\..\\AppData\\Local\\Temp\\.vsdbgsrc\\915e51501c7749ba1814a47f062efa0c8bf66d98ce128a2a2b02756495a35ade\\Form1.cs [Read Only]",
-              "ViewState": "AgIAACkBAAAAAAAAAAAcwDgBAAAZAAAAAQAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-08T13:37:14.217Z",
-              "EditorCaption": " [Read Only]"
+              "Title": "AlKesser",
+              "DocumentMoniker": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\washmachine\\washmachine.csproj",
+              "RelativeDocumentMoniker": "washmachine.csproj",
+              "ToolTip": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\washmachine\\washmachine.csproj",
+              "RelativeToolTip": "washmachine.csproj",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2025-09-17T21:22:27.719Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
               "DocumentIndex": 1,
+              "Title": "Form1.cs",
+              "DocumentMoniker": "C:\\Users\\Hamza\\AppData\\Local\\Temp\\.vsdbgsrc\\915e51501c7749ba1814a47f062efa0c8bf66d98ce128a2a2b02756495a35ade\\Form1.cs",
+              "RelativeDocumentMoniker": "..\\..\\..\\..\\..\\AppData\\Local\\Temp\\.vsdbgsrc\\915e51501c7749ba1814a47f062efa0c8bf66d98ce128a2a2b02756495a35ade\\Form1.cs",
+              "ToolTip": "C:\\Users\\Hamza\\AppData\\Local\\Temp\\.vsdbgsrc\\915e51501c7749ba1814a47f062efa0c8bf66d98ce128a2a2b02756495a35ade\\Form1.cs",
+              "RelativeToolTip": "..\\..\\..\\..\\..\\AppData\\Local\\Temp\\.vsdbgsrc\\915e51501c7749ba1814a47f062efa0c8bf66d98ce128a2a2b02756495a35ade\\Form1.cs",
+              "ViewState": "AgIAACkBAAAAAAAAAAAcwDgBAAAZAAAAAQAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-09-08T13:37:14.217Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
               "Title": "Constants.cs",
-              "DocumentMoniker": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\Constants.cs",
+              "DocumentMoniker": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\washmachine\\Constants.cs",
               "RelativeDocumentMoniker": "Constants.cs",
-              "ToolTip": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\Constants.cs",
+              "ToolTip": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\washmachine\\Constants.cs",
               "RelativeToolTip": "Constants.cs",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAE0AAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
@@ -66,24 +82,24 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 3,
               "Title": "Form1.cs",
               "DocumentMoniker": "C:\\Users\\Hamza\\AppData\\Local\\Temp\\.vsdbgsrc\\cb191c86cf00d7732e96afafc6dda3b70d4d2c4445744aa32ea51deb55bfe885\\Form1.cs",
-              "RelativeDocumentMoniker": "..\\..\\..\\..\\AppData\\Local\\Temp\\.vsdbgsrc\\cb191c86cf00d7732e96afafc6dda3b70d4d2c4445744aa32ea51deb55bfe885\\Form1.cs",
-              "ToolTip": "C:\\Users\\Hamza\\AppData\\Local\\Temp\\.vsdbgsrc\\cb191c86cf00d7732e96afafc6dda3b70d4d2c4445744aa32ea51deb55bfe885\\Form1.cs [Read Only]",
-              "RelativeToolTip": "..\\..\\..\\..\\AppData\\Local\\Temp\\.vsdbgsrc\\cb191c86cf00d7732e96afafc6dda3b70d4d2c4445744aa32ea51deb55bfe885\\Form1.cs [Read Only]",
+              "RelativeDocumentMoniker": "..\\..\\..\\..\\..\\AppData\\Local\\Temp\\.vsdbgsrc\\cb191c86cf00d7732e96afafc6dda3b70d4d2c4445744aa32ea51deb55bfe885\\Form1.cs",
+              "ToolTip": "C:\\Users\\Hamza\\AppData\\Local\\Temp\\.vsdbgsrc\\cb191c86cf00d7732e96afafc6dda3b70d4d2c4445744aa32ea51deb55bfe885\\Form1.cs",
+              "RelativeToolTip": "..\\..\\..\\..\\..\\AppData\\Local\\Temp\\.vsdbgsrc\\cb191c86cf00d7732e96afafc6dda3b70d4d2c4445744aa32ea51deb55bfe885\\Form1.cs",
               "ViewState": "AgIAABwBAAAAAAAAAAAcwDEBAAAhAAAAAQAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-09-08T13:34:49.476Z",
-              "EditorCaption": " [Read Only]"
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 5,
               "Title": "Logger.cs",
-              "DocumentMoniker": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\Logger.cs",
+              "DocumentMoniker": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\washmachine\\Logger.cs",
               "RelativeDocumentMoniker": "Logger.cs",
-              "ToolTip": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\Logger.cs",
+              "ToolTip": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\washmachine\\Logger.cs",
               "RelativeToolTip": "Logger.cs",
               "ViewState": "AgIAAA0AAAAAAAAAAAAAwDMAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
@@ -92,11 +108,11 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 5,
+              "DocumentIndex": 6,
               "Title": "Compiler.cs",
-              "DocumentMoniker": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\Compiler.cs",
+              "DocumentMoniker": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\washmachine\\Compiler.cs",
               "RelativeDocumentMoniker": "Compiler.cs",
-              "ToolTip": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\Compiler.cs",
+              "ToolTip": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\washmachine\\Compiler.cs",
               "RelativeToolTip": "Compiler.cs",
               "ViewState": "AgIAAPgAAAAAAAAAAAAiwBcBAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
@@ -105,27 +121,27 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 4,
               "Title": "Form1.cs [Design]",
-              "DocumentMoniker": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\Form1.cs",
+              "DocumentMoniker": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\washmachine\\Form1.cs",
               "RelativeDocumentMoniker": "Form1.cs",
               "ToolTip": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\Form1.cs [Design]",
-              "RelativeToolTip": "Form1.cs [Design]",
+              "RelativeToolTip": "..\\Form1.cs [Design]",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-08-21T15:07:06.056Z",
-              "EditorCaption": " [Design]"
+              "WhenOpened": "2025-08-21T15:07:06.056Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 6,
+              "DocumentIndex": 7,
               "Title": "Form1.cs",
-              "DocumentMoniker": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\Form1.cs",
+              "DocumentMoniker": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\washmachine\\Form1.cs",
               "RelativeDocumentMoniker": "Form1.cs",
-              "ToolTip": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\Form1.cs",
+              "ToolTip": "C:\\Users\\Hamza\\Desktop\\Evasion\\Dev\\AlKesser\\washmachine\\Form1.cs",
               "RelativeToolTip": "Form1.cs",
               "ViewState": "AgIAAGABAAAAAAAAAAAQwFQBAAAlAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-08-21T15:18:07.768Z"
+              "WhenOpened": "2025-08-21T15:18:07.768Z",
+              "EditorCaption": ""
             }
           ]
         },
