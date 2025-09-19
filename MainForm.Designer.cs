@@ -1,6 +1,6 @@
-﻿namespace AlKesser
+﻿namespace Washmachine
 {
-    partial class Form1
+    partial class MainForm
     {
         /// <summary>
         ///  Required designer variable.
@@ -28,7 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
-            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(Form1));
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(MainForm));
             label1 = new Label();
             shellcodeFile = new TextBox();
             button1 = new Button();
@@ -325,7 +325,6 @@
             label8.Size = new Size(115, 15);
             label8.TabIndex = 8;
             label8.Text = "Shellcode execution:";
-            label8.Click += label8_Click;
             // 
             // label7
             // 
@@ -335,7 +334,6 @@
             label7.Size = new Size(77, 15);
             label7.TabIndex = 7;
             label7.Text = "Parameter(s):";
-            label7.Click += label7_Click;
             // 
             // guardrailParamTextBox
             // 
@@ -362,7 +360,6 @@
             label6.Size = new Size(125, 15);
             label6.TabIndex = 4;
             label6.Text = "Guardrail(s) (env vars):";
-            label6.Click += label6_Click;
             // 
             // psInjComboBox
             // 
@@ -404,7 +401,6 @@
             textBox4.Size = new Size(588, 62);
             textBox4.TabIndex = 8;
             textBox4.Text = resources.GetString("textBox4.Text");
-            textBox4.TextChanged += textBox4_TextChanged;
             // 
             // submitButton
             // 
@@ -558,7 +554,6 @@
             label12.Size = new Size(50, 15);
             label12.TabIndex = 0;
             label12.Text = "Encoder";
-            label12.Click += label12_Click;
             // 
             // PackingTab
             // 
@@ -578,7 +573,7 @@
             BackdooringTab.Text = "Backdooring";
             BackdooringTab.UseVisualStyleBackColor = true;
             // 
-            // Form1
+            // MainForm
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
@@ -591,11 +586,11 @@
             FormBorderStyle = FormBorderStyle.FixedToolWindow;
             Margin = new Padding(3, 2, 3, 2);
             MaximizeBox = false;
-            Name = "Form1";
+            Name = "MainForm";
             ShowIcon = false;
             StartPosition = FormStartPosition.CenterScreen;
-            Text = "AlKesser - Loader Builder";
-            Load += Form1_Load;
+            Text = "Washmachine - Loader Builder";
+            Load += MainForm_Load;
             shellcode.ResumeLayout(false);
             shellcode.PerformLayout();
             groupBox1.ResumeLayout(false);

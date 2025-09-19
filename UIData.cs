@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System.Collections.Generic;
+using System.Linq;
 using System.Windows.Forms;
 
 /********************************************************************************************
@@ -41,6 +42,8 @@ using System.Windows.Forms;
  ********************************************************************************************/
                                                           // Sry for the unnecessary drama lol
 
+
+namespace Washmachine.Models;
 
 public sealed class UiData
 {

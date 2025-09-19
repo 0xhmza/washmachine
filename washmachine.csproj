@@ -6,7 +6,8 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
-    <BaseOutputPath>C:\Users\hamza\Desktop\Offensive\Evasion\Dev\AlKesser\bin\</BaseOutputPath>
+    <BaseOutputPath>C:\Users\hamza\Desktop\Offensive\Evasion\Dev\Washmachine\bin\</BaseOutputPath>
+    <RootNamespace>Washmachine</RootNamespace>
     <PlatformTarget>x64</PlatformTarget>
     <SignAssembly>False</SignAssembly>
     <GeneratePackageOnBuild>False</GeneratePackageOnBuild>

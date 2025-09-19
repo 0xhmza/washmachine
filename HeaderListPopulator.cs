@@ -5,30 +5,33 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
-public static class HeaderListPopulator
+namespace Washmachine.Services;
+
+public sealed class HeaderListProvider : IHeaderListProvider
 {
-    /// <summary>
-    /// Populates a ComboBox with function names from a specific header section.
-    /// </summary>
-    public static void PopulateComboFromHeaderSection(ComboBox combo, string headerPath, string sectionName)
+    private readonly IAppPaths _paths;
+
+    public HeaderListProvider(IAppPaths paths)
+    {
+        _paths = paths ?? throw new ArgumentNullException(nameof(paths));
+    }
+
+    public void PopulateComboFromHeaderSection(ComboBox combo, string sectionName)
     {
         if (combo == null) throw new ArgumentNullException(nameof(combo));
-        var items = LoadFunctions(headerPath, sectionName);
+        var items = LoadFunctions(sectionName);
 
         combo.BeginUpdate();
         combo.Items.Clear();
         combo.Items.AddRange(items.ToArray());
-        if (combo.Items.Count > 0) combo.SelectedIndex = 0; // optional
+        if (combo.Items.Count > 0) combo.SelectedIndex = 0;
         combo.EndUpdate();
     }
 
-    /// <summary>
-    /// Populates a ListBox with function names from a specific header section.
-    /// </summary>
-    public static void PopulateListFromHeaderSection(ListBox list, string headerPath, string sectionName)
+    public void PopulateListFromHeaderSection(ListBox list, string sectionName)
     {
         if (list == null) throw new ArgumentNullException(nameof(list));
-        var items = LoadFunctions(headerPath, sectionName);
+        var items = LoadFunctions(sectionName);
 
         list.BeginUpdate();
         list.Items.Clear();
@@ -36,14 +39,15 @@ public static class HeaderListPopulator
         list.EndUpdate();
     }
 
-    // Shared logic: parse the header and extract function names
-    private static List<string> LoadFunctions(string headerPath, string sectionName)
+    private List<string> LoadFunctions(string sectionName)
     {
-        if (string.IsNullOrWhiteSpace(headerPath)) throw new ArgumentException("Header path is required", nameof(headerPath));
-        if (!File.Exists(headerPath)) throw new FileNotFoundException("Header not found", headerPath);
-        if (string.IsNullOrWhiteSpace(sectionName)) throw new ArgumentException("Section name is required", nameof(sectionName));
+        if (string.IsNullOrWhiteSpace(sectionName))
+            throw new ArgumentException("Section name is required", nameof(sectionName));
 
-        var lines = File.ReadAllLines(headerPath);
+        if (!File.Exists(_paths.ApiHeaderFile))
+            throw new FileNotFoundException("Header not found", _paths.ApiHeaderFile);
+
+        var lines = File.ReadAllLines(_paths.ApiHeaderFile);
         return ExtractFunctionNamesFromSection(lines, sectionName);
     }
 

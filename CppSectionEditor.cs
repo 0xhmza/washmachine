@@ -3,7 +3,9 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 
-public static class CppSectionEditor
+namespace Washmachine.Services;
+
+public sealed class CppSectionEditor : ICppSectionEditor
 {
     /// <summary>
     /// In the given C++ file, find the section delimited by:
@@ -12,7 +14,7 @@ public static class CppSectionEditor
     /// Then locate the first line inside that section that calls <methodName>(...),
     /// and remove a leading '//' on that line (if present). Returns true if it changed anything.
     /// </summary>
-    public static bool UncommentMethodInSection(string cppPath, string sectionName, string methodName)
+    public bool UncommentMethodInSection(string cppPath, string sectionName, string methodName)
     {
         if (string.IsNullOrWhiteSpace(cppPath)) throw new ArgumentException("cppPath is required");
         if (string.IsNullOrWhiteSpace(sectionName)) throw new ArgumentException("sectionName is required");
@@ -80,7 +82,7 @@ public static class CppSectionEditor
         return changed;
     }
 
-    public static void ReplaceInCppFile(string filePath, string oldValue, string newValue, bool backup = false)
+    public void ReplaceInCppFile(string filePath, string oldValue, string newValue, bool backup = false)
     {
         if (string.IsNullOrWhiteSpace(filePath))
             throw new ArgumentException("File path is required.", nameof(filePath));
