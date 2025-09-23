@@ -12,6 +12,7 @@ public partial class MainForm : Form, IMainFormView
 {
     private readonly IAppLogger _logger;
     private readonly MainFormCoordinator _coordinator;
+    private readonly IRequirementProvisioner _requirements;
 
     public MainForm()
     {
@@ -27,6 +28,7 @@ public partial class MainForm : Form, IMainFormView
         var encodingCatalog = new ShellcodeEncodingCatalogService(bin2ShellRunner, paths);
         var compiler = new CompilerService(paths, bin2ShellRunner, new CppSectionEditor(), _logger);
 
+        _requirements = new RequirementProvisioner(paths, _logger);
         _coordinator = new MainFormCoordinator(
             _logger,
             paths,
@@ -56,7 +58,22 @@ public partial class MainForm : Form, IMainFormView
 
     private async void MainForm_Load(object sender, EventArgs e)
     {
-        await _coordinator.InitializeAsync(this).ConfigureAwait(true);
+        try
+        {
+            await _requirements.EnsureRequirementsAsync(this).ConfigureAwait(true);
+            await _coordinator.InitializeAsync(this).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Failed to initialize application: {ex.Message}");
+            MessageBox.Show(
+                this,
+                $"Failed to prepare the application's requirements.{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+                "Startup Error",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            submitButton.Enabled = false;
+        }
     }
 
     private void button1_Click(object sender, EventArgs e)
