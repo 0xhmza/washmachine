@@ -75,10 +75,10 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
 
     private IEnumerable<RequirementData> GetMissingRequirements()
     {
+        string headerPath = Path.Combine(_paths.MainCppDirectory, "Win32Helper.h");
         bool needsVxApi = !Directory.Exists(_paths.MainCppDirectory)
-                          || !File.Exists(_paths.ApiHeaderFile)
-                          || !File.Exists(_paths.MainCppFile)
-                          || !File.Exists(_paths.TemplateCppFile);
+                          || !File.Exists(headerPath)
+                          || !File.Exists(_paths.MainCppFile);
 
         if (needsVxApi)
         {

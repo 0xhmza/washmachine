@@ -18,17 +18,20 @@ public sealed class CompilerService : ICompilerService
     private readonly IAppPaths _paths;
     private readonly IBin2ShellRunner _bin2ShellRunner;
     private readonly ICppSectionEditor _cppEditor;
+    private readonly ICodeSnippetCatalogService _snippets;
     private readonly IAppLogger _logger;
 
     public CompilerService(
         IAppPaths paths,
         IBin2ShellRunner bin2ShellRunner,
         ICppSectionEditor cppEditor,
+        ICodeSnippetCatalogService snippets,
         IAppLogger logger)
     {
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         _bin2ShellRunner = bin2ShellRunner ?? throw new ArgumentNullException(nameof(bin2ShellRunner));
         _cppEditor = cppEditor ?? throw new ArgumentNullException(nameof(cppEditor));
+        _snippets = snippets ?? throw new ArgumentNullException(nameof(snippets));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -174,69 +177,138 @@ public sealed class CompilerService : ICompilerService
 
     private void ApplyFeatureSelections(UiData data, ICollection<string> notes)
     {
-        if (TryGetNonEmpty(data.ComboBoxes, "genericShellcodeComboBox", out var genericShellcode))
-        {
-            LogSectionUpdate("GENERICSHELLCODE", genericShellcode, notes);
-        }
-
-        if (TryGetNonEmpty(data.ComboBoxes, "guardrailComboBox", out var guardrail))
-        {
-            LogSectionUpdate("GUARDRAIL", guardrail, notes);
-        }
-
-        if (TryGetNonEmpty(data.ComboBoxes, "psInjComboBox", out var processInjection))
-        {
-            if (!data.TextBoxes.TryGetValue("PsInjPsNameTextBox", out var psName) || string.IsNullOrWhiteSpace(psName))
-                throw new InvalidOperationException("Process injection requires a target process name.");
-
-            if (LogSectionUpdate("PSINJECTION", processInjection, notes))
-            {
-                _cppEditor.ReplaceInCppFile(_paths.MainCppFile, "$psname$", psName.Trim(), backup: false);
-                _cppEditor.ReplaceInCppFile(_paths.MainCppFile, "/*INJ ", string.Empty, backup: false);
-                _cppEditor.ReplaceInCppFile(_paths.MainCppFile, "INJ*/", string.Empty, backup: false);
-                notes.Add($"Process injection target set to {psName.Trim()}.");
-            }
-        }
-
-        if (TryGetNonEmpty(data.ComboBoxes, "shellcodeExecutionComboBox", out var execution))
-        {
-            LogSectionUpdate("SHELLCODEEXECUTION", execution, notes);
-        }
-
-        if (TryGetNonEmpty(data.ComboBoxes, "UACBComboBox", out var uacBypass))
-        {
-            LogSectionUpdate("UACB", uacBypass, notes);
-        }
-
-        if (data.ListBoxes.TryGetValue("antiDebugListBox", out var antiDebugSelections) && antiDebugSelections.Count > 0)
-        {
-            foreach (var selection in antiDebugSelections.Where(s => !string.IsNullOrWhiteSpace(s)))
-            {
-                if (LogSectionUpdate("ANTIDEBUGGING", selection, notes))
-                    continue;
-
-                _logger.Warn($"Anti-debugging method '{selection}' not found in template section.");
-            }
-        }
+        ApplyComboSelection(data, "genericShellcodeComboBox", "GENERIC SHELLCODE PAYLOADS FOR TESTINGS", notes);
+        ApplyGuardrailSelection(data, notes);
+        ApplyProcessInjectionSelection(data, notes);
+        ApplyComboSelection(data, "shellcodeExecutionComboBox", "SHELLCODE EXECUTION", notes);
+        ApplyComboSelection(data, "UACBComboBox", "UAC BYPASSES", notes);
+        ApplyAntiDebugSelection(data, notes);
     }
 
-    private bool LogSectionUpdate(string section, string method, ICollection<string> notes)
+    private void ApplyComboSelection(UiData data, string controlName, string catalogHeader, ICollection<string> notes)
     {
-        if (string.IsNullOrWhiteSpace(method))
+        if (!TryGetNonEmpty(data.ComboBoxes, controlName, out var selection))
+            return;
+
+        if (!TryResolveSnippet(catalogHeader, selection, out var section, out var item))
+            return;
+
+        _cppEditor.ReplaceSectionContent(_paths.MainCppFile, section.Template, item.Snippet);
+        LogSnippetEnabled(section.Template, item.Id, notes);
+    }
+
+    private void ApplyGuardrailSelection(UiData data, ICollection<string> notes)
+    {
+        if (!TryGetNonEmpty(data.ComboBoxes, "guardrailComboBox", out var selection))
+            return;
+
+        if (!TryResolveSnippet("GUARDRAILS", selection, out var section, out var item))
+            return;
+
+        var parameter = data.TextBoxes.TryGetValue("guardrailParamTextBox", out var rawParam)
+            ? rawParam.Trim()
+            : string.Empty;
+
+        string snippet = item.Snippet;
+        bool requiresParameter =
+            snippet.Contains("$guardrail_param$", StringComparison.Ordinal) ||
+            snippet.Contains("__GUARDRAIL_PARAM__", StringComparison.Ordinal);
+
+        if (requiresParameter && string.IsNullOrWhiteSpace(parameter))
+            throw new InvalidOperationException("Guardrail parameter is required for the selected guardrail.");
+
+        snippet = snippet.Replace("$guardrail_param$", parameter)
+                         .Replace("__GUARDRAIL_PARAM__", parameter);
+        _cppEditor.ReplaceSectionContent(_paths.MainCppFile, section.Template, snippet);
+        LogSnippetEnabled(section.Template, item.Id, notes);
+    }
+
+    private void ApplyProcessInjectionSelection(UiData data, ICollection<string> notes)
+    {
+        if (!TryGetNonEmpty(data.ComboBoxes, "psInjComboBox", out var selection))
+            return;
+
+        if (!data.TextBoxes.TryGetValue("PsInjPsNameTextBox", out var psName) || string.IsNullOrWhiteSpace(psName))
+            throw new InvalidOperationException("Process injection requires a target process name.");
+
+        if (!TryResolveSnippet("PROCESS INJECTION", selection, out var section, out var item))
+            return;
+
+        var trimmedName = psName.Trim();
+        string snippet = item.Snippet.Replace("$psname$", trimmedName);
+        _cppEditor.ReplaceSectionContent(_paths.MainCppFile, section.Template, snippet);
+        _cppEditor.ReplaceInCppFile(_paths.MainCppFile, "/*INJ ", string.Empty, backup: false);
+        _cppEditor.ReplaceInCppFile(_paths.MainCppFile, "INJ*/", string.Empty, backup: false);
+
+        LogSnippetEnabled(section.Template, item.Id, notes);
+        var note = $"Process injection target set to {trimmedName}.";
+        notes.Add(note);
+        _logger.Ok(note);
+    }
+
+    private void ApplyAntiDebugSelection(UiData data, ICollection<string> notes)
+    {
+        if (!data.ListBoxes.TryGetValue("antiDebugListBox", out var selections) || selections.Count == 0)
+            return;
+
+        if (!_snippets.TryGetSectionByHeader("ANTI-DEBUGGING", out var section))
+        {
+            _logger.Warn("Snippet section 'ANTI-DEBUGGING' is missing in the catalog.");
+            return;
+        }
+
+        var uniqueSelections = selections
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (uniqueSelections.Count == 0)
+            return;
+
+        var snippets = new List<string>();
+
+        foreach (var selection in uniqueSelections)
+        {
+            if (!section.TryGetItem(selection, out var item))
+            {
+                _logger.Warn($"Anti-debugging method '{selection}' not found in snippet section.");
+                continue;
+            }
+
+            snippets.Add(item.Snippet);
+            LogSnippetEnabled(section.Template, item.Id, notes);
+        }
+
+        if (snippets.Count == 0)
+            return;
+
+        var combined = string.Join(Environment.NewLine, snippets);
+        _cppEditor.ReplaceSectionContent(_paths.MainCppFile, section.Template, combined);
+    }
+
+    private bool TryResolveSnippet(string catalogHeader, string selection, out CodeSnippetSection section, out CodeSnippetItem item)
+    {
+        if (!_snippets.TryGetSectionByHeader(catalogHeader, out section))
+        {
+            _logger.Warn($"Snippet section '{catalogHeader}' not found in the catalog.");
+            item = null!;
             return false;
-
-        bool changed = _cppEditor.UncommentMethodInSection(_paths.MainCppFile, section, method);
-        if (changed)
-        {
-            notes.Add($"Enabled {section}:{method}.");
-            _logger.Ok($"Enabled {section}:{method}.");
-        }
-        else
-        {
-            _logger.Warn($"Unable to find method '{method}' in section '{section}'.");
         }
 
-        return changed;
+        if (!section.TryGetItem(selection, out item))
+        {
+            _logger.Warn($"Unable to find method '{selection}' in section '{catalogHeader}'.");
+            return false;
+        }
+
+        return true;
+    }
+
+    private void LogSnippetEnabled(string sectionName, string itemId, ICollection<string> notes)
+    {
+        var message = $"Enabled {sectionName}:{itemId}.";
+        notes.Add(message);
+        _logger.Ok(message);
     }
 
     private IReadOnlyList<string> BuildBin2ShellArguments(UiData data, string shellcodeFile)

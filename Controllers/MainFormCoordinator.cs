@@ -209,6 +209,7 @@ public sealed class MainFormCoordinator
         {
             _headerLists.PopulateListFromHeaderSection(view.AntiDebugList, "ANTI-DEBUGGING");
 
+            PopulateCombo(view.GuardrailCombo, "GUARDRAILS");
             PopulateCombo(view.ProcessInjectionCombo, "PROCESS INJECTION");
             PopulateCombo(view.ShellcodeExecutionCombo, "SHELLCODE EXECUTION");
             PopulateCombo(view.UacBypassCombo, "UAC BYPASSES");

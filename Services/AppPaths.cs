@@ -17,10 +17,11 @@ public sealed class AppPaths : IAppPaths
     {
         ExecutableDirectory = AppDomain.CurrentDomain.BaseDirectory;
 
+        AssetsDirectory = Path.Combine(ExecutableDirectory, "Assets");
         MainCppDirectory = Path.Combine(ExecutableDirectory, "VX-API-main", "VX-API");
-        ApiHeaderFile = Path.Combine(MainCppDirectory, "Win32Helper.h");
+        SnippetCatalogFile = Path.Combine(AssetsDirectory, "vx_api_snippets.yaml");
+        TemplateCppFile = Path.Combine(AssetsDirectory, "template.cpp");
         MainCppFile = Path.Combine(MainCppDirectory, "main.cpp");
-        TemplateCppFile = Path.Combine(MainCppDirectory, "template.cpp");
 
         Bin2ShellScript = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "main.py");
         Bin2ShellAlgos = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "algos.yaml");
@@ -29,7 +30,8 @@ public sealed class AppPaths : IAppPaths
     }
 
     public string ExecutableDirectory { get; }
-    public string ApiHeaderFile { get; }
+    public string AssetsDirectory { get; }
+    public string SnippetCatalogFile { get; }
     public string MainCppDirectory { get; }
     public string MainCppFile { get; }
     public string TemplateCppFile { get; }
@@ -45,14 +47,18 @@ public sealed class AppPaths : IAppPaths
         if (!Directory.Exists(MainCppDirectory))
             errors.Add($"C++ project directory not found: '{MainCppDirectory}'.");
 
-        if (!File.Exists(ApiHeaderFile))
-            errors.Add($"Header file missing: '{ApiHeaderFile}'.");
+        var headerPath = Path.Combine(MainCppDirectory, "Win32Helper.h");
+        if (!File.Exists(headerPath))
+            errors.Add($"Header file missing: '{headerPath}'.");
 
-        if (!File.Exists(MainCppFile))
-            errors.Add($"main.cpp template missing: '{MainCppFile}'.");
+        if (!Directory.Exists(AssetsDirectory))
+            errors.Add($"Assets directory not found: '{AssetsDirectory}'.");
 
         if (!File.Exists(TemplateCppFile))
             errors.Add($"template.cpp missing: '{TemplateCppFile}'.");
+
+        if (!File.Exists(SnippetCatalogFile))
+            errors.Add($"Snippet catalog missing: '{SnippetCatalogFile}'.");
 
         if (!File.Exists(Bin2ShellScript))
             errors.Add($"Bin2Shell script missing: '{Bin2ShellScript}'.");

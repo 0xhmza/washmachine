@@ -10,7 +10,8 @@ namespace Washmachine.Services;
 public interface IAppPaths
 {
     string ExecutableDirectory { get; }
-    string ApiHeaderFile { get; }
+    string AssetsDirectory { get; }
+    string SnippetCatalogFile { get; }
     string MainCppDirectory { get; }
     string MainCppFile { get; }
     string TemplateCppFile { get; }

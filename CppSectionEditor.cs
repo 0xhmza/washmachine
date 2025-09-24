@@ -1,5 +1,7 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -7,13 +9,6 @@ namespace Washmachine.Services;
 
 public sealed class CppSectionEditor : ICppSectionEditor
 {
-    /// <summary>
-    /// In the given C++ file, find the section delimited by:
-    ///   //Start#<sectionName>
-    ///   //End#<sectionName>
-    /// Then locate the first line inside that section that calls <methodName>(...),
-    /// and remove a leading '//' on that line (if present). Returns true if it changed anything.
-    /// </summary>
     public bool UncommentMethodInSection(string cppPath, string sectionName, string methodName)
     {
         if (string.IsNullOrWhiteSpace(cppPath)) throw new ArgumentException("cppPath is required");
@@ -30,7 +25,9 @@ public sealed class CppSectionEditor : ICppSectionEditor
         for (int i = 0; i < lines.Length; i++)
         {
             if (start < 0 && lines[i].Trim().Equals(startMarker, StringComparison.OrdinalIgnoreCase))
+            {
                 start = i;
+            }
             else if (start >= 0 && lines[i].Trim().Equals(endMarker, StringComparison.OrdinalIgnoreCase))
             {
                 end = i;
@@ -41,45 +38,77 @@ public sealed class CppSectionEditor : ICppSectionEditor
         if (start < 0 || end < 0 || end <= start)
             throw new InvalidOperationException($"Section '{sectionName}' not found in {cppPath}.");
 
-        // Regex to capture indentation + optional '//' at start of line
         var leadingComment = new Regex(@"^(\s*)//\s?(.*)$", RegexOptions.Compiled);
-
         bool changed = false;
 
         for (int i = start + 1; i < end; i++)
         {
             string line = lines[i];
-
-            // Quick check: must reference the method and a '(' after it
             int idx = line.IndexOf(methodName, StringComparison.Ordinal);
             if (idx < 0) continue;
 
-            // Ensure it's a call (methodName followed by '(' somewhere later)
             int openParen = line.IndexOf('(', idx);
             if (openParen < 0) continue;
 
-            // If the line starts with //, remove just that leading comment
-            var m = leadingComment.Match(line);
-            if (m.Success)
+            var match = leadingComment.Match(line);
+            if (match.Success)
             {
-                // m.Groups[1] = indentation, m.Groups[2] = rest of line without leading //
-                string uncommented = m.Groups[1].Value + m.Groups[2].Value;
+                string uncommented = match.Groups[1].Value + match.Groups[2].Value;
                 lines[i] = uncommented;
                 changed = true;
             }
-            // If it's already uncommented, nothing to do.
-            break; // only the first matching line in the section
+            break;
         }
 
         if (changed)
         {
-            // Optional: create a .bak backup
-            // File.WriteAllLines(cppPath + ".bak", lines);
-
             File.WriteAllLines(cppPath, lines, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         }
 
         return changed;
+    }
+
+    public void ReplaceSectionContent(string cppPath, string sectionName, string newContent)
+    {
+        if (string.IsNullOrWhiteSpace(cppPath)) throw new ArgumentException("cppPath is required", nameof(cppPath));
+        if (string.IsNullOrWhiteSpace(sectionName)) throw new ArgumentException("sectionName is required", nameof(sectionName));
+        if (!File.Exists(cppPath)) throw new FileNotFoundException("File not found", cppPath);
+
+        var lines = File.ReadAllLines(cppPath);
+        var startMarker = $"//Start#{sectionName}";
+        var endMarker = $"//End#{sectionName}";
+
+        int start = -1, end = -1;
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var trimmed = lines[i].Trim();
+            if (start < 0 && trimmed.Equals(startMarker, StringComparison.OrdinalIgnoreCase))
+            {
+                start = i;
+                continue;
+            }
+
+            if (start >= 0 && trimmed.Equals(endMarker, StringComparison.OrdinalIgnoreCase))
+            {
+                end = i;
+                break;
+            }
+        }
+
+        if (start < 0 || end < 0 || end <= start)
+            throw new InvalidOperationException($"Section '{sectionName}' not found in {cppPath}.");
+
+        string indent = new string(lines[start].TakeWhile(char.IsWhiteSpace).ToArray());
+        var replacementLines = string.IsNullOrEmpty(newContent)
+            ? new List<string>()
+            : SplitLinesPreserveEmpty(newContent).Select(line => indent + line).ToList();
+
+        var updated = new List<string>(lines.Length + replacementLines.Count);
+        updated.AddRange(lines.Take(start + 1));
+        updated.AddRange(replacementLines);
+        updated.AddRange(lines.Skip(end));
+
+        File.WriteAllLines(cppPath, updated, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
     }
 
     public void ReplaceInCppFile(string filePath, string oldValue, string newValue, bool backup = false)
@@ -93,12 +122,10 @@ public sealed class CppSectionEditor : ICppSectionEditor
         if (newValue == null)
             newValue = string.Empty;
 
-        // Remove read-only attribute if present
         var attrs = File.GetAttributes(filePath);
         if ((attrs & FileAttributes.ReadOnly) != 0)
             File.SetAttributes(filePath, attrs & ~FileAttributes.ReadOnly);
 
-        // Read with BOM detection and remember original encoding
         string content;
         Encoding enc;
         using (var sr = new StreamReader(filePath, detectEncodingFromByteOrderMarks: true))
@@ -107,7 +134,6 @@ public sealed class CppSectionEditor : ICppSectionEditor
             enc = sr.CurrentEncoding;
         }
 
-        // Count/replace occurrences (Ordinal = literal, case-sensitive)
         int occurrences = 0;
         int start = 0;
         int idx;
@@ -128,7 +154,15 @@ public sealed class CppSectionEditor : ICppSectionEditor
         if (backup)
             File.Copy(filePath, filePath + ".bak", overwrite: true);
 
-        using (var sw = new StreamWriter(filePath, append: false, encoding: enc))
-            sw.Write(sb.ToString());
+        using var sw = new StreamWriter(filePath, append: false, encoding: enc);
+        sw.Write(sb.ToString());
+    }
+
+    private static IEnumerable<string> SplitLinesPreserveEmpty(string value)
+    {
+        return value
+            .Replace("\r\n", "\n")
+            .Replace('\r', '\n')
+            .Split('\n');
     }
 }

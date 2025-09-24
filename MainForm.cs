@@ -23,10 +23,11 @@ public partial class MainForm : Form, IMainFormView
         var paths = new AppPaths();
         var clipboard = new ClipboardService();
         var interaction = new UserInteractionService();
-        var headerLists = new HeaderListProvider(paths);
+        var snippetCatalog = new YamlCodeSnippetCatalogService(paths);
+        var headerLists = new HeaderListProvider(snippetCatalog);
         var bin2ShellRunner = new Bin2ShellRunner(paths);
         var encodingCatalog = new ShellcodeEncodingCatalogService(bin2ShellRunner, paths);
-        var compiler = new CompilerService(paths, bin2ShellRunner, new CppSectionEditor(), _logger);
+        var compiler = new CompilerService(paths, bin2ShellRunner, new CppSectionEditor(), snippetCatalog, _logger);
 
         _requirements = new RequirementProvisioner(paths, _logger);
         _coordinator = new MainFormCoordinator(
@@ -49,11 +50,13 @@ public partial class MainForm : Form, IMainFormView
     public ComboBox ShellcodeExecutionCombo => shellcodeExecutionComboBox;
     public ComboBox UacBypassCombo => UACBComboBox;
     public ComboBox GenericShellcodeCombo => genericShellcodeComboBox;
+    public ComboBox GuardrailCombo => guardrailComboBox;
     public ListBox AntiDebugList => antiDebugListBox;
     public TextBox ShellcodeFileTextBox => shellcodeFile;
     public TextBox ShellcodeRawTextBox => shellcodeRAW;
     public TextBox ShellcodeUrlTextBox => shellcodeURL;
     public TextBox ProcessInjectionTargetTextBox => PsInjPsNameTextBox;
+    public TextBox GuardrailParameterTextBox => guardrailParamTextBox;
     public Button SubmitButton => submitButton;
 
     private async void MainForm_Load(object sender, EventArgs e)
