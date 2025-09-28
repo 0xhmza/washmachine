@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Forms;
@@ -20,9 +20,16 @@ public sealed class HeaderListProvider : IHeaderListProvider
         var items = LoadEntries(sectionName);
 
         combo.BeginUpdate();
+        combo.DisplayMember = nameof(SnippetListEntry.Display);
         combo.Items.Clear();
-        combo.Items.AddRange(items.ToArray());
-        if (combo.Items.Count > 0) combo.SelectedIndex = 0;
+
+        foreach (var entry in items)
+        {
+            combo.Items.Add(entry);
+        }
+
+        combo.Items.Add(SnippetListEntry.Empty);
+        combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
         combo.EndUpdate();
     }
 
@@ -32,17 +39,41 @@ public sealed class HeaderListProvider : IHeaderListProvider
         var items = LoadEntries(sectionName);
 
         list.BeginUpdate();
+        list.DisplayMember = nameof(SnippetListEntry.Display);
         list.Items.Clear();
-        list.Items.AddRange(items.ToArray());
+
+        foreach (var entry in items)
+        {
+            list.Items.Add(entry);
+        }
+
         list.EndUpdate();
     }
 
-    private List<string> LoadEntries(string sectionName)
+    private IReadOnlyList<SnippetListEntry> LoadEntries(string sectionName)
     {
         if (string.IsNullOrWhiteSpace(sectionName))
             throw new ArgumentException("Section name is required", nameof(sectionName));
 
         var section = _catalog.GetSectionByHeader(sectionName);
-        return section.Items.Select(item => item.Id).ToList();
+        return section.Items
+            .Select(item => new SnippetListEntry(item.Id, item.Display))
+            .ToList();
+    }
+
+    private sealed class SnippetListEntry
+    {
+        public static readonly SnippetListEntry Empty = new(string.Empty, string.Empty);
+
+        public SnippetListEntry(string id, string display)
+        {
+            Id = id ?? string.Empty;
+            Display = string.IsNullOrWhiteSpace(display) ? Id : display;
+        }
+
+        public string Id { get; }
+        public string Display { get; }
+
+        public override string ToString() => Id;
     }
 }

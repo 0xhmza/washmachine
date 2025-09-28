@@ -27,7 +27,8 @@ public partial class MainForm : Form, IMainFormView
         var headerLists = new HeaderListProvider(snippetCatalog);
         var bin2ShellRunner = new Bin2ShellRunner(paths);
         var encodingCatalog = new ShellcodeEncodingCatalogService(bin2ShellRunner, paths);
-        var compiler = new CompilerService(paths, bin2ShellRunner, new CppSectionEditor(), snippetCatalog, _logger);
+        var toolchains = new MsvcToolchainLocator(_logger, interaction, paths);
+        var compiler = new CompilerService(paths, bin2ShellRunner, snippetCatalog, _logger);
 
         _requirements = new RequirementProvisioner(paths, _logger);
         _coordinator = new MainFormCoordinator(
@@ -35,6 +36,7 @@ public partial class MainForm : Form, IMainFormView
             paths,
             headerLists,
             encodingCatalog,
+            toolchains,
             compiler,
             clipboard,
             interaction);
@@ -109,3 +111,7 @@ public partial class MainForm : Form, IMainFormView
         await _coordinator.HandleSubmitAsync(this).ConfigureAwait(true);
     }
 }
+
+
+
+

@@ -39,12 +39,77 @@ public sealed class UserInteractionService : IUserInteractionService
             : null;
     }
 
+    public void ShowLargeText(
+        IWin32Window owner,
+        string title,
+        string content,
+        string? header = null)
+    {
+        using var dialog = CreateFixedDialog(title, new Size(920, 620));
+
+        var textBox = new TextBox
+        {
+            Multiline = true,
+            ReadOnly = true,
+            ScrollBars = ScrollBars.Both,
+            WordWrap = false,
+            Font = new Font("Consolas", 9f),
+            Dock = DockStyle.Fill,
+            Text = content ?? string.Empty
+        };
+
+        var bottomPanel = new Panel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 50,
+            Padding = new Padding(0, 0, 16, 10)
+        };
+
+        var closeButton = new Button
+        {
+            Text = "Close",
+            DialogResult = DialogResult.OK,
+            Size = new Size(90, 30),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Right
+        };
+        closeButton.Location = new Point(bottomPanel.ClientSize.Width - closeButton.Width - 16, bottomPanel.ClientSize.Height - closeButton.Height - 10);
+        bottomPanel.Controls.Add(closeButton);
+
+        bottomPanel.Resize += (_, _) =>
+        {
+            closeButton.Location = new Point(bottomPanel.ClientSize.Width - closeButton.Width - 16, bottomPanel.ClientSize.Height - closeButton.Height - 10);
+        };
+
+        dialog.AcceptButton = closeButton;
+        dialog.CancelButton = closeButton;
+
+        dialog.SuspendLayout();
+        dialog.Controls.Add(textBox);
+        dialog.Controls.Add(bottomPanel);
+
+        if (!string.IsNullOrWhiteSpace(header))
+        {
+            var headerLabel = new Label
+            {
+                AutoSize = false,
+                Dock = DockStyle.Top,
+                Padding = new Padding(16, 16, 16, 4),
+                Text = header,
+                Font = new Font("Segoe UI", 9f, FontStyle.Bold)
+            };
+            dialog.Controls.Add(headerLabel);
+        }
+
+        dialog.ResumeLayout(performLayout: true);
+        dialog.ShowDialog(owner);
+    }
+
     public void ShowShellcodeTip(IWin32Window owner)
     {
         const string tipText = "Please paste shellcode as hexadecimal byte escapes.\r\n\r\n" +
-                               "• Use \\x followed by exactly two hex digits per byte.\r\n" +
-                               "• No spaces, commas, or 0x prefixes.\r\n" +
-                               "• Line breaks are okay; format is validated before continuing.\r\n\r\n" +
+                               "- Use \\x followed by exactly two hex digits per byte.\r\n" +
+                               "- No spaces, commas, or 0x prefixes.\r\n" +
+                               "- Line breaks are okay; format is validated before continuing.\r\n\r\n" +
                                "Example:";
 
         const string example = "\\x48\\xB8\\x44\\x44\\x44\\x44\\x44\\x44\\x44\\x44\\x50\\x48\\xB8\\x55\\x55\\x55\\x55\\x55\\x55\\x55\\x55\\x50\\x48\\x31\\xC9\\x48\\x89\\xE2\\x49\\x89\\xE0\\x49\\x83\\xC0\\x08\\x4D\\x31\\xC9\\x48\\xB8\\x33\\x33\\x33\\x33\\x33\\x33\\x33\\x33\\x48\\x83\\xEC\\x28\\xFF\\xD0\\x48\\x83\\xC4\\x38\\x48\\xB8\\xEF\\xBE\\xAD\\xDE\\x00\\x00\\x00\\x00\\xEB\\xFE";
@@ -54,7 +119,7 @@ public sealed class UserInteractionService : IUserInteractionService
         var header = new Label
         {
             AutoSize = true,
-            Text = "✨ Shellcode Input Format",
+            Text = "Shellcode Input Format",
             Font = new Font("Segoe UI Semibold", 12f),
             Location = new Point(16, 16)
         };
@@ -97,7 +162,7 @@ public sealed class UserInteractionService : IUserInteractionService
         var header = new Label
         {
             AutoSize = true,
-            Text = "✨ Environment Condition Format",
+            Text = "Environment Condition Format",
             Font = new Font("Segoe UI Semibold", 12f),
             Location = new Point(16, 16)
         };
@@ -168,3 +233,7 @@ public sealed class UserInteractionService : IUserInteractionService
             Location = new Point(dialog.ClientSize.Width - 16 - 90, dialog.ClientSize.Height - 16 - 30)
         };
 }
+
+
+
+

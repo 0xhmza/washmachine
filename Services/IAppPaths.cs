@@ -25,6 +25,11 @@ public interface IAppPaths
     string EnsureTempShellcodeDirectory();
 
     /// <summary>
+    /// Returns the directory used to store generated C++ source files, creating it if necessary.
+    /// </summary>
+    string EnsureTempSourceDirectory();
+
+    /// <summary>
     /// Validates that all critical paths exist on disk and returns a list of user-facing error messages.
     /// </summary>
     IReadOnlyList<string> Validate();

@@ -18,6 +18,13 @@ public interface IUserInteractionService
         string filter,
         string initialDirectory);
 
+    void ShowLargeText(
+        IWin32Window owner,
+        string title,
+        string content,
+        string? header = null);
+
     void ShowShellcodeTip(IWin32Window owner);
     void ShowGuardRailInfo(IWin32Window owner);
 }
+

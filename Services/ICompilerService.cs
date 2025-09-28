@@ -6,5 +6,6 @@ namespace Washmachine.Services;
 
 public interface ICompilerService
 {
-    Task<CompilerResult> CompileAsync(UiData data, CancellationToken cancellationToken = default);
+    Task<CompilerResult> CompileAsync(UiData data, MsvcToolchain toolchain, CancellationToken cancellationToken = default);
 }
+

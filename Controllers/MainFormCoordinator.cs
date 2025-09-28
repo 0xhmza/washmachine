@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -16,6 +17,7 @@ public sealed class MainFormCoordinator
     private readonly IAppPaths _paths;
     private readonly IHeaderListProvider _headerLists;
     private readonly IShellcodeEncodingCatalog _encodingCatalog;
+    private readonly IMsvcToolchainLocator _toolchains;
     private readonly ICompilerService _compiler;
     private readonly IClipboardService _clipboard;
     private readonly IUserInteractionService _interaction;
@@ -25,6 +27,7 @@ public sealed class MainFormCoordinator
         IAppPaths paths,
         IHeaderListProvider headerLists,
         IShellcodeEncodingCatalog encodingCatalog,
+        IMsvcToolchainLocator toolchains,
         ICompilerService compiler,
         IClipboardService clipboard,
         IUserInteractionService interaction)
@@ -33,6 +36,7 @@ public sealed class MainFormCoordinator
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         _headerLists = headerLists ?? throw new ArgumentNullException(nameof(headerLists));
         _encodingCatalog = encodingCatalog ?? throw new ArgumentNullException(nameof(encodingCatalog));
+        _toolchains = toolchains ?? throw new ArgumentNullException(nameof(toolchains));
         _compiler = compiler ?? throw new ArgumentNullException(nameof(compiler));
         _clipboard = clipboard ?? throw new ArgumentNullException(nameof(clipboard));
         _interaction = interaction ?? throw new ArgumentNullException(nameof(interaction));
@@ -163,8 +167,20 @@ public sealed class MainFormCoordinator
             var data = new UiData(view.RootControl);
             LogCollectedData(data);
 
-            _logger.Info("Starting compilation process...");
-            var result = await _compiler.CompileAsync(data).ConfigureAwait(true);
+            _logger.Info("Ensuring MSVC toolchain...");
+            var toolchain = await _toolchains.EnsureToolchainAsync(view).ConfigureAwait(true);
+            if (toolchain == null)
+            {
+                _interaction.ShowMessage(view,
+                    "Microsoft Visual C++ compiler is required. Please configure the location and try again.",
+                    "MSVC Compiler",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            _logger.Info($"Starting compilation process with {toolchain.VersionLabel}...");
+            var result = await _compiler.CompileAsync(data, toolchain).ConfigureAwait(true);
 
             foreach (var note in result.Notes)
             {
@@ -182,11 +198,32 @@ public sealed class MainFormCoordinator
             }
 
             _logger.Ok("Compilation pipeline completed.");
-            _interaction.ShowMessage(view,
-                "Project files updated successfully.",
-                "Compile",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+
+            string? header = null;
+            if (!string.IsNullOrWhiteSpace(result.GeneratedSourcePath))
+            {
+                header = $"Source: {result.GeneratedSourcePath}";
+                if (!string.IsNullOrWhiteSpace(result.OutputExecutablePath))
+                {
+                    header += $"{Environment.NewLine}Executable: {result.OutputExecutablePath}";
+                }
+            }
+            string preview = result.GeneratedSourceCode ?? string.Empty;
+
+            _interaction.ShowLargeText(
+                view,
+                "Generated C++ Source",
+                preview,
+                header);
+
+            if (!string.IsNullOrWhiteSpace(result.OutputExecutablePath))
+            {
+                _interaction.ShowMessage(view,
+                    $"Native executable saved to:{Environment.NewLine}{result.OutputExecutablePath}",
+                    "MSVC Compiler",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
         }
         catch (Exception ex)
         {
@@ -231,7 +268,6 @@ public sealed class MainFormCoordinator
         void PopulateCombo(ComboBox combo, string sectionName)
         {
             _headerLists.PopulateComboFromHeaderSection(combo, sectionName);
-            combo.Items.Add(string.Empty);
         }
     }
 
@@ -352,3 +388,8 @@ public sealed class MainFormCoordinator
         _logger.Info("UI snapshot — end");
     }
 }
+
+
+
+
+

