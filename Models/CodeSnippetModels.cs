@@ -16,12 +16,24 @@ public sealed class CodeSnippetCatalog
         if (sections == null) throw new ArgumentNullException(nameof(sections));
         var list = sections.ToList();
         _sections = new ReadOnlyCollection<CodeSnippetSection>(list);
-        _sectionsByHeader = list
-            .Where(s => !string.IsNullOrWhiteSpace(s.Header))
-            .ToDictionary(s => s.Header, StringComparer.OrdinalIgnoreCase);
-        _sectionsByTemplate = list
-            .Where(s => !string.IsNullOrWhiteSpace(s.Template))
-            .ToDictionary(s => s.Template, StringComparer.OrdinalIgnoreCase);
+
+        var headerMap = new Dictionary<string, CodeSnippetSection>(StringComparer.OrdinalIgnoreCase);
+        var templateMap = new Dictionary<string, CodeSnippetSection>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var section in list)
+        {
+            if (section == null)
+                continue;
+
+            if (!string.IsNullOrWhiteSpace(section.Header))
+                headerMap[section.Header!] = section;
+
+            if (!string.IsNullOrWhiteSpace(section.Template))
+                templateMap[section.Template!] = section;
+        }
+
+        _sectionsByHeader = headerMap;
+        _sectionsByTemplate = templateMap;
     }
 
     public IReadOnlyList<CodeSnippetSection> Sections => _sections;
@@ -52,6 +64,7 @@ public sealed class CodeSnippetCatalog
 public sealed class CodeSnippetSection
 {
     private readonly ReadOnlyCollection<CodeSnippetItem> _items;
+    private readonly ReadOnlyCollection<CodeSnippetInput> _inputs;
     private readonly Dictionary<string, CodeSnippetItem> _itemsById;
 
     public CodeSnippetSection(
@@ -59,7 +72,8 @@ public sealed class CodeSnippetSection
         string template,
         string display,
         bool allowMultiple,
-        IEnumerable<CodeSnippetItem> items)
+        IEnumerable<CodeSnippetItem> items,
+        IEnumerable<CodeSnippetInput> inputs)
     {
         Header = header ?? string.Empty;
         Template = template ?? string.Empty;
@@ -67,9 +81,22 @@ public sealed class CodeSnippetSection
         AllowMultiple = allowMultiple;
         var list = (items ?? Enumerable.Empty<CodeSnippetItem>()).ToList();
         _items = new ReadOnlyCollection<CodeSnippetItem>(list);
-        _itemsById = list
-            .Where(i => !string.IsNullOrWhiteSpace(i.Id))
-            .ToDictionary(i => i.Id, StringComparer.OrdinalIgnoreCase);
+
+        var itemMap = new Dictionary<string, CodeSnippetItem>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in list)
+        {
+            if (item == null)
+                continue;
+
+            if (string.IsNullOrWhiteSpace(item.Id))
+                continue;
+
+            itemMap[item.Id!] = item;
+        }
+
+        _itemsById = itemMap;
+        _inputs = new ReadOnlyCollection<CodeSnippetInput>(
+            (inputs ?? Enumerable.Empty<CodeSnippetInput>()).ToList());
     }
 
     public string Header { get; }
@@ -77,6 +104,7 @@ public sealed class CodeSnippetSection
     public string Display { get; }
     public bool AllowMultiple { get; }
     public IReadOnlyList<CodeSnippetItem> Items => _items;
+    public IReadOnlyList<CodeSnippetInput> Inputs => _inputs;
 
     public bool TryGetItem(string id, out CodeSnippetItem item)
     {
@@ -102,4 +130,50 @@ public sealed class CodeSnippetItem
     public string Id { get; }
     public string Display { get; }
     public string Snippet { get; }
+}
+
+public sealed class CodeSnippetInput
+{
+    public CodeSnippetInput(
+        string id,
+        string label,
+        SnippetInputType type,
+        SnippetInputPlacement placement,
+        bool required,
+        int? width,
+        string? placeholder,
+        string? infoAction,
+        string? infoButtonLabel)
+    {
+        Id = id ?? string.Empty;
+        Label = label ?? string.Empty;
+        Type = type;
+        Placement = placement;
+        Required = required;
+        Width = width;
+        Placeholder = placeholder ?? string.Empty;
+        InfoAction = infoAction ?? string.Empty;
+        InfoButtonLabel = infoButtonLabel ?? string.Empty;
+    }
+
+    public string Id { get; }
+    public string Label { get; }
+    public SnippetInputType Type { get; }
+    public SnippetInputPlacement Placement { get; }
+    public bool Required { get; }
+    public int? Width { get; }
+    public string Placeholder { get; }
+    public string InfoAction { get; }
+    public string InfoButtonLabel { get; }
+}
+
+public enum SnippetInputType
+{
+    TextBox
+}
+
+public enum SnippetInputPlacement
+{
+    BeforeSelector,
+    AfterSelector
 }

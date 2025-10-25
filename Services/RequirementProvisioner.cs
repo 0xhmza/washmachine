@@ -75,23 +75,6 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
 
     private IEnumerable<RequirementData> GetMissingRequirements()
     {
-        string headerPath = Path.Combine(_paths.MainCppDirectory, "Win32Helper.h");
-        bool needsVxApi = !Directory.Exists(_paths.MainCppDirectory)
-                          || !File.Exists(headerPath)
-                          || !File.Exists(_paths.MainCppFile);
-
-        if (needsVxApi)
-        {
-            yield return new RequirementData(
-                "VX-API",
-                Path.Combine(_paths.ExecutableDirectory, "VX-API-main"),
-                new[]
-                {
-                    new Uri("https://github.com/vxunderground/VX-API/archive/refs/heads/main.zip"),
-                    new Uri("https://github.com/vxunderground/VX-API/archive/refs/heads/master.zip")
-                });
-        }
-
         string? bin2ShellDir = Path.GetDirectoryName(_paths.Bin2ShellScript);
         bool needsBin2Shell = string.IsNullOrWhiteSpace(bin2ShellDir)
                               || !Directory.Exists(bin2ShellDir)
@@ -253,5 +236,3 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
 
     private sealed record RequirementData(string Name, string TargetDirectory, IReadOnlyList<Uri> DownloadUris);
 }
-
-

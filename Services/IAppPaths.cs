@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.IO;
 
 namespace Washmachine.Services;
 
@@ -12,20 +11,16 @@ public interface IAppPaths
     string ExecutableDirectory { get; }
     string AssetsDirectory { get; }
     string SnippetCatalogFile { get; }
-    string MainCppDirectory { get; }
-    string MainCppFile { get; }
-    string TemplateCppFile { get; }
     string Bin2ShellScript { get; }
     string Bin2ShellAlgos { get; }
 
     /// <summary>
     /// Returns the directory used to store temporary shellcode artifacts, creating it if necessary.
     /// </summary>
-    /// <exception cref="IOException">Thrown when the directory cannot be created.</exception>
     string EnsureTempShellcodeDirectory();
 
     /// <summary>
-    /// Returns the directory used to store generated C++ source files, creating it if necessary.
+    /// Returns the directory used to store generated source files, creating it if necessary.
     /// </summary>
     string EnsureTempSourceDirectory();
 

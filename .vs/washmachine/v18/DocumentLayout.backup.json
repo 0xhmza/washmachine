@@ -3,14 +3,6 @@
   "WorkspaceRootPath": "C:\\Users\\hamza\\Documents\\GitHub\\washmachine\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|washmachine.csproj|c:\\users\\hamza\\documents\\github\\washmachine\\controllers\\mainformcoordinator.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|washmachine.csproj|solutionrelative:controllers\\mainformcoordinator.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|washmachine.csproj|c:\\users\\hamza\\documents\\github\\washmachine\\mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|washmachine.csproj|solutionrelative:mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|washmachine.csproj|c:\\users\\hamza\\documents\\github\\washmachine\\mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}|Form",
       "RelativeMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|washmachine.csproj|solutionrelative:mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}|Form"
     }
@@ -22,49 +14,27 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 1,
+          "SelectedChildIndex": 0,
           "Children": [
-            {
-              "$type": "Bookmark",
-              "Name": "ST:0:0:{eefa5220-e298-11d0-8f78-00a0c9110057}"
-            },
             {
               "$type": "Document",
               "DocumentIndex": 0,
-              "Title": "MainFormCoordinator.cs",
-              "DocumentMoniker": "C:\\Users\\hamza\\Documents\\GitHub\\washmachine\\Controllers\\MainFormCoordinator.cs",
-              "RelativeDocumentMoniker": "Controllers\\MainFormCoordinator.cs",
-              "ToolTip": "C:\\Users\\hamza\\Documents\\GitHub\\washmachine\\Controllers\\MainFormCoordinator.cs",
-              "RelativeToolTip": "Controllers\\MainFormCoordinator.cs",
-              "ViewState": "AgIAADUBAAAAAAAAAAAAAEIBAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-24T21:38:33.86Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 1,
-              "Title": "MainForm.cs",
-              "DocumentMoniker": "C:\\Users\\hamza\\Documents\\GitHub\\washmachine\\MainForm.cs",
-              "RelativeDocumentMoniker": "MainForm.cs",
-              "ToolTip": "C:\\Users\\hamza\\Documents\\GitHub\\washmachine\\MainForm.cs",
-              "RelativeToolTip": "MainForm.cs",
-              "ViewState": "AgIAAAcAAAAAAAAAAAAqwHUAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-24T21:37:51.185Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 2,
               "Title": "MainForm.cs [Design]",
               "DocumentMoniker": "C:\\Users\\hamza\\Documents\\GitHub\\washmachine\\MainForm.cs",
               "RelativeDocumentMoniker": "MainForm.cs",
               "ToolTip": "C:\\Users\\hamza\\Documents\\GitHub\\washmachine\\MainForm.cs [Design]",
               "RelativeToolTip": "MainForm.cs [Design]",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-24T21:37:43.518Z",
+              "WhenOpened": "2025-10-17T18:33:33.556Z",
               "EditorCaption": " [Design]"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{cce594b6-0c39-4442-ba28-10c64ac7e89f}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{eefa5220-e298-11d0-8f78-00a0c9110057}"
             }
           ]
         }

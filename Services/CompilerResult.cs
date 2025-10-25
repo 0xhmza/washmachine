@@ -1,10 +1,12 @@
 using System.Collections.Generic;
+using Washmachine.Models;
 
 namespace Washmachine.Services;
 
 public sealed record CompilerResult(
     bool Success,
-    string? OutputExecutablePath,
     string? GeneratedSourcePath,
     string? GeneratedSourceCode,
-    IReadOnlyList<string> Notes);
+    IReadOnlyList<string> Notes,
+    CompilerToolDiscoveryResult? Discovery,
+    CppFileConversionResult ConversionResult);

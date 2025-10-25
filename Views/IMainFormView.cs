@@ -9,20 +9,13 @@ public interface IMainFormView : IWin32Window
     ComboBox EncoderCombo { get; }
     ComboBox CompressorCombo { get; }
     ComboBox EnvelopeCombo { get; }
-
-    ComboBox ProcessInjectionCombo { get; }
-    ComboBox ShellcodeExecutionCombo { get; }
-    ComboBox UacBypassCombo { get; }
+    ComboBox TemplateCombo { get; }
+    FlowLayoutPanel SnippetPickerPanel { get; }
     ComboBox GenericShellcodeCombo { get; }
-    ComboBox GuardrailCombo { get; }
-
-    ListBox AntiDebugList { get; }
 
     TextBox ShellcodeFileTextBox { get; }
     TextBox ShellcodeRawTextBox { get; }
     TextBox ShellcodeUrlTextBox { get; }
-    TextBox ProcessInjectionTargetTextBox { get; }
-    TextBox GuardrailParameterTextBox { get; }
 
     Button SubmitButton { get; }
 }

@@ -6,8 +6,8 @@ using System.Threading;
 namespace Washmachine.Services;
 
 /// <summary>
-/// Centralized resolver for the project paths that were previously scattered across <c>Constants</c>.
-/// Defers expensive checks until needed and offers validation messages that can be surfaced to the user.
+/// Centralized resolver for application paths. Keeps path knowledge in one place and
+/// defers expensive checks until required by callers.
 /// </summary>
 public sealed class AppPaths : IAppPaths
 {
@@ -19,10 +19,7 @@ public sealed class AppPaths : IAppPaths
         ExecutableDirectory = AppDomain.CurrentDomain.BaseDirectory;
 
         AssetsDirectory = Path.Combine(ExecutableDirectory, "Assets");
-        MainCppDirectory = Path.Combine(ExecutableDirectory, "VX-API-main", "VX-API");
         SnippetCatalogFile = Path.Combine(AssetsDirectory, "vx_api_snippets.yaml");
-        TemplateCppFile = Path.Combine(AssetsDirectory, "template.cpp");
-        MainCppFile = Path.Combine(MainCppDirectory, "main.cpp");
 
         Bin2ShellScript = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "main.py");
         Bin2ShellAlgos = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "data", "yaml", "algos.yaml");
@@ -34,9 +31,6 @@ public sealed class AppPaths : IAppPaths
     public string ExecutableDirectory { get; }
     public string AssetsDirectory { get; }
     public string SnippetCatalogFile { get; }
-    public string MainCppDirectory { get; }
-    public string MainCppFile { get; }
-    public string TemplateCppFile { get; }
     public string Bin2ShellScript { get; }
     public string Bin2ShellAlgos { get; }
 
@@ -47,18 +41,8 @@ public sealed class AppPaths : IAppPaths
     {
         var errors = new List<string>();
 
-        if (!Directory.Exists(MainCppDirectory))
-            errors.Add($"C++ project directory not found: '{MainCppDirectory}'.");
-
-        var headerPath = Path.Combine(MainCppDirectory, "Win32Helper.h");
-        if (!File.Exists(headerPath))
-            errors.Add($"Header file missing: '{headerPath}'.");
-
         if (!Directory.Exists(AssetsDirectory))
             errors.Add($"Assets directory not found: '{AssetsDirectory}'.");
-
-        if (!File.Exists(TemplateCppFile))
-            errors.Add($"template.cpp missing: '{TemplateCppFile}'.");
 
         if (!File.Exists(SnippetCatalogFile))
             errors.Add($"Snippet catalog missing: '{SnippetCatalogFile}'.");
@@ -86,5 +70,3 @@ public sealed class AppPaths : IAppPaths
         return tempDir;
     }
 }
-
-

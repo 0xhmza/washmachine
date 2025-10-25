@@ -1,6 +1,5 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Threading;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -13,30 +12,29 @@ namespace Washmachine.Controllers;
 
 public sealed class MainFormCoordinator
 {
+    private const string TemplateGenericShellcode = "GENERICSHELLCODE";
     private readonly IAppLogger _logger;
     private readonly IAppPaths _paths;
-    private readonly IHeaderListProvider _headerLists;
+    private readonly ICodeSnippetCatalogService _snippetCatalog;
     private readonly IShellcodeEncodingCatalog _encodingCatalog;
-    private readonly IMsvcToolchainLocator _toolchains;
     private readonly ICompilerService _compiler;
     private readonly IClipboardService _clipboard;
     private readonly IUserInteractionService _interaction;
+    private IReadOnlyList<CodeTemplateDefinition> _templates = Array.Empty<CodeTemplateDefinition>();
 
     public MainFormCoordinator(
         IAppLogger logger,
         IAppPaths paths,
-        IHeaderListProvider headerLists,
+        ICodeSnippetCatalogService snippetCatalog,
         IShellcodeEncodingCatalog encodingCatalog,
-        IMsvcToolchainLocator toolchains,
         ICompilerService compiler,
         IClipboardService clipboard,
         IUserInteractionService interaction)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
-        _headerLists = headerLists ?? throw new ArgumentNullException(nameof(headerLists));
+        _snippetCatalog = snippetCatalog ?? throw new ArgumentNullException(nameof(snippetCatalog));
         _encodingCatalog = encodingCatalog ?? throw new ArgumentNullException(nameof(encodingCatalog));
-        _toolchains = toolchains ?? throw new ArgumentNullException(nameof(toolchains));
         _compiler = compiler ?? throw new ArgumentNullException(nameof(compiler));
         _clipboard = clipboard ?? throw new ArgumentNullException(nameof(clipboard));
         _interaction = interaction ?? throw new ArgumentNullException(nameof(interaction));
@@ -56,7 +54,8 @@ public sealed class MainFormCoordinator
             return;
         }
 
-        PopulateHeaderControls(view);
+        PopulateTemplateCombo(view);
+        PopulateSnippetControls(view, GetSelectedTemplate(view));
         await LoadEncodingCombosAsync(view).ConfigureAwait(true);
     }
 
@@ -129,22 +128,7 @@ public sealed class MainFormCoordinator
         target.SelectionStart = target.TextLength;
         target.SelectionLength = 0;
         target.Focus();
-        _logger.Ok("Clipboard content pasted.");
-    }
-
-    public void ShowShellcodeTip(IMainFormView view)
-    {
-        if (view == null) throw new ArgumentNullException(nameof(view));
-        _logger.Info("Displaying shellcode format tip.");
-        _interaction.ShowShellcodeTip(view);
-        _logger.Ok("Shellcode tip dialog closed.");
-    }
-
-    public void ShowGuardRailInfo(IMainFormView view)
-    {
-        if (view == null) throw new ArgumentNullException(nameof(view));
-        _interaction.ShowGuardRailInfo(view);
-        _logger.Ok("Guard rails format dialog closed.");
+        _logger.Ok("Clipboard contents pasted.");
     }
 
     public async Task HandleSubmitAsync(IMainFormView view)
@@ -167,70 +151,59 @@ public sealed class MainFormCoordinator
             var data = new UiData(view.RootControl);
             LogCollectedData(data);
 
-            _logger.Info("Ensuring MSVC toolchain...");
-            var toolchain = await _toolchains.EnsureToolchainAsync(view).ConfigureAwait(true);
-            if (toolchain == null)
-            {
-                _interaction.ShowMessage(view,
-                    "Microsoft Visual C++ compiler is required. Please configure the location and try again.",
-                    "MSVC Compiler",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-                return;
-            }
+            _logger.Info("Generating source from selected snippets...");
+            var result = await _compiler.CompileAsync(data).ConfigureAwait(true);
 
-            _logger.Info($"Starting compilation process with {toolchain.VersionLabel}...");
-            var result = await _compiler.CompileAsync(data, toolchain).ConfigureAwait(true);
-
+            var loggedNotes = new HashSet<string>(StringComparer.Ordinal);
             foreach (var note in result.Notes)
             {
-                _logger.Info(note);
+                if (string.IsNullOrWhiteSpace(note))
+                    continue;
+
+                if (loggedNotes.Add(note))
+                {
+                    _logger.Info(note);
+                }
             }
+            if (result.Discovery != null)
+            {
+                await HandleCompilerDiscoveryAsync(view, result.Discovery).ConfigureAwait(true);
+            }
+
+            ShowGeneratedSourcePreview(view, result);
 
             if (!result.Success)
             {
                 _interaction.ShowMessage(view,
-                    "Compilation failed. Check the log for details.",
-                    "Compile",
+                    "Generation failed. Check the log for details.",
+                    "Generate",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
                 return;
             }
 
-            _logger.Ok("Compilation pipeline completed.");
+            _logger.Ok("Snippet generation completed.");
 
             string? header = null;
             if (!string.IsNullOrWhiteSpace(result.GeneratedSourcePath))
             {
-                header = $"Source: {result.GeneratedSourcePath}";
-                if (!string.IsNullOrWhiteSpace(result.OutputExecutablePath))
-                {
-                    header += $"{Environment.NewLine}Executable: {result.OutputExecutablePath}";
-                }
+                header = $"Source saved to: {result.GeneratedSourcePath}";
             }
+
             string preview = result.GeneratedSourceCode ?? string.Empty;
 
             _interaction.ShowLargeText(
                 view,
-                "Generated C++ Source",
+                "Generated Source",
                 preview,
                 header);
-
-            if (!string.IsNullOrWhiteSpace(result.OutputExecutablePath))
-            {
-                _interaction.ShowMessage(view,
-                    $"Native executable saved to:{Environment.NewLine}{result.OutputExecutablePath}",
-                    "MSVC Compiler",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
-            }
         }
         catch (Exception ex)
         {
-            _logger.Error($"Unexpected error during compilation: {ex.Message}");
+            _logger.Error($"Unexpected error during generation: {ex.Message}");
             _interaction.ShowMessage(view,
                 $"Unexpected error: {ex.Message}",
-                "Compile",
+                "Generate",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
         }
@@ -240,34 +213,562 @@ public sealed class MainFormCoordinator
         }
     }
 
-    private void PopulateHeaderControls(IMainFormView view)
+    public void ShowShellcodeTip(IMainFormView view)
     {
+        if (view == null) throw new ArgumentNullException(nameof(view));
+
+        _interaction.ShowShellcodeTip(view);
+    }
+
+    public void ShowGuardRailInfo(IMainFormView view)
+    {
+        if (view == null) throw new ArgumentNullException(nameof(view));
+
+        _interaction.ShowGuardRailInfo(view);
+    }
+
+    private void PopulateTemplateCombo(IMainFormView view)
+    {
+        if (view == null) throw new ArgumentNullException(nameof(view));
+
+        var combo = view.TemplateCombo;
+        if (combo == null)
+        {
+            _logger.Warn("Template combo box is not available on the view; default template will be used.");
+            _templates = _snippetCatalog.GetTemplates();
+            return;
+        }
+
         try
         {
-            _headerLists.PopulateListFromHeaderSection(view.AntiDebugList, "ANTI-DEBUGGING");
+            var allTemplates = _snippetCatalog.GetTemplates()
+                .Where(t => t != null)
+                .OrderBy(t => t.Display, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
-            PopulateCombo(view.GuardrailCombo, "GUARDRAILS");
-            PopulateCombo(view.ProcessInjectionCombo, "PROCESS INJECTION");
-            PopulateCombo(view.ShellcodeExecutionCombo, "SHELLCODE EXECUTION");
-            PopulateCombo(view.UacBypassCombo, "UAC BYPASSES");
-            PopulateCombo(view.GenericShellcodeCombo, "GENERIC SHELLCODE PAYLOADS FOR TESTINGS");
+            if (allTemplates.Count == 0)
+                throw new InvalidOperationException("No code templates are defined in the snippet catalog.");
 
-            _logger.Info("Tip: Choose the empty entry for components you wish to skip.");
-            _logger.Ok("Header lists populated successfully.");
+            _templates = allTemplates;
+
+            combo.BeginUpdate();
+            try
+            {
+                combo.DisplayMember = nameof(TemplateComboItem.Display);
+                combo.ValueMember = nameof(TemplateComboItem.Id);
+                combo.DropDownStyle = ComboBoxStyle.DropDownList;
+                combo.Items.Clear();
+
+                foreach (var template in _templates)
+                    combo.Items.Add(new TemplateComboItem(template.Id, template.Display));
+
+                if (combo.Items.Count > 0 && combo.SelectedIndex < 0)
+                    combo.SelectedIndex = 0;
+            }
+            finally
+            {
+                combo.EndUpdate();
+            }
+
+            _logger.Ok($"Loaded {_templates.Count} template(s) into chooser.");
         }
         catch (Exception ex)
         {
-            _logger.Error($"Failed to populate header lists: {ex.Message}");
-            _interaction.ShowMessage(view,
-                $"Unable to populate header lists:{Environment.NewLine}{ex.Message}",
+            _logger.Error($"Failed to populate template list: {ex.Message}");
+            _interaction.ShowMessage(
+                view,
+                $"Unable to load templates:{Environment.NewLine}{ex.Message}",
+                "Initialization Error",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            _templates = Array.Empty<CodeTemplateDefinition>();
+        }
+    }
+
+    public void HandleTemplateChanged(IMainFormView view)
+    {
+        PopulateSnippetControls(view, GetSelectedTemplate(view));
+    }
+
+    private CodeTemplateDefinition? GetSelectedTemplate(IMainFormView view)
+    {
+        if (_templates == null || _templates.Count == 0)
+            return null;
+
+        var combo = view?.TemplateCombo;
+        string selectedId = string.Empty;
+
+        if (combo != null)
+        {
+            if (combo.SelectedItem is TemplateComboItem item)
+            {
+                selectedId = item.Id ?? string.Empty;
+            }
+            else if (combo.SelectedValue is string rawValue)
+            {
+                selectedId = rawValue ?? string.Empty;
+            }
+            else if (!string.IsNullOrWhiteSpace(combo.Text))
+            {
+                selectedId = combo.Text;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectedId))
+        {
+            var match = _templates.FirstOrDefault(t => string.Equals(t.Id, selectedId, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+                return match;
+        }
+
+        return _templates.FirstOrDefault();
+    }
+
+    private void PopulateSnippetControls(IMainFormView view, CodeTemplateDefinition? template)
+    {
+        if (view == null) throw new ArgumentNullException(nameof(view));
+        if (view.SnippetPickerPanel == null)
+            throw new InvalidOperationException("Snippet picker panel is not available on the view.");
+
+        var panel = view.SnippetPickerPanel;
+        panel.SuspendLayout();
+        try
+        {
+            panel.Controls.Clear();
+            panel.FlowDirection = FlowDirection.TopDown;
+            panel.WrapContents = false;
+            panel.AutoScroll = true;
+
+            CodeSnippetSection? genericSection = null;
+            bool templateProvided = template != null;
+
+            var snippetPlaceholders = template?.Placeholders
+                .Where(p => p != null && p.Kind == TemplatePlaceholderKind.Snippet && !string.IsNullOrWhiteSpace(p.SnippetTemplateKey))
+                .ToList();
+
+            if (snippetPlaceholders != null && snippetPlaceholders.Count > 0)
+            {
+                foreach (var placeholder in snippetPlaceholders)
+                {
+                    var snippetKey = placeholder.SnippetTemplateKey;
+                    if (string.IsNullOrWhiteSpace(snippetKey))
+                        continue;
+
+                    if (!_snippetCatalog.TryGetSectionByTemplate(snippetKey, out var section))
+                    {
+                        _logger.Warn($"Template '{template!.Id}' references missing snippet section '{snippetKey}'.");
+                        continue;
+                    }
+
+                    if (string.Equals(section.Template, TemplateGenericShellcode, StringComparison.OrdinalIgnoreCase))
+                    {
+                        genericSection ??= section;
+                        continue;
+                    }
+
+                    var ui = new SnippetSectionUi(section);
+                    AddSnippetSectionControls(view, panel, ui);
+                }
+            }
+            else
+            {
+                foreach (var section in _snippetCatalog.GetAllSections())
+                {
+                    if (section == null)
+                        continue;
+
+                    if (string.Equals(section.Template, TemplateGenericShellcode, StringComparison.OrdinalIgnoreCase))
+                    {
+                        genericSection ??= section;
+                        continue;
+                    }
+
+                    var ui = new SnippetSectionUi(section);
+                    AddSnippetSectionControls(view, panel, ui);
+                }
+
+                templateProvided = false;
+            }
+
+            PopulateGenericShellcodeCombo(view, genericSection);
+
+            _logger.Info("Tip: Use 'None' whenever you want to skip a snippet section.");
+            if (templateProvided && template != null)
+                _logger.Ok($"Snippet picker populated for template '{template.Display}'.");
+            else
+                _logger.Ok("Snippet picker populated with all available sections.");
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Failed to populate snippet picker: {ex.Message}");
+            _interaction.ShowMessage(
+                view,
+                $"Unable to populate snippet options:{Environment.NewLine}{ex.Message}",
                 "Initialization Error",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
         }
-
-        void PopulateCombo(ComboBox combo, string sectionName)
+        finally
         {
-            _headerLists.PopulateComboFromHeaderSection(combo, sectionName);
+            panel.ResumeLayout(true);
+        }
+    }
+
+    private void ShowGeneratedSourcePreview(IMainFormView view, CompilerResult result)
+    {
+        if (view == null)
+            throw new ArgumentNullException(nameof(view));
+        if (result == null)
+            return;
+
+        if (string.IsNullOrWhiteSpace(result.GeneratedSourceCode))
+            return;
+
+        string? header = null;
+        if (!string.IsNullOrWhiteSpace(result.GeneratedSourcePath))
+        {
+            header = $"Source saved to: {result.GeneratedSourcePath}";
+        }
+        else if (!result.Success)
+        {
+            header = "Generation failed; preview shown for debugging.";
+        }
+
+        _interaction.ShowLargeText(
+            view,
+            result.Success ? "Generated Source" : "Generated Source (Debug Preview)",
+            result.GeneratedSourceCode,
+            header);
+    }
+
+    private void AddSnippetSectionControls(IMainFormView view, FlowLayoutPanel host, SnippetSectionUi ui)
+    {
+        if (host == null) throw new ArgumentNullException(nameof(host));
+        if (ui == null) throw new ArgumentNullException(nameof(ui));
+
+        var label = new Label
+        {
+            AutoSize = true,
+            Text = ui.Section.Display,
+            Margin = new Padding(3, host.Controls.Count == 0 ? 0 : 12, 3, 0)
+        };
+        host.Controls.Add(label);
+
+        var beforeInputs = ui.Section.Inputs
+            .Where(input => input.Placement == SnippetInputPlacement.BeforeSelector)
+            .ToList();
+        AddInputRows(view, host, beforeInputs);
+
+        host.Controls.Add(CreateSelectorRow(ui));
+
+        var afterInputs = ui.Section.Inputs
+            .Where(input => input.Placement == SnippetInputPlacement.AfterSelector)
+            .ToList();
+        AddInputRows(view, host, afterInputs);
+    }
+
+    private void PopulateGenericShellcodeCombo(IMainFormView view, CodeSnippetSection? section)
+    {
+        if (view == null)
+            throw new ArgumentNullException(nameof(view));
+
+        var combo = view.GenericShellcodeCombo;
+        if (combo == null)
+            return;
+
+        combo.BeginUpdate();
+        try
+        {
+            combo.DisplayMember = nameof(SnippetComboItem.Display);
+            combo.ValueMember = nameof(SnippetComboItem.Id);
+            combo.Items.Clear();
+            combo.DropDownStyle = ComboBoxStyle.DropDownList;
+            combo.Items.Add(SnippetComboItem.None);
+
+            if (section != null)
+            {
+                foreach (var item in section.Items)
+                {
+                    combo.Items.Add(new SnippetComboItem(item.Id, item.Display));
+                }
+            }
+
+            combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
+        }
+        finally
+        {
+            combo.EndUpdate();
+        }
+    }
+
+    private void AddInputRows(IMainFormView view, FlowLayoutPanel host, IEnumerable<CodeSnippetInput> inputs)
+    {
+        if (inputs == null)
+            return;
+
+        foreach (var input in inputs)
+        {
+            if (input == null)
+                continue;
+            host.Controls.Add(CreateInputRow(view, input));
+        }
+    }
+
+    private Control CreateSelectorRow(SnippetSectionUi ui)
+    {
+        var row = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Margin = new Padding(24, 6, 3, 0)
+        };
+
+        Control selector;
+        int selectorIndex = ui.GetNextSelectorIndex();
+
+        if (ui.Section.AllowMultiple)
+        {
+            selector = CreateSnippetList(ui, selectorIndex);
+        }
+        else
+        {
+            selector = CreateSnippetCombo(ui, selectorIndex);
+        }
+
+        selector.Margin = new Padding(0);
+        row.Controls.Add(selector);
+        return row;
+    }
+
+    private ComboBox CreateSnippetCombo(SnippetSectionUi ui, int selectorIndex)
+    {
+        var combo = new ComboBox
+        {
+            Name = SnippetControlNaming.GetComboName(ui.Section, selectorIndex),
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Width = 320,
+            Margin = new Padding(0, 0, 6, 0)
+        };
+
+        combo.DisplayMember = nameof(SnippetComboItem.Display);
+        combo.ValueMember = nameof(SnippetComboItem.Id);
+
+        combo.BeginUpdate();
+        combo.Items.Add(SnippetComboItem.None);
+        foreach (var item in ui.Section.Items)
+        {
+            combo.Items.Add(new SnippetComboItem(item.Id, item.Display));
+        }
+        combo.EndUpdate();
+        combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
+
+        return combo;
+    }
+
+    private ListBox CreateSnippetList(SnippetSectionUi ui, int selectorIndex)
+    {
+        var list = new ListBox
+        {
+            Name = SnippetControlNaming.GetListName(ui.Section, selectorIndex),
+            SelectionMode = SelectionMode.MultiExtended,
+            IntegralHeight = false,
+            Width = 360,
+            Margin = new Padding(0)
+        };
+
+        int itemCount = Math.Max(1, ui.Section.Items.Count);
+        int preferredHeight = itemCount * 28 + 16;
+        preferredHeight = Math.Clamp(preferredHeight, 120, 320);
+        list.Height = preferredHeight;
+
+        list.DisplayMember = nameof(SnippetComboItem.Display);
+
+        foreach (var item in ui.Section.Items)
+        {
+            list.Items.Add(new SnippetComboItem(item.Id, item.Display));
+        }
+
+        return list;
+    }
+
+    private Control CreateInputRow(IMainFormView view, CodeSnippetInput input)
+    {
+        var row = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Margin = new Padding(24, 6, 3, 0)
+        };
+
+        string labelText = input.Label;
+        if (input.Required && !string.IsNullOrWhiteSpace(labelText))
+        {
+            labelText += " *";
+        }
+
+        if (!string.IsNullOrWhiteSpace(labelText))
+        {
+            row.Controls.Add(new Label
+            {
+                AutoSize = true,
+                Text = labelText,
+                Margin = new Padding(0, 5, 6, 0)
+            });
+        }
+
+        Control editor = input.Type switch
+        {
+            SnippetInputType.TextBox => CreateTextBoxInput(input),
+            _ => CreateTextBoxInput(input)
+        };
+
+        row.Controls.Add(editor);
+
+        if (!string.IsNullOrWhiteSpace(input.InfoAction))
+        {
+            var button = new Button
+            {
+                AutoSize = true,
+                Text = string.IsNullOrWhiteSpace(input.InfoButtonLabel) ? "Info" : input.InfoButtonLabel,
+                Margin = new Padding(8, 0, 0, 0)
+            };
+            button.Click += (_, _) => HandleInputInfoAction(view, input.InfoAction);
+            row.Controls.Add(button);
+        }
+
+        return row;
+    }
+
+    private static Control CreateTextBoxInput(CodeSnippetInput input)
+    {
+        var textBox = new TextBox
+        {
+            Name = string.IsNullOrWhiteSpace(input.Id) ? Guid.NewGuid().ToString("N") : input.Id,
+            Width = input.Width.HasValue && input.Width.Value > 0 ? input.Width.Value : 240,
+            Margin = new Padding(0, 0, 0, 0)
+        };
+        return textBox;
+    }
+
+    private void HandleInputInfoAction(IMainFormView view, string action)
+    {
+        if (string.IsNullOrWhiteSpace(action))
+            return;
+
+        switch (action)
+        {
+            case "GuardRailInfo":
+                ShowGuardRailInfo(view);
+                break;
+            default:
+                _logger.Warn($"No handler registered for snippet input info action '{action}'.");
+                break;
+        }
+    }
+
+    private async Task HandleCompilerDiscoveryAsync(IMainFormView view, CompilerToolDiscoveryResult discovery)
+    {
+        if (view == null)
+            throw new ArgumentNullException(nameof(view));
+        if (discovery == null)
+            return;
+
+        if (discovery.Errors.Count > 0)
+        {
+            foreach (var error in discovery.Errors)
+            {
+                _logger.Warn(error);
+            }
+        }
+
+        if (discovery.Best != null)
+        {
+            string state = discovery.Best.Validated ? "validated" : "not validated";
+            _logger.Info($"Compiler candidate available: {discovery.Best.Path} ({state}).");
+            return;
+        }
+
+        const string browsePrompt = "Are MSVS Build tools installed and you wanna browse folder for: \"vcvars64.bat\"?";
+        var response = _interaction.ShowMessage(
+            view,
+            browsePrompt,
+            "Visual Studio Build Tools",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question,
+            MessageBoxDefaultButton.Button1);
+
+        if (response != DialogResult.Yes)
+        {
+            _interaction.ShowMessage(
+                view,
+                "MSVS Build Tools should be installed.\r\nDownload: https://visualstudio.microsoft.com/downloads/",
+                "Visual Studio Build Tools Required",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        string? selected = _interaction.SelectFile(
+            view,
+            "Locate vcvars64.bat",
+            "Batch files (*.bat)|*.bat|All files (*.*)|*.*",
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles));
+
+        if (string.IsNullOrWhiteSpace(selected))
+        {
+            _logger.Warn("Manual compiler script selection cancelled by user.");
+            return;
+        }
+
+        CompilerToolDiscoveryResult manualResult;
+        try
+        {
+            manualResult = await _compiler.RegisterManualCompilerAsync(selected).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Manual compiler validation failed: {ex.Message}");
+            _interaction.ShowMessage(
+                view,
+                $"Failed to validate the selected compiler script: {ex.Message}",
+                "Visual Studio Build Tools",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return;
+        }
+
+        if (manualResult.Errors.Count > 0)
+        {
+            foreach (var error in manualResult.Errors)
+            {
+                _logger.Warn(error);
+            }
+        }
+
+        if (manualResult.Best == null)
+        {
+            _interaction.ShowMessage(
+                view,
+                "Selected script could not be validated. MSVS Build Tools should be installed.\r\nDownload: https://visualstudio.microsoft.com/downloads/",
+                "Visual Studio Build Tools",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
+        string selectedState = manualResult.Best.Validated ? "validated" : "not validated";
+        _logger.Ok($"Manual compiler candidate selected: {manualResult.Best.Path} ({selectedState}).");
+
+        if (!manualResult.Best.Validated)
+        {
+            _interaction.ShowMessage(
+                view,
+                "Selected script was not validated successfully. MSVS Build Tools may be incomplete.",
+                "Visual Studio Build Tools",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
         }
     }
 
@@ -279,6 +780,7 @@ public sealed class MainFormCoordinator
             BindEncodingCombo(view.EncoderCombo, catalog.Encoders);
             BindEncodingCombo(view.CompressorCombo, catalog.Compressors);
             BindEncodingCombo(view.EnvelopeCombo, catalog.Envelopes);
+            PopulateAntiEmulationCombo(view, catalog.AntiEmulation);
             _logger.Ok("Bin2Shell catalog loaded.");
         }
         catch (Exception ex)
@@ -312,16 +814,74 @@ public sealed class MainFormCoordinator
             combo.EndUpdate();
         }
     }
+    private void PopulateAntiEmulationCombo(IMainFormView view, IReadOnlyCollection<AntiEmulationOption> options)
+    {
+        var combo = FindAntiEmulationCombo(view);
+        if (combo == null)
+        {
+            if (options.Count > 0)
+            {
+                _logger.Warn("Anti-emulation combo 'bin2shellOptions' not found; options will not be shown.");
+            }
 
-    private static bool ValidateShellcodeSource(IMainFormView view, out string? errorMessage)
+            return;
+        }
+
+        combo.BeginUpdate();
+        try
+        {
+            combo.Items.Clear();
+            combo.Items.Add(string.Empty);
+
+            foreach (var option in options.OrderBy(o => o.Index))
+            {
+                combo.Items.Add(option.DisplayText);
+            }
+
+            combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
+        }
+        finally
+        {
+            combo.EndUpdate();
+        }
+    }
+
+    private static ComboBox? FindAntiEmulationCombo(IMainFormView view)
+    {
+        if (view?.RootControl == null)
+            return null;
+
+        string[] candidateNames =
+        {
+            "bin2shellOptions",
+            "bin2ShellOptions",
+            "bin2shellOptionCombo",
+            "bin2ShellOptionCombo"
+        };
+
+        foreach (var name in candidateNames)
+        {
+            var combo = view.RootControl.Controls
+                .Find(name, searchAllChildren: true)
+                .OfType<ComboBox>()
+                .FirstOrDefault();
+
+            if (combo != null)
+                return combo;
+        }
+
+        return null;
+    }
+
+
+    private bool ValidateShellcodeSource(IMainFormView view, out string? errorMessage)
     {
         bool hasFile = !string.IsNullOrWhiteSpace(view.ShellcodeFileTextBox.Text);
         bool hasRaw = !string.IsNullOrWhiteSpace(view.ShellcodeRawTextBox.Text);
         bool hasUrl = !string.IsNullOrWhiteSpace(view.ShellcodeUrlTextBox.Text);
-        bool hasCombo = view.GenericShellcodeCombo.SelectedItem is string comboText &&
-                        !string.IsNullOrWhiteSpace(comboText);
+        bool hasGeneric = !string.IsNullOrWhiteSpace(GetSelectedSnippetId(view.GenericShellcodeCombo));
 
-        int selectedCount = new[] { hasFile, hasRaw, hasUrl, hasCombo }.Count(x => x);
+        int selectedCount = new[] { hasFile, hasRaw, hasUrl, hasGeneric }.Count(x => x);
 
         const string msgNoSource = "Please provide one shellcode source (File, RAW, URL, or Generic).";
         const string msgMultipleSources = "Multiple shellcode sources provided. Please select only one.";
@@ -361,7 +921,7 @@ public sealed class MainFormCoordinator
             return value.Substring(0, head) + ".." + value.Substring(value.Length - tail);
         }
 
-        _logger.Info("UI snapshot — begin");
+        _logger.Info("UI snapshot -> begin");
 
         foreach (var entry in data.TextBoxes.OrderBy(k => k.Key))
         {
@@ -385,9 +945,68 @@ public sealed class MainFormCoordinator
             }
         }
 
-        _logger.Info("UI snapshot — end");
+        _logger.Info("UI snapshot -> end");
+    }
+
+    private static string GetSelectedSnippetId(ComboBox? combo)
+    {
+        if (combo?.SelectedItem is SnippetComboItem item)
+            return item.Id ?? string.Empty;
+
+        if (combo?.SelectedValue is string raw)
+            return raw ?? string.Empty;
+
+        return string.Empty;
+    }
+
+    private sealed class SnippetSectionUi
+    {
+        public SnippetSectionUi(CodeSnippetSection section)
+        {
+            Section = section ?? throw new ArgumentNullException(nameof(section));
+        }
+
+        public CodeSnippetSection Section { get; }
+        private int _nextSelectorIndex;
+
+        public int GetNextSelectorIndex() => _nextSelectorIndex++;
+    }
+
+    private sealed class TemplateComboItem
+    {
+        public TemplateComboItem(string id, string display)
+        {
+            Id = id ?? string.Empty;
+            Display = string.IsNullOrWhiteSpace(display) ? Id : display;
+        }
+
+        public string Id { get; }
+        public string Display { get; }
+
+        public override string ToString() => Id;
+    }
+
+    private sealed class SnippetComboItem
+    {
+        public static readonly SnippetComboItem None = new(string.Empty, "None");
+
+        public SnippetComboItem(string id, string display)
+        {
+            Id = id ?? string.Empty;
+            Display = string.IsNullOrWhiteSpace(display)
+                ? (string.IsNullOrWhiteSpace(Id) ? "None" : Id)
+                : display;
+        }
+
+        public string Id { get; }
+        public string Display { get; }
+
+        public override string ToString() => Id;
     }
 }
+
+
+
 
 
 

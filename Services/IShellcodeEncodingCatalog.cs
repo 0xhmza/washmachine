@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -12,9 +12,16 @@ public interface IShellcodeEncodingCatalog
 public sealed record ShellcodeEncodingCatalog(
     IReadOnlyList<ShellcodeEncodingItem> Encoders,
     IReadOnlyList<ShellcodeEncodingItem> Compressors,
-    IReadOnlyList<ShellcodeEncodingItem> Envelopes);
+    IReadOnlyList<ShellcodeEncodingItem> Envelopes,
+    IReadOnlyList<AntiEmulationOption> AntiEmulation);
 
 public sealed record ShellcodeEncodingItem(int Index, string Name)
 {
     public string DisplayText => $"{Index} - {Name}";
+}
+
+public sealed record AntiEmulationOption(int Index, string Name, string Description, string? ArgsHint)
+{
+    public string DisplayText => $"{Index} - {Name}";
+    public bool RequiresArguments => !string.IsNullOrWhiteSpace(ArgsHint);
 }

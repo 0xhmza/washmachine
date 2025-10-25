@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -83,64 +82,133 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 }
 """;
 
+    private const string TemplateAntiDebug = "ANTIDEBUGGING";
+    private const string TemplateProcessInjection = "PSINJECTION";
+    private const string TemplateShellcodeExecution = "SHELLCODEEXECUTION";
+    private const string TemplateUacBypass = "UACB";
+    private const string TemplateGenericShellcode = "GENERICSHELLCODE";
+    private const string TemplateGuardrail = "GUARDRAIL";
+    private const string TemplateSelectionControlName = "templateComboBox";
+
+    private const string PlaceholderProcessLookupHelper = "PROCESS_LOOKUP_HELPER";
+    private const string PlaceholderShellcodeSource = "SHELLCODE_SOURCE";
+    private const string PlaceholderShellcodeUrl = "SHELLCODE_URL";
+    private const string PlaceholderGuardrails = "GUARDRAILS";
+    private const string PlaceholderAntiDebug = "ANTI_DEBUGGING";
+    private const string PlaceholderUacBypass = "UAC_BYPASS";
+    private const string PlaceholderProcessInjection = "PROCESS_INJECTION";
+    private const string PlaceholderShellcodeExecution = "SHELLCODE_EXECUTION";
+
     private readonly IAppPaths _paths;
     private readonly IBin2ShellRunner _bin2ShellRunner;
     private readonly ICodeSnippetCatalogService _snippets;
+    private readonly ICompilerToolLocator _toolLocator;
     private readonly IAppLogger _logger;
 
     public CompilerService(
         IAppPaths paths,
         IBin2ShellRunner bin2ShellRunner,
         ICodeSnippetCatalogService snippets,
+        ICompilerToolLocator toolLocator,
         IAppLogger logger)
     {
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         _bin2ShellRunner = bin2ShellRunner ?? throw new ArgumentNullException(nameof(bin2ShellRunner));
         _snippets = snippets ?? throw new ArgumentNullException(nameof(snippets));
+        _toolLocator = toolLocator ?? throw new ArgumentNullException(nameof(toolLocator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<CompilerResult> CompileAsync(UiData data, MsvcToolchain toolchain, CancellationToken cancellationToken = default)
+    public async Task<CompilerResult> CompileAsync(UiData data, CancellationToken cancellationToken = default)
     {
         if (data == null) throw new ArgumentNullException(nameof(data));
-        if (toolchain == null) throw new ArgumentNullException(nameof(toolchain));
 
         ValidateEnvironment();
 
         var notes = new List<string>();
+        CompilerToolDiscoveryResult? discovery = null;
+
 
         try
         {
+            try
+            {
+                discovery = await _toolLocator.DiscoverAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                var message = $"Compiler tool discovery failed: {ex.Message}";
+                notes.Add(message);
+                _logger.Warn(message);
+            }
+
+            var template = ResolveTemplate(data);
+            notes.Add($"Template selected: {template.Display} ({template.Id}).");
+
             var plan = new CppCompilationPlan();
             var shellcodeSource = DetermineShellcodeSource(data);
 
             await ApplyShellcodeAsync(plan, data, shellcodeSource, notes, cancellationToken).ConfigureAwait(false);
-            ApplyFeatureSelections(plan, data, notes);
+            ApplyFeatureSelections(plan, data, template, notes);
 
-            var sourceCode = RenderCompilationUnit(plan);
+            var sourceCode = RenderTemplate(plan, template);
             var sourcePath = await PersistSourceAsync(sourceCode, cancellationToken).ConfigureAwait(false);
 
             notes.Add($"Generated C++ source at {sourcePath}.");
             _logger.Ok($"Generated C++ source at {sourcePath}.");
 
-            var executablePath = await CompileWithMsvcAsync(toolchain, sourcePath, notes, cancellationToken).ConfigureAwait(false);
+            const string skipMessage = "Native compilation skipped; C++ source returned for external use.";
+            notes.Add(skipMessage);
+            _logger.Info(skipMessage);
 
-            notes.Add($"Native executable built at {executablePath}.");
-            _logger.Ok($"Native executable built at {executablePath}.");
+            var compilerDirectory = ResolveCompilerDirectory(discovery);
+            var conversionResult = await ExecuteConversionAsync(sourcePath, compilerDirectory, notes, cancellationToken).ConfigureAwait(false);
 
-            return new CompilerResult(true, executablePath, sourcePath, sourceCode, notes);
+            DeleteTemporarySource(sourcePath, notes);
+
+            return new CompilerResult(conversionResult.Success, null, sourceCode, notes, discovery, conversionResult);
         }
         catch (OperationCanceledException)
         {
-            _logger.Warn("Compilation cancelled by user.");
-            notes.Add("Compilation cancelled.");
-            return new CompilerResult(false, null, null, null, notes);
+            _logger.Warn("Generation cancelled by user.");
+            notes.Add("Generation cancelled.");
+            var cancellation = new CppFileConversionResult(false, "Operation cancelled.");
+            return new CompilerResult(false, null, null, notes, discovery, cancellation);
         }
         catch (Exception ex)
         {
-            _logger.Error($"Compilation failed: {ex.Message}");
+            _logger.Error($"Generation failed: {ex.Message}");
             notes.Add(ex.Message);
-            return new CompilerResult(false, null, null, null, notes);
+            var failure = new CppFileConversionResult(false, ex.Message);
+            return new CompilerResult(false, null, null, notes, discovery, failure);
+        }
+    }
+
+    public async Task<CompilerToolDiscoveryResult> RegisterManualCompilerAsync(string compilerScriptPath, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(compilerScriptPath))
+            throw new ArgumentException("Compiler script path is required.", nameof(compilerScriptPath));
+
+        var normalizedPath = compilerScriptPath.Trim();
+
+        try
+        {
+            var result = await _toolLocator.AddManualCandidateAsync(normalizedPath, cancellationToken).ConfigureAwait(false);
+            _logger.Ok($"Manual compiler script registered: {normalizedPath}");
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Failed to register compiler script: {ex.Message}");
+            throw;
         }
     }
 
@@ -156,6 +224,25 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         }
 
         throw new InvalidOperationException("Required project assets are missing.");
+    }
+
+    private CodeTemplateDefinition ResolveTemplate(UiData data)
+    {
+        string selectedId = string.Empty;
+        if (data.ComboBoxes.TryGetValue(TemplateSelectionControlName, out var rawSelection))
+            selectedId = rawSelection?.Trim() ?? string.Empty;
+
+        if (!string.IsNullOrWhiteSpace(selectedId) && _snippets.TryGetTemplate(selectedId, out var template))
+            return template;
+
+        var allTemplates = _snippets.GetTemplates();
+        if (allTemplates == null || allTemplates.Count == 0)
+            throw new InvalidOperationException("No code templates are defined in the snippet catalog.");
+
+        if (!string.IsNullOrWhiteSpace(selectedId))
+            _logger.Warn($"Template '{selectedId}' not found. Falling back to '{allTemplates[0].Id}'.");
+
+        return allTemplates[0];
     }
 
     private async Task ApplyShellcodeAsync(
@@ -185,6 +272,13 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             case ShellcodeSourceKind.Url:
                 InjectUrlShellcode(plan, source.Value, notes);
                 break;
+
+            case ShellcodeSourceKind.Generic:
+                ConfigureGenericShellcode(plan, source.Value, notes);
+                break;
+
+            default:
+                throw new InvalidOperationException($"Unsupported shellcode source '{source.Kind}'.");
         }
     }
 
@@ -213,6 +307,29 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         _logger.Ok("Encoded shellcode prepared.");
     }
 
+    private void ConfigureGenericShellcode(
+        CppCompilationPlan plan,
+        string selection,
+        ICollection<string> notes)
+    {
+        const string sectionHeader = "GENERIC SHELLCODE PAYLOADS FOR TESTINGS";
+
+        if (string.IsNullOrWhiteSpace(selection))
+            throw new InvalidOperationException("Generic shellcode selection is required.");
+
+        if (!_snippets.TryGetSectionByHeader(sectionHeader, out var section))
+            throw new InvalidOperationException($"Snippet section '{sectionHeader}' is missing in the catalog.");
+
+        var trimmedSelection = selection.Trim();
+
+        if (!section.TryGetItem(trimmedSelection, out var item))
+            throw new InvalidOperationException($"Generic shellcode '{trimmedSelection}' not found in snippet section.");
+
+        plan.GenericShellcodeSnippet = item.Snippet;
+        plan.UsesGenericShellcode = true;
+        LogSnippetEnabled(section.Template, item.Id, notes);
+    }
+
     private void InjectUrlShellcode(CppCompilationPlan plan, string url, ICollection<string> notes)
     {
         if (string.IsNullOrWhiteSpace(url))
@@ -238,133 +355,322 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         return path;
     }
 
-    private async Task<string> CompileWithMsvcAsync(MsvcToolchain toolchain, string sourcePath, ICollection<string> notes, CancellationToken cancellationToken)
+
+    private static string ResolveCompilerDirectory(CompilerToolDiscoveryResult? discovery)
     {
-        if (!File.Exists(sourcePath))
-            throw new FileNotFoundException("Source file not found.", sourcePath);
+        var best = discovery?.Best;
+        if (best == null)
+            return string.Empty;
 
-        string workingDir = Path.GetDirectoryName(sourcePath) ?? _paths.EnsureTempSourceDirectory();
-        string baseName = Path.GetFileNameWithoutExtension(sourcePath);
-        string objPath = Path.Combine(workingDir, baseName + ".obj");
-        string pdbPath = Path.Combine(workingDir, baseName + ".pdb");
-        string ilkPath = Path.Combine(workingDir, baseName + ".ilk");
-        string exePath = Path.Combine(workingDir, baseName + ".exe");
-
-        string clArgs = string.Join(" ", new[]
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var root in EnumerateCompilerRoots(best))
         {
-            "/nologo",
-            "/MD",
-            "/O1",
-            "/GL",
-            "/Gy",
-            "/Gw",
-            "/GF",
-            "/Oy",
-            "/EHsc",
-            "/std:c++17",
-            "/DNDEBUG",
-            $"/Fo{QuoteArg(objPath)}",
-            $"/Fe{QuoteArg(exePath)}",
-            QuoteArg(sourcePath),
-            "/link",
-            "/LTCG",
-            "/OPT:REF",
-            "/OPT:ICF",
-            "/INCREMENTAL:NO"
-        });
+            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root) || !visited.Add(root))
+                continue;
 
-        string command = $"call {QuoteArg(toolchain.VcVarsPath)} amd64 && {QuoteArg(toolchain.ClPath)} {clArgs}";
-        notes.Add($"MSVC command: {command}");
-
-        var psi = new ProcessStartInfo("cmd.exe")
-        {
-            Arguments = "/c " + command,
-            WorkingDirectory = workingDir,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        };
-
-        using var process = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start MSVC compiler process.");
-        string stdOut = await process.StandardOutput.ReadToEndAsync();
-        string stdErr = await process.StandardError.ReadToEndAsync();
-
-        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-
-        if (!string.IsNullOrWhiteSpace(stdOut))
-            notes.Add(stdOut.Trim());
-        if (!string.IsNullOrWhiteSpace(stdErr))
-            notes.Add(stdErr.Trim());
-
-        if (process.ExitCode != 0 || !File.Exists(exePath))
-        {
-            throw new InvalidOperationException($"MSVC compilation failed with exit code {process.ExitCode}.\n{stdOut}\n{stdErr}");
+            var resolved = TryFindCompilerDirectory(root);
+            if (!string.IsNullOrWhiteSpace(resolved))
+                return resolved;
         }
 
-        CleanupIntermediate(objPath, pdbPath, ilkPath);
-        return exePath;
+        return string.Empty;
     }
 
-    private void ApplyFeatureSelections(CppCompilationPlan plan, UiData data, ICollection<string> notes)
+    private static IEnumerable<string> EnumerateCompilerRoots(CompilerToolCandidate best)
     {
-        ApplyComboSelection(
-            data,
-            "genericShellcodeComboBox",
-            "GENERIC SHELLCODE PAYLOADS FOR TESTINGS",
-            notes,
-            item => plan.GenericShellcodeSnippet = item.Snippet);
+        if (!string.IsNullOrWhiteSpace(best.InstallationPath))
+            yield return best.InstallationPath;
 
-        ApplyGuardrailSelection(plan, data, notes);
-        ApplyProcessInjectionSelection(plan, data, notes);
+        if (!string.IsNullOrWhiteSpace(best.Path))
+        {
+            var current = Path.GetDirectoryName(best.Path);
+            while (!string.IsNullOrWhiteSpace(current))
+            {
+                yield return current;
+                current = Directory.GetParent(current)?.FullName;
+            }
+        }
 
-        ApplyComboSelection(
-            data,
-            "shellcodeExecutionComboBox",
-            "SHELLCODE EXECUTION",
-            notes,
-            item => plan.ShellcodeExecutionSnippet = item.Snippet);
+        var envCandidates = new[]
+        {
+            Environment.GetEnvironmentVariable("VCToolsInstallDir"),
+            Environment.GetEnvironmentVariable("VCINSTALLDIR"),
+            Environment.GetEnvironmentVariable("VSINSTALLDIR")
+        };
 
-        ApplyComboSelection(
-            data,
-            "UACBComboBox",
-            "UAC BYPASSES",
-            notes,
-            item => plan.UacBypassSnippet = item.Snippet);
+        foreach (var candidate in envCandidates)
+        {
+            if (!string.IsNullOrWhiteSpace(candidate))
+                yield return candidate;
+        }
+    }
 
-        ApplyAntiDebugSelection(plan, data, notes);
+    private static string TryFindCompilerDirectory(string root)
+    {
+        var msvc = TryGetMsvcCompilerDirectory(root);
+        if (!string.IsNullOrWhiteSpace(msvc))
+            return msvc;
+
+        var cl = TryGetExecutableDirectory(root, "cl.exe");
+        if (!string.IsNullOrWhiteSpace(cl))
+            return cl;
+
+        var gcc = TryGetExecutableDirectory(root, "g++.exe");
+        if (!string.IsNullOrWhiteSpace(gcc))
+            return gcc;
+
+        var clang = TryGetExecutableDirectory(root, "clang++.exe");
+        if (!string.IsNullOrWhiteSpace(clang))
+            return clang;
+
+        return string.Empty;
+    }
+
+    private static string TryGetMsvcCompilerDirectory(string root)
+    {
+        var candidateRoots = new[]
+        {
+            Path.Combine(root, "VC", "Tools", "MSVC"),
+            Path.Combine(root, "Tools", "MSVC")
+        };
+
+        foreach (var toolsRoot in candidateRoots)
+        {
+            if (!Directory.Exists(toolsRoot))
+                continue;
+
+            try
+            {
+                foreach (var versionDir in Directory.EnumerateDirectories(toolsRoot).OrderByDescending(Path.GetFileName))
+                {
+                    var candidates = new[]
+                    {
+                        Path.Combine(versionDir, "bin", "Hostx64", "x64"),
+                        Path.Combine(versionDir, "bin", "Hostx64", "x86"),
+                        Path.Combine(versionDir, "bin", "Hostx86", "x64"),
+                        Path.Combine(versionDir, "bin", "Hostx86", "x86")
+                    };
+
+                    foreach (var candidate in candidates)
+                    {
+                        if (File.Exists(Path.Combine(candidate, "cl.exe")))
+                            return candidate;
+                    }
+                }
+            }
+            catch
+            {
+                // ignored
+            }
+        }
+
+        return string.Empty;
+    }
+    private static string TryGetExecutableDirectory(string root, string executable)
+    {
+        var direct = Path.Combine(root, executable);
+        if (File.Exists(direct))
+            return root;
+
+        try
+        {
+            var match = Directory
+                .EnumerateFiles(root, executable, SearchOption.AllDirectories)
+                .FirstOrDefault();
+
+            if (!string.IsNullOrWhiteSpace(match))
+                return Path.GetDirectoryName(match!) ?? string.Empty;
+        }
+        catch
+        {
+            // ignored
+        }
+
+        return string.Empty;
+    }
+
+    private async Task<CppFileConversionResult> ExecuteConversionAsync(string sourcePath, string compilerDirectory, ICollection<string> notes, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath))
+            throw new ArgumentException("Source path must be provided.", nameof(sourcePath));
+
+        string? directory = Path.GetDirectoryName(sourcePath);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            const string message = "Unable to determine directory for generated C++ source file.";
+            notes.Add(message);
+            _logger.Error(message);
+            return new CppFileConversionResult(false, message);
+        }
+
+
+        if (string.IsNullOrWhiteSpace(compilerDirectory))
+        {
+            const string message = "No compiler toolchain detected. Register a compiler or provide a manual cl.exe location.";
+            notes.Add(message);
+            _logger.Warn(message);
+            return new CppFileConversionResult(false, message);
+        }
+
+        try
+        {
+            var result = await CppFileConverter.ConvertAsync(directory, compilerDirectory, _logger, cancellationToken).ConfigureAwait(false);
+
+            if (result.Success)
+            {
+                const string successMessage = "CppFileConverter completed successfully.";
+                notes.Add(successMessage);
+                _logger.Ok(successMessage);
+            }
+            else
+            {
+                var errorMessage = string.IsNullOrWhiteSpace(result.Error)
+                    ? "CppFileConverter reported an unspecified error."
+                    : result.Error!;
+                notes.Add(errorMessage);
+                _logger.Warn(errorMessage);
+            }
+
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var message = $"CppFileConverter failed with exception: {ex.Message}";
+            notes.Add(message);
+            _logger.Error(message);
+            return new CppFileConversionResult(false, ex.Message);
+        }
+    }
+
+    private void DeleteTemporarySource(string sourcePath, ICollection<string> notes)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath))
+            return;
+
+        try
+        {
+            if (!File.Exists(sourcePath))
+                return;
+
+            File.Delete(sourcePath);
+            var message = $"Temporary C++ source deleted: {sourcePath}.";
+            notes.Add(message);
+            _logger.Info(message);
+        }
+        catch (Exception ex)
+        {
+            var message = $"Failed to delete temporary C++ source '{sourcePath}': {ex.Message}";
+            notes.Add(message);
+            _logger.Warn(message);
+        }
+    }
+
+
+    private void ApplyFeatureSelections(
+        CppCompilationPlan plan,
+        UiData data,
+        CodeTemplateDefinition template,
+        ICollection<string> notes)
+    {
+        if (template == null)
+            throw new ArgumentNullException(nameof(template));
+
+        foreach (var placeholder in template.Placeholders)
+        {
+            if (placeholder == null || placeholder.Kind != TemplatePlaceholderKind.Snippet)
+                continue;
+
+            if (string.IsNullOrWhiteSpace(placeholder.SnippetTemplateKey))
+            {
+                _logger.Warn($"Template placeholder '{placeholder.Name}' is missing a snippet template key.");
+                continue;
+            }
+
+            var templateKey = placeholder.SnippetTemplateKey.Trim();
+            switch (templateKey.ToUpperInvariant())
+            {
+                case TemplateGuardrail:
+                    ApplyGuardrailSelection(plan, data, placeholder.Name, notes);
+                    break;
+                case TemplateProcessInjection:
+                    ApplyProcessInjectionSelection(plan, data, placeholder.Name, notes);
+                    break;
+                case TemplateShellcodeExecution:
+                    ApplyComboSelection(
+                        plan,
+                        data,
+                        templateKey,
+                        placeholder.Name,
+                        notes,
+                        (p, item) => p.ShellcodeExecutionSnippet = item.Snippet);
+                    break;
+                case TemplateUacBypass:
+                    ApplyComboSelection(
+                        plan,
+                        data,
+                        templateKey,
+                        placeholder.Name,
+                        notes,
+                        (p, item) => p.UacBypassSnippet = item.Snippet);
+                    break;
+                case TemplateAntiDebug:
+                    ApplyAntiDebugSelection(plan, data, placeholder.Name, notes);
+                    break;
+                default:
+                    ApplyGenericSnippetSelection(plan, data, placeholder, notes);
+                    break;
+            }
+        }
     }
 
     private void ApplyComboSelection(
+        CppCompilationPlan plan,
         UiData data,
-        string controlName,
-        string catalogHeader,
+        string templateKey,
+        string placeholderName,
         ICollection<string> notes,
-        Action<CodeSnippetItem> apply)
+        Action<CppCompilationPlan, CodeSnippetItem> apply)
     {
-        if (!TryGetNonEmpty(data.ComboBoxes, controlName, out var selection))
+        if (!_snippets.TryGetSectionByTemplate(templateKey, out var section))
+        {
+            _logger.Warn($"Snippet section '{templateKey}' is missing in the catalog.");
+            return;
+        }
+
+        var selection = ResolveSnippetSelections(data, section).FirstOrDefault();
+        if (selection == null)
             return;
 
-        if (!TryResolveSnippet(catalogHeader, selection, out var section, out var item))
-            return;
-
-        apply(item);
-        LogSnippetEnabled(section.Template, item.Id, notes);
+        apply(plan, selection);
+        AddCustomSnippet(plan, placeholderName, selection.Snippet);
+        LogSnippetEnabled(section.Template, selection.Id, notes);
     }
 
-    private void ApplyGuardrailSelection(CppCompilationPlan plan, UiData data, ICollection<string> notes)
+    private void ApplyGuardrailSelection(
+        CppCompilationPlan plan,
+        UiData data,
+        string placeholderName,
+        ICollection<string> notes)
     {
-        if (!TryGetNonEmpty(data.ComboBoxes, "guardrailComboBox", out var selection))
+        if (!_snippets.TryGetSectionByTemplate(TemplateGuardrail, out var section))
+        {
+            _logger.Warn("Snippet section 'GUARDRAIL' is missing in the catalog.");
             return;
+        }
 
-        if (!TryResolveSnippet("GUARDRAILS", selection, out var section, out var item))
+        var selection = ResolveSnippetSelections(data, section).FirstOrDefault();
+        if (selection == null)
             return;
 
         var parameter = data.TextBoxes.TryGetValue("guardrailParamTextBox", out var rawParam)
             ? rawParam.Trim()
             : string.Empty;
 
-        string snippet = item.Snippet;
+        string snippet = selection.Snippet;
         bool requiresParameter =
             snippet.Contains("$guardrail_param$", StringComparison.Ordinal) ||
             snippet.Contains("__GUARDRAIL_PARAM__", StringComparison.Ordinal);
@@ -376,167 +682,365 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
                          .Replace("__GUARDRAIL_PARAM__", parameter);
 
         plan.GuardrailSnippets.Add(snippet);
-        LogSnippetEnabled(section.Template, item.Id, notes);
+        AddCustomSnippet(plan, placeholderName, snippet);
+        LogSnippetEnabled(section.Template, selection.Id, notes);
     }
 
-    private void ApplyProcessInjectionSelection(CppCompilationPlan plan, UiData data, ICollection<string> notes)
+    private void ApplyProcessInjectionSelection(
+        CppCompilationPlan plan,
+        UiData data,
+        string placeholderName,
+        ICollection<string> notes)
     {
-        if (!TryGetNonEmpty(data.ComboBoxes, "psInjComboBox", out var selection))
+        if (!_snippets.TryGetSectionByTemplate(TemplateProcessInjection, out var section))
+        {
+            _logger.Warn("Snippet section 'PSINJECTION' is missing in the catalog.");
+            return;
+        }
+
+        var selection = ResolveSnippetSelections(data, section).FirstOrDefault();
+        if (selection == null)
             return;
 
         if (!data.TextBoxes.TryGetValue("PsInjPsNameTextBox", out var psName) || string.IsNullOrWhiteSpace(psName))
             throw new InvalidOperationException("Process injection requires a target process name.");
 
-        if (!TryResolveSnippet("PROCESS INJECTION", selection, out var section, out var item))
-            return;
-
         var trimmedName = psName.Trim();
-        string snippet = item.Snippet.Replace("$psname$", trimmedName);
+        string snippet = selection.Snippet.Replace("$psname$", trimmedName);
 
         plan.ProcessInjectionSnippet = snippet;
         plan.ProcessLookupHelper = ProcessLookupHelper;
+        AddCustomSnippet(plan, placeholderName, snippet);
 
-        LogSnippetEnabled(section.Template, item.Id, notes);
+        LogSnippetEnabled(section.Template, selection.Id, notes);
 
         var note = $"Process injection target set to {trimmedName}.";
         notes.Add(note);
         _logger.Ok(note);
     }
 
-    private void ApplyAntiDebugSelection(CppCompilationPlan plan, UiData data, ICollection<string> notes)
+    private void ApplyAntiDebugSelection(
+        CppCompilationPlan plan,
+        UiData data,
+        string placeholderName,
+        ICollection<string> notes)
     {
-        if (!data.ListBoxes.TryGetValue("antiDebugListBox", out var selections) || selections.Count == 0)
-            return;
-
-        if (!_snippets.TryGetSectionByHeader("ANTI-DEBUGGING", out var section))
+        if (!_snippets.TryGetSectionByTemplate(TemplateAntiDebug, out var section))
         {
-            _logger.Warn("Snippet section 'ANTI-DEBUGGING' is missing in the catalog.");
+            _logger.Warn("Snippet section 'ANTIDEBUGGING' is missing in the catalog.");
             return;
         }
 
-        var uniqueSelections = selections
-            .Where(s => !string.IsNullOrWhiteSpace(s))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (uniqueSelections.Count == 0)
+        var selections = ResolveSnippetSelections(data, section);
+        if (selections.Count == 0)
             return;
 
-        foreach (var selection in uniqueSelections)
+        foreach (var item in selections)
         {
-            if (!section.TryGetItem(selection, out var item))
-            {
-                _logger.Warn($"Anti-debugging method '{selection}' not found in snippet section.");
-                continue;
-            }
-
             plan.AntiDebuggingSnippets.Add(item.Snippet);
+            AddCustomSnippet(plan, placeholderName, item.Snippet);
             LogSnippetEnabled(section.Template, item.Id, notes);
         }
     }
 
-    private string RenderCompilationUnit(CppCompilationPlan plan)
+    private void ApplyGenericSnippetSelection(
+        CppCompilationPlan plan,
+        UiData data,
+        CodeTemplatePlaceholder placeholder,
+        ICollection<string> notes)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine("#include \"Win32Helper.h\"");
-        sb.AppendLine();
+        if (placeholder == null)
+            return;
 
-        if (!string.IsNullOrWhiteSpace(plan.ProcessLookupHelper))
+        if (!_snippets.TryGetSectionByTemplate(placeholder.SnippetTemplateKey, out var section))
         {
-            sb.AppendLine(plan.ProcessLookupHelper!.TrimEnd());
-            sb.AppendLine();
+            _logger.Warn($"Snippet section '{placeholder.SnippetTemplateKey}' referenced by placeholder '{placeholder.Name}' is missing.");
+            return;
         }
 
-        sb.AppendLine("INT main(VOID)");
-        sb.AppendLine("{");
+        var selections = ResolveSnippetSelections(data, section);
+        if (selections.Count == 0)
+            return;
 
-        bool hasEncodedShellcode = !string.IsNullOrWhiteSpace(plan.EncodedShellcodeSnippet);
-
-        if (hasEncodedShellcode)
+        foreach (var item in selections)
         {
-            AppendIndentedBlock(sb, plan.EncodedShellcodeSnippet!, 1);
+            AddCustomSnippet(plan, placeholder.Name, item.Snippet);
+            LogSnippetEnabled(section.Template, item.Id, notes);
         }
-        else
+    }
+
+    private static void AddCustomSnippet(
+        CppCompilationPlan plan,
+        string placeholderName,
+        string snippet)
+    {
+        if (plan == null || string.IsNullOrWhiteSpace(placeholderName) || string.IsNullOrWhiteSpace(snippet))
+            return;
+
+        if (!plan.CustomSnippetBlocks.TryGetValue(placeholderName, out var list))
         {
-            sb.AppendLine("    unsigned int code_blob_len = 0;");
-            sb.AppendLine("    PCHAR code_blob = nullptr;");
+            list = new List<string>();
+            plan.CustomSnippetBlocks[placeholderName] = list;
         }
 
-        sb.AppendLine("    DWORD dwSize = (DWORD)code_blob_len;");
+        var normalized = NormalizeBlock(snippet);
+        if (!string.IsNullOrWhiteSpace(normalized))
+            list.Add(normalized);
+    }
+
+    private string RenderTemplate(CppCompilationPlan plan, CodeTemplateDefinition template)
+    {
+        if (template == null)
+            throw new ArgumentNullException(nameof(template));
+
+        var values = BuildPlaceholderValues(plan);
+        return ApplyTemplateContent(template.Content ?? string.Empty, values);
+    }
+
+    private static Dictionary<string, string> BuildPlaceholderValues(CppCompilationPlan plan)
+    {
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in plan.CustomSnippetBlocks)
+        {
+            if (entry.Value == null || entry.Value.Count == 0)
+                continue;
+
+            var block = NormalizeBlock(string.Join(Environment.NewLine, entry.Value));
+            if (!string.IsNullOrWhiteSpace(block))
+                values[entry.Key] = block;
+        }
+
+        AddPlaceholder(values, PlaceholderProcessLookupHelper, plan.ProcessLookupHelper);
+
+        var shellcodeBlock = BuildShellcodeSourceBlock(plan);
+        AddPlaceholder(values, PlaceholderShellcodeSource, shellcodeBlock, overwrite: true);
 
         if (!string.IsNullOrWhiteSpace(plan.UrlShellcodeSnippet))
         {
-            sb.AppendLine();
-            sb.AppendLine("    // URL-based shellcode");
-            AppendIndentedBlock(sb, plan.UrlShellcodeSnippet!, 1);
-        }
-
-        if (!string.IsNullOrWhiteSpace(plan.GenericShellcodeSnippet))
-        {
-            sb.AppendLine();
-            sb.AppendLine("    // Generic shellcode payload");
-            AppendIndentedBlock(sb, plan.GenericShellcodeSnippet!, 1);
+            var urlBlock = $"// URL-based shellcode{Environment.NewLine}{plan.UrlShellcodeSnippet}";
+            AddPlaceholder(values, PlaceholderShellcodeUrl, urlBlock, overwrite: true);
         }
 
         if (plan.GuardrailSnippets.Count > 0)
         {
-            sb.AppendLine();
-            sb.AppendLine("    // Guardrails");
-            AppendIndentedBlock(sb, string.Join(Environment.NewLine, plan.GuardrailSnippets), 1);
+            var guardrailContent = string.Join(Environment.NewLine, plan.GuardrailSnippets);
+            var guardrailBlock = $"// Guardrails{Environment.NewLine}{guardrailContent}";
+            AddPlaceholder(values, PlaceholderGuardrails, guardrailBlock, overwrite: true);
         }
 
         if (plan.AntiDebuggingSnippets.Count > 0)
         {
-            sb.AppendLine();
-            sb.AppendLine("    // Anti-debugging");
-            AppendIndentedBlock(sb, string.Join(Environment.NewLine, plan.AntiDebuggingSnippets), 1);
+            var antiDebugContent = string.Join(Environment.NewLine, plan.AntiDebuggingSnippets);
+            var antiDebugBlock = $"// Anti-debugging{Environment.NewLine}{antiDebugContent}";
+            AddPlaceholder(values, PlaceholderAntiDebug, antiDebugBlock, overwrite: true);
         }
 
         if (!string.IsNullOrWhiteSpace(plan.UacBypassSnippet))
         {
-            sb.AppendLine();
-            sb.AppendLine("    // UAC bypass");
-            AppendIndentedBlock(sb, plan.UacBypassSnippet!, 1);
+            var uacBlock = $"// UAC bypass{Environment.NewLine}{plan.UacBypassSnippet}";
+            AddPlaceholder(values, PlaceholderUacBypass, uacBlock, overwrite: true);
         }
 
         if (!string.IsNullOrWhiteSpace(plan.ProcessInjectionSnippet))
         {
-            sb.AppendLine();
-            sb.AppendLine("    // Process injection");
-            AppendIndentedBlock(sb, plan.ProcessInjectionSnippet!, 1);
+            var injectionBlock = $"// Process injection{Environment.NewLine}{plan.ProcessInjectionSnippet}";
+            AddPlaceholder(values, PlaceholderProcessInjection, injectionBlock, overwrite: true);
         }
 
         if (!string.IsNullOrWhiteSpace(plan.ShellcodeExecutionSnippet))
         {
-            sb.AppendLine();
-            sb.AppendLine("    // Shellcode execution");
-            AppendIndentedBlock(sb, plan.ShellcodeExecutionSnippet!, 1);
+            var executionBlock = $"// Shellcode execution{Environment.NewLine}{plan.ShellcodeExecutionSnippet}";
+            AddPlaceholder(values, PlaceholderShellcodeExecution, executionBlock, overwrite: true);
         }
 
-        sb.AppendLine();
-        sb.AppendLine("    Sleep(1);");
-        sb.AppendLine("    return 0;");
-        sb.AppendLine("}");
+        return values;
+    }
+
+    private static void AddPlaceholder(
+        IDictionary<string, string> values,
+        string key,
+        string? content,
+        bool overwrite = false)
+    {
+        if (values == null)
+            return;
+
+        if (string.IsNullOrWhiteSpace(key))
+            return;
+
+        var normalized = NormalizeBlock(content);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return;
+
+        if (!overwrite && values.ContainsKey(key))
+            return;
+
+        values[key] = normalized;
+    }
+
+    private static string BuildShellcodeSourceBlock(CppCompilationPlan plan)
+    {
+        if (plan == null)
+            return string.Empty;
+
+        var sb = new StringBuilder();
+        bool hasEncodedShellcode = !string.IsNullOrWhiteSpace(plan.EncodedShellcodeSnippet);
+        bool usesGenericShellcode = plan.UsesGenericShellcode;
+
+        if (hasEncodedShellcode)
+        {
+            sb.AppendLine(plan.EncodedShellcodeSnippet!.TrimEnd());
+            sb.Append("DWORD dwSize = (DWORD)code_blob_len;");
+        }
+        else if (usesGenericShellcode)
+        {
+            sb.AppendLine("DWORD dwSize = 0;");
+            sb.AppendLine();
+            sb.AppendLine("// Generic shellcode payload");
+            sb.Append(plan.GenericShellcodeSnippet?.TrimEnd());
+        }
+        else
+        {
+            sb.AppendLine("unsigned int code_blob_len = 0;");
+            sb.AppendLine("PCHAR code_blob = nullptr;");
+            sb.Append("DWORD dwSize = (DWORD)code_blob_len;");
+        }
+
+        return NormalizeBlock(sb.ToString());
+    }
+
+    private static readonly Regex PlaceholderLineRegex = new(@"^(?<indent>\s*)\{\{(?<name>[A-Z0-9_]+)\}\}\s*$", RegexOptions.Compiled);
+    private static readonly Regex InlinePlaceholderRegex = new(@"\{\{(?<name>[A-Z0-9_]+)\}\}", RegexOptions.Compiled);
+
+    private static string ApplyTemplateContent(string content, IReadOnlyDictionary<string, string> values)
+    {
+        var sb = new StringBuilder();
+        using var reader = new StringReader(content);
+        string? line;
+
+        while ((line = reader.ReadLine()) != null)
+        {
+            var match = PlaceholderLineRegex.Match(line);
+            if (match.Success)
+            {
+                var name = match.Groups["name"].Value;
+                if (!values.TryGetValue(name, out var block) || string.IsNullOrWhiteSpace(block))
+                    continue;
+
+                var indent = match.Groups["indent"].Value;
+                var normalized = block.Split('\n');
+                foreach (var blockLine in normalized)
+                {
+                    if (blockLine.Length == 0)
+                    {
+                        sb.AppendLine(indent);
+                    }
+                    else
+                    {
+                        sb.Append(indent);
+                        sb.AppendLine(blockLine);
+                    }
+                }
+
+                continue;
+            }
+
+            var replaced = InlinePlaceholderRegex.Replace(line, m =>
+            {
+                var name = m.Groups["name"].Value;
+                if (!values.TryGetValue(name, out var inline) || string.IsNullOrEmpty(inline))
+                    return string.Empty;
+
+                return inline.Replace("\n", Environment.NewLine);
+            });
+
+            sb.AppendLine(replaced);
+        }
 
         return sb.ToString();
     }
 
-    private bool TryResolveSnippet(string catalogHeader, string selection, out CodeSnippetSection section, out CodeSnippetItem item)
+    private static string NormalizeBlock(string? content)
     {
-        if (!_snippets.TryGetSectionByHeader(catalogHeader, out section))
+        if (string.IsNullOrWhiteSpace(content))
+            return string.Empty;
+
+        return content
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .TrimEnd();
+    }
+
+    private IReadOnlyList<CodeSnippetItem> ResolveSnippetSelections(UiData data, CodeSnippetSection section)
+    {
+        if (data == null) throw new ArgumentNullException(nameof(data));
+        if (section == null) throw new ArgumentNullException(nameof(section));
+
+        var matches = new List<(int Index, CodeSnippetItem Item)>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in data.ComboBoxes)
         {
-            _logger.Warn($"Snippet section '{catalogHeader}' not found in the catalog.");
-            item = null!;
-            return false;
+            if (!SnippetControlNaming.TryMatchComboName(section, entry.Key, out var index))
+                continue;
+
+            var rawId = entry.Value?.Trim();
+            if (string.IsNullOrWhiteSpace(rawId))
+                continue;
+
+            if (!section.TryGetItem(rawId, out var item))
+            {
+                _logger.Warn($"Snippet '{rawId}' not found in section '{section.Display}'.");
+                continue;
+            }
+
+            if (seen.Add(item.Id))
+            {
+                matches.Add((index, item));
+            }
         }
 
-        if (!section.TryGetItem(selection, out item))
+        foreach (var entry in data.ListBoxes)
         {
-            _logger.Warn($"Unable to find method '{selection}' in section '{catalogHeader}'.");
-            return false;
+            if (!SnippetControlNaming.TryMatchListName(section, entry.Key, out var listIndex))
+                continue;
+
+            var selectedValues = entry.Value;
+            if (selectedValues == null || selectedValues.Count == 0)
+                continue;
+
+            var selectedSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var value in selectedValues)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                    continue;
+
+                selectedSet.Add(value.Trim());
+            }
+
+            if (selectedSet.Count == 0)
+                continue;
+
+            int order = 0;
+            foreach (var option in section.Items)
+            {
+                if (!selectedSet.Contains(option.Id))
+                    continue;
+
+                if (seen.Add(option.Id))
+                {
+                    matches.Add((listIndex * 1000 + order, option));
+                }
+
+                order++;
+            }
         }
 
-        return true;
+        return matches
+            .OrderBy(m => m.Index)
+            .Select(m => m.Item)
+            .ToList();
     }
 
     private void LogSnippetEnabled(string sectionName, string itemId, ICollection<string> notes)
@@ -625,27 +1129,19 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         return false;
     }
 
-    private static bool TryGetNonEmpty(IDictionary<string, string> source, string key, out string value)
-    {
-        value = string.Empty;
-        if (!source.TryGetValue(key, out var raw) || string.IsNullOrWhiteSpace(raw))
-            return false;
-
-        value = raw.Trim();
-        return value.Length > 0;
-    }
-
     private ShellcodeSource DetermineShellcodeSource(UiData data)
     {
         data.TextBoxes.TryGetValue("shellcodeFile", out var filePathRaw);
         data.TextBoxes.TryGetValue("shellcodeRAW", out var rawInput);
         data.TextBoxes.TryGetValue("shellcodeURL", out var urlInput);
+        data.ComboBoxes.TryGetValue("genericShellcodeComboBox", out var genericSelection);
 
         bool hasFile = !string.IsNullOrWhiteSpace(filePathRaw);
         bool hasRaw = !string.IsNullOrWhiteSpace(rawInput);
         bool hasUrl = !string.IsNullOrWhiteSpace(urlInput);
+        bool hasGeneric = !string.IsNullOrWhiteSpace(genericSelection);
 
-        int selected = new[] { hasFile, hasRaw, hasUrl }.Count(x => x);
+        int selected = new[] { hasFile, hasRaw, hasUrl, hasGeneric }.Count(x => x);
 
         if (selected == 0)
             return new ShellcodeSource(ShellcodeSourceKind.None, string.Empty);
@@ -654,7 +1150,10 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
         if (hasFile) return new ShellcodeSource(ShellcodeSourceKind.File, filePathRaw!.Trim());
         if (hasRaw) return new ShellcodeSource(ShellcodeSourceKind.Raw, rawInput!.Trim());
-        return new ShellcodeSource(ShellcodeSourceKind.Url, urlInput!.Trim());
+        if (hasUrl) return new ShellcodeSource(ShellcodeSourceKind.Url, urlInput!.Trim());
+        if (hasGeneric) return new ShellcodeSource(ShellcodeSourceKind.Generic, genericSelection!.Trim());
+
+        throw new InvalidOperationException("Unable to resolve the selected shellcode source.");
     }
 
     private string SaveRawHexToBin(string raw)
@@ -719,51 +1218,6 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     private static string EscapeForCxxString(string value)
         => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
-    private static void AppendIndentedBlock(StringBuilder sb, string content, int indentLevel)
-    {
-        if (string.IsNullOrWhiteSpace(content))
-            return;
-
-        string indent = new string(' ', indentLevel * 4);
-        foreach (var line in SplitLines(content))
-        {
-            if (line.Length == 0)
-            {
-                sb.AppendLine(indent);
-            }
-            else
-            {
-                sb.Append(indent);
-                sb.AppendLine(line);
-            }
-        }
-    }
-
-    private static IEnumerable<string> SplitLines(string value)
-    {
-        return value
-            .Replace("\r\n", "\n")
-            .Replace('\r', '\n')
-            .Split('\n');
-    }
-
-    private static void CleanupIntermediate(params string[] paths)
-    {
-        foreach (var path in paths)
-        {
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
-                {
-                    File.Delete(path);
-                }
-            }
-            catch
-            {
-                // ignore cleanup failures
-            }
-        }
-    }
 
     private sealed record ShellcodeSource(ShellcodeSourceKind Kind, string Value);
 
@@ -772,6 +1226,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         None,
         File,
         Raw,
-        Url
+        Url,
+        Generic
     }
 }

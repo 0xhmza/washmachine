@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+using System;
+using System.Collections.Generic;
 
 namespace Washmachine.Models;
 
@@ -6,6 +7,9 @@ public sealed class CppCompilationPlan
 {
     public List<string> AntiDebuggingSnippets { get; } = new();
     public List<string> GuardrailSnippets { get; } = new();
+    public Dictionary<string, List<string>> CustomSnippetBlocks { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public bool UsesGenericShellcode { get; set; }
 
     public string? EncodedShellcodeSnippet { get; set; }
     public string? UrlShellcodeSnippet { get; set; }
