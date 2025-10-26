@@ -5,6 +5,18 @@ using System.Threading;
 
 namespace Washmachine.Services;
 
+public interface IAppPaths
+{
+    string ExecutableDirectory { get; }
+    string AssetsDirectory { get; }
+    string SnippetCatalogFile { get; }
+    string Bin2ShellScript { get; }
+    string Bin2ShellAlgos { get; }
+    string EnsureTempShellcodeDirectory();
+    string EnsureTempSourceDirectory();
+    IReadOnlyList<string> Validate();
+}
+
 /// <summary>
 /// Centralized resolver for application paths. Keeps path knowledge in one place and
 /// defers expensive checks until required by callers.

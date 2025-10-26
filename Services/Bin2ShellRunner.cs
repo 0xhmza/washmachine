@@ -8,6 +8,14 @@ using System.Threading.Tasks;
 
 namespace Washmachine.Services;
 
+public interface IBin2ShellRunner
+{
+    Task<string> RunAsync(
+        IEnumerable<string> arguments,
+        string? pythonExecutable = null,
+        CancellationToken cancellationToken = default);
+}
+
 public sealed class Bin2ShellRunner : IBin2ShellRunner
 {
     private readonly IAppPaths _paths;
