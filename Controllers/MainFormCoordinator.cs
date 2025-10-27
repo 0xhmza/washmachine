@@ -778,8 +778,6 @@ public sealed class MainFormCoordinator
         {
             var catalog = await _encodingCatalog.GetCatalogAsync().ConfigureAwait(true);
             BindEncodingCombo(view.EncoderCombo, catalog.Encoders);
-            BindEncodingCombo(view.CompressorCombo, catalog.Compressors);
-            BindEncodingCombo(view.EnvelopeCombo, catalog.Envelopes);
             PopulateAntiEmulationCombo(view, catalog.AntiEmulation);
             _logger.Ok("Bin2Shell catalog loaded.");
         }
@@ -794,8 +792,11 @@ public sealed class MainFormCoordinator
         }
     }
 
-    private static void BindEncodingCombo(ComboBox combo, IReadOnlyCollection<ShellcodeEncodingItem> items)
+    private static void BindEncodingCombo(ComboBox? combo, IReadOnlyCollection<ShellcodeEncodingItem> items)
     {
+        if (combo == null)
+            return;
+
         combo.BeginUpdate();
         try
         {
@@ -856,7 +857,15 @@ public sealed class MainFormCoordinator
             "bin2shellOptions",
             "bin2ShellOptions",
             "bin2shellOptionCombo",
-            "bin2ShellOptionCombo"
+            "bin2ShellOptionCombo",
+            "bin2shellAntiCombo",
+            "bin2ShellAntiCombo",
+            "bin2shellAntiOptions",
+            "bin2ShellAntiOptions",
+            "bin2shellAntiEmulation",
+            "bin2ShellAntiEmulation",
+            "bin2shellSelection",
+            "bin2ShellSelection"
         };
 
         foreach (var name in candidateNames)

@@ -44,8 +44,6 @@ public partial class MainForm : Form, IMainFormView
 
     public Control RootControl => this;
     public ComboBox EncoderCombo => bin2hexEncoder;
-    public ComboBox CompressorCombo => bin2hexCompressor;
-    public ComboBox EnvelopeCombo => bin2hexEnvelope;
     public ComboBox TemplateCombo => templateComboBox;
     public FlowLayoutPanel SnippetPickerPanel => SnippetsPicker;
     public ComboBox GenericShellcodeCombo => genericShellcodeComboBox;

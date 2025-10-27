@@ -1062,32 +1062,206 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     {
         var args = new List<string> { "-y", _paths.Bin2ShellAlgos };
 
-        if (TryParseIndex(data, "bin2hexEncoder", out int encoder))
+        if (TryGetEncoderIndex(data, out int encoderIndex))
         {
             args.Add("-e");
-            args.Add(encoder.ToString(CultureInfo.InvariantCulture));
+            args.Add(encoderIndex.ToString(CultureInfo.InvariantCulture));
         }
 
-        if (TryParseIndex(data, "bin2hexCompressor", out int compressor))
-        {
-            args.Add("-c");
-            args.Add(compressor.ToString(CultureInfo.InvariantCulture));
-        }
+        var antiSelection = GetAntiEmulationSelection(data);
+        var antiArgs = GetAntiEmulationArgs(data);
 
-        if (TryParseIndex(data, "bin2hexEnvelope", out int envelope))
+        if (!string.IsNullOrWhiteSpace(antiSelection))
         {
-            args.Add("-env");
-            args.Add(envelope.ToString(CultureInfo.InvariantCulture));
+            args.Add("-ae");
+            args.Add(antiSelection!);
+
+            if (!string.IsNullOrWhiteSpace(antiArgs))
+            {
+                args.Add(antiArgs!);
+            }
         }
 
         args.Add(shellcodeFile);
         return args;
     }
 
-    private static bool TryParseIndex(UiData data, string key, out int index)
+    private static bool TryGetEncoderIndex(UiData data, out int index)
     {
         index = 0;
-        return data.ComboBoxes.TryGetValue(key, out var raw) && TryParseIndex(raw, out index) && index > 0;
+
+        string[] preferredKeys =
+        {
+            "bin2hexEncoder",
+            "bin2shellEncoder",
+            "bin2ShellEncoder",
+            "bin2shellEncoding",
+            "bin2ShellEncoding"
+        };
+
+        foreach (var key in preferredKeys)
+        {
+            if (data.ComboBoxes.TryGetValue(key, out var raw) && TryParseIndex(raw, out index) && index > 0)
+                return true;
+        }
+
+        foreach (var entry in data.ComboBoxes)
+        {
+            var key = entry.Key ?? string.Empty;
+            if (key.IndexOf("bin2", StringComparison.OrdinalIgnoreCase) < 0)
+                continue;
+            if (key.IndexOf("enc", StringComparison.OrdinalIgnoreCase) < 0 &&
+                key.IndexOf("codec", StringComparison.OrdinalIgnoreCase) < 0)
+                continue;
+
+            if (TryParseIndex(entry.Value, out index) && index > 0)
+                return true;
+        }
+
+        index = 0;
+        return false;
+    }
+
+    private static string? GetAntiEmulationSelection(UiData data)
+    {
+        string[] candidateKeys =
+        {
+            "bin2shellOptions",
+            "bin2ShellOptions",
+            "bin2shellOptionCombo",
+            "bin2ShellOptionCombo",
+            "bin2shellAntiCombo",
+            "bin2ShellAntiCombo",
+            "bin2shellAntiOptions",
+            "bin2ShellAntiOptions",
+            "bin2shellAntiEmulation",
+            "bin2ShellAntiEmulation",
+            "bin2shellSelection",
+            "bin2ShellSelection"
+        };
+
+        foreach (var key in candidateKeys)
+        {
+            if (!data.ComboBoxes.TryGetValue(key, out var raw))
+                continue;
+
+            var parsed = ParseAntiEmulationToken(raw);
+            if (!string.IsNullOrWhiteSpace(parsed))
+                return parsed;
+        }
+
+        foreach (var entry in data.ComboBoxes)
+        {
+            var key = entry.Key ?? string.Empty;
+            if (key.IndexOf("bin2", StringComparison.OrdinalIgnoreCase) < 0 &&
+                key.IndexOf("anti", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                continue;
+            }
+
+            var parsed = ParseAntiEmulationToken(entry.Value);
+            if (!string.IsNullOrWhiteSpace(parsed))
+                return parsed;
+        }
+
+        return null;
+    }
+
+    private static string? ParseAntiEmulationToken(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var trimmed = value.Trim();
+
+        if (TryParseIndex(trimmed, out int index) && index > 0)
+            return index.ToString(CultureInfo.InvariantCulture);
+
+        int dash = trimmed.IndexOf('-');
+        if (dash >= 0 && dash + 1 < trimmed.Length)
+        {
+            var tail = trimmed[(dash + 1)..].Trim();
+            if (tail.Length == 0)
+                return null;
+
+            int pipe = tail.IndexOf('|');
+            if (pipe >= 0)
+                tail = tail[..pipe].Trim();
+
+            return tail.Length > 0 ? tail : null;
+        }
+
+        int pipeOnly = trimmed.IndexOf('|');
+        if (pipeOnly >= 0)
+        {
+            var head = trimmed[..pipeOnly].Trim();
+            if (TryParseIndex(head, out index) && index > 0)
+                return index.ToString(CultureInfo.InvariantCulture);
+            if (head.Length > 0)
+                return head;
+        }
+
+        return trimmed;
+    }
+
+    private static string? GetAntiEmulationArgs(UiData data)
+    {
+        string[] candidateKeys =
+        {
+            "bin2shellArgs",
+            "bin2ShellArgs",
+            "bin2shellOptionArgs",
+            "bin2ShellOptionArgs",
+            "bin2shellAntiArgs",
+            "bin2ShellAntiArgs"
+        };
+
+        foreach (var key in candidateKeys)
+        {
+            if (!data.TextBoxes.TryGetValue(key, out var raw))
+                continue;
+
+            var normalized = NormalizeAntiEmulationArgs(raw);
+            if (!string.IsNullOrWhiteSpace(normalized))
+                return normalized;
+        }
+
+        foreach (var entry in data.TextBoxes)
+        {
+            var key = entry.Key ?? string.Empty;
+            if (key.IndexOf("bin2", StringComparison.OrdinalIgnoreCase) < 0 ||
+                key.IndexOf("arg", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                continue;
+            }
+
+            var normalized = NormalizeAntiEmulationArgs(entry.Value);
+            if (!string.IsNullOrWhiteSpace(normalized))
+                return normalized;
+        }
+
+        return null;
+    }
+
+    private static string? NormalizeAntiEmulationArgs(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        var noNewLines = raw.Replace("\r", string.Empty).Replace("\n", string.Empty).Trim();
+        if (noNewLines.Length == 0)
+            return null;
+
+        var segments = noNewLines
+            .Split(':', StringSplitOptions.RemoveEmptyEntries)
+            .Select(segment => segment.Trim())
+            .Where(segment => segment.Length > 0)
+            .ToArray();
+
+        if (segments.Length == 0)
+            return null;
+
+        return string.Join(":", segments);
     }
 
     private static bool TryParseIndex(string? raw, out int index)
