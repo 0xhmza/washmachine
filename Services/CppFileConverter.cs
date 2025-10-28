@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -218,6 +219,8 @@ public static class CppFileConverter
             return new CppFileConversionResult(false, msg);
         }
 
+        TryStripBinary(compilerPath, finalExe, logger);
+
         return new CppFileConversionResult(true, null);
     }
 
@@ -247,15 +250,62 @@ public static class CppFileConverter
 
         if (family == CompilerFamily.MSVC)
         {
-            // Size-focused build
-            var src = string.Join(" ", sources.Select(Q));
-            return $"/nologo /O1 /Gy /DNDEBUG /EHsc /Fe:{Q(outputExe)} {src} /link /OPT:REF /OPT:ICF /INCREMENTAL:NO";
+            var args = new List<string>
+            {
+                "/nologo",
+                "/O1",
+                "/Os",
+                "/GS-",
+                "/Gw",
+                "/Gy",
+                "/GL",
+                "/Zc:inline",
+                "/Zc:threadSafeInit-",
+                "/DNDEBUG",
+                "/DWIN32_LEAN_AND_MEAN",
+                "/D_CRT_SECURE_NO_WARNINGS",
+                "/GR-",
+                "/EHsc",
+                $"/Fe:{Q(outputExe)}"
+            };
+
+            args.AddRange(sources.Select(Q));
+            args.Add("/link");
+            args.Add("/NODEFAULTLIB");
+            args.Add("/LTCG");
+            args.Add("/OPT:REF");
+            args.Add("/OPT:ICF");
+            args.Add("/INCREMENTAL:NO");
+            args.Add("/ENTRY:WinMainCRTStartup");
+            args.Add("/SUBSYSTEM:WINDOWS");
+            args.Add("kernel32.lib");
+            args.Add("user32.lib");
+
+            return string.Join(" ", args);
         }
         else
         {
-            // GCC/Clang size-focused build
-            var src = string.Join(" ", sources.Select(Q));
-            return $"-Os -s -ffunction-sections -fdata-sections -Wl,--gc-sections -DNDEBUG -o {Q(outputExe)} {src}";
+            var args = new List<string>
+            {
+                "-Os",
+                "-s",
+                "-ffunction-sections",
+                "-fdata-sections",
+                "-fno-ident",
+                "-fno-asynchronous-unwind-tables",
+                "-fmerge-all-constants",
+                "-fno-stack-protector",
+                "-fvisibility=hidden",
+                "-DNDEBUG",
+                "-Wl,--gc-sections",
+                "-Wl,--strip-all",
+                "-o",
+                Q(outputExe)
+            };
+
+            args.AddRange(sources.Select(Q));
+
+            return string.Join(" ", args);
         }
     }
 
@@ -267,6 +317,89 @@ public static class CppFileConverter
     private static void SafeDelete(string path)
     {
         try { File.Delete(path); } catch { /* ignore */ }
+    }
+
+    private static void TryStripBinary(string? compilerPath, string exePath, IAppLogger logger)
+    {
+        if (string.IsNullOrWhiteSpace(exePath) || !File.Exists(exePath))
+            return;
+
+        var candidates = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(compilerPath))
+        {
+            var dir = Path.GetDirectoryName(compilerPath);
+            if (!string.IsNullOrWhiteSpace(dir))
+            {
+                candidates.Add(Path.Combine(dir, "llvm-strip.exe"));
+                candidates.Add(Path.Combine(dir, "strip.exe"));
+                candidates.Add(Path.Combine(dir, "objcopy.exe"));
+            }
+        }
+
+        var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        foreach (var segment in pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = segment.Trim();
+            if (trimmed.Length == 0)
+                continue;
+
+            candidates.Add(Path.Combine(trimmed, "llvm-strip.exe"));
+            candidates.Add(Path.Combine(trimmed, "strip.exe"));
+            candidates.Add(Path.Combine(trimmed, "objcopy.exe"));
+        }
+
+        string? tool = candidates.FirstOrDefault(File.Exists);
+        if (string.IsNullOrWhiteSpace(tool))
+        {
+            logger.Info("No strip utility found; skipping post-link trimming.");
+            return;
+        }
+
+        try
+        {
+            using var proc = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = tool,
+                    WorkingDirectory = Path.GetDirectoryName(exePath) ?? Environment.CurrentDirectory,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                }
+            };
+
+            if (tool.EndsWith("objcopy.exe", StringComparison.OrdinalIgnoreCase))
+            {
+                proc.StartInfo.ArgumentList.Add("--strip-unneeded");
+            }
+            else
+            {
+                proc.StartInfo.ArgumentList.Add("--strip-all");
+            }
+
+            proc.StartInfo.ArgumentList.Add(exePath);
+
+            if (!proc.Start())
+                return;
+
+            proc.WaitForExit();
+            if (proc.ExitCode == 0)
+            {
+                logger.Ok("Post-link stripping succeeded (binary trimmed).");
+            }
+            else
+            {
+                var err = proc.StandardError.ReadToEnd();
+                if (!string.IsNullOrWhiteSpace(err))
+                    logger.Warn($"Strip utility exited with code {proc.ExitCode}: {Truncate(err, 300)}");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.Warn($"Unable to strip binary: {ex.Message}");
+        }
     }
 
     private static string Truncate(string? value, int max)

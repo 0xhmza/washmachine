@@ -6,6 +6,7 @@ namespace Washmachine.Models;
 public sealed class CppCompilationPlan
 {
     public List<string> AntiDebuggingSnippets { get; } = new();
+    public List<string> AntiEmulationSnippets { get; } = new();
     public List<string> GuardrailSnippets { get; } = new();
     public Dictionary<string, List<string>> CustomSnippetBlocks { get; } = new(StringComparer.OrdinalIgnoreCase);
 

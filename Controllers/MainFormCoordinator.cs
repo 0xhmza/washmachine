@@ -778,7 +778,7 @@ public sealed class MainFormCoordinator
         {
             var catalog = await _encodingCatalog.GetCatalogAsync().ConfigureAwait(true);
             BindEncodingCombo(view.EncoderCombo, catalog.Encoders);
-            PopulateAntiEmulationCombo(view, catalog.AntiEmulation);
+            BindEncodingCombo(view.EnvelopeCombo, catalog.Envelopes);
             _logger.Ok("Bin2Shell catalog loaded.");
         }
         catch (Exception ex)
@@ -815,73 +815,6 @@ public sealed class MainFormCoordinator
             combo.EndUpdate();
         }
     }
-    private void PopulateAntiEmulationCombo(IMainFormView view, IReadOnlyCollection<AntiEmulationOption> options)
-    {
-        var combo = FindAntiEmulationCombo(view);
-        if (combo == null)
-        {
-            if (options.Count > 0)
-            {
-                _logger.Warn("Anti-emulation combo 'bin2shellOptions' not found; options will not be shown.");
-            }
-
-            return;
-        }
-
-        combo.BeginUpdate();
-        try
-        {
-            combo.Items.Clear();
-            combo.Items.Add(string.Empty);
-
-            foreach (var option in options.OrderBy(o => o.Index))
-            {
-                combo.Items.Add(option.DisplayText);
-            }
-
-            combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
-        }
-        finally
-        {
-            combo.EndUpdate();
-        }
-    }
-
-    private static ComboBox? FindAntiEmulationCombo(IMainFormView view)
-    {
-        if (view?.RootControl == null)
-            return null;
-
-        string[] candidateNames =
-        {
-            "bin2shellOptions",
-            "bin2ShellOptions",
-            "bin2shellOptionCombo",
-            "bin2ShellOptionCombo",
-            "bin2shellAntiCombo",
-            "bin2ShellAntiCombo",
-            "bin2shellAntiOptions",
-            "bin2ShellAntiOptions",
-            "bin2shellAntiEmulation",
-            "bin2ShellAntiEmulation",
-            "bin2shellSelection",
-            "bin2ShellSelection"
-        };
-
-        foreach (var name in candidateNames)
-        {
-            var combo = view.RootControl.Controls
-                .Find(name, searchAllChildren: true)
-                .OfType<ComboBox>()
-                .FirstOrDefault();
-
-            if (combo != null)
-                return combo;
-        }
-
-        return null;
-    }
-
 
     private bool ValidateShellcodeSource(IMainFormView view, out string? errorMessage)
     {

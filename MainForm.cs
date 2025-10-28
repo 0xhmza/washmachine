@@ -25,7 +25,7 @@ public partial class MainForm : Form, IMainFormView
         var interaction = new UserInteractionService();
         var snippetCatalog = new YamlCodeSnippetCatalogService(paths);
         var bin2ShellRunner = new Bin2ShellRunner(paths);
-        var encodingCatalog = new ShellcodeEncodingCatalogService(bin2ShellRunner, paths);
+        var encodingCatalog = new ShellcodeEncodingCatalogService(paths);
         var toolLocator = new CompilerToolLocator(_logger);
         var compiler = new CompilerService(paths, bin2ShellRunner, snippetCatalog, toolLocator, _logger);
 
@@ -44,6 +44,7 @@ public partial class MainForm : Form, IMainFormView
 
     public Control RootControl => this;
     public ComboBox EncoderCombo => bin2hexEncoder;
+    public ComboBox EnvelopeCombo => bin2hexEnvelope;
     public ComboBox TemplateCombo => templateComboBox;
     public FlowLayoutPanel SnippetPickerPanel => SnippetsPicker;
     public ComboBox GenericShellcodeCombo => genericShellcodeComboBox;
