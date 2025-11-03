@@ -35,36 +35,38 @@
             BackdooringTab = new TabPage();
             PackingTab = new TabPage();
             MainTab = new TabPage();
-            submitButton = new Button();
-            groupBox1 = new GroupBox();
-            templateLabel = new Label();
-            templateComboBox = new ComboBox();
-            SnippetsPicker = new FlowLayoutPanel();
-            shellcode = new GroupBox();
-            label1 = new Label();
-            shellcodeFile = new TextBox();
-            button1 = new Button();
-            label2 = new Label();
-            shellcodeRAW = new TextBox();
-            button2 = new Button();
-            label3 = new Label();
-            genericShellcodeComboBox = new ComboBox();
-            label11 = new Label();
-            shellcodeURL = new TextBox();
-            button3 = new Button();
-            RAWShellcodeInfo = new Label();
-            tabControl = new TabControl();
             groupBox3 = new GroupBox();
-            payloadEncodingEnvelopeLabel = new Label();
-            payloadEncodingEncoderLabel = new Label();
             bin2hexEncoder = new ComboBox();
             bin2hexEnvelope = new ComboBox();
+            payloadEncodingEnvelopeLabel = new Label();
+            payloadEncodingEncoderLabel = new Label();
+            shellcode = new GroupBox();
+            RAWShellcodeInfo = new Label();
+            button3 = new Button();
+            shellcodeURL = new TextBox();
+            label11 = new Label();
+            genericShellcodeComboBox = new ComboBox();
+            label3 = new Label();
+            button2 = new Button();
+            shellcodeRAW = new TextBox();
+            label2 = new Label();
+            button1 = new Button();
+            shellcodeFile = new TextBox();
+            label1 = new Label();
+            groupBox1 = new GroupBox();
+            SnippetsPicker = new FlowLayoutPanel();
+            templateComboBox = new ComboBox();
+            templateLabel = new Label();
+            submitButton = new Button();
+            tabControl = new TabControl();
+            label4 = new Label();
+            WebPayloadGenerator = new Button();
             groupBox2.SuspendLayout();
             MainTab.SuspendLayout();
-            groupBox1.SuspendLayout();
-            shellcode.SuspendLayout();
-            tabControl.SuspendLayout();
             groupBox3.SuspendLayout();
+            shellcode.SuspendLayout();
+            groupBox1.SuspendLayout();
+            tabControl.SuspendLayout();
             SuspendLayout();
             // 
             // textBox4
@@ -140,216 +142,6 @@
             MainTab.Text = "Main";
             MainTab.UseVisualStyleBackColor = true;
             // 
-            // submitButton
-            // 
-            submitButton.Location = new Point(437, 1021);
-            submitButton.Margin = new Padding(4);
-            submitButton.Name = "submitButton";
-            submitButton.Size = new Size(154, 36);
-            submitButton.TabIndex = 9;
-            submitButton.Text = "Compile";
-            submitButton.UseVisualStyleBackColor = true;
-            submitButton.Click += submitButton_Click;
-            // 
-            // groupBox1
-            // 
-            groupBox1.Controls.Add(SnippetsPicker);
-            groupBox1.Controls.Add(templateComboBox);
-            groupBox1.Controls.Add(templateLabel);
-            groupBox1.Location = new Point(4, 619);
-            groupBox1.Margin = new Padding(4);
-            groupBox1.Name = "groupBox1";
-            groupBox1.Padding = new Padding(4);
-            groupBox1.Size = new Size(996, 394);
-            groupBox1.TabIndex = 7;
-            groupBox1.TabStop = false;
-            groupBox1.Text = "Parameters";
-            // 
-            // templateLabel
-            // 
-            templateLabel.AutoSize = true;
-            templateLabel.Location = new Point(12, 35);
-            templateLabel.Margin = new Padding(4, 0, 4, 0);
-            templateLabel.Name = "templateLabel";
-            templateLabel.Size = new Size(133, 25);
-            templateLabel.TabIndex = 0;
-            templateLabel.Text = "Code template:";
-            // 
-            // templateComboBox
-            // 
-            templateComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            templateComboBox.FormattingEnabled = true;
-            templateComboBox.Location = new Point(152, 31);
-            templateComboBox.Margin = new Padding(4);
-            templateComboBox.Name = "templateComboBox";
-            templateComboBox.Size = new Size(430, 33);
-            templateComboBox.TabIndex = 1;
-            templateComboBox.SelectedIndexChanged += templateComboBox_SelectedIndexChanged;
-            // 
-            // SnippetsPicker
-            // 
-            SnippetsPicker.AutoScroll = true;
-            SnippetsPicker.Location = new Point(7, 80);
-            SnippetsPicker.Name = "SnippetsPicker";
-            SnippetsPicker.Size = new Size(982, 306);
-            SnippetsPicker.TabIndex = 2;
-            // 
-            // shellcode
-            // 
-            shellcode.Controls.Add(RAWShellcodeInfo);
-            shellcode.Controls.Add(button3);
-            shellcode.Controls.Add(shellcodeURL);
-            shellcode.Controls.Add(label11);
-            shellcode.Controls.Add(genericShellcodeComboBox);
-            shellcode.Controls.Add(label3);
-            shellcode.Controls.Add(button2);
-            shellcode.Controls.Add(shellcodeRAW);
-            shellcode.Controls.Add(label2);
-            shellcode.Controls.Add(button1);
-            shellcode.Controls.Add(shellcodeFile);
-            shellcode.Controls.Add(label1);
-            shellcode.Location = new Point(4, 19);
-            shellcode.Margin = new Padding(4);
-            shellcode.Name = "shellcode";
-            shellcode.Padding = new Padding(4);
-            shellcode.Size = new Size(996, 479);
-            shellcode.TabIndex = 6;
-            shellcode.TabStop = false;
-            shellcode.Text = "Shellcode";
-            // 
-            // label1
-            // 
-            label1.AutoSize = true;
-            label1.Location = new Point(34, 49);
-            label1.Margin = new Padding(4, 0, 4, 0);
-            label1.Name = "label1";
-            label1.Size = new Size(233, 25);
-            label1.TabIndex = 0;
-            label1.Text = "Shellcode file (typically .bin):";
-            // 
-            // shellcodeFile
-            // 
-            shellcodeFile.Location = new Point(34, 76);
-            shellcodeFile.Margin = new Padding(4);
-            shellcodeFile.Name = "shellcodeFile";
-            shellcodeFile.Size = new Size(828, 31);
-            shellcodeFile.TabIndex = 1;
-            // 
-            // button1
-            // 
-            button1.Location = new Point(870, 76);
-            button1.Margin = new Padding(4);
-            button1.Name = "button1";
-            button1.Size = new Size(100, 36);
-            button1.TabIndex = 2;
-            button1.Text = "Browse";
-            button1.UseVisualStyleBackColor = true;
-            button1.Click += button1_Click;
-            // 
-            // label2
-            // 
-            label2.AutoSize = true;
-            label2.Location = new Point(34, 126);
-            label2.Margin = new Padding(4, 0, 4, 0);
-            label2.Name = "label2";
-            label2.Size = new Size(117, 25);
-            label2.TabIndex = 3;
-            label2.Text = "Or paste raw:";
-            // 
-            // shellcodeRAW
-            // 
-            shellcodeRAW.Font = new Font("Consolas", 9F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            shellcodeRAW.Location = new Point(34, 155);
-            shellcodeRAW.Margin = new Padding(4);
-            shellcodeRAW.Multiline = true;
-            shellcodeRAW.Name = "shellcodeRAW";
-            shellcodeRAW.Size = new Size(828, 125);
-            shellcodeRAW.TabIndex = 4;
-            // 
-            // button2
-            // 
-            button2.Location = new Point(870, 245);
-            button2.Margin = new Padding(4);
-            button2.Name = "button2";
-            button2.Size = new Size(100, 36);
-            button2.TabIndex = 5;
-            button2.Text = "Paste";
-            button2.UseVisualStyleBackColor = true;
-            button2.Click += button2_Click;
-            // 
-            // label3
-            // 
-            label3.AutoSize = true;
-            label3.Location = new Point(34, 391);
-            label3.Margin = new Padding(4, 0, 4, 0);
-            label3.Name = "label3";
-            label3.Size = new Size(191, 25);
-            label3.TabIndex = 6;
-            label3.Text = "Or a generic shellcode:";
-            // 
-            // genericShellcodeComboBox
-            // 
-            genericShellcodeComboBox.FormattingEnabled = true;
-            genericShellcodeComboBox.Location = new Point(34, 420);
-            genericShellcodeComboBox.Margin = new Padding(4);
-            genericShellcodeComboBox.Name = "genericShellcodeComboBox";
-            genericShellcodeComboBox.Size = new Size(430, 33);
-            genericShellcodeComboBox.TabIndex = 7;
-            // 
-            // label11
-            // 
-            label11.AutoSize = true;
-            label11.Location = new Point(34, 305);
-            label11.Margin = new Padding(4, 0, 4, 0);
-            label11.Name = "label11";
-            label11.Size = new Size(130, 25);
-            label11.TabIndex = 8;
-            label11.Text = "Or from a URL:";
-            // 
-            // shellcodeURL
-            // 
-            shellcodeURL.Location = new Point(34, 334);
-            shellcodeURL.Margin = new Padding(4);
-            shellcodeURL.Name = "shellcodeURL";
-            shellcodeURL.Size = new Size(828, 31);
-            shellcodeURL.TabIndex = 9;
-            // 
-            // button3
-            // 
-            button3.Location = new Point(870, 334);
-            button3.Margin = new Padding(4);
-            button3.Name = "button3";
-            button3.Size = new Size(100, 36);
-            button3.TabIndex = 10;
-            button3.Text = "Paste";
-            button3.UseVisualStyleBackColor = true;
-            button3.Click += button3_Click;
-            // 
-            // RAWShellcodeInfo
-            // 
-            RAWShellcodeInfo.AutoSize = true;
-            RAWShellcodeInfo.Font = new Font("NSimSun", 9F, FontStyle.Underline, GraphicsUnit.Point, 0);
-            RAWShellcodeInfo.ForeColor = SystemColors.HotTrack;
-            RAWShellcodeInfo.Location = new Point(784, 134);
-            RAWShellcodeInfo.Margin = new Padding(4, 0, 4, 0);
-            RAWShellcodeInfo.Name = "RAWShellcodeInfo";
-            RAWShellcodeInfo.Size = new Size(71, 18);
-            RAWShellcodeInfo.TabIndex = 11;
-            RAWShellcodeInfo.Text = "Format?";
-            RAWShellcodeInfo.Click += RAWShellcodeInfo_Click;
-            // 
-            // tabControl
-            // 
-            tabControl.Controls.Add(MainTab);
-            tabControl.Controls.Add(PackingTab);
-            tabControl.Controls.Add(BackdooringTab);
-            tabControl.Location = new Point(18, 15);
-            tabControl.Margin = new Padding(4, 5, 4, 5);
-            tabControl.Name = "tabControl";
-            tabControl.SelectedIndex = 0;
-            tabControl.Size = new Size(1029, 1104);
-            tabControl.TabIndex = 12;
-            // 
             // groupBox3
             // 
             groupBox3.Controls.Add(bin2hexEncoder);
@@ -362,6 +154,24 @@
             groupBox3.TabIndex = 10;
             groupBox3.TabStop = false;
             groupBox3.Text = "Payload Encoding";
+            // 
+            // bin2hexEncoder
+            // 
+            bin2hexEncoder.FormattingEnabled = true;
+            bin2hexEncoder.Location = new Point(171, 45);
+            bin2hexEncoder.Margin = new Padding(4, 5, 4, 5);
+            bin2hexEncoder.Name = "bin2hexEncoder";
+            bin2hexEncoder.Size = new Size(260, 33);
+            bin2hexEncoder.TabIndex = 8;
+            // 
+            // bin2hexEnvelope
+            // 
+            bin2hexEnvelope.FormattingEnabled = true;
+            bin2hexEnvelope.Location = new Point(631, 45);
+            bin2hexEnvelope.Margin = new Padding(4, 5, 4, 5);
+            bin2hexEnvelope.Name = "bin2hexEnvelope";
+            bin2hexEnvelope.Size = new Size(260, 33);
+            bin2hexEnvelope.TabIndex = 7;
             // 
             // payloadEncodingEnvelopeLabel
             // 
@@ -383,23 +193,240 @@
             payloadEncodingEncoderLabel.TabIndex = 3;
             payloadEncodingEncoderLabel.Text = "Encoder:";
             // 
-            // bin2hexEncoder
+            // shellcode
             // 
-            bin2hexEncoder.FormattingEnabled = true;
-            bin2hexEncoder.Location = new Point(171, 45);
-            bin2hexEncoder.Margin = new Padding(4, 5, 4, 5);
-            bin2hexEncoder.Name = "bin2hexEncoder";
-            bin2hexEncoder.Size = new Size(260, 33);
-            bin2hexEncoder.TabIndex = 8;
+            shellcode.Controls.Add(WebPayloadGenerator);
+            shellcode.Controls.Add(label4);
+            shellcode.Controls.Add(RAWShellcodeInfo);
+            shellcode.Controls.Add(button3);
+            shellcode.Controls.Add(shellcodeURL);
+            shellcode.Controls.Add(label11);
+            shellcode.Controls.Add(genericShellcodeComboBox);
+            shellcode.Controls.Add(label3);
+            shellcode.Controls.Add(button2);
+            shellcode.Controls.Add(label2);
+            shellcode.Controls.Add(button1);
+            shellcode.Controls.Add(shellcodeFile);
+            shellcode.Controls.Add(label1);
+            shellcode.Controls.Add(shellcodeRAW);
+            shellcode.Location = new Point(4, 19);
+            shellcode.Margin = new Padding(4);
+            shellcode.Name = "shellcode";
+            shellcode.Padding = new Padding(4);
+            shellcode.Size = new Size(996, 479);
+            shellcode.TabIndex = 6;
+            shellcode.TabStop = false;
+            shellcode.Text = "Shellcode";
             // 
-            // bin2hexEnvelope
+            // RAWShellcodeInfo
             // 
-            bin2hexEnvelope.FormattingEnabled = true;
-            bin2hexEnvelope.Location = new Point(631, 45);
-            bin2hexEnvelope.Margin = new Padding(4, 5, 4, 5);
-            bin2hexEnvelope.Name = "bin2hexEnvelope";
-            bin2hexEnvelope.Size = new Size(260, 33);
-            bin2hexEnvelope.TabIndex = 7;
+            RAWShellcodeInfo.AutoSize = true;
+            RAWShellcodeInfo.Font = new Font("NSimSun", 9F, FontStyle.Underline, GraphicsUnit.Point, 0);
+            RAWShellcodeInfo.ForeColor = SystemColors.HotTrack;
+            RAWShellcodeInfo.Location = new Point(784, 134);
+            RAWShellcodeInfo.Margin = new Padding(4, 0, 4, 0);
+            RAWShellcodeInfo.Name = "RAWShellcodeInfo";
+            RAWShellcodeInfo.Size = new Size(71, 18);
+            RAWShellcodeInfo.TabIndex = 11;
+            RAWShellcodeInfo.Text = "Format?";
+            RAWShellcodeInfo.Click += RAWShellcodeInfo_Click;
+            // 
+            // button3
+            // 
+            button3.Location = new Point(870, 334);
+            button3.Margin = new Padding(4);
+            button3.Name = "button3";
+            button3.Size = new Size(100, 36);
+            button3.TabIndex = 10;
+            button3.Text = "Paste";
+            button3.UseVisualStyleBackColor = true;
+            button3.Click += button3_Click;
+            // 
+            // shellcodeURL
+            // 
+            shellcodeURL.Location = new Point(34, 334);
+            shellcodeURL.Margin = new Padding(4);
+            shellcodeURL.Name = "shellcodeURL";
+            shellcodeURL.Size = new Size(828, 31);
+            shellcodeURL.TabIndex = 9;
+            // 
+            // label11
+            // 
+            label11.AutoSize = true;
+            label11.Location = new Point(34, 305);
+            label11.Margin = new Padding(4, 0, 4, 0);
+            label11.Name = "label11";
+            label11.Size = new Size(130, 25);
+            label11.TabIndex = 8;
+            label11.Text = "Or from a URL:";
+            // 
+            // genericShellcodeComboBox
+            // 
+            genericShellcodeComboBox.FormattingEnabled = true;
+            genericShellcodeComboBox.Location = new Point(34, 420);
+            genericShellcodeComboBox.Margin = new Padding(4);
+            genericShellcodeComboBox.Name = "genericShellcodeComboBox";
+            genericShellcodeComboBox.Size = new Size(430, 33);
+            genericShellcodeComboBox.TabIndex = 7;
+            // 
+            // label3
+            // 
+            label3.AutoSize = true;
+            label3.Location = new Point(34, 391);
+            label3.Margin = new Padding(4, 0, 4, 0);
+            label3.Name = "label3";
+            label3.Size = new Size(191, 25);
+            label3.TabIndex = 6;
+            label3.Text = "Or a generic shellcode:";
+            // 
+            // button2
+            // 
+            button2.Location = new Point(870, 245);
+            button2.Margin = new Padding(4);
+            button2.Name = "button2";
+            button2.Size = new Size(100, 36);
+            button2.TabIndex = 5;
+            button2.Text = "Paste";
+            button2.UseVisualStyleBackColor = true;
+            button2.Click += button2_Click;
+            // 
+            // shellcodeRAW
+            // 
+            shellcodeRAW.Font = new Font("Consolas", 9F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            shellcodeRAW.Location = new Point(34, 155);
+            shellcodeRAW.Margin = new Padding(4);
+            shellcodeRAW.Multiline = true;
+            shellcodeRAW.Name = "shellcodeRAW";
+            shellcodeRAW.Size = new Size(828, 125);
+            shellcodeRAW.TabIndex = 4;
+            // 
+            // label2
+            // 
+            label2.AutoSize = true;
+            label2.Location = new Point(34, 126);
+            label2.Margin = new Padding(4, 0, 4, 0);
+            label2.Name = "label2";
+            label2.Size = new Size(117, 25);
+            label2.TabIndex = 3;
+            label2.Text = "Or paste raw:";
+            // 
+            // button1
+            // 
+            button1.Location = new Point(755, 76);
+            button1.Margin = new Padding(4);
+            button1.Name = "button1";
+            button1.Size = new Size(100, 36);
+            button1.TabIndex = 2;
+            button1.Text = "Browse";
+            button1.UseVisualStyleBackColor = true;
+            button1.Click += button1_Click;
+            // 
+            // shellcodeFile
+            // 
+            shellcodeFile.Location = new Point(34, 76);
+            shellcodeFile.Margin = new Padding(4);
+            shellcodeFile.Name = "shellcodeFile";
+            shellcodeFile.Size = new Size(709, 31);
+            shellcodeFile.TabIndex = 1;
+            // 
+            // label1
+            // 
+            label1.AutoSize = true;
+            label1.Location = new Point(34, 49);
+            label1.Margin = new Padding(4, 0, 4, 0);
+            label1.Name = "label1";
+            label1.Size = new Size(233, 25);
+            label1.TabIndex = 0;
+            label1.Text = "Shellcode file (typically .bin):";
+            // 
+            // groupBox1
+            // 
+            groupBox1.Controls.Add(SnippetsPicker);
+            groupBox1.Controls.Add(templateComboBox);
+            groupBox1.Controls.Add(templateLabel);
+            groupBox1.Location = new Point(4, 619);
+            groupBox1.Margin = new Padding(4);
+            groupBox1.Name = "groupBox1";
+            groupBox1.Padding = new Padding(4);
+            groupBox1.Size = new Size(996, 394);
+            groupBox1.TabIndex = 7;
+            groupBox1.TabStop = false;
+            groupBox1.Text = "Parameters";
+            // 
+            // SnippetsPicker
+            // 
+            SnippetsPicker.AutoScroll = true;
+            SnippetsPicker.Location = new Point(7, 80);
+            SnippetsPicker.Name = "SnippetsPicker";
+            SnippetsPicker.Size = new Size(982, 306);
+            SnippetsPicker.TabIndex = 2;
+            // 
+            // templateComboBox
+            // 
+            templateComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            templateComboBox.FormattingEnabled = true;
+            templateComboBox.Location = new Point(152, 31);
+            templateComboBox.Margin = new Padding(4);
+            templateComboBox.Name = "templateComboBox";
+            templateComboBox.Size = new Size(430, 33);
+            templateComboBox.TabIndex = 1;
+            templateComboBox.SelectedIndexChanged += templateComboBox_SelectedIndexChanged;
+            // 
+            // templateLabel
+            // 
+            templateLabel.AutoSize = true;
+            templateLabel.Location = new Point(12, 35);
+            templateLabel.Margin = new Padding(4, 0, 4, 0);
+            templateLabel.Name = "templateLabel";
+            templateLabel.Size = new Size(133, 25);
+            templateLabel.TabIndex = 0;
+            templateLabel.Text = "Code template:";
+            // 
+            // submitButton
+            // 
+            submitButton.Location = new Point(437, 1021);
+            submitButton.Margin = new Padding(4);
+            submitButton.Name = "submitButton";
+            submitButton.Size = new Size(154, 36);
+            submitButton.TabIndex = 9;
+            submitButton.Text = "Compile";
+            submitButton.UseVisualStyleBackColor = true;
+            submitButton.Click += submitButton_Click;
+            // 
+            // tabControl
+            // 
+            tabControl.Controls.Add(MainTab);
+            tabControl.Controls.Add(PackingTab);
+            tabControl.Controls.Add(BackdooringTab);
+            tabControl.Location = new Point(18, 15);
+            tabControl.Margin = new Padding(4, 5, 4, 5);
+            tabControl.Name = "tabControl";
+            tabControl.SelectedIndex = 0;
+            tabControl.Size = new Size(1029, 1104);
+            tabControl.TabIndex = 12;
+            // 
+            // label4
+            // 
+            label4.AutoSize = true;
+            label4.Font = new Font("NSimSun", 9F, FontStyle.Underline, GraphicsUnit.Point, 0);
+            label4.ForeColor = SystemColors.HotTrack;
+            label4.Location = new Point(811, 310);
+            label4.Margin = new Padding(4, 0, 4, 0);
+            label4.Name = "label4";
+            label4.Size = new Size(44, 18);
+            label4.TabIndex = 12;
+            label4.Text = "Help";
+            // 
+            // WebPayloadGenerator
+            // 
+            WebPayloadGenerator.Font = new Font("Segoe UI", 6F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            WebPayloadGenerator.Location = new Point(870, 77);
+            WebPayloadGenerator.Name = "WebPayloadGenerator";
+            WebPayloadGenerator.Size = new Size(100, 34);
+            WebPayloadGenerator.TabIndex = 13;
+            WebPayloadGenerator.Text = "Web Payload";
+            WebPayloadGenerator.UseVisualStyleBackColor = true;
+            WebPayloadGenerator.Click += WebPayloadGenerator_Click;
             // 
             // MainForm
             // 
@@ -420,13 +447,13 @@
             Load += MainForm_Load;
             groupBox2.ResumeLayout(false);
             MainTab.ResumeLayout(false);
-            groupBox1.ResumeLayout(false);
-            groupBox1.PerformLayout();
-            shellcode.ResumeLayout(false);
-            shellcode.PerformLayout();
-            tabControl.ResumeLayout(false);
             groupBox3.ResumeLayout(false);
             groupBox3.PerformLayout();
+            shellcode.ResumeLayout(false);
+            shellcode.PerformLayout();
+            groupBox1.ResumeLayout(false);
+            groupBox1.PerformLayout();
+            tabControl.ResumeLayout(false);
             ResumeLayout(false);
             PerformLayout();
         }
@@ -464,5 +491,7 @@
         private Label templateLabel;
         private Button submitButton;
         private TabControl tabControl;
+        private Label label4;
+        private Button WebPayloadGenerator;
     }
 }

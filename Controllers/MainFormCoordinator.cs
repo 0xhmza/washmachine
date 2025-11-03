@@ -1,6 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Washmachine.Logging;
@@ -13,10 +17,20 @@ namespace Washmachine.Controllers;
 public sealed class MainFormCoordinator
 {
     private const string TemplateGenericShellcode = "GENERICSHELLCODE";
+    private static readonly HashSet<string> AllowedEnvelopeNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "base32",
+        "base64",
+        "base91"
+    };
+    private static readonly Regex CodeBlobArrayRegex = new(@"unsigned\s+char\s+code_blob\[\]\s*=\s*\{(?<body>.*?)\};", RegexOptions.Compiled | RegexOptions.Singleline);
+    private static readonly Regex CodeBlobTextBlockRegex = new(@"code_blob_text\[\]\s*=\s*(?<body>.*?)\s*;", RegexOptions.Compiled | RegexOptions.Singleline);
+    private static readonly Regex QuotedStringRegex = new("\"(?<segment>.*?)\"", RegexOptions.Compiled | RegexOptions.Singleline);
     private readonly IAppLogger _logger;
     private readonly IAppPaths _paths;
     private readonly ICodeSnippetCatalogService _snippetCatalog;
     private readonly IShellcodeEncodingCatalog _encodingCatalog;
+    private readonly IBin2ShellRunner _bin2ShellRunner;
     private readonly ICompilerService _compiler;
     private readonly IClipboardService _clipboard;
     private readonly IUserInteractionService _interaction;
@@ -27,6 +41,7 @@ public sealed class MainFormCoordinator
         IAppPaths paths,
         ICodeSnippetCatalogService snippetCatalog,
         IShellcodeEncodingCatalog encodingCatalog,
+        IBin2ShellRunner bin2ShellRunner,
         ICompilerService compiler,
         IClipboardService clipboard,
         IUserInteractionService interaction)
@@ -35,6 +50,7 @@ public sealed class MainFormCoordinator
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         _snippetCatalog = snippetCatalog ?? throw new ArgumentNullException(nameof(snippetCatalog));
         _encodingCatalog = encodingCatalog ?? throw new ArgumentNullException(nameof(encodingCatalog));
+        _bin2ShellRunner = bin2ShellRunner ?? throw new ArgumentNullException(nameof(bin2ShellRunner));
         _compiler = compiler ?? throw new ArgumentNullException(nameof(compiler));
         _clipboard = clipboard ?? throw new ArgumentNullException(nameof(clipboard));
         _interaction = interaction ?? throw new ArgumentNullException(nameof(interaction));
@@ -225,6 +241,197 @@ public sealed class MainFormCoordinator
         if (view == null) throw new ArgumentNullException(nameof(view));
 
         _interaction.ShowGuardRailInfo(view);
+    }
+
+    public async Task GenerateWebPayloadAsync(IMainFormView view)
+    {
+        if (view == null) throw new ArgumentNullException(nameof(view));
+
+        string filePathRaw = view.ShellcodeFileTextBox?.Text ?? string.Empty;
+        string filePath = filePathRaw.Trim();
+
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            const string message = "Select a shellcode file before generating a web payload.";
+            _logger.Warn(message);
+            _interaction.ShowMessage(
+                view,
+                message,
+                "Web Payload",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
+        if (!File.Exists(filePath))
+        {
+            string message = $"Shellcode file not found: {filePath}";
+            _logger.Warn(message);
+            _interaction.ShowMessage(
+                view,
+                message,
+                "Web Payload",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
+        var encoderCombo = view.EncoderCombo;
+        if (encoderCombo != null && encoderCombo.SelectedIndex > 0)
+        {
+            _logger.Warn("Web payload generation does not support encoders. Clearing selection.");
+            _interaction.ShowMessage(
+                view,
+                "Web payload generation does not support encoders. The encoder selection has been reset to None.",
+                "Web Payload",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+
+            if (encoderCombo.Items.Count > 0)
+            {
+                encoderCombo.SelectedIndex = 0;
+            }
+            else
+            {
+                encoderCombo.SelectedIndex = -1;
+            }
+        }
+
+        var envelopeCombo = view.EnvelopeCombo;
+        if (envelopeCombo == null)
+        {
+            const string message = "Envelope selection control is unavailable.";
+            _logger.Warn(message);
+            _interaction.ShowMessage(
+                view,
+                message,
+                "Web Payload",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return;
+        }
+
+        if (!TryResolveEnvelopeSelection(envelopeCombo, out int envelopeIndex, out string envelopeName, out string envelopeDisplay))
+        {
+            const string message = "Select an envelope (Base32, Base64, or Base91) before generating a web payload.";
+            _logger.Warn(message);
+            _interaction.ShowMessage(
+                view,
+                message,
+                "Web Payload",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
+        if (envelopeIndex <= 0 || string.Equals(envelopeName, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            const string message = "Envelope 'None' is not supported. Choose Base32, Base64, or Base91.";
+            _logger.Warn(message);
+            _interaction.ShowMessage(
+                view,
+                message,
+                "Web Payload",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
+        if (!AllowedEnvelopeNames.Contains(envelopeName))
+        {
+            string message = $"Envelope '{envelopeDisplay}' is not supported. Choose Base32, Base64, or Base91.";
+            _logger.Warn(message);
+            _interaction.ShowMessage(
+                view,
+                message,
+                "Web Payload",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
+        var args = new List<string>
+        {
+            "-y", _paths.Bin2ShellAlgos,
+            "-env", envelopeIndex.ToString(CultureInfo.InvariantCulture),
+            filePath
+        };
+
+        _logger.Info($"Running Bin2Shell for web payload: envelope='{envelopeDisplay}', file='{filePath}'.");
+
+        string output;
+        try
+        {
+            output = await _bin2ShellRunner.RunAsync(args, cancellationToken: default).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Bin2Shell failed during web payload generation: {ex.Message}");
+            _interaction.ShowMessage(
+                view,
+                $"Failed to generate web payload:{Environment.NewLine}{ex.Message}",
+                "Web Payload",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            const string message = "Bin2Shell returned no output while generating the web payload.";
+            _logger.Warn(message);
+            _interaction.ShowMessage(
+                view,
+                message,
+                "Web Payload",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return;
+        }
+
+        string payload;
+        string payloadSource;
+        if (TryExtractCodeBlobArray(output, out payload))
+        {
+            payloadSource = "code_blob[]";
+        }
+        else if (TryExtractEnvelopeString(output, out payload))
+        {
+            payloadSource = "code_blob_text[]";
+        }
+        else
+        {
+            _logger.Warn("Bin2Shell output did not contain a recognizable payload segment.");
+            _interaction.ShowMessage(
+                view,
+                "Bin2Shell output did not contain a recognizable payload segment.",
+                "Web Payload",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            _logger.Warn("Extracted payload content was empty.");
+            _interaction.ShowMessage(
+                view,
+                "Extracted payload content was empty.",
+                "Web Payload",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
+        var header = new StringBuilder();
+        header.Append($"Envelope: {envelopeDisplay}");
+        if (!string.Equals(payloadSource, "code_blob[]", StringComparison.Ordinal))
+        {
+            header.Append($" (from {payloadSource})");
+        }
+
+        _interaction.ShowCopyableText(view, "Web Payload", payload, header.ToString());
+        _logger.Ok("Web payload generated successfully.");
     }
 
     private void PopulateTemplateCombo(IMainFormView view)
@@ -778,6 +985,7 @@ public sealed class MainFormCoordinator
         {
             var catalog = await _encodingCatalog.GetCatalogAsync().ConfigureAwait(true);
             BindEncodingCombo(view.EncoderCombo, catalog.Encoders);
+            BindEnvelopeCombo(view.EnvelopeCombo, catalog.Envelopes);
             PopulateAntiEmulationCombo(view, catalog.AntiEmulation);
             _logger.Ok("Bin2Shell catalog loaded.");
         }
@@ -815,6 +1023,130 @@ public sealed class MainFormCoordinator
             combo.EndUpdate();
         }
     }
+
+    private static void BindEnvelopeCombo(ComboBox? combo, IReadOnlyCollection<ShellcodeEncodingItem> items)
+    {
+        if (combo == null)
+            return;
+
+        combo.BeginUpdate();
+        try
+        {
+            combo.Items.Clear();
+            combo.Items.Add(string.Empty);
+
+            int preferredIndex = -1;
+            foreach (var item in items.OrderBy(i => i.Index))
+            {
+                var display = item.DisplayText;
+                combo.Items.Add(display);
+
+                if (preferredIndex < 0 &&
+                    string.Equals(item.Name, "base64", StringComparison.OrdinalIgnoreCase))
+                {
+                    preferredIndex = combo.Items.Count - 1;
+                }
+            }
+
+            if (preferredIndex >= 0)
+            {
+                combo.SelectedIndex = preferredIndex;
+            }
+            else
+            {
+                combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
+            }
+        }
+        finally
+        {
+            combo.EndUpdate();
+        }
+    }
+
+    private static bool TryResolveEnvelopeSelection(
+        ComboBox combo,
+        out int index,
+        out string normalizedName,
+        out string displayText)
+    {
+        index = 0;
+        normalizedName = string.Empty;
+        displayText = string.Empty;
+
+        if (combo == null)
+            return false;
+
+        string? selected = combo.SelectedItem?.ToString();
+        string rawCandidate = !string.IsNullOrWhiteSpace(selected)
+            ? selected
+            : combo.Text ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(rawCandidate))
+            return false;
+
+        var trimmed = rawCandidate.Trim();
+        int dashIndex = trimmed.IndexOf('-');
+        string numberPart = dashIndex >= 0 ? trimmed[..dashIndex].Trim() : trimmed;
+
+        if (!int.TryParse(numberPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out index))
+            return false;
+
+        string namePart = dashIndex >= 0 ? trimmed[(dashIndex + 1)..].Trim() : string.Empty;
+        if (string.IsNullOrEmpty(namePart))
+            return false;
+
+        normalizedName = namePart
+            .Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault()?.ToLowerInvariant() ?? namePart.ToLowerInvariant();
+
+        displayText = !string.IsNullOrWhiteSpace(selected) ? selected.Trim() : trimmed;
+        return true;
+    }
+
+    private static bool TryExtractCodeBlobArray(string output, out string payload)
+    {
+        payload = string.Empty;
+        if (string.IsNullOrWhiteSpace(output))
+            return false;
+
+        var match = CodeBlobArrayRegex.Match(output);
+        if (!match.Success)
+            return false;
+
+        var body = match.Groups["body"].Value;
+        var lines = body
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => line.Length > 0);
+
+        payload = string.Join(Environment.NewLine, lines);
+        return payload.Length > 0;
+    }
+
+    private static bool TryExtractEnvelopeString(string output, out string payload)
+    {
+        payload = string.Empty;
+        if (string.IsNullOrWhiteSpace(output))
+            return false;
+
+        var match = CodeBlobTextBlockRegex.Match(output);
+        if (!match.Success)
+            return false;
+
+        var body = match.Groups["body"].Value;
+        if (string.IsNullOrWhiteSpace(body))
+            return false;
+
+        var builder = new StringBuilder();
+        foreach (Match segment in QuotedStringRegex.Matches(body))
+        {
+            builder.Append(segment.Groups["segment"].Value);
+        }
+
+        payload = builder.ToString();
+        return payload.Length > 0;
+    }
+
     private void PopulateAntiEmulationCombo(IMainFormView view, IReadOnlyCollection<AntiEmulationOption> options)
     {
         var combo = FindAntiEmulationCombo(view);

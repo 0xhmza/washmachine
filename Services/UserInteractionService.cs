@@ -26,6 +26,12 @@ public interface IUserInteractionService
         string content,
         string? header = null);
 
+    void ShowCopyableText(
+        IWin32Window owner,
+        string title,
+        string content,
+        string? header = null);
+
     void ShowShellcodeTip(IWin32Window owner);
     void ShowGuardRailInfo(IWin32Window owner);
 }
@@ -104,6 +110,103 @@ public sealed class UserInteractionService : IUserInteractionService
         bottomPanel.Resize += (_, _) =>
         {
             closeButton.Location = new Point(bottomPanel.ClientSize.Width - closeButton.Width - 16, bottomPanel.ClientSize.Height - closeButton.Height - 10);
+        };
+
+        dialog.AcceptButton = closeButton;
+        dialog.CancelButton = closeButton;
+
+        dialog.SuspendLayout();
+        dialog.Controls.Add(textBox);
+        dialog.Controls.Add(bottomPanel);
+
+        if (!string.IsNullOrWhiteSpace(header))
+        {
+            var headerLabel = new Label
+            {
+                AutoSize = false,
+                Dock = DockStyle.Top,
+                Padding = new Padding(16, 16, 16, 4),
+                Text = header,
+                Font = new Font("Segoe UI", 9f, FontStyle.Bold)
+            };
+            dialog.Controls.Add(headerLabel);
+        }
+
+        dialog.ResumeLayout(performLayout: true);
+        dialog.ShowDialog(owner);
+    }
+
+    public void ShowCopyableText(
+        IWin32Window owner,
+        string title,
+        string content,
+        string? header = null)
+    {
+        using var dialog = CreateFixedDialog(title, new Size(720, 460));
+
+        var textBox = new TextBox
+        {
+            Multiline = true,
+            ReadOnly = true,
+            ScrollBars = ScrollBars.Both,
+            WordWrap = false,
+            Font = new Font("Consolas", 9f),
+            Dock = DockStyle.Fill,
+            Text = content ?? string.Empty
+        };
+
+        var bottomPanel = new Panel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 60,
+            Padding = new Padding(16, 8, 16, 12)
+        };
+
+        var copyButton = new Button
+        {
+            Text = "Copy",
+            Size = new Size(90, 30),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Right
+        };
+
+        var closeButton = new Button
+        {
+            Text = "Close",
+            DialogResult = DialogResult.OK,
+            Size = new Size(90, 30),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Right
+        };
+
+        void LayoutButtons()
+        {
+            closeButton.Location = new Point(
+                bottomPanel.ClientSize.Width - closeButton.Width,
+                bottomPanel.ClientSize.Height - closeButton.Height);
+            copyButton.Location = new Point(
+                closeButton.Left - copyButton.Width - 10,
+                closeButton.Top);
+        }
+
+        bottomPanel.Controls.Add(copyButton);
+        bottomPanel.Controls.Add(closeButton);
+        LayoutButtons();
+        bottomPanel.Resize += (_, _) => LayoutButtons();
+
+        copyButton.Click += (_, _) =>
+        {
+            try
+            {
+                Clipboard.SetText(textBox.Text ?? string.Empty);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    dialog,
+                    $"Failed to copy payload: {ex.Message}",
+                    "Copy",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
         };
 
         dialog.AcceptButton = closeButton;
