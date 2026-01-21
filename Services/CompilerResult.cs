@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Washmachine.Models;
 
 namespace Washmachine.Services;

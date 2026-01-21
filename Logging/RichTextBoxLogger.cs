@@ -1,7 +1,3 @@
-using System;
-using System.Drawing;
-using System.Windows.Forms;
-
 namespace Washmachine.Logging;
 
 public sealed class RichTextBoxLogger : IAppLogger

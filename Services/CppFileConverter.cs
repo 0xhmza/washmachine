@@ -1,11 +1,6 @@
-using System;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using Washmachine.Logging; // <-- same logger as your other code
 using Washmachine.Models;
 
@@ -117,7 +112,7 @@ public static class CppFileConverter
         var stdOut = new StringBuilder();
         var stdErr = new StringBuilder();
         proc.OutputDataReceived += (_, e) => { if (e.Data != null) stdOut.AppendLine(e.Data); };
-        proc.ErrorDataReceived  += (_, e) => { if (e.Data != null) stdErr.AppendLine(e.Data); };
+        proc.ErrorDataReceived += (_, e) => { if (e.Data != null) stdErr.AppendLine(e.Data); };
 
         try
         {

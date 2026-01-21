@@ -1,5 +1,3 @@
-using System.Windows.Forms;
-
 namespace Washmachine.Views;
 
 public interface IMainFormView : IWin32Window

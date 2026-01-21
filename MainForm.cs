@@ -1,7 +1,4 @@
-﻿using System;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-using Washmachine.Controllers;
+﻿using Washmachine.Controllers;
 using Washmachine.Logging;
 using Washmachine.Services;
 using Washmachine.Views;

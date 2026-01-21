@@ -1,8 +1,4 @@
-﻿using System.Collections.Generic;
-using System.Linq;
-using System.Windows.Forms;
-
-/********************************************************************************************
+﻿/********************************************************************************************
  *                                ██████╗ ██╗   ██╗██╗██████╗  █████╗ ████████╗ █████╗      
  *                                ██╔══██╗██║   ██║██║██╔══██╗██╔══██╗╚══██╔══╝██╔══██╗     
  *                                ██████╔╝██║   ██║██║██████╔╝███████║   ██║   ███████║     
@@ -40,8 +36,7 @@ using System.Windows.Forms;
  *  When the user hits “Submit”, every important control’s state is captured here.   
  *                                                                                          
  ********************************************************************************************/
-                                                          // Sry for the unnecessary drama lol
-
+// Sry for the unnecessary drama lol
 
 namespace Washmachine.Models;
 

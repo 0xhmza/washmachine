@@ -1,10 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Reflection;
 using System.Text.Json;
-using System.Threading;
 using Washmachine.Models;
 using YamlDotNet.Core;
 using YamlDotNet.Serialization;
@@ -329,14 +324,14 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
             _ => SnippetInputType.TextBox
         };
 
-        private static SnippetInputPlacement ParseInputPlacement(string? value)
-            => value switch
-            {
-                null or "" => SnippetInputPlacement.AfterSelector,
-                var v when string.Equals(v, "before", StringComparison.OrdinalIgnoreCase) => SnippetInputPlacement.BeforeSelector,
-                var v when string.Equals(v, "after", StringComparison.OrdinalIgnoreCase) => SnippetInputPlacement.AfterSelector,
-                _ => SnippetInputPlacement.AfterSelector
-            };
+    private static SnippetInputPlacement ParseInputPlacement(string? value)
+        => value switch
+        {
+            null or "" => SnippetInputPlacement.AfterSelector,
+            var v when string.Equals(v, "before", StringComparison.OrdinalIgnoreCase) => SnippetInputPlacement.BeforeSelector,
+            var v when string.Equals(v, "after", StringComparison.OrdinalIgnoreCase) => SnippetInputPlacement.AfterSelector,
+            _ => SnippetInputPlacement.AfterSelector
+        };
 
     private static string NormalizeKey(string value)
         => new string((value ?? string.Empty)

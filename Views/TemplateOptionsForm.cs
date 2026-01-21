@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Drawing;
-using System.Linq;
-using System.Windows.Forms;
 using Washmachine.Models;
 
 namespace Washmachine.Views;
@@ -454,52 +449,52 @@ public sealed class TemplateOptionsForm : Form
             switch (binding.Kind)
             {
                 case FieldKind.Text:
-                {
-                    var text = (binding.Control as TextBox)?.Text ?? string.Empty;
-                    text = text.Trim();
-                    if (!string.IsNullOrWhiteSpace(text))
-                        state.TextValues[binding.Key] = text;
-                    break;
-                }
-                case FieldKind.SingleSelect:
-                {
-                    var combo = binding.Control as ComboBox;
-                    var selected = combo?.SelectedItem as OptionItem;
-                    var id = selected?.Id ?? string.Empty;
-
-                    if (string.IsNullOrWhiteSpace(id))
-                        id = combo?.SelectedValue as string ?? combo?.Text ?? string.Empty;
-
-                    id = id.Trim();
-                    if (!string.IsNullOrWhiteSpace(id))
-                        state.ComboValues[binding.Key] = id;
-                    break;
-                }
-                case FieldKind.MultiSelect:
-                {
-                    var list = binding.Control as CheckedListBox;
-                    if (list == null)
-                        break;
-
-                    var selections = new List<string>();
-                    foreach (var item in list.CheckedItems)
                     {
-                        if (item is OptionItem option && !string.IsNullOrWhiteSpace(option.Id))
-                        {
-                            selections.Add(option.Id);
-                        }
-                        else if (item != null)
-                        {
-                            var raw = item.ToString() ?? string.Empty;
-                            if (!string.IsNullOrWhiteSpace(raw))
-                                selections.Add(raw);
-                        }
+                        var text = (binding.Control as TextBox)?.Text ?? string.Empty;
+                        text = text.Trim();
+                        if (!string.IsNullOrWhiteSpace(text))
+                            state.TextValues[binding.Key] = text;
+                        break;
                     }
+                case FieldKind.SingleSelect:
+                    {
+                        var combo = binding.Control as ComboBox;
+                        var selected = combo?.SelectedItem as OptionItem;
+                        var id = selected?.Id ?? string.Empty;
 
-                    if (selections.Count > 0)
-                        state.ListValues[binding.Key] = selections;
-                    break;
-                }
+                        if (string.IsNullOrWhiteSpace(id))
+                            id = combo?.SelectedValue as string ?? combo?.Text ?? string.Empty;
+
+                        id = id.Trim();
+                        if (!string.IsNullOrWhiteSpace(id))
+                            state.ComboValues[binding.Key] = id;
+                        break;
+                    }
+                case FieldKind.MultiSelect:
+                    {
+                        var list = binding.Control as CheckedListBox;
+                        if (list == null)
+                            break;
+
+                        var selections = new List<string>();
+                        foreach (var item in list.CheckedItems)
+                        {
+                            if (item is OptionItem option && !string.IsNullOrWhiteSpace(option.Id))
+                            {
+                                selections.Add(option.Id);
+                            }
+                            else if (item != null)
+                            {
+                                var raw = item.ToString() ?? string.Empty;
+                                if (!string.IsNullOrWhiteSpace(raw))
+                                    selections.Add(raw);
+                            }
+                        }
+
+                        if (selections.Count > 0)
+                            state.ListValues[binding.Key] = selections;
+                        break;
+                    }
             }
         }
 
@@ -676,7 +671,7 @@ public sealed class TemplateOptionsForm : Form
     {
         section.IsCollapsed = collapsed;
         section.Body.Visible = !collapsed;
-        section.ToggleButton.Text = collapsed ? "[+]" : "[-]";
+        section.ToggleButton.Text = collapsed ? "+" : "-";
     }
 
     private void SetAllSectionsCollapsed(bool collapsed)
