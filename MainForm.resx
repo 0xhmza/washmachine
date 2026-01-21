@@ -120,7 +120,4 @@
   <data name="textBox4.Text" xml:space="preserve">
     <value>This tool is provided strictly for educational and research purposes. The author makes no representations or warranties of any kind regarding its accuracy, reliability, or suitability for any purpose. By using this tool, you agree that you are solely responsible for ensuring your actions comply with all applicable laws and regulations. The author explicitly disclaims any liability for misuse, damage, or unlawful activity carried out with or derived from this software. Use it at your own risk.</value>
   </data>
-  <metadata name="$this.Locked" type="System.Boolean, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089">
-    <value>True</value>
-  </metadata>
 </root>

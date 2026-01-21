@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using System.Threading;
 using Washmachine.Models;
@@ -18,6 +19,7 @@ public interface ICodeSnippetCatalogService
     bool TryGetSectionByHeader(string header, out CodeSnippetSection section);
     IReadOnlyList<CodeSnippetItem> GetItemsForHeader(string header);
     bool TryGetSectionByTemplate(string template, out CodeSnippetSection section);
+    bool TryResolveSection(string key, out CodeSnippetSection section);
     IReadOnlyList<CodeTemplateDefinition> GetTemplates();
     CodeTemplateDefinition GetTemplate(string templateId);
     bool TryGetTemplate(string templateId, out CodeTemplateDefinition template);
@@ -27,6 +29,7 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
 {
     private readonly IAppPaths _paths;
     private readonly Lazy<CatalogBundle> _catalog;
+    private const string EmbeddedCatalogResourceName = "Washmachine.Assets.vx_api_snippets.yaml";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -72,6 +75,35 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
         return _catalog.Value.Snippets.TryGetByTemplate(template, out section);
     }
 
+    public bool TryResolveSection(string key, out CodeSnippetSection section)
+    {
+        section = default!;
+        if (string.IsNullOrWhiteSpace(key))
+            return false;
+
+        if (TryGetSectionByTemplate(key, out section) || TryGetSectionByHeader(key, out section))
+            return true;
+
+        string keyNorm = NormalizeKey(key);
+        var sections = _catalog.Value.Snippets.Sections;
+
+        // Score potential matches so we can pick the closest template/header name.
+        var candidate = sections
+            .Select(s => (Section: s, Score: MatchScore(keyNorm, s)))
+            .Where(x => x.Score >= 0)
+            .OrderBy(x => x.Score)
+            .ThenBy(x => x.Section.Display, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
+
+        if (candidate.Section != null)
+        {
+            section = candidate.Section;
+            return true;
+        }
+
+        return false;
+    }
+
     public IReadOnlyList<CodeTemplateDefinition> GetTemplates()
         => _catalog.Value.Templates.Templates;
 
@@ -90,10 +122,7 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
 
     private CatalogBundle LoadCatalog()
     {
-        if (!File.Exists(_paths.SnippetCatalogFile))
-            throw new FileNotFoundException("Snippet catalog file not found.", _paths.SnippetCatalogFile);
-
-        string content = File.ReadAllText(_paths.SnippetCatalogFile);
+        string content = LoadCatalogContent();
         if (string.IsNullOrWhiteSpace(content))
             throw new InvalidOperationException("Snippet catalog is empty or invalid.");
 
@@ -137,6 +166,32 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
         return new CatalogBundle(
             new CodeSnippetCatalog(sections),
             new CodeTemplateCatalog(templates));
+    }
+
+    private string LoadCatalogContent()
+    {
+        if (File.Exists(_paths.SnippetCatalogFile))
+            return File.ReadAllText(_paths.SnippetCatalogFile);
+
+        var assembly = Assembly.GetExecutingAssembly();
+        Stream? stream = assembly.GetManifestResourceStream(EmbeddedCatalogResourceName);
+        if (stream == null)
+        {
+            var resourceName = assembly
+                .GetManifestResourceNames()
+                .FirstOrDefault(name => name.EndsWith("vx_api_snippets.yaml", StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(resourceName))
+                stream = assembly.GetManifestResourceStream(resourceName);
+        }
+
+        if (stream == null)
+            throw new FileNotFoundException("Snippet catalog file not found.", _paths.SnippetCatalogFile);
+
+        using (stream)
+        {
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
+        }
     }
 
 
@@ -274,12 +329,91 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
             _ => SnippetInputType.TextBox
         };
 
-    private static SnippetInputPlacement ParseInputPlacement(string? value)
-        => value switch
+        private static SnippetInputPlacement ParseInputPlacement(string? value)
+            => value switch
+            {
+                null or "" => SnippetInputPlacement.AfterSelector,
+                var v when string.Equals(v, "before", StringComparison.OrdinalIgnoreCase) => SnippetInputPlacement.BeforeSelector,
+                var v when string.Equals(v, "after", StringComparison.OrdinalIgnoreCase) => SnippetInputPlacement.AfterSelector,
+                _ => SnippetInputPlacement.AfterSelector
+            };
+
+    private static string NormalizeKey(string value)
+        => new string((value ?? string.Empty)
+            .Where(char.IsLetterOrDigit)
+            .Select(char.ToLowerInvariant)
+            .ToArray());
+
+    private static string TrimPlural(string value)
+    {
+        if (value.EndsWith("es", StringComparison.OrdinalIgnoreCase))
+            return value[..^2];
+        if (value.EndsWith("s", StringComparison.OrdinalIgnoreCase))
+            return value[..^1];
+        return value;
+    }
+
+    private static int MatchScore(string keyNorm, CodeSnippetSection section)
+    {
+        string headerNorm = NormalizeKey(section.Header);
+        string templateNorm = NormalizeKey(section.Template);
+
+        static bool Equalish(string a, string b)
+            => string.Equals(a, b, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(a, TrimPlural(b), StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(TrimPlural(a), b, StringComparison.OrdinalIgnoreCase);
+
+        if (Equalish(keyNorm, templateNorm) || Equalish(keyNorm, headerNorm))
+            return 0;
+
+        if (templateNorm.Contains(keyNorm, StringComparison.OrdinalIgnoreCase) ||
+            headerNorm.Contains(keyNorm, StringComparison.OrdinalIgnoreCase) ||
+            keyNorm.Contains(templateNorm, StringComparison.OrdinalIgnoreCase) ||
+            keyNorm.Contains(headerNorm, StringComparison.OrdinalIgnoreCase))
         {
-            null or "" => SnippetInputPlacement.AfterSelector,
-            var v when string.Equals(v, "before", StringComparison.OrdinalIgnoreCase) => SnippetInputPlacement.BeforeSelector,
-            var v when string.Equals(v, "after", StringComparison.OrdinalIgnoreCase) => SnippetInputPlacement.AfterSelector,
-            _ => SnippetInputPlacement.AfterSelector
-        };
+            return 1;
+        }
+
+        int sharedPrefix = LongestCommonPrefix(keyNorm, templateNorm);
+        sharedPrefix = Math.Max(sharedPrefix, LongestCommonPrefix(keyNorm, headerNorm));
+        if (sharedPrefix >= Math.Min(keyNorm.Length, templateNorm.Length) - 1 ||
+            sharedPrefix >= Math.Min(keyNorm.Length, headerNorm.Length) - 1)
+        {
+            return 2;
+        }
+
+        if (SharesKeyword(keyNorm, templateNorm, headerNorm))
+            return 3;
+
+        return -1;
+    }
+
+    private static int LongestCommonPrefix(string a, string b)
+    {
+        int len = Math.Min(a.Length, b.Length);
+        int i = 0;
+        for (; i < len; i++)
+        {
+            if (a[i] != b[i])
+                break;
+        }
+
+        return i;
+    }
+
+    private static bool SharesKeyword(string keyNorm, string templateNorm, string headerNorm)
+    {
+        string[] keywords = { "injection", "shellcode", "guard", "uac", "debug", "generic", "payload" };
+        foreach (var keyword in keywords)
+        {
+            if (keyNorm.Contains(keyword, StringComparison.OrdinalIgnoreCase) &&
+                (templateNorm.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                 headerNorm.Contains(keyword, StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

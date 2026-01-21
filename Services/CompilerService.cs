@@ -107,6 +107,8 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     private const string PlaceholderProcessInjection = "PROCESS_INJECTION";
     private const string PlaceholderShellcodeExecution = "SHELLCODE_EXECUTION";
 
+    private static readonly string[] CompilerExecutables = { "cl.exe", "g++.exe", "clang++.exe" };
+
     private readonly IAppPaths _paths;
     private readonly IBin2ShellRunner _bin2ShellRunner;
     private readonly ICodeSnippetCatalogService _snippets;
@@ -129,7 +131,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
     public async Task<CompilerResult> CompileAsync(UiData data, CancellationToken cancellationToken = default)
     {
-        if (data == null) throw new ArgumentNullException(nameof(data));
+        ArgumentNullException.ThrowIfNull(data);
 
         ValidateEnvironment();
 
@@ -157,6 +159,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             var template = ResolveTemplate(data);
             notes.Add($"Template selected: {template.Display} ({template.Id}).");
 
+            // Build the plan, render the template, then compile if a toolchain is available.
             var plan = new CppCompilationPlan();
             var shellcodeSource = DetermineShellcodeSource(data);
 
@@ -419,17 +422,12 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         if (!string.IsNullOrWhiteSpace(msvc))
             return msvc;
 
-        var cl = TryGetExecutableDirectory(root, "cl.exe");
-        if (!string.IsNullOrWhiteSpace(cl))
-            return cl;
-
-        var gcc = TryGetExecutableDirectory(root, "g++.exe");
-        if (!string.IsNullOrWhiteSpace(gcc))
-            return gcc;
-
-        var clang = TryGetExecutableDirectory(root, "clang++.exe");
-        if (!string.IsNullOrWhiteSpace(clang))
-            return clang;
+        foreach (var executable in CompilerExecutables)
+        {
+            var found = TryGetExecutableDirectory(root, executable);
+            if (!string.IsNullOrWhiteSpace(found))
+                return found;
+        }
 
         return string.Empty;
     }
@@ -584,8 +582,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         CodeTemplateDefinition template,
         ICollection<string> notes)
     {
-        if (template == null)
-            throw new ArgumentNullException(nameof(template));
+        ArgumentNullException.ThrowIfNull(template);
 
         foreach (var placeholder in template.Placeholders)
         {
@@ -635,6 +632,39 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         }
     }
 
+    private bool TryGetSectionSelections(
+        UiData data,
+        string templateKey,
+        out CodeSnippetSection section,
+        out IReadOnlyList<CodeSnippetItem> selections,
+        string? missingMessage = null)
+    {
+        selections = Array.Empty<CodeSnippetItem>();
+        if (!_snippets.TryResolveSection(templateKey, out section))
+        {
+            _logger.Warn(missingMessage ?? $"Snippet section '{templateKey}' is missing in the catalog.");
+            return false;
+        }
+
+        selections = ResolveSnippetSelections(data, section);
+        return selections.Count > 0;
+    }
+
+    private bool TryGetFirstSelection(
+        UiData data,
+        string templateKey,
+        out CodeSnippetSection section,
+        out CodeSnippetItem selection,
+        string? missingMessage = null)
+    {
+        selection = default!;
+        if (!TryGetSectionSelections(data, templateKey, out section, out var selections, missingMessage))
+            return false;
+
+        selection = selections[0];
+        return true;
+    }
+
     private void ApplyComboSelection(
         CppCompilationPlan plan,
         UiData data,
@@ -643,14 +673,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         ICollection<string> notes,
         Action<CppCompilationPlan, CodeSnippetItem> apply)
     {
-        if (!_snippets.TryGetSectionByTemplate(templateKey, out var section))
-        {
-            _logger.Warn($"Snippet section '{templateKey}' is missing in the catalog.");
-            return;
-        }
-
-        var selection = ResolveSnippetSelections(data, section).FirstOrDefault();
-        if (selection == null)
+        if (!TryGetFirstSelection(data, templateKey, out var section, out var selection))
             return;
 
         apply(plan, selection);
@@ -664,14 +687,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         string placeholderName,
         ICollection<string> notes)
     {
-        if (!_snippets.TryGetSectionByTemplate(TemplateGuardrail, out var section))
-        {
-            _logger.Warn("Snippet section 'GUARDRAIL' is missing in the catalog.");
-            return;
-        }
-
-        var selection = ResolveSnippetSelections(data, section).FirstOrDefault();
-        if (selection == null)
+        if (!TryGetFirstSelection(data, TemplateGuardrail, out var section, out var selection))
             return;
 
         var parameter = data.TextBoxes.TryGetValue("guardrailParamTextBox", out var rawParam)
@@ -700,14 +716,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         string placeholderName,
         ICollection<string> notes)
     {
-        if (!_snippets.TryGetSectionByTemplate(TemplateProcessInjection, out var section))
-        {
-            _logger.Warn("Snippet section 'PSINJECTION' is missing in the catalog.");
-            return;
-        }
-
-        var selection = ResolveSnippetSelections(data, section).FirstOrDefault();
-        if (selection == null)
+        if (!TryGetFirstSelection(data, TemplateProcessInjection, out var section, out var selection))
             return;
 
         if (!data.TextBoxes.TryGetValue("PsInjPsNameTextBox", out var psName) || string.IsNullOrWhiteSpace(psName))
@@ -733,14 +742,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         string placeholderName,
         ICollection<string> notes)
     {
-        if (!_snippets.TryGetSectionByTemplate(TemplateAntiDebug, out var section))
-        {
-            _logger.Warn("Snippet section 'ANTIDEBUGGING' is missing in the catalog.");
-            return;
-        }
-
-        var selections = ResolveSnippetSelections(data, section);
-        if (selections.Count == 0)
+        if (!TryGetSectionSelections(data, TemplateAntiDebug, out var section, out var selections))
             return;
 
         foreach (var item in selections)
@@ -760,14 +762,12 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         if (placeholder == null)
             return;
 
-        if (!_snippets.TryGetSectionByTemplate(placeholder.SnippetTemplateKey, out var section))
-        {
-            _logger.Warn($"Snippet section '{placeholder.SnippetTemplateKey}' referenced by placeholder '{placeholder.Name}' is missing.");
-            return;
-        }
-
-        var selections = ResolveSnippetSelections(data, section);
-        if (selections.Count == 0)
+        if (!TryGetSectionSelections(
+                data,
+                placeholder.SnippetTemplateKey,
+                out var section,
+                out var selections,
+                $"Snippet section '{placeholder.SnippetTemplateKey}' referenced by placeholder '{placeholder.Name}' is missing."))
             return;
 
         foreach (var item in selections)
@@ -798,8 +798,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
     private string RenderTemplate(CppCompilationPlan plan, CodeTemplateDefinition template)
     {
-        if (template == null)
-            throw new ArgumentNullException(nameof(template));
+        ArgumentNullException.ThrowIfNull(template);
 
         var values = BuildPlaceholderValues(plan);
         return ApplyTemplateContent(template.Content ?? string.Empty, values);
@@ -807,6 +806,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
     private static Dictionary<string, string> BuildPlaceholderValues(CppCompilationPlan plan)
     {
+        // Map template placeholders to generated snippet blocks.
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var entry in plan.CustomSnippetBlocks)
@@ -824,45 +824,39 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         var shellcodeBlock = BuildShellcodeSourceBlock(plan);
         AddPlaceholder(values, PlaceholderShellcodeSource, shellcodeBlock, overwrite: true);
 
-        if (!string.IsNullOrWhiteSpace(plan.UrlShellcodeSnippet))
-        {
-            var urlBlock = $"// URL-based shellcode{Environment.NewLine}{plan.UrlShellcodeSnippet}";
-            AddPlaceholder(values, PlaceholderShellcodeUrl, urlBlock, overwrite: true);
-        }
-
-        if (plan.GuardrailSnippets.Count > 0)
-        {
-            var guardrailContent = string.Join(Environment.NewLine, plan.GuardrailSnippets);
-            var guardrailBlock = $"// Guardrails{Environment.NewLine}{guardrailContent}";
-            AddPlaceholder(values, PlaceholderGuardrails, guardrailBlock, overwrite: true);
-        }
-
-        if (plan.AntiDebuggingSnippets.Count > 0)
-        {
-            var antiDebugContent = string.Join(Environment.NewLine, plan.AntiDebuggingSnippets);
-            var antiDebugBlock = $"// Anti-debugging{Environment.NewLine}{antiDebugContent}";
-            AddPlaceholder(values, PlaceholderAntiDebug, antiDebugBlock, overwrite: true);
-        }
-
-        if (!string.IsNullOrWhiteSpace(plan.UacBypassSnippet))
-        {
-            var uacBlock = $"// UAC bypass{Environment.NewLine}{plan.UacBypassSnippet}";
-            AddPlaceholder(values, PlaceholderUacBypass, uacBlock, overwrite: true);
-        }
-
-        if (!string.IsNullOrWhiteSpace(plan.ProcessInjectionSnippet))
-        {
-            var injectionBlock = $"// Process injection{Environment.NewLine}{plan.ProcessInjectionSnippet}";
-            AddPlaceholder(values, PlaceholderProcessInjection, injectionBlock, overwrite: true);
-        }
-
-        if (!string.IsNullOrWhiteSpace(plan.ShellcodeExecutionSnippet))
-        {
-            var executionBlock = $"// Shellcode execution{Environment.NewLine}{plan.ShellcodeExecutionSnippet}";
-            AddPlaceholder(values, PlaceholderShellcodeExecution, executionBlock, overwrite: true);
-        }
+        AddHeaderBlock(values, PlaceholderShellcodeUrl, "URL-based shellcode", plan.UrlShellcodeSnippet);
+        AddHeaderBlock(values, PlaceholderGuardrails, "Guardrails", plan.GuardrailSnippets);
+        AddHeaderBlock(values, PlaceholderAntiDebug, "Anti-debugging", plan.AntiDebuggingSnippets);
+        AddHeaderBlock(values, PlaceholderUacBypass, "UAC bypass", plan.UacBypassSnippet);
+        AddHeaderBlock(values, PlaceholderProcessInjection, "Process injection", plan.ProcessInjectionSnippet);
+        AddHeaderBlock(values, PlaceholderShellcodeExecution, "Shellcode execution", plan.ShellcodeExecutionSnippet);
 
         return values;
+    }
+
+    private static void AddHeaderBlock(
+        IDictionary<string, string> values,
+        string key,
+        string header,
+        string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return;
+
+        AddPlaceholder(values, key, $"// {header}{Environment.NewLine}{content}", overwrite: true);
+    }
+
+    private static void AddHeaderBlock(
+        IDictionary<string, string> values,
+        string key,
+        string header,
+        IEnumerable<string> lines)
+    {
+        if (lines == null)
+            return;
+
+        var content = string.Join(Environment.NewLine, lines);
+        AddHeaderBlock(values, key, header, content);
     }
 
     private static void AddPlaceholder(
@@ -889,19 +883,14 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
     private static string BuildShellcodeSourceBlock(CppCompilationPlan plan)
     {
-        if (plan == null)
-            return string.Empty;
-
+        ArgumentNullException.ThrowIfNull(plan);
         var sb = new StringBuilder();
-        bool hasEncodedShellcode = !string.IsNullOrWhiteSpace(plan.EncodedShellcodeSnippet);
-        bool usesGenericShellcode = plan.UsesGenericShellcode;
-
-        if (hasEncodedShellcode)
+        if (!string.IsNullOrWhiteSpace(plan.EncodedShellcodeSnippet))
         {
             sb.AppendLine(plan.EncodedShellcodeSnippet!.TrimEnd());
             sb.Append("DWORD dwSize = (DWORD)code_blob_len;");
         }
-        else if (usesGenericShellcode)
+        else if (plan.UsesGenericShellcode)
         {
             sb.AppendLine("DWORD dwSize = 0;");
             sb.AppendLine();
@@ -982,8 +971,8 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
     private IReadOnlyList<CodeSnippetItem> ResolveSnippetSelections(UiData data, CodeSnippetSection section)
     {
-        if (data == null) throw new ArgumentNullException(nameof(data));
-        if (section == null) throw new ArgumentNullException(nameof(section));
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(section);
 
         var matches = new List<(int Index, CodeSnippetItem Item)>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1068,6 +1057,12 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             args.Add(encoderIndex.ToString(CultureInfo.InvariantCulture));
         }
 
+        if (TryGetEnvelopeIndex(data, out int envelopeIndex))
+        {
+            args.Add("-env");
+            args.Add(envelopeIndex.ToString(CultureInfo.InvariantCulture));
+        }
+
         var antiSelection = GetAntiEmulationSelection(data);
         var antiArgs = GetAntiEmulationArgs(data);
 
@@ -1122,6 +1117,42 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         return false;
     }
 
+    private static bool TryGetEnvelopeIndex(UiData data, out int index)
+    {
+        index = 0;
+
+        string[] preferredKeys =
+        {
+            "bin2hexEnvelope",
+            "bin2shellEnvelope",
+            "bin2ShellEnvelope",
+            "bin2shellEnv",
+            "bin2ShellEnv"
+        };
+
+        foreach (var key in preferredKeys)
+        {
+            if (data.ComboBoxes.TryGetValue(key, out var raw) && TryParseIndex(raw, out index) && index > 0)
+                return true;
+        }
+
+        foreach (var entry in data.ComboBoxes)
+        {
+            var key = entry.Key ?? string.Empty;
+            if (key.IndexOf("bin2", StringComparison.OrdinalIgnoreCase) < 0)
+                continue;
+            if (key.IndexOf("env", StringComparison.OrdinalIgnoreCase) < 0 &&
+                key.IndexOf("envelope", StringComparison.OrdinalIgnoreCase) < 0)
+                continue;
+
+            if (TryParseIndex(entry.Value, out index) && index > 0)
+                return true;
+        }
+
+        index = 0;
+        return false;
+    }
+
     private static string? GetAntiEmulationSelection(UiData data)
     {
         string[] candidateKeys =
@@ -1153,8 +1184,8 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         foreach (var entry in data.ComboBoxes)
         {
             var key = entry.Key ?? string.Empty;
-            if (key.IndexOf("bin2", StringComparison.OrdinalIgnoreCase) < 0 &&
-                key.IndexOf("anti", StringComparison.OrdinalIgnoreCase) < 0)
+            if (key.IndexOf("anti", StringComparison.OrdinalIgnoreCase) < 0 &&
+                key.IndexOf("emulation", StringComparison.OrdinalIgnoreCase) < 0)
             {
                 continue;
             }

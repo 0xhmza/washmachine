@@ -72,9 +72,9 @@ templates:
         snippetTemplate: "SHELLCODEEXECUTION"
 
 sections:
-  - header: "ANTI-DEBUGGING"
-    template: "ANTIDEBUGGING"
-    display: "Anti-Debugging"
+  - header: "Anti Debugging"
+    template: "anti_debugging"
+    display: "Anti Debugging"
     allowMultiple: true
     items:
       - id: "AdfCloseHandleOnInvalidAddress"
@@ -95,8 +95,8 @@ sections:
 
           return FALSE;
 
-  - header: "PROCESS INJECTION"
-    template: "PSINJECTION"
+  - header: "Process Injection"
+    template: "process_injection"
     display: "Process Injection"
     allowMultiple: false
     inputs:
@@ -112,8 +112,8 @@ sections:
         snippet: |
           if (MpfProcessInjectionViaProcessReflection((PBYTE)code_blob,dwSize, GetProcessOrThreadId(L"$psname$", true))) return 1;
 
-  - header: "SHELLCODE EXECUTION"
-    template: "SHELLCODEEXECUTION"
+  - header: "Shellcode Execution"
+    template: "shellcode_execution"
     display: "Shellcode Execution"
     allowMultiple: false
     items:
@@ -139,9 +139,9 @@ sections:
 
 
 
-  - header: "GENERIC SHELLCODE PAYLOADS FOR TESTINGS"
-    template: "GENERICSHELLCODE"
-    display: "Generic Shellcode Payloads"
+  - header: "Generic Payload"
+    template: "generic_shellcoes"
+    display: "Generic Payload"
     allowMultiple: false
     items:
       - id: "GenericShellcodeOpenCalcExitThread"
@@ -185,8 +185,8 @@ sections:
           
           return Payload;
 
-  - header: "GUARDRAILS"
-    template: "GUARDRAIL"
+  - header: "Guardrails"
+    template: "Guardrails"
     display: "Guardrails (env vars)"
     allowMultiple: false
     inputs:
@@ -207,9 +207,9 @@ sections:
               return 0;
           }
 
-  - header: "UAC BYPASSES"
-    template: "UACB"
-    display: "UAC Bypasses"
+  - header: "UAC Bypass"
+    template: "uac_bypass"
+    display: "UAC Bypass"
     allowMultiple: false
     items:
       - id: "UacBypassFodHelperMethodA"

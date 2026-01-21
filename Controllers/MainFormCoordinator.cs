@@ -35,6 +35,8 @@ public sealed class MainFormCoordinator
     private readonly IClipboardService _clipboard;
     private readonly IUserInteractionService _interaction;
     private IReadOnlyList<CodeTemplateDefinition> _templates = Array.Empty<CodeTemplateDefinition>();
+    private TemplateOptionsState _templateOptions = new();
+    private string _templateOptionsTemplateId = string.Empty;
 
     public MainFormCoordinator(
         IAppLogger logger,
@@ -71,7 +73,9 @@ public sealed class MainFormCoordinator
         }
 
         PopulateTemplateCombo(view);
-        PopulateSnippetControls(view, GetSelectedTemplate(view));
+        var selectedTemplate = GetSelectedTemplate(view);
+        ResetTemplateOptions(selectedTemplate);
+        UpdateTemplateContext(view, selectedTemplate);
         await LoadEncodingCombosAsync(view).ConfigureAwait(true);
     }
 
@@ -165,6 +169,7 @@ public sealed class MainFormCoordinator
         {
             _logger.Ok("Validation passed. Collecting UI data...");
             var data = new UiData(view.RootControl);
+            MergeTemplateOptions(data);
             LogCollectedData(data);
 
             _logger.Info("Generating source from selected snippets...");
@@ -494,7 +499,44 @@ public sealed class MainFormCoordinator
 
     public void HandleTemplateChanged(IMainFormView view)
     {
-        PopulateSnippetControls(view, GetSelectedTemplate(view));
+        var selectedTemplate = GetSelectedTemplate(view);
+        ResetTemplateOptions(selectedTemplate);
+        UpdateTemplateContext(view, selectedTemplate);
+    }
+
+    public void OpenTemplateConfig(IMainFormView view)
+    {
+        if (view == null) throw new ArgumentNullException(nameof(view));
+
+        var template = GetSelectedTemplate(view);
+        if (template == null)
+        {
+            _interaction.ShowMessage(view,
+                "No template is currently selected.",
+                "Template Options",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
+        var sections = GetTemplateSections(template, out _, out _);
+        if (sections.Count == 0)
+        {
+            _interaction.ShowMessage(view,
+                "No template options were found for the selected template.",
+                "Template Options",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        using var dialog = new TemplateOptionsForm(template, sections, _templateOptions);
+        if (dialog.ShowDialog(view) == DialogResult.OK)
+        {
+            _templateOptions = dialog.ResultState ?? new TemplateOptionsState();
+            _templateOptionsTemplateId = template.Id ?? string.Empty;
+            _logger.Ok($"Template options updated for '{template.Display}'.");
+        }
     }
 
     private CodeTemplateDefinition? GetSelectedTemplate(IMainFormView view)
@@ -531,6 +573,118 @@ public sealed class MainFormCoordinator
         return _templates.FirstOrDefault();
     }
 
+    private void ResetTemplateOptions(CodeTemplateDefinition? template)
+    {
+        string templateId = template?.Id ?? string.Empty;
+        if (!string.Equals(_templateOptionsTemplateId, templateId, StringComparison.OrdinalIgnoreCase))
+        {
+            _templateOptionsTemplateId = templateId;
+            _templateOptions = new TemplateOptionsState();
+        }
+    }
+
+    private void MergeTemplateOptions(UiData data)
+    {
+        if (data == null)
+            return;
+
+        foreach (var entry in _templateOptions.TextValues)
+        {
+            data.TextBoxes[entry.Key] = entry.Value ?? string.Empty;
+        }
+
+        foreach (var entry in _templateOptions.ComboValues)
+        {
+            data.ComboBoxes[entry.Key] = entry.Value ?? string.Empty;
+        }
+
+        foreach (var entry in _templateOptions.ListValues)
+        {
+            if (entry.Value == null || entry.Value.Count == 0)
+                continue;
+
+            data.ListBoxes[entry.Key] = new List<string>(entry.Value);
+        }
+    }
+
+    private void UpdateTemplateContext(IMainFormView view, CodeTemplateDefinition? template)
+    {
+        if (view == null) throw new ArgumentNullException(nameof(view));
+
+        var sections = GetTemplateSections(template, out var genericSection, out bool templateProvided);
+        PopulateGenericShellcodeCombo(view, genericSection);
+
+        if (templateProvided && template != null)
+            _logger.Info($"Template '{template.Display}' ready. Use Config to edit options.");
+        else
+            _logger.Info("Template options ready. Use Config to edit options.");
+    }
+
+    private IReadOnlyList<CodeSnippetSection> GetTemplateSections(
+        CodeTemplateDefinition? template,
+        out CodeSnippetSection? genericSection,
+        out bool templateProvided)
+    {
+        var sections = new List<CodeSnippetSection>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        genericSection = null;
+        templateProvided = template != null;
+
+        var snippetPlaceholders = template?.Placeholders
+            .Where(p => p != null && p.Kind == TemplatePlaceholderKind.Snippet && !string.IsNullOrWhiteSpace(p.SnippetTemplateKey))
+            .ToList();
+
+        if (snippetPlaceholders != null && snippetPlaceholders.Count > 0)
+        {
+            foreach (var placeholder in snippetPlaceholders)
+            {
+                var snippetKey = placeholder.SnippetTemplateKey;
+                if (string.IsNullOrWhiteSpace(snippetKey))
+                    continue;
+
+                if (_snippetCatalog.TryResolveSection(snippetKey, out var section))
+                {
+                    if (IsGenericSection(section))
+                    {
+                        genericSection ??= section;
+                        continue;
+                    }
+
+                    var sectionKey = SnippetControlNaming.GetSectionKey(section);
+                    if (seen.Add(sectionKey))
+                        sections.Add(section);
+                }
+                else
+                {
+                    _logger.Warn($"Template '{template!.Id}' references missing snippet section '{snippetKey}'.");
+                }
+            }
+        }
+        else
+        {
+            foreach (var section in _snippetCatalog.GetAllSections())
+            {
+                if (section == null)
+                    continue;
+
+                if (IsGenericSection(section))
+                {
+                    genericSection ??= section;
+                    continue;
+                }
+
+                var sectionKey = SnippetControlNaming.GetSectionKey(section);
+                if (seen.Add(sectionKey))
+                    sections.Add(section);
+            }
+
+            templateProvided = false;
+        }
+
+        return sections;
+    }
+
     private void PopulateSnippetControls(IMainFormView view, CodeTemplateDefinition? template)
     {
         if (view == null) throw new ArgumentNullException(nameof(view));
@@ -561,20 +715,21 @@ public sealed class MainFormCoordinator
                     if (string.IsNullOrWhiteSpace(snippetKey))
                         continue;
 
-                    if (!_snippetCatalog.TryGetSectionByTemplate(snippetKey, out var section))
+                    if (_snippetCatalog.TryResolveSection(snippetKey, out var section))
+                    {
+                        if (IsGenericSection(section))
+                        {
+                            genericSection ??= section;
+                            continue;
+                        }
+
+                        var ui = new SnippetSectionUi(section);
+                        AddSnippetSectionControls(view, panel, ui);
+                    }
+                    else
                     {
                         _logger.Warn($"Template '{template!.Id}' references missing snippet section '{snippetKey}'.");
-                        continue;
                     }
-
-                    if (string.Equals(section.Template, TemplateGenericShellcode, StringComparison.OrdinalIgnoreCase))
-                    {
-                        genericSection ??= section;
-                        continue;
-                    }
-
-                    var ui = new SnippetSectionUi(section);
-                    AddSnippetSectionControls(view, panel, ui);
                 }
             }
             else
@@ -584,7 +739,7 @@ public sealed class MainFormCoordinator
                     if (section == null)
                         continue;
 
-                    if (string.Equals(section.Template, TemplateGenericShellcode, StringComparison.OrdinalIgnoreCase))
+                    if (IsGenericSection(section))
                     {
                         genericSection ??= section;
                         continue;
@@ -1299,6 +1454,46 @@ public sealed class MainFormCoordinator
 
         return string.Empty;
     }
+
+    private static bool IsGenericSection(CodeSnippetSection section)
+    {
+        if (section == null)
+            return false;
+
+        string key = TemplateGenericShellcode;
+        return SectionMatchesKey(section, key) ||
+               section.Display.Contains("generic", StringComparison.OrdinalIgnoreCase) ||
+               section.Header.Contains("generic", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool SectionMatchesKey(CodeSnippetSection section, string key)
+    {
+        string keyNorm = NormalizeKey(key);
+        string headerNorm = NormalizeKey(section.Header);
+        string templateNorm = NormalizeKey(section.Template);
+
+        static string TrimPlural(string value)
+        {
+            if (value.EndsWith("es", StringComparison.OrdinalIgnoreCase))
+                return value[..^2];
+            if (value.EndsWith("s", StringComparison.OrdinalIgnoreCase))
+                return value[..^1];
+            return value;
+        }
+
+        bool Equalish(string a, string b)
+            => string.Equals(a, b, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(a, TrimPlural(b), StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(TrimPlural(a), b, StringComparison.OrdinalIgnoreCase);
+
+        return Equalish(keyNorm, headerNorm) || Equalish(keyNorm, templateNorm);
+    }
+
+    private static string NormalizeKey(string value)
+        => new string((value ?? string.Empty)
+            .Where(char.IsLetterOrDigit)
+            .Select(char.ToLowerInvariant)
+            .ToArray());
 
     private sealed class SnippetSectionUi
     {

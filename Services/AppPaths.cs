@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Reflection;
 using System.Threading;
 
 namespace Washmachine.Services;
@@ -23,6 +25,7 @@ public interface IAppPaths
 /// </summary>
 public sealed class AppPaths : IAppPaths
 {
+    private const string EmbeddedCatalogResourceName = "Washmachine.Assets.vx_api_snippets.yaml";
     private readonly Lazy<string> _tempShellcodeDir;
     private readonly Lazy<string> _tempSourceDir;
 
@@ -53,19 +56,18 @@ public sealed class AppPaths : IAppPaths
     {
         var errors = new List<string>();
 
-        if (!Directory.Exists(AssetsDirectory))
-            errors.Add($"Assets directory not found: '{AssetsDirectory}'.");
-
-        if (!File.Exists(SnippetCatalogFile))
+        if (!File.Exists(SnippetCatalogFile) && !HasEmbeddedSnippetCatalog())
             errors.Add($"Snippet catalog missing: '{SnippetCatalogFile}'.");
 
-        if (!File.Exists(Bin2ShellScript))
-            errors.Add($"Bin2Shell script missing: '{Bin2ShellScript}'.");
-
-        if (!File.Exists(Bin2ShellAlgos))
-            errors.Add($"Bin2Shell algos.yaml missing: '{Bin2ShellAlgos}'.");
-
         return errors;
+    }
+
+    private static bool HasEmbeddedSnippetCatalog()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        return assembly.GetManifestResourceNames().Any(name =>
+            name.Equals(EmbeddedCatalogResourceName, StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith("vx_api_snippets.yaml", StringComparison.OrdinalIgnoreCase));
     }
 
     private string CreateTempShellcodeDir()

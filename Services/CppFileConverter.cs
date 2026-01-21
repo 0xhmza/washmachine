@@ -23,12 +23,15 @@ public static class CppFileConverter
         IAppLogger logger,
         CancellationToken cancellationToken = default)
     {
-        if (directory == null)
-            throw new ArgumentNullException(nameof(directory));
-        if (compilerDirectory == null)
-            throw new ArgumentNullException(nameof(compilerDirectory));
-        if (logger == null)
-            throw new ArgumentNullException(nameof(logger));
+        ArgumentNullException.ThrowIfNull(directory);
+        ArgumentNullException.ThrowIfNull(compilerDirectory);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        CppFileConversionResult Fail(string message)
+        {
+            logger.Warn(message);
+            return new CppFileConversionResult(false, message);
+        }
 
         logger.Info($"Starting C++ conversion: dir='{directory}', compilerDir='{compilerDirectory}'");
         cancellationToken.ThrowIfCancellationRequested();
@@ -36,23 +39,20 @@ public static class CppFileConverter
         if (!Directory.Exists(directory))
         {
             string msg = $"Source directory not found: {directory}";
-            logger.Warn(msg);
-            return new CppFileConversionResult(false, msg);
+            return Fail(msg);
         }
 
         if (!Directory.Exists(compilerDirectory))
         {
             string msg = $"Compiler directory not found: {compilerDirectory}";
-            logger.Warn(msg);
-            return new CppFileConversionResult(false, msg);
+            return Fail(msg);
         }
 
         var sources = Directory.GetFiles(directory, "*.cpp", SearchOption.TopDirectoryOnly);
         if (sources.Length == 0)
         {
             string msg = "No .cpp files found to compile.";
-            logger.Warn(msg);
-            return new CppFileConversionResult(false, msg);
+            return Fail(msg);
         }
 
         logger.Info($"Discovered {sources.Length} .cpp file(s) to compile. First few: {string.Join(", ", sources.Take(3).Select(Path.GetFileName))}{(sources.Length > 3 ? ", ..." : string.Empty)}");
@@ -67,13 +67,12 @@ public static class CppFileConverter
         if (compilerPath == null)
         {
             const string msg = "No supported compiler found. Expected cl.exe, g++.exe, or clang++.exe in compilerDirectory.";
-            logger.Warn(msg);
-            return new CppFileConversionResult(false, msg);
+            return Fail(msg);
         }
 
         logger.Info($"Detected compiler: '{compilerPath}' ({family})");
 
-        // Build to a temporary exe name first, then hash and rename
+        // Build to a temporary exe name first, then hash and rename after compilation succeeds.
         var tempExe = Path.Combine(outputDir, $"build-{Guid.NewGuid():N}.exe");
         var args = BuildCompilerArgs(family, sources, tempExe);
         var vcVarsScript = family == CompilerFamily.MSVC
@@ -125,8 +124,7 @@ public static class CppFileConverter
             if (!proc.Start())
             {
                 const string msg = "Failed to start compiler process.";
-                logger.Warn(msg);
-                return new CppFileConversionResult(false, msg);
+                return Fail(msg);
             }
 
             proc.BeginOutputReadLine();
@@ -146,22 +144,20 @@ public static class CppFileConverter
         {
             logger.Warn("Compilation cancelled by caller.");
             TryKill(proc);
-            if (File.Exists(tempExe)) SafeDelete(tempExe);
+            SafeDelete(tempExe);
             throw;
         }
         catch (Exception ex)
         {
             TryKill(proc);
-            if (File.Exists(tempExe)) SafeDelete(tempExe);
-            string msg = $"Compiler failed to launch: {ex.Message}";
-            logger.Warn(msg);
-            return new CppFileConversionResult(false, msg);
+            SafeDelete(tempExe);
+            return Fail($"Compiler failed to launch: {ex.Message}");
         }
 
         logger.Info($"Compiler exited with code {proc.ExitCode}.");
         if (proc.ExitCode != 0 || !File.Exists(tempExe))
         {
-            if (File.Exists(tempExe)) SafeDelete(tempExe);
+            SafeDelete(tempExe);
 
             var msg = new StringBuilder();
             msg.AppendLine("Compilation failed.");
@@ -191,9 +187,7 @@ public static class CppFileConverter
         catch (Exception ex)
         {
             SafeDelete(tempExe);
-            string msg = $"Failed to hash output exe: {ex.Message}";
-            logger.Warn(msg);
-            return new CppFileConversionResult(false, msg);
+            return Fail($"Failed to hash output exe: {ex.Message}");
         }
 
         var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
@@ -213,9 +207,7 @@ public static class CppFileConverter
         catch (Exception ex)
         {
             SafeDelete(tempExe);
-            string msg = $"Failed to finalize output exe: {ex.Message}";
-            logger.Warn(msg);
-            return new CppFileConversionResult(false, msg);
+            return Fail($"Failed to finalize output exe: {ex.Message}");
         }
 
         return new CppFileConversionResult(true, null);
@@ -244,19 +236,16 @@ public static class CppFileConverter
     private static string BuildCompilerArgs(CompilerFamily family, string[] sources, string outputExe)
     {
         static string Q(string s) => $"\"{s}\"";
+        var src = string.Join(" ", sources.Select(Q));
 
         if (family == CompilerFamily.MSVC)
         {
             // Size-focused build
-            var src = string.Join(" ", sources.Select(Q));
             return $"/nologo /O1 /Gy /DNDEBUG /EHsc /Fe:{Q(outputExe)} {src} /link /OPT:REF /OPT:ICF /INCREMENTAL:NO";
         }
-        else
-        {
-            // GCC/Clang size-focused build
-            var src = string.Join(" ", sources.Select(Q));
-            return $"-Os -s -ffunction-sections -fdata-sections -Wl,--gc-sections -DNDEBUG -o {Q(outputExe)} {src}";
-        }
+
+        // GCC/Clang size-focused build
+        return $"-Os -s -ffunction-sections -fdata-sections -Wl,--gc-sections -DNDEBUG -o {Q(outputExe)} {src}";
     }
 
     private static void TryKill(Process p)
