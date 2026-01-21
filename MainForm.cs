@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Drawing;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Washmachine.Controllers;
@@ -14,27 +13,10 @@ public partial class MainForm : Form, IMainFormView
     private readonly IAppLogger _logger;
     private readonly MainFormCoordinator _coordinator;
     private readonly IRequirementProvisioner _requirements;
-    private readonly FlowLayoutPanel SnippetsPicker;
 
     public MainForm()
     {
         InitializeComponent();
-
-        SnippetsPicker = new FlowLayoutPanel
-        {
-            Name = "SnippetsPicker",
-            AutoScroll = true,
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = false,
-            BorderStyle = BorderStyle.FixedSingle,
-            Location = new Point(groupBox1.Left, groupBox1.Bottom + 6),
-            Size = new Size(groupBox1.Width, 140),
-            Margin = new Padding(3, 4, 3, 4),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-            Visible = false,
-            TabStop = false
-        };
-        MainTab.Controls.Add(SnippetsPicker);
 
         _logger = new RichTextBoxLogger(debugBox);
 
@@ -65,7 +47,6 @@ public partial class MainForm : Form, IMainFormView
     public ComboBox EncoderCombo => bin2hexEncoder;
     public ComboBox EnvelopeCombo => bin2hexEnvelope;
     public ComboBox TemplateCombo => templateComboBox;
-    public FlowLayoutPanel SnippetPickerPanel => SnippetsPicker;
     public ComboBox GenericShellcodeCombo => genericShellcodeComboBox;
     public TextBox ShellcodeFileTextBox => shellcodeFile;
     public TextBox ShellcodeRawTextBox => shellcodeRAW;

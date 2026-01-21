@@ -471,18 +471,19 @@ public sealed class MainFormCoordinator
                 combo.DropDownStyle = ComboBoxStyle.DropDownList;
                 combo.Items.Clear();
 
+                combo.Items.Add(new TemplateComboItem(string.Empty, "None"));
+
                 foreach (var template in _templates)
                     combo.Items.Add(new TemplateComboItem(template.Id, template.Display));
 
-                if (combo.Items.Count > 0 && combo.SelectedIndex < 0)
-                    combo.SelectedIndex = 0;
+                combo.SelectedIndex = 0;
             }
             finally
             {
                 combo.EndUpdate();
             }
 
-            _logger.Ok($"Loaded {_templates.Count} template(s) into chooser.");
+            _logger.Ok($"Loaded {_templates.Count} template(s) into chooser (default None).");
         }
         catch (Exception ex)
         {
@@ -499,9 +500,16 @@ public sealed class MainFormCoordinator
 
     public void HandleTemplateChanged(IMainFormView view)
     {
+        if (view == null) throw new ArgumentNullException(nameof(view));
+
         var selectedTemplate = GetSelectedTemplate(view);
         ResetTemplateOptions(selectedTemplate);
         UpdateTemplateContext(view, selectedTemplate);
+
+        if (selectedTemplate != null)
+        {
+            OpenTemplateConfig(view, selectedTemplate);
+        }
     }
 
     public void OpenTemplateConfig(IMainFormView view)
@@ -509,33 +517,54 @@ public sealed class MainFormCoordinator
         if (view == null) throw new ArgumentNullException(nameof(view));
 
         var template = GetSelectedTemplate(view);
+        OpenTemplateConfig(view, template);
+    }
+
+    private void OpenTemplateConfig(IMainFormView view, CodeTemplateDefinition? template)
+    {
+        if (view == null) throw new ArgumentNullException(nameof(view));
+
         if (template == null)
         {
             _interaction.ShowMessage(view,
-                "No template is currently selected.",
-                "Template Options",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
-            return;
-        }
-
-        var sections = GetTemplateSections(template, out _, out _);
-        if (sections.Count == 0)
-        {
-            _interaction.ShowMessage(view,
-                "No template options were found for the selected template.",
+                "Select a template before configuring options.",
                 "Template Options",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
             return;
         }
 
-        using var dialog = new TemplateOptionsForm(template, sections, _templateOptions);
+        ResetTemplateOptions(template);
+
+        var sections = GetTemplateSections(template, out var genericSection, out _);
+        PopulateGenericShellcodeCombo(view, genericSection);
+
+        using var dialog = new TemplateOptionsForm(
+            template,
+            sections,
+            _templateOptions,
+            action => HandleTemplateInfoAction(view, action));
+
         if (dialog.ShowDialog(view) == DialogResult.OK)
         {
             _templateOptions = dialog.ResultState ?? new TemplateOptionsState();
-            _templateOptionsTemplateId = template.Id ?? string.Empty;
-            _logger.Ok($"Template options updated for '{template.Display}'.");
+            _logger.Ok($"Template options saved for '{template.Display}'.");
+        }
+    }
+
+    private void HandleTemplateInfoAction(IMainFormView view, string action)
+    {
+        if (string.IsNullOrWhiteSpace(action))
+            return;
+
+        switch (action)
+        {
+            case "GuardRailInfo":
+                ShowGuardRailInfo(view);
+                break;
+            default:
+                _logger.Warn($"No handler registered for template info action '{action}'.");
+                break;
         }
     }
 
@@ -547,28 +576,30 @@ public sealed class MainFormCoordinator
         var combo = view?.TemplateCombo;
         string selectedId = string.Empty;
 
-        if (combo != null)
+        if (combo == null)
         {
-            if (combo.SelectedItem is TemplateComboItem item)
-            {
-                selectedId = item.Id ?? string.Empty;
-            }
-            else if (combo.SelectedValue is string rawValue)
-            {
-                selectedId = rawValue ?? string.Empty;
-            }
-            else if (!string.IsNullOrWhiteSpace(combo.Text))
-            {
-                selectedId = combo.Text;
-            }
+            return _templates.FirstOrDefault();
         }
 
-        if (!string.IsNullOrWhiteSpace(selectedId))
+        if (combo.SelectedItem is TemplateComboItem item)
         {
-            var match = _templates.FirstOrDefault(t => string.Equals(t.Id, selectedId, StringComparison.OrdinalIgnoreCase));
-            if (match != null)
-                return match;
+            selectedId = item.Id ?? string.Empty;
         }
+        else if (combo.SelectedValue is string rawValue)
+        {
+            selectedId = rawValue ?? string.Empty;
+        }
+        else if (!string.IsNullOrWhiteSpace(combo.Text))
+        {
+            selectedId = combo.Text;
+        }
+
+        if (string.IsNullOrWhiteSpace(selectedId))
+            return null;
+
+        var match = _templates.FirstOrDefault(t => string.Equals(t.Id, selectedId, StringComparison.OrdinalIgnoreCase));
+        if (match != null)
+            return match;
 
         return _templates.FirstOrDefault();
     }
@@ -614,10 +645,24 @@ public sealed class MainFormCoordinator
         var sections = GetTemplateSections(template, out var genericSection, out bool templateProvided);
         PopulateGenericShellcodeCombo(view, genericSection);
 
-        if (templateProvided && template != null)
-            _logger.Info($"Template '{template.Display}' ready. Use Config to edit options.");
+        if (template == null)
+        {
+            _logger.Info("Template set to None. Select a template to configure options.");
+            return;
+        }
+
+        if (!templateProvided)
+        {
+            _logger.Info($"Template '{template.Display}' does not declare snippet placeholders; showing all sections.");
+        }
+        else if (sections.Count == 0)
+        {
+            _logger.Info($"Template '{template.Display}' has no configurable sections.");
+        }
         else
-            _logger.Info("Template options ready. Use Config to edit options.");
+        {
+            _logger.Info($"Template '{template.Display}' ready with {sections.Count} configurable section(s).");
+        }
     }
 
     private IReadOnlyList<CodeSnippetSection> GetTemplateSections(
@@ -685,97 +730,6 @@ public sealed class MainFormCoordinator
         return sections;
     }
 
-    private void PopulateSnippetControls(IMainFormView view, CodeTemplateDefinition? template)
-    {
-        if (view == null) throw new ArgumentNullException(nameof(view));
-        if (view.SnippetPickerPanel == null)
-            throw new InvalidOperationException("Snippet picker panel is not available on the view.");
-
-        var panel = view.SnippetPickerPanel;
-        panel.SuspendLayout();
-        try
-        {
-            panel.Controls.Clear();
-            panel.FlowDirection = FlowDirection.TopDown;
-            panel.WrapContents = false;
-            panel.AutoScroll = true;
-
-            CodeSnippetSection? genericSection = null;
-            bool templateProvided = template != null;
-
-            var snippetPlaceholders = template?.Placeholders
-                .Where(p => p != null && p.Kind == TemplatePlaceholderKind.Snippet && !string.IsNullOrWhiteSpace(p.SnippetTemplateKey))
-                .ToList();
-
-            if (snippetPlaceholders != null && snippetPlaceholders.Count > 0)
-            {
-                foreach (var placeholder in snippetPlaceholders)
-                {
-                    var snippetKey = placeholder.SnippetTemplateKey;
-                    if (string.IsNullOrWhiteSpace(snippetKey))
-                        continue;
-
-                    if (_snippetCatalog.TryResolveSection(snippetKey, out var section))
-                    {
-                        if (IsGenericSection(section))
-                        {
-                            genericSection ??= section;
-                            continue;
-                        }
-
-                        var ui = new SnippetSectionUi(section);
-                        AddSnippetSectionControls(view, panel, ui);
-                    }
-                    else
-                    {
-                        _logger.Warn($"Template '{template!.Id}' references missing snippet section '{snippetKey}'.");
-                    }
-                }
-            }
-            else
-            {
-                foreach (var section in _snippetCatalog.GetAllSections())
-                {
-                    if (section == null)
-                        continue;
-
-                    if (IsGenericSection(section))
-                    {
-                        genericSection ??= section;
-                        continue;
-                    }
-
-                    var ui = new SnippetSectionUi(section);
-                    AddSnippetSectionControls(view, panel, ui);
-                }
-
-                templateProvided = false;
-            }
-
-            PopulateGenericShellcodeCombo(view, genericSection);
-
-            _logger.Info("Tip: Use 'None' whenever you want to skip a snippet section.");
-            if (templateProvided && template != null)
-                _logger.Ok($"Snippet picker populated for template '{template.Display}'.");
-            else
-                _logger.Ok("Snippet picker populated with all available sections.");
-        }
-        catch (Exception ex)
-        {
-            _logger.Error($"Failed to populate snippet picker: {ex.Message}");
-            _interaction.ShowMessage(
-                view,
-                $"Unable to populate snippet options:{Environment.NewLine}{ex.Message}",
-                "Initialization Error",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
-        }
-        finally
-        {
-            panel.ResumeLayout(true);
-        }
-    }
-
     private void ShowGeneratedSourcePreview(IMainFormView view, CompilerResult result)
     {
         if (view == null)
@@ -801,32 +755,6 @@ public sealed class MainFormCoordinator
             result.Success ? "Generated Source" : "Generated Source (Debug Preview)",
             result.GeneratedSourceCode,
             header);
-    }
-
-    private void AddSnippetSectionControls(IMainFormView view, FlowLayoutPanel host, SnippetSectionUi ui)
-    {
-        if (host == null) throw new ArgumentNullException(nameof(host));
-        if (ui == null) throw new ArgumentNullException(nameof(ui));
-
-        var label = new Label
-        {
-            AutoSize = true,
-            Text = ui.Section.Display,
-            Margin = new Padding(3, host.Controls.Count == 0 ? 0 : 12, 3, 0)
-        };
-        host.Controls.Add(label);
-
-        var beforeInputs = ui.Section.Inputs
-            .Where(input => input.Placement == SnippetInputPlacement.BeforeSelector)
-            .ToList();
-        AddInputRows(view, host, beforeInputs);
-
-        host.Controls.Add(CreateSelectorRow(ui));
-
-        var afterInputs = ui.Section.Inputs
-            .Where(input => input.Placement == SnippetInputPlacement.AfterSelector)
-            .ToList();
-        AddInputRows(view, host, afterInputs);
     }
 
     private void PopulateGenericShellcodeCombo(IMainFormView view, CodeSnippetSection? section)
@@ -860,173 +788,6 @@ public sealed class MainFormCoordinator
         finally
         {
             combo.EndUpdate();
-        }
-    }
-
-    private void AddInputRows(IMainFormView view, FlowLayoutPanel host, IEnumerable<CodeSnippetInput> inputs)
-    {
-        if (inputs == null)
-            return;
-
-        foreach (var input in inputs)
-        {
-            if (input == null)
-                continue;
-            host.Controls.Add(CreateInputRow(view, input));
-        }
-    }
-
-    private Control CreateSelectorRow(SnippetSectionUi ui)
-    {
-        var row = new FlowLayoutPanel
-        {
-            AutoSize = true,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
-            Margin = new Padding(24, 6, 3, 0)
-        };
-
-        Control selector;
-        int selectorIndex = ui.GetNextSelectorIndex();
-
-        if (ui.Section.AllowMultiple)
-        {
-            selector = CreateSnippetList(ui, selectorIndex);
-        }
-        else
-        {
-            selector = CreateSnippetCombo(ui, selectorIndex);
-        }
-
-        selector.Margin = new Padding(0);
-        row.Controls.Add(selector);
-        return row;
-    }
-
-    private ComboBox CreateSnippetCombo(SnippetSectionUi ui, int selectorIndex)
-    {
-        var combo = new ComboBox
-        {
-            Name = SnippetControlNaming.GetComboName(ui.Section, selectorIndex),
-            DropDownStyle = ComboBoxStyle.DropDownList,
-            Width = 320,
-            Margin = new Padding(0, 0, 6, 0)
-        };
-
-        combo.DisplayMember = nameof(SnippetComboItem.Display);
-        combo.ValueMember = nameof(SnippetComboItem.Id);
-
-        combo.BeginUpdate();
-        combo.Items.Add(SnippetComboItem.None);
-        foreach (var item in ui.Section.Items)
-        {
-            combo.Items.Add(new SnippetComboItem(item.Id, item.Display));
-        }
-        combo.EndUpdate();
-        combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
-
-        return combo;
-    }
-
-    private ListBox CreateSnippetList(SnippetSectionUi ui, int selectorIndex)
-    {
-        var list = new ListBox
-        {
-            Name = SnippetControlNaming.GetListName(ui.Section, selectorIndex),
-            SelectionMode = SelectionMode.MultiExtended,
-            IntegralHeight = false,
-            Width = 360,
-            Margin = new Padding(0)
-        };
-
-        int itemCount = Math.Max(1, ui.Section.Items.Count);
-        int preferredHeight = itemCount * 28 + 16;
-        preferredHeight = Math.Clamp(preferredHeight, 120, 320);
-        list.Height = preferredHeight;
-
-        list.DisplayMember = nameof(SnippetComboItem.Display);
-
-        foreach (var item in ui.Section.Items)
-        {
-            list.Items.Add(new SnippetComboItem(item.Id, item.Display));
-        }
-
-        return list;
-    }
-
-    private Control CreateInputRow(IMainFormView view, CodeSnippetInput input)
-    {
-        var row = new FlowLayoutPanel
-        {
-            AutoSize = true,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
-            Margin = new Padding(24, 6, 3, 0)
-        };
-
-        string labelText = input.Label;
-        if (input.Required && !string.IsNullOrWhiteSpace(labelText))
-        {
-            labelText += " *";
-        }
-
-        if (!string.IsNullOrWhiteSpace(labelText))
-        {
-            row.Controls.Add(new Label
-            {
-                AutoSize = true,
-                Text = labelText,
-                Margin = new Padding(0, 5, 6, 0)
-            });
-        }
-
-        Control editor = input.Type switch
-        {
-            SnippetInputType.TextBox => CreateTextBoxInput(input),
-            _ => CreateTextBoxInput(input)
-        };
-
-        row.Controls.Add(editor);
-
-        if (!string.IsNullOrWhiteSpace(input.InfoAction))
-        {
-            var button = new Button
-            {
-                AutoSize = true,
-                Text = string.IsNullOrWhiteSpace(input.InfoButtonLabel) ? "Info" : input.InfoButtonLabel,
-                Margin = new Padding(8, 0, 0, 0)
-            };
-            button.Click += (_, _) => HandleInputInfoAction(view, input.InfoAction);
-            row.Controls.Add(button);
-        }
-
-        return row;
-    }
-
-    private static Control CreateTextBoxInput(CodeSnippetInput input)
-    {
-        var textBox = new TextBox
-        {
-            Name = string.IsNullOrWhiteSpace(input.Id) ? Guid.NewGuid().ToString("N") : input.Id,
-            Width = input.Width.HasValue && input.Width.Value > 0 ? input.Width.Value : 240,
-            Margin = new Padding(0, 0, 0, 0)
-        };
-        return textBox;
-    }
-
-    private void HandleInputInfoAction(IMainFormView view, string action)
-    {
-        if (string.IsNullOrWhiteSpace(action))
-            return;
-
-        switch (action)
-        {
-            case "GuardRailInfo":
-                ShowGuardRailInfo(view);
-                break;
-            default:
-                _logger.Warn($"No handler registered for snippet input info action '{action}'.");
-                break;
         }
     }
 
@@ -1494,19 +1255,6 @@ public sealed class MainFormCoordinator
             .Where(char.IsLetterOrDigit)
             .Select(char.ToLowerInvariant)
             .ToArray());
-
-    private sealed class SnippetSectionUi
-    {
-        public SnippetSectionUi(CodeSnippetSection section)
-        {
-            Section = section ?? throw new ArgumentNullException(nameof(section));
-        }
-
-        public CodeSnippetSection Section { get; }
-        private int _nextSelectorIndex;
-
-        public int GetNextSelectorIndex() => _nextSelectorIndex++;
-    }
 
     private sealed class TemplateComboItem
     {

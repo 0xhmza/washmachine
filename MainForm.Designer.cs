@@ -35,6 +35,7 @@
             BackdooringTab = new TabPage();
             PackingTab = new TabPage();
             MainTab = new TabPage();
+            submitButton = new Button();
             groupBox3 = new GroupBox();
             bin2hexEncoder = new ComboBox();
             bin2hexEnvelope = new ComboBox();
@@ -63,7 +64,6 @@
             groupBox1 = new GroupBox();
             button4 = new Button();
             templateComboBox = new ComboBox();
-            submitButton = new Button();
             tabControl = new TabControl();
             groupBox2.SuspendLayout();
             MainTab.SuspendLayout();
@@ -120,7 +120,7 @@
             BackdooringTab.Location = new Point(4, 29);
             BackdooringTab.Margin = new Padding(3, 4, 3, 4);
             BackdooringTab.Name = "BackdooringTab";
-            BackdooringTab.Size = new Size(786, 829);
+            BackdooringTab.Size = new Size(786, 692);
             BackdooringTab.TabIndex = 3;
             BackdooringTab.Text = "Backdooring";
             BackdooringTab.UseVisualStyleBackColor = true;
@@ -130,7 +130,7 @@
             PackingTab.Location = new Point(4, 29);
             PackingTab.Margin = new Padding(3, 4, 3, 4);
             PackingTab.Name = "PackingTab";
-            PackingTab.Size = new Size(786, 829);
+            PackingTab.Size = new Size(786, 692);
             PackingTab.TabIndex = 2;
             PackingTab.Text = "Packing";
             PackingTab.UseVisualStyleBackColor = true;
@@ -149,9 +149,19 @@
             MainTab.Margin = new Padding(3, 4, 3, 4);
             MainTab.Name = "MainTab";
             MainTab.Padding = new Padding(3, 4, 3, 4);
-            MainTab.Size = new Size(786, 692);
+            MainTab.Size = new Size(794, 692);
             MainTab.TabIndex = 0;
             MainTab.Text = "Main";
+            // 
+            // submitButton
+            // 
+            submitButton.Location = new Point(354, 375);
+            submitButton.Name = "submitButton";
+            submitButton.Size = new Size(123, 29);
+            submitButton.TabIndex = 9;
+            submitButton.Text = "Compile";
+            submitButton.UseVisualStyleBackColor = true;
+            submitButton.Click += submitButton_Click;
             // 
             // groupBox3
             // 
@@ -424,12 +434,12 @@
             // 
             // button4
             // 
-            button4.Location = new Point(674, 25);
+            button4.Location = new Point(640, 25);
             button4.Margin = new Padding(2);
             button4.Name = "button4";
-            button4.Size = new Size(80, 27);
+            button4.Size = new Size(120, 27);
             button4.TabIndex = 2;
-            button4.Text = "Config";
+            button4.Text = "Config Template";
             button4.UseVisualStyleBackColor = true;
             button4.Click += button4_Click;
             // 
@@ -439,19 +449,9 @@
             templateComboBox.FormattingEnabled = true;
             templateComboBox.Location = new Point(27, 25);
             templateComboBox.Name = "templateComboBox";
-            templateComboBox.Size = new Size(634, 28);
+            templateComboBox.Size = new Size(600, 28);
             templateComboBox.TabIndex = 1;
             templateComboBox.SelectedIndexChanged += templateComboBox_SelectedIndexChanged;
-            // 
-            // submitButton
-            // 
-            submitButton.Location = new Point(354, 375);
-            submitButton.Name = "submitButton";
-            submitButton.Size = new Size(123, 29);
-            submitButton.TabIndex = 9;
-            submitButton.Text = "Compile";
-            submitButton.UseVisualStyleBackColor = true;
-            submitButton.Click += submitButton_Click;
             // 
             // tabControl
             // 
@@ -462,7 +462,7 @@
             tabControl.Margin = new Padding(3, 4, 3, 4);
             tabControl.Name = "tabControl";
             tabControl.SelectedIndex = 0;
-            tabControl.Size = new Size(794, 725);
+            tabControl.Size = new Size(802, 910);
             tabControl.TabIndex = 12;
             // 
             // MainForm
@@ -470,7 +470,7 @@
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = SystemColors.Control;
-            ClientSize = new Size(820, 749);
+            ClientSize = new Size(828, 936);
             Controls.Add(tabControl);
             FormBorderStyle = FormBorderStyle.FixedToolWindow;
             MaximizeBox = false;

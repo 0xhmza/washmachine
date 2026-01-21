@@ -9,7 +9,6 @@ public interface IMainFormView : IWin32Window
     ComboBox EncoderCombo { get; }
     ComboBox EnvelopeCombo { get; }
     ComboBox TemplateCombo { get; }
-    FlowLayoutPanel SnippetPickerPanel { get; }
     ComboBox GenericShellcodeCombo { get; }
 
     TextBox ShellcodeFileTextBox { get; }
