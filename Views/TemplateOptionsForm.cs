@@ -2,6 +2,9 @@ using Washmachine.Models;
 
 namespace Washmachine.Views;
 
+/// <summary>
+/// Captures template option selections so they can be reused across dialog sessions.
+/// </summary>
 public sealed class TemplateOptionsState
 {
     public Dictionary<string, string> TextValues { get; } = new(StringComparer.Ordinal);
@@ -21,6 +24,9 @@ public sealed class TemplateOptionsState
     }
 }
 
+/// <summary>
+/// Renders template-specific inputs and snippet selectors in a scrollable dialog.
+/// </summary>
 public sealed class TemplateOptionsForm : Form
 {
     private const int DefaultInputWidth = 260;
@@ -41,8 +47,8 @@ public sealed class TemplateOptionsForm : Form
         TemplateOptionsState? existingState,
         Action<string>? infoAction = null)
     {
-        if (template == null) throw new ArgumentNullException(nameof(template));
-        if (sections == null) throw new ArgumentNullException(nameof(sections));
+        ArgumentNullException.ThrowIfNull(template);
+        ArgumentNullException.ThrowIfNull(sections);
 
         _initialState = existingState?.Clone() ?? new TemplateOptionsState();
         _infoAction = infoAction;

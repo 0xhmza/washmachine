@@ -25,6 +25,9 @@ public sealed record AntiEmulationOption(int Index, string Name, string Descript
     public bool RequiresArguments => !string.IsNullOrWhiteSpace(ArgsHint);
 }
 
+/// <summary>
+/// Parses Bin2Shell help output to build encoder/envelope catalogs for the UI.
+/// </summary>
 public sealed class ShellcodeEncodingCatalogService : IShellcodeEncodingCatalog
 {
     private static readonly Regex LineRegex = new(@"\[\s*(\d+)\s*\]\s+(.+)$", RegexOptions.Compiled);

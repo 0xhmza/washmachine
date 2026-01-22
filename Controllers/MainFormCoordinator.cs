@@ -8,6 +8,9 @@ using Washmachine.Views;
 
 namespace Washmachine.Controllers;
 
+/// <summary>
+/// Coordinates MainForm UI events with application services and logging.
+/// </summary>
 public sealed class MainFormCoordinator
 {
     private const string TemplateGenericShellcode = "GENERICSHELLCODE";
@@ -17,6 +20,7 @@ public sealed class MainFormCoordinator
         "base64",
         "base91"
     };
+    // Bin2Shell output patterns for array and envelope payloads.
     private static readonly Regex CodeBlobArrayRegex = new(@"unsigned\s+char\s+code_blob\[\]\s*=\s*\{(?<body>.*?)\};", RegexOptions.Compiled | RegexOptions.Singleline);
     private static readonly Regex CodeBlobTextBlockRegex = new(@"code_blob_text\[\]\s*=\s*(?<body>.*?)\s*;", RegexOptions.Compiled | RegexOptions.Singleline);
     private static readonly Regex QuotedStringRegex = new("\"(?<segment>.*?)\"", RegexOptions.Compiled | RegexOptions.Singleline);
@@ -54,7 +58,7 @@ public sealed class MainFormCoordinator
 
     public async Task InitializeAsync(IMainFormView view)
     {
-        if (view == null) throw new ArgumentNullException(nameof(view));
+        ArgumentNullException.ThrowIfNull(view);
 
         var pathIssues = _paths.Validate();
         if (pathIssues.Count > 0)
@@ -70,12 +74,12 @@ public sealed class MainFormCoordinator
         var selectedTemplate = GetSelectedTemplate(view);
         ResetTemplateOptions(selectedTemplate);
         UpdateTemplateContext(view, selectedTemplate);
-        await LoadEncodingCombosAsync(view).ConfigureAwait(true);
+        await LoadEncodingCombosAsync(view);
     }
 
     public void SelectShellcodeFile(IMainFormView view)
     {
-        if (view == null) throw new ArgumentNullException(nameof(view));
+        ArgumentNullException.ThrowIfNull(view);
 
         _logger.Info("Selecting shellcode file...");
         string? selected = _interaction.SelectFile(
@@ -96,8 +100,8 @@ public sealed class MainFormCoordinator
 
     public void PasteShellcodeFromClipboard(IMainFormView view, TextBox target)
     {
-        if (view == null) throw new ArgumentNullException(nameof(view));
-        if (target == null) throw new ArgumentNullException(nameof(target));
+        ArgumentNullException.ThrowIfNull(view);
+        ArgumentNullException.ThrowIfNull(target);
 
         _logger.Info("Paste invoked for text box.");
 
@@ -147,7 +151,7 @@ public sealed class MainFormCoordinator
 
     public async Task HandleSubmitAsync(IMainFormView view)
     {
-        if (view == null) throw new ArgumentNullException(nameof(view));
+        ArgumentNullException.ThrowIfNull(view);
 
         if (!ValidateShellcodeSource(view, out string? validationError))
         {
@@ -167,7 +171,7 @@ public sealed class MainFormCoordinator
             LogCollectedData(data);
 
             _logger.Info("Generating source from selected snippets...");
-            var result = await _compiler.CompileAsync(data).ConfigureAwait(true);
+            var result = await _compiler.CompileAsync(data);
 
             var loggedNotes = new HashSet<string>(StringComparer.Ordinal);
             foreach (var note in result.Notes)
@@ -182,7 +186,7 @@ public sealed class MainFormCoordinator
             }
             if (result.Discovery != null)
             {
-                await HandleCompilerDiscoveryAsync(view, result.Discovery).ConfigureAwait(true);
+                await HandleCompilerDiscoveryAsync(view, result.Discovery);
             }
 
             ShowGeneratedSourcePreview(view, result);
@@ -230,21 +234,21 @@ public sealed class MainFormCoordinator
 
     public void ShowShellcodeTip(IMainFormView view)
     {
-        if (view == null) throw new ArgumentNullException(nameof(view));
+        ArgumentNullException.ThrowIfNull(view);
 
         _interaction.ShowShellcodeTip(view);
     }
 
     public void ShowGuardRailInfo(IMainFormView view)
     {
-        if (view == null) throw new ArgumentNullException(nameof(view));
+        ArgumentNullException.ThrowIfNull(view);
 
         _interaction.ShowGuardRailInfo(view);
     }
 
     public async Task GenerateWebPayloadAsync(IMainFormView view)
     {
-        if (view == null) throw new ArgumentNullException(nameof(view));
+        ArgumentNullException.ThrowIfNull(view);
 
         string filePathRaw = view.ShellcodeFileTextBox?.Text ?? string.Empty;
         string filePath = filePathRaw.Trim();
@@ -275,6 +279,7 @@ public sealed class MainFormCoordinator
             return;
         }
 
+        // Web payloads only support envelope wrapping (no encoders).
         var encoderCombo = view.EncoderCombo;
         if (encoderCombo != null && encoderCombo.SelectedIndex > 0)
         {
@@ -361,7 +366,7 @@ public sealed class MainFormCoordinator
         string output;
         try
         {
-            output = await _bin2ShellRunner.RunAsync(args, cancellationToken: default).ConfigureAwait(true);
+            output = await _bin2ShellRunner.RunAsync(args, cancellationToken: default);
         }
         catch (Exception ex)
         {
@@ -435,7 +440,7 @@ public sealed class MainFormCoordinator
 
     private void PopulateTemplateCombo(IMainFormView view)
     {
-        if (view == null) throw new ArgumentNullException(nameof(view));
+        ArgumentNullException.ThrowIfNull(view);
 
         var combo = view.TemplateCombo;
         if (combo == null)
@@ -494,7 +499,7 @@ public sealed class MainFormCoordinator
 
     public void HandleTemplateChanged(IMainFormView view)
     {
-        if (view == null) throw new ArgumentNullException(nameof(view));
+        ArgumentNullException.ThrowIfNull(view);
 
         var selectedTemplate = GetSelectedTemplate(view);
         ResetTemplateOptions(selectedTemplate);
@@ -508,7 +513,7 @@ public sealed class MainFormCoordinator
 
     public void OpenTemplateConfig(IMainFormView view)
     {
-        if (view == null) throw new ArgumentNullException(nameof(view));
+        ArgumentNullException.ThrowIfNull(view);
 
         var template = GetSelectedTemplate(view);
         OpenTemplateConfig(view, template);
@@ -516,7 +521,7 @@ public sealed class MainFormCoordinator
 
     private void OpenTemplateConfig(IMainFormView view, CodeTemplateDefinition? template)
     {
-        if (view == null) throw new ArgumentNullException(nameof(view));
+        ArgumentNullException.ThrowIfNull(view);
 
         if (template == null)
         {
@@ -634,7 +639,7 @@ public sealed class MainFormCoordinator
 
     private void UpdateTemplateContext(IMainFormView view, CodeTemplateDefinition? template)
     {
-        if (view == null) throw new ArgumentNullException(nameof(view));
+        ArgumentNullException.ThrowIfNull(view);
 
         var sections = GetTemplateSections(template, out var genericSection, out bool templateProvided);
         PopulateGenericShellcodeCombo(view, genericSection);
@@ -726,8 +731,7 @@ public sealed class MainFormCoordinator
 
     private void ShowGeneratedSourcePreview(IMainFormView view, CompilerResult result)
     {
-        if (view == null)
-            throw new ArgumentNullException(nameof(view));
+        ArgumentNullException.ThrowIfNull(view);
         if (result == null)
             return;
 
@@ -753,8 +757,7 @@ public sealed class MainFormCoordinator
 
     private void PopulateGenericShellcodeCombo(IMainFormView view, CodeSnippetSection? section)
     {
-        if (view == null)
-            throw new ArgumentNullException(nameof(view));
+        ArgumentNullException.ThrowIfNull(view);
 
         var combo = view.GenericShellcodeCombo;
         if (combo == null)
@@ -787,8 +790,7 @@ public sealed class MainFormCoordinator
 
     private async Task HandleCompilerDiscoveryAsync(IMainFormView view, CompilerToolDiscoveryResult discovery)
     {
-        if (view == null)
-            throw new ArgumentNullException(nameof(view));
+        ArgumentNullException.ThrowIfNull(view);
         if (discovery == null)
             return;
 
@@ -842,7 +844,7 @@ public sealed class MainFormCoordinator
         CompilerToolDiscoveryResult manualResult;
         try
         {
-            manualResult = await _compiler.RegisterManualCompilerAsync(selected).ConfigureAwait(true);
+            manualResult = await _compiler.RegisterManualCompilerAsync(selected);
         }
         catch (Exception ex)
         {
@@ -893,7 +895,7 @@ public sealed class MainFormCoordinator
     {
         try
         {
-            var catalog = await _encodingCatalog.GetCatalogAsync().ConfigureAwait(true);
+            var catalog = await _encodingCatalog.GetCatalogAsync();
             BindEncodingCombo(view.EncoderCombo, catalog.Encoders);
             BindEnvelopeCombo(view.EnvelopeCombo, catalog.Envelopes);
             PopulateAntiEmulationCombo(view, catalog.AntiEmulation);
@@ -1223,32 +1225,13 @@ public sealed class MainFormCoordinator
 
     private static bool SectionMatchesKey(CodeSnippetSection section, string key)
     {
-        string keyNorm = NormalizeKey(key);
-        string headerNorm = NormalizeKey(section.Header);
-        string templateNorm = NormalizeKey(section.Template);
+        string keyNorm = SnippetKeyNormalizer.Normalize(key);
+        string headerNorm = SnippetKeyNormalizer.Normalize(section.Header);
+        string templateNorm = SnippetKeyNormalizer.Normalize(section.Template);
 
-        static string TrimPlural(string value)
-        {
-            if (value.EndsWith("es", StringComparison.OrdinalIgnoreCase))
-                return value[..^2];
-            if (value.EndsWith("s", StringComparison.OrdinalIgnoreCase))
-                return value[..^1];
-            return value;
-        }
-
-        bool Equalish(string a, string b)
-            => string.Equals(a, b, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(a, TrimPlural(b), StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(TrimPlural(a), b, StringComparison.OrdinalIgnoreCase);
-
-        return Equalish(keyNorm, headerNorm) || Equalish(keyNorm, templateNorm);
+        return SnippetKeyNormalizer.Equalish(keyNorm, headerNorm) ||
+               SnippetKeyNormalizer.Equalish(keyNorm, templateNorm);
     }
-
-    private static string NormalizeKey(string value)
-        => new string((value ?? string.Empty)
-            .Where(char.IsLetterOrDigit)
-            .Select(char.ToLowerInvariant)
-            .ToArray());
 
     private sealed class TemplateComboItem
     {

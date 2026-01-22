@@ -17,38 +17,49 @@ public sealed class HeaderListProvider : IHeaderListProvider
 
     public void PopulateComboFromHeaderSection(ComboBox combo, string sectionName)
     {
-        if (combo == null) throw new ArgumentNullException(nameof(combo));
+        ArgumentNullException.ThrowIfNull(combo);
         var items = LoadEntries(sectionName);
 
         combo.BeginUpdate();
-        combo.DisplayMember = nameof(SnippetListEntry.Display);
-        combo.Items.Clear();
-
-        foreach (var entry in items)
+        try
         {
-            combo.Items.Add(entry);
-        }
+            combo.DisplayMember = nameof(SnippetListEntry.Display);
+            combo.Items.Clear();
 
-        combo.Items.Add(SnippetListEntry.Empty);
-        combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
-        combo.EndUpdate();
+            foreach (var entry in items)
+            {
+                combo.Items.Add(entry);
+            }
+
+            combo.Items.Add(SnippetListEntry.Empty);
+            combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
+        }
+        finally
+        {
+            combo.EndUpdate();
+        }
     }
 
     public void PopulateListFromHeaderSection(ListBox list, string sectionName)
     {
-        if (list == null) throw new ArgumentNullException(nameof(list));
+        ArgumentNullException.ThrowIfNull(list);
         var items = LoadEntries(sectionName);
 
         list.BeginUpdate();
-        list.DisplayMember = nameof(SnippetListEntry.Display);
-        list.Items.Clear();
-
-        foreach (var entry in items)
+        try
         {
-            list.Items.Add(entry);
-        }
+            list.DisplayMember = nameof(SnippetListEntry.Display);
+            list.Items.Clear();
 
-        list.EndUpdate();
+            foreach (var entry in items)
+            {
+                list.Items.Add(entry);
+            }
+        }
+        finally
+        {
+            list.EndUpdate();
+        }
     }
 
     private IReadOnlyList<SnippetListEntry> LoadEntries(string sectionName)

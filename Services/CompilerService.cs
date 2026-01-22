@@ -15,6 +15,9 @@ public interface ICompilerService
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Builds C++ source from UI selections and optionally compiles it via available toolchains.
+/// </summary>
 public sealed class CompilerService : ICompilerService
 {
     private const string ProcessLookupHelper = """
@@ -102,6 +105,46 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     private const string PlaceholderShellcodeExecution = "SHELLCODE_EXECUTION";
 
     private static readonly string[] CompilerExecutables = { "cl.exe", "g++.exe", "clang++.exe" };
+    private static readonly string[] EncoderKeys =
+    {
+        "bin2hexEncoder",
+        "bin2shellEncoder",
+        "bin2ShellEncoder",
+        "bin2shellEncoding",
+        "bin2ShellEncoding"
+    };
+    private static readonly string[] EnvelopeKeys =
+    {
+        "bin2hexEnvelope",
+        "bin2shellEnvelope",
+        "bin2ShellEnvelope",
+        "bin2shellEnv",
+        "bin2ShellEnv"
+    };
+    private static readonly string[] AntiEmulationSelectionKeys =
+    {
+        "bin2shellOptions",
+        "bin2ShellOptions",
+        "bin2shellOptionCombo",
+        "bin2ShellOptionCombo",
+        "bin2shellAntiCombo",
+        "bin2ShellAntiCombo",
+        "bin2shellAntiOptions",
+        "bin2ShellAntiOptions",
+        "bin2shellAntiEmulation",
+        "bin2ShellAntiEmulation",
+        "bin2shellSelection",
+        "bin2ShellSelection"
+    };
+    private static readonly string[] AntiEmulationArgsKeys =
+    {
+        "bin2shellArgs",
+        "bin2ShellArgs",
+        "bin2shellOptionArgs",
+        "bin2ShellOptionArgs",
+        "bin2shellAntiArgs",
+        "bin2ShellAntiArgs"
+    };
 
     private readonly IAppPaths _paths;
     private readonly IBin2ShellRunner _bin2ShellRunner;
@@ -132,23 +175,9 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         var notes = new List<string>();
         CompilerToolDiscoveryResult? discovery = null;
 
-
         try
         {
-            try
-            {
-                discovery = await _toolLocator.DiscoverAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                var message = $"Compiler tool discovery failed: {ex.Message}";
-                notes.Add(message);
-                _logger.Warn(message);
-            }
+            discovery = await TryDiscoverCompilerAsync(notes, cancellationToken).ConfigureAwait(false);
 
             var template = ResolveTemplate(data);
             notes.Add($"Template selected: {template.Display} ({template.Id}).");
@@ -166,9 +195,9 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             notes.Add($"Generated C++ source at {sourcePath}.");
             _logger.Ok($"Generated C++ source at {sourcePath}.");
 
-            const string skipMessage = "Native compilation skipped; C++ source returned for external use.";
-            notes.Add(skipMessage);
-            _logger.Info(skipMessage);
+            const string compileMessage = "Attempting native compilation.";
+            notes.Add(compileMessage);
+            _logger.Info(compileMessage);
 
             var compilerDirectory = ResolveCompilerDirectory(discovery);
             var conversionResult = await ExecuteConversionAsync(sourcePath, compilerDirectory, notes, cancellationToken).ConfigureAwait(false);
@@ -229,6 +258,27 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         }
 
         throw new InvalidOperationException("Required project assets are missing.");
+    }
+
+    private async Task<CompilerToolDiscoveryResult?> TryDiscoverCompilerAsync(
+        ICollection<string> notes,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _toolLocator.DiscoverAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var message = $"Compiler tool discovery failed: {ex.Message}";
+            notes.Add(message);
+            _logger.Warn(message);
+            return null;
+        }
     }
 
     private CodeTemplateDefinition ResolveTemplate(UiData data)
@@ -361,6 +411,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             return output ?? string.Empty;
         }
 
+        // Some templates embed Bin2Shell lambdas in local scopes; capture by reference avoids invalid copies.
         bool changed = false;
         string updated = Bin2ShellPayloadLambdaRegex.Replace(output, match =>
         {
@@ -904,6 +955,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     private static string BuildShellcodeSourceBlock(CppCompilationPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
+        // Prefer encoded shellcode, then generic payload, else a safe stub.
         var sb = new StringBuilder();
         if (!string.IsNullOrWhiteSpace(plan.EncodedShellcodeSnippet))
         {
@@ -939,6 +991,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
         while ((line = reader.ReadLine()) != null)
         {
+            // Full-line placeholders map to multi-line blocks with preserved indentation.
             var match = PlaceholderLineRegex.Match(line);
             if (match.Success)
             {
@@ -1112,16 +1165,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     {
         index = 0;
 
-        string[] preferredKeys =
-        {
-            "bin2hexEncoder",
-            "bin2shellEncoder",
-            "bin2ShellEncoder",
-            "bin2shellEncoding",
-            "bin2ShellEncoding"
-        };
-
-        foreach (var key in preferredKeys)
+        foreach (var key in EncoderKeys)
         {
             if (data.ComboBoxes.TryGetValue(key, out var raw) && TryParseIndex(raw, out index) && index > 0)
                 return true;
@@ -1148,16 +1192,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     {
         index = 0;
 
-        string[] preferredKeys =
-        {
-            "bin2hexEnvelope",
-            "bin2shellEnvelope",
-            "bin2ShellEnvelope",
-            "bin2shellEnv",
-            "bin2ShellEnv"
-        };
-
-        foreach (var key in preferredKeys)
+        foreach (var key in EnvelopeKeys)
         {
             if (data.ComboBoxes.TryGetValue(key, out var raw) && TryParseIndex(raw, out index) && index > 0)
                 return true;
@@ -1182,23 +1217,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
     private static string? GetAntiEmulationSelection(UiData data)
     {
-        string[] candidateKeys =
-        {
-            "bin2shellOptions",
-            "bin2ShellOptions",
-            "bin2shellOptionCombo",
-            "bin2ShellOptionCombo",
-            "bin2shellAntiCombo",
-            "bin2ShellAntiCombo",
-            "bin2shellAntiOptions",
-            "bin2ShellAntiOptions",
-            "bin2shellAntiEmulation",
-            "bin2ShellAntiEmulation",
-            "bin2shellSelection",
-            "bin2ShellSelection"
-        };
-
-        foreach (var key in candidateKeys)
+        foreach (var key in AntiEmulationSelectionKeys)
         {
             if (!data.ComboBoxes.TryGetValue(key, out var raw))
                 continue;
@@ -1264,17 +1283,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
     private static string? GetAntiEmulationArgs(UiData data)
     {
-        string[] candidateKeys =
-        {
-            "bin2shellArgs",
-            "bin2ShellArgs",
-            "bin2shellOptionArgs",
-            "bin2ShellOptionArgs",
-            "bin2shellAntiArgs",
-            "bin2ShellAntiArgs"
-        };
-
-        foreach (var key in candidateKeys)
+        foreach (var key in AntiEmulationArgsKeys)
         {
             if (!data.TextBoxes.TryGetValue(key, out var raw))
                 continue;

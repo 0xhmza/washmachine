@@ -20,6 +20,9 @@ public interface ICodeSnippetCatalogService
     bool TryGetTemplate(string templateId, out CodeTemplateDefinition template);
 }
 
+/// <summary>
+/// Loads snippet/template catalogs from YAML or JSON (file or embedded resource).
+/// </summary>
 public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
 {
     private readonly IAppPaths _paths;
@@ -79,7 +82,7 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
         if (TryGetSectionByTemplate(key, out section) || TryGetSectionByHeader(key, out section))
             return true;
 
-        string keyNorm = NormalizeKey(key);
+        string keyNorm = SnippetKeyNormalizer.Normalize(key);
         var sections = _catalog.Value.Snippets.Sections;
 
         // Score potential matches so we can pick the closest template/header name.
@@ -333,32 +336,13 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
             _ => SnippetInputPlacement.AfterSelector
         };
 
-    private static string NormalizeKey(string value)
-        => new string((value ?? string.Empty)
-            .Where(char.IsLetterOrDigit)
-            .Select(char.ToLowerInvariant)
-            .ToArray());
-
-    private static string TrimPlural(string value)
-    {
-        if (value.EndsWith("es", StringComparison.OrdinalIgnoreCase))
-            return value[..^2];
-        if (value.EndsWith("s", StringComparison.OrdinalIgnoreCase))
-            return value[..^1];
-        return value;
-    }
-
     private static int MatchScore(string keyNorm, CodeSnippetSection section)
     {
-        string headerNorm = NormalizeKey(section.Header);
-        string templateNorm = NormalizeKey(section.Template);
+        string headerNorm = SnippetKeyNormalizer.Normalize(section.Header);
+        string templateNorm = SnippetKeyNormalizer.Normalize(section.Template);
 
-        static bool Equalish(string a, string b)
-            => string.Equals(a, b, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(a, TrimPlural(b), StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(TrimPlural(a), b, StringComparison.OrdinalIgnoreCase);
-
-        if (Equalish(keyNorm, templateNorm) || Equalish(keyNorm, headerNorm))
+        if (SnippetKeyNormalizer.Equalish(keyNorm, templateNorm) ||
+            SnippetKeyNormalizer.Equalish(keyNorm, headerNorm))
             return 0;
 
         if (templateNorm.Contains(keyNorm, StringComparison.OrdinalIgnoreCase) ||

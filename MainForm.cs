@@ -54,8 +54,8 @@ public partial class MainForm : Form, IMainFormView
     {
         try
         {
-            await _requirements.EnsureRequirementsAsync(this).ConfigureAwait(true);
-            await _coordinator.InitializeAsync(this).ConfigureAwait(true);
+            await _requirements.EnsureRequirementsAsync(this);
+            await _coordinator.InitializeAsync(this);
         }
         catch (Exception ex)
         {
@@ -97,7 +97,7 @@ public partial class MainForm : Form, IMainFormView
 
     private async void submitButton_Click(object sender, EventArgs e)
     {
-        await _coordinator.HandleSubmitAsync(this).ConfigureAwait(true);
+        await _coordinator.HandleSubmitAsync(this);
     }
 
     private void templateComboBox_SelectedIndexChanged(object sender, EventArgs e)
@@ -112,6 +112,6 @@ public partial class MainForm : Form, IMainFormView
 
     private async void WebPayloadGenerator_Click(object sender, EventArgs e)
     {
-        await _coordinator.GenerateWebPayloadAsync(this).ConfigureAwait(true);
+        await _coordinator.GenerateWebPayloadAsync(this);
     }
 }

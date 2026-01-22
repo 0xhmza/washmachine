@@ -32,6 +32,9 @@ public interface IUserInteractionService
     void ShowGuardRailInfo(IWin32Window owner);
 }
 
+/// <summary>
+/// Thin wrapper around WinForms dialogs to keep UI interactions centralized.
+/// </summary>
 public sealed class UserInteractionService : IUserInteractionService
 {
     public DialogResult ShowMessage(

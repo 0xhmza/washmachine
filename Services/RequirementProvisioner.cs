@@ -10,6 +10,9 @@ public interface IRequirementProvisioner
     Task EnsureRequirementsAsync(IMainFormView view, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Ensures external tools (like Bin2Shell) are present, downloading when missing.
+/// </summary>
 public sealed class RequirementProvisioner : IRequirementProvisioner
 {
     private readonly IAppPaths _paths;
@@ -32,7 +35,7 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
 
     public async Task EnsureRequirementsAsync(IMainFormView view, CancellationToken cancellationToken = default)
     {
-        if (view == null) throw new ArgumentNullException(nameof(view));
+        ArgumentNullException.ThrowIfNull(view);
 
         var missing = GetMissingRequirements().ToList();
         if (missing.Count == 0)
@@ -55,11 +58,11 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
         {
             foreach (var requirement in missing)
             {
-                completedStages = await InstallRequirementAsync(requirement, progressForm, totalStages, completedStages, cancellationToken).ConfigureAwait(true);
+                completedStages = await InstallRequirementAsync(requirement, progressForm, totalStages, completedStages, cancellationToken);
             }
 
             progressForm.UpdateStatus("Requirements ready.", 100);
-            await Task.Delay(400, cancellationToken).ConfigureAwait(true);
+            await Task.Delay(400, cancellationToken);
             _logger.Ok("All external requirements downloaded successfully.");
         }
         finally
@@ -105,11 +108,11 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
         try
         {
             progressForm.UpdateStatus($"Downloading {requirement.Name}...", CalculatePercent(completedStages, totalStages));
-            await DownloadToFileAsync(requirement, tempZip, cancellationToken).ConfigureAwait(true);
+            await DownloadToFileAsync(requirement, tempZip, cancellationToken);
             completedStages++;
 
             progressForm.UpdateStatus($"Installing {requirement.Name}...", CalculatePercent(completedStages, totalStages));
-            await ExtractAndMoveAsync(requirement, tempZip, tempExtractRoot, cancellationToken).ConfigureAwait(true);
+            await ExtractAndMoveAsync(requirement, tempZip, tempExtractRoot, cancellationToken);
             completedStages++;
 
             progressForm.UpdateStatus($"{requirement.Name} ready.", CalculatePercent(completedStages, totalStages));

@@ -16,6 +16,9 @@ public interface IBin2ShellRunner
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Runs the bundled Bin2Shell CLI and returns its stdout.
+/// </summary>
 public sealed class Bin2ShellRunner : IBin2ShellRunner
 {
     private readonly IAppPaths _paths;
@@ -27,7 +30,7 @@ public sealed class Bin2ShellRunner : IBin2ShellRunner
 
     public async Task<string> RunAsync(IEnumerable<string> arguments, string? pythonExecutable = null, CancellationToken cancellationToken = default)
     {
-        if (arguments == null) throw new ArgumentNullException(nameof(arguments));
+        ArgumentNullException.ThrowIfNull(arguments);
 
         pythonExecutable ??= Environment.OSVersion.Platform == PlatformID.Win32NT ? "python" : "python3";
 

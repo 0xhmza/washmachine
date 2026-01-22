@@ -3,7 +3,7 @@
   "WorkspaceRootPath": "C:\\Users\\hamza\\Documents\\GitHub\\washmachine\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|washmachine.csproj|C:\\Users\\hamza\\Documents\\GitHub\\washmachine\\mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}|Form",
+      "AbsoluteMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|washmachine.csproj|c:\\users\\hamza\\documents\\github\\washmachine\\mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}|Form",
       "RelativeMoniker": "D:0:0:{976B1789-8D67-4AC2-A389-BD142E7E1D83}|washmachine.csproj|solutionrelative:mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}|Form"
     },
     {
@@ -45,8 +45,7 @@
               "ToolTip": "C:\\Users\\hamza\\Documents\\GitHub\\washmachine\\washmachine.csproj",
               "RelativeToolTip": "washmachine.csproj",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
-              "WhenOpened": "2026-01-21T22:06:52.324Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-01-21T22:06:52.324Z"
             },
             {
               "$type": "Document",

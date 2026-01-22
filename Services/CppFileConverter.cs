@@ -6,6 +6,9 @@ using Washmachine.Models;
 
 namespace Washmachine.Services;
 
+/// <summary>
+/// Compiles .cpp sources into a single minimized executable.
+/// </summary>
 public static class CppFileConverter
 {
     /// <summary>
