@@ -1,53 +1,55 @@
 # Washmachine
 
-Washmachine is a Windows **loader builder** designed to streamline the process of composing, encoding, and packaging shellcode payloads. It combines a .NET 8 Windows Forms front-end with a modular services layer that reads structured snippets from YAML and orchestrates the generation pipeline.
+Washmachine is a Windows **loader builder** designed to streamline the process of composing, encoding, and packaging shellcode payloads. It combines a .NET 8 WinUI 3 front-end (dark mode) with a modular services layer that reads structured snippets from YAML and orchestrates the generation pipeline.
 
-> ?? **Security notice**: Washmachine manipulates and embeds shellcode. Use it only in environments where you have explicit permission, and treat all payloads as sensitive.
+> !! **Security notice**: Washmachine manipulates and embeds shellcode. Use it only in environments where you have explicit permission, and treat all payloads as sensitive.
 
 ---
 
 ## Key Features
-- **WinForms UI:** Modernised entry form (`MainForm`) with asynchronous operations and contextual logging.
+- **WinUI 3 UI:** Dark theme shellcode builder (`MainWindow`) with asynchronous operations and contextual logging.
 - **Coordinator pattern:** `MainFormCoordinator` owns all UI workflows, leaving the code-behind thin and test-friendly.
 - **Snippet-driven generation:** YAML-backed catalog powers every drop-down and produces a composed C++ source file without needing the VX-UG repository.
 - **Python integration:** Executes Bin2Shell tooling with safe argument handling and rich error reporting.
 - **Path validation:** Centralised validation ensures required assets (snippet catalog, Bin2Shell scripts) exist before any generation step runs.
-- **Composable logging:** Thread-safe `RichTextBoxLogger` provides consistent, colour-coded feedback inside the UI.
+- **Composable logging:** Thread-safe `RichEditBoxLogger` provides consistent, colour-coded feedback inside the UI.
 
 ---
 
 ## Project Structure
 ```
 Washmachine/
-+-- Controllers/
-¦   +-- MainFormCoordinator.cs      # UI workflow orchestrator
-+-- Logging/
-¦   +-- IAppLogger.cs
-¦   +-- RichTextBoxLogger.cs        # RichTextBox-backed logger
-+-- Models/
-¦   +-- CodeSnippetModels.cs
-¦   +-- CppCompilationPlan.cs
-¦   +-- UiData.cs                   # Snapshot of WinForms control state
-+-- Services/
-¦   +-- AppPaths.cs                 # Centralised path resolution/validation
-¦   +-- Bin2ShellRunner.cs          # Python process execution helper
-¦   +-- ClipboardService.cs
-¦   +-- CompilerResult.cs
-¦   +-- CompilerService.cs          # Core snippet generation pipeline
-¦   +-- HeaderListProvider.cs       # Header parsing utilities
-¦   +-- RequirementProvisioner.cs   # Downloads optional external tools
-¦   +-- ShellcodeEncodingCatalogService.cs
-¦   +-- UserInteractionService.cs
-+-- Views/
-¦   +-- IMainFormView.cs            # Contract implemented by MainForm
-¦   +-- RequirementsProgressForm.cs
-+-- Assets/
-¦   +-- vx_api_snippets.yaml        # Snippet catalog consumed at runtime
-+-- MainForm.cs
-+-- MainForm.Designer.cs
-+-- MainForm.resx
-+-- Program.cs
-+-- washmachine.csproj
+|-- Controllers/
+|   |-- MainFormCoordinator.cs      # UI workflow orchestrator
+|-- Logging/
+|   |-- IAppLogger.cs
+|   |-- RichTextBoxLogger.cs        # RichEditBox-backed logger
+|-- Models/
+|   |-- CodeSnippetModels.cs
+|   |-- CppCompilationPlan.cs
+|   |-- UiData.cs                   # Snapshot of WinUI control state
+|-- Services/
+|   |-- AppPaths.cs                 # Centralised path resolution/validation
+|   |-- Bin2ShellRunner.cs          # Python process execution helper
+|   |-- ClipboardService.cs
+|   |-- CompilerResult.cs
+|   |-- CompilerService.cs          # Core snippet generation pipeline
+|   |-- HeaderListProvider.cs       # Header parsing utilities
+|   |-- RequirementProvisioner.cs   # Downloads optional external tools
+|   |-- ShellcodeEncodingCatalogService.cs
+|   |-- UserInteractionService.cs
+|-- Views/
+|   |-- IMainFormView.cs            # Contract implemented by MainWindow
+|   |-- RequirementsProgressForm.cs
+|   |-- TemplateOptionsForm.cs
+|-- Assets/
+|   |-- vx_api_snippets.yaml        # Snippet catalog consumed at runtime
+|-- App.xaml
+|-- App.xaml.cs
+|-- MainWindow.xaml
+|-- MainWindow.xaml.cs
+|-- Program.cs
+|-- washmachine.csproj
 ```
 
 ---
@@ -83,7 +85,7 @@ dotnet restore
 dotnet build
 ```
 
-### 4. Run the WinForms application
+### 4. Run the WinUI 3 application
 ```powershell
 dotnet run --project washmachine.csproj
 ```
@@ -100,7 +102,7 @@ Alternatively, open the solution in Visual Studio and press **F5**.
    - Generic payload from the predefined combo box
 2. Choose optional protections or behaviours (anti-debugging, guard rails, UAC bypass, etc.).
 3. Configure encoders/compressors/envelopes via the Bin2Shell tab (requires Python).
-4. Press **Generate**. The coordinator will:
+4. Press **Compile**. The coordinator will:
    - Validate required assets
    - Snapshot the UI state (`UiData`)
    - Encode or persist shellcode inputs
@@ -111,7 +113,7 @@ Alternatively, open the solution in Visual Studio and press **F5**.
 ---
 
 ## Architectural Highlights
-- **Coordinator-driven UI**: `MainForm` delegates all logic to `MainFormCoordinator`, keeping WinForms code-behind minimal and easing unit testing.
+- **Coordinator-driven UI**: `MainWindow` delegates all logic to `MainFormCoordinator`, keeping code-behind minimal and easing unit testing.
 - **Dependency inversion**: Behaviours (logging, dialogs, clipboard, file IO) flow through interfaces (`IAppLogger`, `IUserInteractionService`, etc.). Swap implementations for tests or future platforms.
 - **Async-ready**: Long-running tasks (Python invocations, file IO) run asynchronously to maintain UI responsiveness.
 - **Centralised validation**: `AppPaths.Validate()` consolidates filesystem checks and surfaces actionable messages to the user.
@@ -123,7 +125,7 @@ Alternatively, open the solution in Visual Studio and press **F5**.
 - **Additional shellcode workflows**: Implement new strategies inside `CompilerService` or create decorator services that plug in before/after generation.
 - **Alternative logging**: Implement `IAppLogger` to log to disk, structured logs, or remote sinks.
 - **CLI/automation**: Reuse `CompilerService` in a console host by providing non-UI implementations of `IUserInteractionService` and `IClipboardService`.
-- **Unit testing**: Mock the view and services to exercise `MainFormCoordinator` without WinForms (e.g., using Moq or NSubstitute).
+- **Unit testing**: Mock the view and services to exercise `MainFormCoordinator` without WinUI (e.g., using Moq or NSubstitute).
 
 ---
 
@@ -133,7 +135,7 @@ Alternatively, open the solution in Visual Studio and press **F5**.
 | *"Missing Assets" dialog on startup* | Ensure the snippet catalog (and optional Bin2Shell files) exist or adjust `AppPaths`. |
 | Python process fails | Verify Python 3 is installed and accessible. Check the console log for stderr output. |
 | UI freezes during generation | Confirm Bin2Shell scripts finish; long-running external scripts can hold the coordinator. |
-| Designer errors after renames | Rebuild the project and reopen `MainForm` in the WinForms designer to regenerate partial classes. |
+| Dialogs not appearing | Ensure the window has loaded before triggering a dialog so `XamlRoot` is available. |
 
 ---
 
@@ -150,4 +152,3 @@ Please ensure added functionality respects the existing dependency-inversion pat
 ## License
 
 No license information is included. Add one before distributing or open-sourcing the project.
-

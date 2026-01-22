@@ -1,3 +1,5 @@
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Washmachine.Models;
 
 namespace Washmachine.Views;
@@ -27,7 +29,7 @@ public sealed class TemplateOptionsState
 /// <summary>
 /// Renders template-specific inputs and snippet selectors in a scrollable dialog.
 /// </summary>
-public sealed class TemplateOptionsForm : Form
+public sealed class TemplateOptionsDialog : ContentDialog
 {
     private const int DefaultInputWidth = 260;
     private const int DefaultSelectorWidth = 360;
@@ -37,15 +39,15 @@ public sealed class TemplateOptionsForm : Form
     private readonly TemplateOptionsState _initialState;
     private readonly List<FieldBinding> _bindings = new();
     private readonly List<SectionUi> _sections = new();
-    private readonly Action<string>? _infoAction;
-    private readonly FlowLayoutPanel _sectionsHost;
-    private readonly Label _emptyLabel;
+    private readonly Func<string, Task>? _infoAction;
+    private readonly StackPanel _sectionsHost;
+    private readonly TextBlock _emptyLabel;
 
-    public TemplateOptionsForm(
+    public TemplateOptionsDialog(
         CodeTemplateDefinition template,
         IReadOnlyList<CodeSnippetSection> sections,
         TemplateOptionsState? existingState,
-        Action<string>? infoAction = null)
+        Func<string, Task>? infoAction = null)
     {
         ArgumentNullException.ThrowIfNull(template);
         ArgumentNullException.ThrowIfNull(sections);
@@ -53,249 +55,163 @@ public sealed class TemplateOptionsForm : Form
         _initialState = existingState?.Clone() ?? new TemplateOptionsState();
         _infoAction = infoAction;
 
-        Text = $"Template Options - {template.Display}";
-        StartPosition = FormStartPosition.CenterParent;
-        FormBorderStyle = FormBorderStyle.Sizable;
-        MinimizeBox = false;
-        MaximizeBox = true;
-        ShowInTaskbar = false;
-        ClientSize = new Size(900, 620);
-        Font = new Font("Segoe UI", 9f);
-        BackColor = SystemColors.Window;
+        Title = $"Template Options - {template.Display}";
+        PrimaryButtonText = "OK";
+        CloseButtonText = "Cancel";
+        DefaultButton = ContentDialogButton.Primary;
 
         var headerPanel = BuildHeaderPanel();
         _sectionsHost = BuildSectionsHost();
-        _emptyLabel = new Label
+        _emptyLabel = new TextBlock
         {
-            AutoSize = true,
             Text = "No options are available for this template.",
-            ForeColor = SystemColors.GrayText,
-            Margin = new Padding(12, 12, 12, 0)
+            Opacity = 0.7,
+            Margin = new Thickness(8, 8, 8, 0)
         };
 
-        var bottomPanel = BuildBottomPanel(out var okButton, out var cancelButton);
+        var scrollViewer = new ScrollViewer
+        {
+            Content = _sectionsHost,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+        };
 
-        AcceptButton = okButton;
-        CancelButton = cancelButton;
+        var root = new Grid
+        {
+            RowDefinitions =
+            {
+                new RowDefinition { Height = GridLength.Auto },
+                new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }
+            }
+        };
 
-        Controls.Add(_sectionsHost);
-        Controls.Add(bottomPanel);
-        Controls.Add(headerPanel);
+        root.Children.Add(headerPanel);
+        Grid.SetRow(scrollViewer, 1);
+        root.Children.Add(scrollViewer);
+
+        Content = root;
+
+        PrimaryButtonClick += (_, _) => ResultState = BuildResultState();
 
         BuildSections(sections);
     }
 
     public TemplateOptionsState ResultState { get; private set; } = new();
 
-    protected override void OnFormClosing(FormClosingEventArgs e)
+    public async Task<TemplateOptionsState?> ShowDialogAsync(XamlRoot xamlRoot)
     {
-        if (DialogResult == DialogResult.OK)
-        {
-            ResultState = BuildResultState();
-        }
-
-        base.OnFormClosing(e);
+        XamlRoot = xamlRoot;
+        var result = await ShowAsync();
+        return result == ContentDialogResult.Primary ? ResultState : null;
     }
 
-    private Panel BuildHeaderPanel()
+    private UIElement BuildHeaderPanel()
     {
-        var panel = new Panel
+        var panel = new StackPanel
         {
-            Dock = DockStyle.Top,
-            Height = 38,
-            Padding = new Padding(12, 8, 12, 0)
-        };
-
-        var buttonRow = new FlowLayoutPanel
-        {
-            AutoSize = true,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
-            Dock = DockStyle.Left
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Thickness(8, 8, 8, 4)
         };
 
         var expandButton = new Button
         {
-            AutoSize = true,
-            Text = "Expand All",
-            Margin = new Padding(0, 0, 6, 0)
+            Content = "Expand All",
+            MinWidth = 110
         };
-        expandButton.Click += (_, _) => SetAllSectionsCollapsed(false);
 
         var collapseButton = new Button
         {
-            AutoSize = true,
-            Text = "Collapse All",
-            Margin = new Padding(0, 0, 6, 0)
+            Content = "Collapse All",
+            MinWidth = 110
         };
-        collapseButton.Click += (_, _) => SetAllSectionsCollapsed(true);
 
-        buttonRow.Controls.Add(expandButton);
-        buttonRow.Controls.Add(collapseButton);
-        panel.Controls.Add(buttonRow);
+        expandButton.Click += (_, _) => SetAllSectionsExpanded(true);
+        collapseButton.Click += (_, _) => SetAllSectionsExpanded(false);
+
+        panel.Children.Add(expandButton);
+        panel.Children.Add(collapseButton);
 
         return panel;
     }
 
-    private static FlowLayoutPanel BuildSectionsHost()
+    private StackPanel BuildSectionsHost()
     {
-        return new FlowLayoutPanel
+        return new StackPanel
         {
-            Dock = DockStyle.Fill,
-            AutoScroll = true,
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = false,
-            Padding = new Padding(0, 0, 0, 12)
+            Spacing = 12,
+            Margin = new Thickness(8, 0, 8, 8)
         };
-    }
-
-    private static Panel BuildBottomPanel(out Button okButton, out Button cancelButton)
-    {
-        var bottomPanel = new Panel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 52,
-            Padding = new Padding(0, 0, 12, 10)
-        };
-
-        var ok = new Button
-        {
-            Text = "OK",
-            DialogResult = DialogResult.OK,
-            Size = new Size(90, 30),
-            Anchor = AnchorStyles.Bottom | AnchorStyles.Right
-        };
-
-        var cancel = new Button
-        {
-            Text = "Cancel",
-            DialogResult = DialogResult.Cancel,
-            Size = new Size(90, 30),
-            Anchor = AnchorStyles.Bottom | AnchorStyles.Right
-        };
-
-        void LayoutButtons()
-        {
-            cancel.Location = new Point(
-                bottomPanel.ClientSize.Width - cancel.Width,
-                bottomPanel.ClientSize.Height - cancel.Height);
-            ok.Location = new Point(
-                cancel.Left - ok.Width - 10,
-                cancel.Top);
-        }
-
-        bottomPanel.Controls.Add(ok);
-        bottomPanel.Controls.Add(cancel);
-        bottomPanel.Resize += (_, _) => LayoutButtons();
-        LayoutButtons();
-
-        okButton = ok;
-        cancelButton = cancel;
-
-        return bottomPanel;
     }
 
     private void BuildSections(IReadOnlyList<CodeSnippetSection> sections)
     {
-        _sectionsHost.SuspendLayout();
-        try
+        _sectionsHost.Children.Clear();
+        _sections.Clear();
+        _bindings.Clear();
+
+        var list = sections.Where(s => s != null).ToList();
+        if (list.Count == 0)
         {
-            _sectionsHost.Controls.Clear();
-            _sections.Clear();
-            _bindings.Clear();
-
-            var list = sections.Where(s => s != null).ToList();
-            if (list.Count == 0)
-            {
-                _sectionsHost.Controls.Add(_emptyLabel);
-                return;
-            }
-
-            foreach (var section in list)
-            {
-                var ui = CreateSection(section);
-                _sections.Add(ui);
-                _sectionsHost.Controls.Add(ui.Container);
-            }
+            _sectionsHost.Children.Add(_emptyLabel);
+            return;
         }
-        finally
+
+        foreach (var section in list)
         {
-            _sectionsHost.ResumeLayout(true);
+            var ui = CreateSection(section);
+            _sections.Add(ui);
+            _sectionsHost.Children.Add(ui.Container);
         }
     }
 
     private SectionUi CreateSection(CodeSnippetSection section)
     {
-        var container = new FlowLayoutPanel
+        var expander = new Expander
         {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = false,
-            BorderStyle = BorderStyle.FixedSingle,
-            Padding = new Padding(8, 8, 8, 8),
-            Margin = new Padding(12, 10, 12, 0)
+            IsExpanded = true,
+            Margin = new Thickness(0, 0, 0, 4)
         };
 
-        var headerRow = new FlowLayoutPanel
+        var headerRow = new StackPanel
         {
-            AutoSize = true,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
-            Margin = new Padding(0, 0, 0, 6)
+            Orientation = Orientation.Horizontal,
+            Spacing = 8
         };
 
-        var toggleButton = new Button
+        headerRow.Children.Add(new TextBlock
         {
-            Text = "[-]",
-            Size = new Size(30, 24),
-            Margin = new Padding(0, 0, 6, 0)
-        };
-
-        var titleLabel = new Label
-        {
-            AutoSize = true,
             Text = string.IsNullOrWhiteSpace(section.Display) ? "Section" : section.Display,
-            Font = new Font(Font, FontStyle.Bold),
-            Margin = new Padding(0, 4, 0, 0)
-        };
+            FontWeight = Windows.UI.Text.FontWeights.SemiBold
+        });
 
-        headerRow.Controls.Add(toggleButton);
-        headerRow.Controls.Add(titleLabel);
-        container.Controls.Add(headerRow);
+        expander.Header = headerRow;
 
-        var body = new FlowLayoutPanel
+        var body = new StackPanel
         {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = false,
-            Margin = new Padding(0)
+            Spacing = 10,
+            Margin = new Thickness(8, 4, 8, 8)
         };
 
         AddInputs(body, section, SnippetInputPlacement.BeforeSelector);
         AddSnippetSelector(body, section);
         AddInputs(body, section, SnippetInputPlacement.AfterSelector);
 
-        if (body.Controls.Count == 0)
+        if (body.Children.Count == 0)
         {
-            body.Controls.Add(new Label
+            body.Children.Add(new TextBlock
             {
-                AutoSize = true,
                 Text = "No options available.",
-                ForeColor = SystemColors.GrayText,
-                Margin = new Padding(12, 4, 3, 0)
+                Opacity = 0.7
             });
         }
 
-        container.Controls.Add(body);
+        expander.Content = body;
 
-        var ui = new SectionUi(section, container, body, toggleButton);
-        toggleButton.Click += (_, _) => ToggleSection(ui);
+        var ui = new SectionUi(section, expander, body);
         return ui;
     }
 
-    private void AddInputs(FlowLayoutPanel host, CodeSnippetSection section, SnippetInputPlacement placement)
+    private void AddInputs(StackPanel host, CodeSnippetSection section, SnippetInputPlacement placement)
     {
         foreach (var input in section.Inputs.Where(i => i != null && i.Placement == placement))
         {
@@ -303,26 +219,28 @@ public sealed class TemplateOptionsForm : Form
         }
     }
 
-    private void AddInputRow(FlowLayoutPanel host, CodeSnippetInput input)
+    private void AddInputRow(StackPanel host, CodeSnippetInput input)
     {
-        var row = CreateRow();
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8
+        };
 
         string labelText = BuildInputLabel(input);
         if (!string.IsNullOrWhiteSpace(labelText))
         {
-            row.Controls.Add(new Label
+            row.Children.Add(new TextBlock
             {
-                AutoSize = true,
                 Text = labelText,
-                Margin = new Padding(0, 5, 6, 0)
+                VerticalAlignment = VerticalAlignment.Center
             });
         }
 
         string key = input.Id ?? string.Empty;
         var textBox = new TextBox
         {
-            Width = input.Width.HasValue && input.Width.Value > 0 ? input.Width.Value : DefaultInputWidth,
-            Margin = new Padding(0)
+            Width = input.Width.HasValue && input.Width.Value > 0 ? input.Width.Value : DefaultInputWidth
         };
 
         if (!string.IsNullOrWhiteSpace(key))
@@ -332,34 +250,42 @@ public sealed class TemplateOptionsForm : Form
             textBox.PlaceholderText = input.Placeholder;
 
         textBox.Text = GetInitialTextValue(key);
-        row.Controls.Add(textBox);
+        row.Children.Add(textBox);
 
         if (!string.IsNullOrWhiteSpace(input.InfoAction))
         {
             var infoButton = new Button
             {
-                AutoSize = true,
-                Text = string.IsNullOrWhiteSpace(input.InfoButtonLabel) ? "Info" : input.InfoButtonLabel,
-                Margin = new Padding(6, 0, 0, 0)
+                Content = string.IsNullOrWhiteSpace(input.InfoButtonLabel) ? "Info" : input.InfoButtonLabel
             };
-            infoButton.Click += (_, _) => _infoAction?.Invoke(input.InfoAction);
-            row.Controls.Add(infoButton);
+
+            infoButton.Click += async (_, _) =>
+            {
+                if (_infoAction != null)
+                    await _infoAction(input.InfoAction);
+            };
+
+            row.Children.Add(infoButton);
         }
 
         if (!string.IsNullOrWhiteSpace(key))
             _bindings.Add(new FieldBinding(key, FieldKind.Text, textBox));
 
-        host.Controls.Add(row);
+        host.Children.Add(row);
     }
 
-    private void AddSnippetSelector(FlowLayoutPanel host, CodeSnippetSection section)
+    private void AddSnippetSelector(StackPanel host, CodeSnippetSection section)
     {
-        var row = CreateRow();
-        row.Controls.Add(new Label
+        var row = new StackPanel
         {
-            AutoSize = true,
+            Orientation = Orientation.Horizontal,
+            Spacing = 8
+        };
+
+        row.Children.Add(new TextBlock
+        {
             Text = section.AllowMultiple ? "Snippets" : "Snippet",
-            Margin = new Padding(0, 5, 6, 0)
+            VerticalAlignment = VerticalAlignment.Top
         });
 
         if (section.AllowMultiple)
@@ -371,40 +297,36 @@ public sealed class TemplateOptionsForm : Form
 
             if (options.Count == 0)
             {
-                row.Controls.Add(new Label
+                row.Children.Add(new TextBlock
                 {
-                    AutoSize = true,
                     Text = "No snippets defined.",
-                    ForeColor = SystemColors.GrayText,
-                    Margin = new Padding(0, 5, 0, 0)
+                    Opacity = 0.7,
+                    VerticalAlignment = VerticalAlignment.Center
                 });
-                host.Controls.Add(row);
+                host.Children.Add(row);
                 return;
             }
 
-            var list = new CheckedListBox
+            var list = new ListView
             {
                 Width = DefaultSelectorWidth,
-                CheckOnClick = true,
-                IntegralHeight = false,
-                Margin = new Padding(0)
+                SelectionMode = ListViewSelectionMode.Multiple,
+                IsMultiSelectCheckBoxEnabled = true,
+                ItemsSource = options,
+                DisplayMemberPath = nameof(OptionItem.Display)
             };
 
-            list.DisplayMember = nameof(OptionItem.Display);
+            int height = Math.Clamp(options.Count * 32 + 12, MinSelectorHeight, MaxSelectorHeight);
+            list.Height = height;
+
             var selectedIds = new HashSet<string>(resolved, StringComparer.OrdinalIgnoreCase);
             foreach (var option in options)
             {
-                int index = list.Items.Add(option);
                 if (!string.IsNullOrWhiteSpace(option.Id) && selectedIds.Contains(option.Id))
-                    list.SetItemChecked(index, true);
+                    list.SelectedItems.Add(option);
             }
 
-            int itemCount = Math.Max(1, list.Items.Count);
-            int height = itemCount * 18 + 12;
-            height = Math.Clamp(height, MinSelectorHeight, MaxSelectorHeight);
-            list.Height = height;
-
-            row.Controls.Add(list);
+            row.Children.Add(list);
             _bindings.Add(new FieldBinding(key, FieldKind.MultiSelect, list));
         }
         else
@@ -416,34 +338,20 @@ public sealed class TemplateOptionsForm : Form
 
             var combo = new ComboBox
             {
-                DropDownStyle = ComboBoxStyle.DropDownList,
                 Width = DefaultSelectorWidth,
-                Margin = new Padding(0)
+                ItemsSource = options,
+                DisplayMemberPath = nameof(OptionItem.Display),
+                SelectedValuePath = nameof(OptionItem.Id),
+                IsEditable = false
             };
-            combo.DisplayMember = nameof(OptionItem.Display);
-            combo.ValueMember = nameof(OptionItem.Id);
-
-            foreach (var option in options)
-                combo.Items.Add(option);
 
             SelectComboItem(combo, options, resolved);
 
-            row.Controls.Add(combo);
+            row.Children.Add(combo);
             _bindings.Add(new FieldBinding(key, FieldKind.SingleSelect, combo));
         }
 
-        host.Controls.Add(row);
-    }
-
-    private static FlowLayoutPanel CreateRow()
-    {
-        return new FlowLayoutPanel
-        {
-            AutoSize = true,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
-            Margin = new Padding(12, 4, 3, 0)
-        };
+        host.Children.Add(row);
     }
 
     private TemplateOptionsState BuildResultState()
@@ -478,12 +386,11 @@ public sealed class TemplateOptionsForm : Form
                     }
                 case FieldKind.MultiSelect:
                     {
-                        var list = binding.Control as CheckedListBox;
-                        if (list == null)
+                        if (binding.Control is not ListView list)
                             break;
 
                         var selections = new List<string>();
-                        foreach (var item in list.CheckedItems)
+                        foreach (var item in list.SelectedItems)
                         {
                             if (item is OptionItem option && !string.IsNullOrWhiteSpace(option.Id))
                             {
@@ -541,23 +448,14 @@ public sealed class TemplateOptionsForm : Form
             {
                 if (string.Equals(options[i].Id, selectedId, StringComparison.OrdinalIgnoreCase))
                 {
-                    combo.SelectedIndex = i;
+                    combo.SelectedItem = options[i];
                     return;
                 }
             }
         }
 
-        int noneIndex = -1;
-        for (int i = 0; i < options.Count; i++)
-        {
-            if (string.IsNullOrWhiteSpace(options[i].Id))
-            {
-                noneIndex = i;
-                break;
-            }
-        }
-
-        combo.SelectedIndex = noneIndex >= 0 ? noneIndex : (options.Count > 0 ? 0 : -1);
+        OptionItem? noneItem = options.FirstOrDefault(option => string.IsNullOrWhiteSpace(option.Id));
+        combo.SelectedItem = noneItem ?? options.FirstOrDefault();
     }
 
     private static List<OptionItem> BuildOptionItems(
@@ -668,23 +566,11 @@ public sealed class TemplateOptionsForm : Form
         return selections;
     }
 
-    private void ToggleSection(SectionUi section)
-    {
-        SetSectionCollapsed(section, !section.IsCollapsed);
-    }
-
-    private void SetSectionCollapsed(SectionUi section, bool collapsed)
-    {
-        section.IsCollapsed = collapsed;
-        section.Body.Visible = !collapsed;
-        section.ToggleButton.Text = collapsed ? "+" : "-";
-    }
-
-    private void SetAllSectionsCollapsed(bool collapsed)
+    private void SetAllSectionsExpanded(bool expanded)
     {
         foreach (var section in _sections)
         {
-            SetSectionCollapsed(section, collapsed);
+            section.Container.IsExpanded = expanded;
         }
     }
 
@@ -701,24 +587,21 @@ public sealed class TemplateOptionsForm : Form
 
     private sealed class SectionUi
     {
-        public SectionUi(CodeSnippetSection section, FlowLayoutPanel container, FlowLayoutPanel body, Button toggleButton)
+        public SectionUi(CodeSnippetSection section, Expander container, StackPanel body)
         {
             Section = section;
             Container = container;
             Body = body;
-            ToggleButton = toggleButton;
         }
 
         public CodeSnippetSection Section { get; }
-        public FlowLayoutPanel Container { get; }
-        public FlowLayoutPanel Body { get; }
-        public Button ToggleButton { get; }
-        public bool IsCollapsed { get; set; }
+        public Expander Container { get; }
+        public StackPanel Body { get; }
     }
 
     private sealed class FieldBinding
     {
-        public FieldBinding(string key, FieldKind kind, Control control)
+        public FieldBinding(string key, FieldKind kind, FrameworkElement control)
         {
             Key = key ?? string.Empty;
             Kind = kind;
@@ -727,7 +610,7 @@ public sealed class TemplateOptionsForm : Form
 
         public string Key { get; }
         public FieldKind Kind { get; }
-        public Control Control { get; }
+        public FrameworkElement Control { get; }
     }
 
     private sealed class OptionItem

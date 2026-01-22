@@ -1,20 +1,27 @@
+using Windows.ApplicationModel.DataTransfer;
+
 namespace Washmachine.Services;
 
 public interface IClipboardService
 {
-    bool ContainsText();
-    string GetText(TextDataFormat format = TextDataFormat.UnicodeText);
+    Task<bool> ContainsTextAsync();
+    Task<string> GetTextAsync();
 }
 
 public sealed class ClipboardService : IClipboardService
 {
-    public bool ContainsText() => Clipboard.ContainsText();
-
-    public string GetText(TextDataFormat format = TextDataFormat.UnicodeText)
+    public Task<bool> ContainsTextAsync()
     {
-        if (!ContainsText())
+        var content = Clipboard.GetContent();
+        return Task.FromResult(content != null && content.Contains(StandardDataFormats.Text));
+    }
+
+    public async Task<string> GetTextAsync()
+    {
+        var content = Clipboard.GetContent();
+        if (content == null || !content.Contains(StandardDataFormats.Text))
             throw new InvalidOperationException("Clipboard does not contain text.");
 
-        return Clipboard.GetText(format);
+        return await content.GetTextAsync();
     }
 }

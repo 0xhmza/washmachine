@@ -1,8 +1,13 @@
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+
 namespace Washmachine.Views;
 
-public interface IMainFormView : IWin32Window
+public interface IMainFormView
 {
-    Control RootControl { get; }
+    Window Window { get; }
+    XamlRoot XamlRoot { get; }
+    FrameworkElement RootElement { get; }
 
     ComboBox EncoderCombo { get; }
     ComboBox EnvelopeCombo { get; }
