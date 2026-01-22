@@ -1,238 +1,160 @@
+using Microsoft.UI;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.Storage.Pickers;
+using Washmachine.Views;
+using WinRT.Interop;
+
 namespace Washmachine.Services;
 
 public interface IUserInteractionService
 {
-    DialogResult ShowMessage(
-        IWin32Window owner,
+    Task<DialogResult> ShowMessageAsync(
+        IMainFormView view,
         string message,
         string title,
-        MessageBoxButtons buttons,
-        MessageBoxIcon icon,
-        MessageBoxDefaultButton defaultButton = MessageBoxDefaultButton.Button1);
+        DialogButtons buttons,
+        DialogIcon icon,
+        DialogDefaultButton defaultButton = DialogDefaultButton.Primary);
 
-    string? SelectFile(
-        IWin32Window owner,
+    Task<string?> SelectFileAsync(
+        IMainFormView view,
         string title,
         string filter,
         string initialDirectory);
 
-    void ShowLargeText(
-        IWin32Window owner,
+    Task ShowLargeTextAsync(
+        IMainFormView view,
         string title,
         string content,
         string? header = null);
 
-    void ShowCopyableText(
-        IWin32Window owner,
+    Task ShowCopyableTextAsync(
+        IMainFormView view,
         string title,
         string content,
         string? header = null);
 
-    void ShowShellcodeTip(IWin32Window owner);
-    void ShowGuardRailInfo(IWin32Window owner);
+    Task ShowShellcodeTipAsync(IMainFormView view);
+    Task ShowGuardRailInfoAsync(IMainFormView view);
 }
 
-/// <summary>
-/// Thin wrapper around WinForms dialogs to keep UI interactions centralized.
-/// </summary>
 public sealed class UserInteractionService : IUserInteractionService
 {
-    public DialogResult ShowMessage(
-        IWin32Window owner,
+    public async Task<DialogResult> ShowMessageAsync(
+        IMainFormView view,
         string message,
         string title,
-        MessageBoxButtons buttons,
-        MessageBoxIcon icon,
-        MessageBoxDefaultButton defaultButton = MessageBoxDefaultButton.Button1)
-        => MessageBox.Show(owner, message, title, buttons, icon, defaultButton);
+        DialogButtons buttons,
+        DialogIcon icon,
+        DialogDefaultButton defaultButton = DialogDefaultButton.Primary)
+    {
+        ArgumentNullException.ThrowIfNull(view);
 
-    public string? SelectFile(
-        IWin32Window owner,
+        var dialog = new ContentDialog
+        {
+            XamlRoot = view.XamlRoot,
+            Title = title,
+            Content = BuildMessageContent(message, icon)
+        };
+
+        ConfigureButtons(dialog, buttons, defaultButton);
+
+        var result = await dialog.ShowAsync();
+        return MapDialogResult(buttons, result);
+    }
+
+    public async Task<string?> SelectFileAsync(
+        IMainFormView view,
         string title,
         string filter,
         string initialDirectory)
     {
-        using var dialog = new OpenFileDialog
+        ArgumentNullException.ThrowIfNull(view);
+
+        var picker = new FileOpenPicker
         {
+            ViewMode = PickerViewMode.List,
+            SuggestedStartLocation = PickerLocationId.DocumentsLibrary
+        };
+
+        foreach (var extension in ParseFileTypes(filter))
+        {
+            picker.FileTypeFilter.Add(extension);
+        }
+
+        var hwnd = WindowNative.GetWindowHandle(view.Window);
+        InitializeWithWindow.Initialize(picker, hwnd);
+
+        var file = await picker.PickSingleFileAsync();
+        return file?.Path;
+    }
+
+    public async Task ShowLargeTextAsync(
+        IMainFormView view,
+        string title,
+        string content,
+        string? header = null)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = view.XamlRoot,
             Title = title,
-            Filter = filter,
-            InitialDirectory = string.IsNullOrWhiteSpace(initialDirectory)
-                ? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
-                : initialDirectory,
-            CheckFileExists = true,
-            CheckPathExists = true,
-            Multiselect = false,
-            RestoreDirectory = true
+            CloseButtonText = "Close"
         };
 
-        return dialog.ShowDialog(owner) == DialogResult.OK
-            ? dialog.FileName
-            : null;
+        dialog.Content = BuildTextDialogContent(content, header, isCopyable: false);
+
+        await dialog.ShowAsync();
     }
 
-    public void ShowLargeText(
-        IWin32Window owner,
+    public async Task ShowCopyableTextAsync(
+        IMainFormView view,
         string title,
         string content,
         string? header = null)
     {
-        using var dialog = CreateFixedDialog(title, new Size(920, 620));
+        ArgumentNullException.ThrowIfNull(view);
 
-        var textBox = new TextBox
+        var dialog = new ContentDialog
         {
-            Multiline = true,
-            ReadOnly = true,
-            ScrollBars = ScrollBars.Both,
-            WordWrap = false,
-            Font = new Font("Consolas", 9f),
-            Dock = DockStyle.Fill,
-            Text = content ?? string.Empty
+            XamlRoot = view.XamlRoot,
+            Title = title,
+            PrimaryButtonText = "Copy",
+            CloseButtonText = "Close"
         };
 
-        var bottomPanel = new Panel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 50,
-            Padding = new Padding(0, 0, 16, 10)
-        };
-
-        var closeButton = new Button
-        {
-            Text = "Close",
-            DialogResult = DialogResult.OK,
-            Size = new Size(90, 30),
-            Anchor = AnchorStyles.Bottom | AnchorStyles.Right
-        };
-        closeButton.Location = new Point(bottomPanel.ClientSize.Width - closeButton.Width - 16, bottomPanel.ClientSize.Height - closeButton.Height - 10);
-        bottomPanel.Controls.Add(closeButton);
-
-        bottomPanel.Resize += (_, _) =>
-        {
-            closeButton.Location = new Point(bottomPanel.ClientSize.Width - closeButton.Width - 16, bottomPanel.ClientSize.Height - closeButton.Height - 10);
-        };
-
-        dialog.AcceptButton = closeButton;
-        dialog.CancelButton = closeButton;
-
-        dialog.SuspendLayout();
-        dialog.Controls.Add(textBox);
-        dialog.Controls.Add(bottomPanel);
-
-        if (!string.IsNullOrWhiteSpace(header))
-        {
-            var headerLabel = new Label
-            {
-                AutoSize = false,
-                Dock = DockStyle.Top,
-                Padding = new Padding(16, 16, 16, 4),
-                Text = header,
-                Font = new Font("Segoe UI", 9f, FontStyle.Bold)
-            };
-            dialog.Controls.Add(headerLabel);
-        }
-
-        dialog.ResumeLayout(performLayout: true);
-        dialog.ShowDialog(owner);
-    }
-
-    public void ShowCopyableText(
-        IWin32Window owner,
-        string title,
-        string content,
-        string? header = null)
-    {
-        using var dialog = CreateFixedDialog(title, new Size(720, 460));
-
-        var textBox = new TextBox
-        {
-            Multiline = true,
-            ReadOnly = true,
-            ScrollBars = ScrollBars.Both,
-            WordWrap = false,
-            Font = new Font("Consolas", 9f),
-            Dock = DockStyle.Fill,
-            Text = content ?? string.Empty
-        };
-
-        var bottomPanel = new Panel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 60,
-            Padding = new Padding(16, 8, 16, 12)
-        };
-
-        var copyButton = new Button
-        {
-            Text = "Copy",
-            Size = new Size(90, 30),
-            Anchor = AnchorStyles.Bottom | AnchorStyles.Right
-        };
-
-        var closeButton = new Button
-        {
-            Text = "Close",
-            DialogResult = DialogResult.OK,
-            Size = new Size(90, 30),
-            Anchor = AnchorStyles.Bottom | AnchorStyles.Right
-        };
-
-        void LayoutButtons()
-        {
-            closeButton.Location = new Point(
-                bottomPanel.ClientSize.Width - closeButton.Width,
-                bottomPanel.ClientSize.Height - closeButton.Height);
-            copyButton.Location = new Point(
-                closeButton.Left - copyButton.Width - 10,
-                closeButton.Top);
-        }
-
-        bottomPanel.Controls.Add(copyButton);
-        bottomPanel.Controls.Add(closeButton);
-        LayoutButtons();
-        bottomPanel.Resize += (_, _) => LayoutButtons();
-
-        copyButton.Click += (_, _) =>
+        dialog.Content = BuildTextDialogContent(content, header, isCopyable: true);
+        dialog.PrimaryButtonClick += (_, args) =>
         {
             try
             {
-                Clipboard.SetText(textBox.Text ?? string.Empty);
+                var package = new DataPackage();
+                package.SetText(content ?? string.Empty);
+                Clipboard.SetContent(package);
+                Clipboard.Flush();
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    dialog,
+                _ = ShowMessageAsync(
+                    view,
                     $"Failed to copy payload: {ex.Message}",
                     "Copy",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                    DialogButtons.Ok,
+                    DialogIcon.Error);
             }
+
+            args.Cancel = true;
         };
 
-        dialog.AcceptButton = closeButton;
-        dialog.CancelButton = closeButton;
-
-        dialog.SuspendLayout();
-        dialog.Controls.Add(textBox);
-        dialog.Controls.Add(bottomPanel);
-
-        if (!string.IsNullOrWhiteSpace(header))
-        {
-            var headerLabel = new Label
-            {
-                AutoSize = false,
-                Dock = DockStyle.Top,
-                Padding = new Padding(16, 16, 16, 4),
-                Text = header,
-                Font = new Font("Segoe UI", 9f, FontStyle.Bold)
-            };
-            dialog.Controls.Add(headerLabel);
-        }
-
-        dialog.ResumeLayout(performLayout: true);
-        dialog.ShowDialog(owner);
+        await dialog.ShowAsync();
     }
 
-    public void ShowShellcodeTip(IWin32Window owner)
+    public async Task ShowShellcodeTipAsync(IMainFormView view)
     {
         const string tipText = "Please paste shellcode as hexadecimal byte escapes.\r\n\r\n" +
                                "- Use \\x followed by exactly two hex digits per byte.\r\n" +
@@ -242,126 +164,232 @@ public sealed class UserInteractionService : IUserInteractionService
 
         const string example = "\\x48\\xB8\\x44\\x44\\x44\\x44\\x44\\x44\\x44\\x44\\x50\\x48\\xB8\\x55\\x55\\x55\\x55\\x55\\x55\\x55\\x55\\x50\\x48\\x31\\xC9\\x48\\x89\\xE2\\x49\\x89\\xE0\\x49\\x83\\xC0\\x08\\x4D\\x31\\xC9\\x48\\xB8\\x33\\x33\\x33\\x33\\x33\\x33\\x33\\x33\\x48\\x83\\xEC\\x28\\xFF\\xD0\\x48\\x83\\xC4\\x38\\x48\\xB8\\xEF\\xBE\\xAD\\xDE\\x00\\x00\\x00\\x00\\xEB\\xFE";
 
-        using var dialog = CreateFixedDialog("Shellcode Tip", new Size(560, 360));
-
-        var header = new Label
+        var dialog = new ContentDialog
         {
-            AutoSize = true,
-            Text = "Shellcode Input Format",
-            Font = new Font("Segoe UI Semibold", 12f),
-            Location = new Point(16, 16)
+            XamlRoot = view.XamlRoot,
+            Title = "Shellcode Tip",
+            CloseButtonText = "OK",
+            Content = BuildInfoDialogContent("Shellcode Input Format", tipText, example)
         };
 
-        var info = new Label
-        {
-            AutoSize = false,
-            Location = new Point(16, 48),
-            Size = new Size(dialog.ClientSize.Width - 32, 140),
-            Text = tipText
-        };
-
-        var exampleBox = new TextBox
-        {
-            Multiline = true,
-            ReadOnly = true,
-            BorderStyle = BorderStyle.FixedSingle,
-            ScrollBars = ScrollBars.Vertical,
-            Location = new Point(16, 190),
-            Size = new Size(dialog.ClientSize.Width - 32, 120),
-            Font = new Font("Consolas", 9f),
-            Text = example
-        };
-
-        var okButton = CreateCloseButton(dialog);
-
-        dialog.AcceptButton = okButton;
-        dialog.Controls.Add(header);
-        dialog.Controls.Add(info);
-        dialog.Controls.Add(exampleBox);
-        dialog.Controls.Add(okButton);
-
-        dialog.ShowDialog(owner);
+        await dialog.ShowAsync();
     }
 
-    public void ShowGuardRailInfo(IWin32Window owner)
+    public async Task ShowGuardRailInfoAsync(IMainFormView view)
     {
-        using var dialog = CreateFixedDialog("Environment Condition Format", new Size(560, 420));
+        const string infoText = "Enter environment conditions in the form NAME#operator#value.\r\n\r\n" +
+                                "Operators include equals, contains, biggerthan, and smallerthan.\r\n" +
+                                "Separate multiple conditions with commas.";
 
-        var header = new Label
+        const string example = "\"PROCESSOR_LEVEL#equals#6\", \"PATH#contains#System32\"\r\n" +
+                               "NUMBER_OF_PROCESSORS#biggerthan#4, USERDOMAIN#equals#ACME\r\n" +
+                               "PROCESSOR_LEVEL#smallerthan#10";
+
+        var dialog = new ContentDialog
         {
-            AutoSize = true,
-            Text = "Environment Condition Format",
-            Font = new Font("Segoe UI Semibold", 12f),
-            Location = new Point(16, 16)
+            XamlRoot = view.XamlRoot,
+            Title = "Environment Condition Format",
+            CloseButtonText = "OK",
+            Content = BuildInfoDialogContent("Environment Condition Format", infoText, example)
         };
 
-        var info = new Label
-        {
-            AutoSize = false,
-            Location = new Point(16, 48),
-            Size = new Size(dialog.ClientSize.Width - 32, 180),
-            Text = "Enter environment conditions in the form NAME#operator#value.\r\n\r\n" +
-                   "Operators include equals, contains, biggerthan, and smallerthan.\r\n" +
-                   "Separate multiple conditions with commas."
-        };
-
-        var exampleLabel = new Label
-        {
-            AutoSize = true,
-            Location = new Point(16, 250),
-            Text = "Examples:"
-        };
-
-        var exampleBox = new TextBox
-        {
-            Multiline = true,
-            ReadOnly = true,
-            BorderStyle = BorderStyle.FixedSingle,
-            ScrollBars = ScrollBars.Vertical,
-            Location = new Point(16, 270),
-            Size = new Size(dialog.ClientSize.Width - 32, 100),
-            Font = new Font("Consolas", 9f),
-            Text = "\"PROCESSOR_LEVEL#equals#6\", \"PATH#contains#System32\"\r\n" +
-                   "NUMBER_OF_PROCESSORS#biggerthan#4, USERDOMAIN#equals#ACME\r\n" +
-                   "PROCESSOR_LEVEL#smallerthan#10"
-        };
-
-        var okButton = CreateCloseButton(dialog);
-
-        dialog.AcceptButton = okButton;
-        dialog.Controls.Add(header);
-        dialog.Controls.Add(info);
-        dialog.Controls.Add(exampleLabel);
-        dialog.Controls.Add(exampleBox);
-        dialog.Controls.Add(okButton);
-
-        dialog.ShowDialog(owner);
+        await dialog.ShowAsync();
     }
 
-    private static Form CreateFixedDialog(string title, Size size)
-        => new()
+    private static UIElement BuildMessageContent(string message, DialogIcon icon)
+    {
+        var text = new TextBlock
         {
-            Text = title,
-            FormBorderStyle = FormBorderStyle.FixedDialog,
-            StartPosition = FormStartPosition.CenterParent,
-            ClientSize = size,
-            MaximizeBox = false,
-            MinimizeBox = false,
-            ShowInTaskbar = false,
-            BackColor = SystemColors.Window,
-            Font = new Font("Segoe UI", 9f)
+            Text = message ?? string.Empty,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 420
         };
 
-    private static Button CreateCloseButton(Form dialog)
-        => new()
+        if (icon == DialogIcon.None)
+            return text;
+
+        var iconElement = new SymbolIcon
         {
-            Text = "OK",
-            DialogResult = DialogResult.OK,
-            Size = new Size(90, 30),
-            Location = new Point(dialog.ClientSize.Width - 16 - 90, dialog.ClientSize.Height - 16 - 30)
+            Symbol = icon switch
+            {
+                DialogIcon.Warning => Symbol.Warning,
+                DialogIcon.Error => Symbol.Clear,
+                DialogIcon.Question => Symbol.Help,
+                DialogIcon.Information => Symbol.Info,
+                _ => Symbol.Info
+            },
+            Foreground = new SolidColorBrush(icon switch
+            {
+                DialogIcon.Warning => Colors.Goldenrod,
+                DialogIcon.Error => Colors.OrangeRed,
+                DialogIcon.Question => Colors.LightSkyBlue,
+                DialogIcon.Information => Colors.DeepSkyBlue,
+                _ => Colors.Gray
+            })
         };
+
+        var panel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 12
+        };
+
+        panel.Children.Add(iconElement);
+        panel.Children.Add(text);
+        return panel;
+    }
+
+    private static void ConfigureButtons(ContentDialog dialog, DialogButtons buttons, DialogDefaultButton defaultButton)
+    {
+        dialog.PrimaryButtonText = string.Empty;
+        dialog.SecondaryButtonText = string.Empty;
+        dialog.CloseButtonText = string.Empty;
+        dialog.DefaultButton = ContentDialogButton.None;
+
+        switch (buttons)
+        {
+            case DialogButtons.Ok:
+                dialog.CloseButtonText = "OK";
+                dialog.DefaultButton = ContentDialogButton.Close;
+                break;
+            case DialogButtons.YesNo:
+                dialog.PrimaryButtonText = "Yes";
+                dialog.SecondaryButtonText = "No";
+                dialog.DefaultButton = defaultButton == DialogDefaultButton.Secondary
+                    ? ContentDialogButton.Secondary
+                    : ContentDialogButton.Primary;
+                break;
+        }
+    }
+
+    private static DialogResult MapDialogResult(DialogButtons buttons, ContentDialogResult result)
+    {
+        return buttons switch
+        {
+            DialogButtons.Ok => DialogResult.Ok,
+            DialogButtons.YesNo => result switch
+            {
+                ContentDialogResult.Primary => DialogResult.Yes,
+                ContentDialogResult.Secondary => DialogResult.No,
+                _ => DialogResult.Cancel
+            },
+            _ => DialogResult.None
+        };
+    }
+
+    private static UIElement BuildTextDialogContent(string content, string? header, bool isCopyable)
+    {
+        var container = new StackPanel
+        {
+            Spacing = 10
+        };
+
+        if (!string.IsNullOrWhiteSpace(header))
+        {
+            container.Children.Add(new TextBlock
+            {
+                Text = header,
+                FontWeight = Windows.UI.Text.FontWeights.SemiBold
+            });
+        }
+
+        var textBox = new TextBox
+        {
+            Text = content ?? string.Empty,
+            FontFamily = new FontFamily("Consolas"),
+            TextWrapping = TextWrapping.NoWrap,
+            AcceptsReturn = true,
+            IsReadOnly = true,
+            MinHeight = isCopyable ? 260 : 360,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+        };
+
+        container.Children.Add(textBox);
+        return container;
+    }
+
+    private static UIElement BuildInfoDialogContent(string header, string info, string example)
+    {
+        var container = new StackPanel
+        {
+            Spacing = 10
+        };
+
+        container.Children.Add(new TextBlock
+        {
+            Text = header,
+            FontSize = 18,
+            FontWeight = Windows.UI.Text.FontWeights.SemiBold
+        });
+
+        container.Children.Add(new TextBlock
+        {
+            Text = info,
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        container.Children.Add(new TextBlock
+        {
+            Text = "Examples:",
+            FontWeight = Windows.UI.Text.FontWeights.SemiBold
+        });
+
+        container.Children.Add(new TextBox
+        {
+            Text = example,
+            FontFamily = new FontFamily("Consolas"),
+            AcceptsReturn = true,
+            IsReadOnly = true,
+            TextWrapping = TextWrapping.NoWrap,
+            MinHeight = 120,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+        });
+
+        return container;
+    }
+
+    private static IReadOnlyList<string> ParseFileTypes(string filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter))
+            return new[] { "*" };
+
+        var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var segments = filter.Split('|');
+
+        for (int i = 1; i < segments.Length; i += 2)
+        {
+            var patterns = segments[i].Split(';', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var pattern in patterns)
+            {
+                var trimmed = pattern.Trim();
+                if (string.IsNullOrEmpty(trimmed))
+                    continue;
+
+                if (trimmed == "*" || trimmed == "*.*")
+                {
+                    results.Add("*");
+                    continue;
+                }
+
+                if (trimmed.StartsWith("*.", StringComparison.Ordinal))
+                {
+                    results.Add(trimmed[1..]);
+                    continue;
+                }
+
+                if (trimmed.StartsWith(".", StringComparison.Ordinal))
+                {
+                    results.Add(trimmed);
+                    continue;
+                }
+            }
+        }
+
+        if (results.Count == 0)
+            results.Add("*");
+
+        return results.ToList();
+    }
 }
-
-
-
-

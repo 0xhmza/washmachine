@@ -1,41 +1,54 @@
+using Microsoft.UI;
+using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml.Controls;
+using Windows.UI.Text;
+
 namespace Washmachine.Logging;
 
-public sealed class RichTextBoxLogger : IAppLogger
+public sealed class RichEditBoxLogger : IAppLogger
 {
-    private readonly RichTextBox _target;
+    private readonly RichEditBox _target;
+    private readonly DispatcherQueue _dispatcher;
 
-    public RichTextBoxLogger(RichTextBox target)
+    public RichEditBoxLogger(RichEditBox target)
     {
         _target = target ?? throw new ArgumentNullException(nameof(target));
-        _target.ReadOnly = true;
-        _target.WordWrap = false;
-        _target.ScrollBars = RichTextBoxScrollBars.Both;
+        _dispatcher = _target.DispatcherQueue;
+        _target.IsReadOnly = true;
+        _target.IsSpellCheckEnabled = false;
+        _target.IsTextPredictionEnabled = false;
     }
 
-    public void Info(string message) => Write(message, _target.ForeColor);
-    public void Warn(string message) => Write(message, Color.Goldenrod);
-    public void Error(string message) => Write(message, Color.OrangeRed);
-    public void Ok(string message) => Write(message, Color.ForestGreen);
+    public void Info(string message) => Write(message, Colors.Gainsboro);
+    public void Warn(string message) => Write(message, Colors.Goldenrod);
+    public void Error(string message) => Write(message, Colors.OrangeRed);
+    public void Ok(string message) => Write(message, Colors.ForestGreen);
 
     private void Write(string message, Color color)
     {
-        if (_target.IsDisposed) return;
-
-        void Append()
+        if (_dispatcher.HasThreadAccess)
         {
-            _target.SelectionStart = _target.TextLength;
-            _target.SelectionLength = 0;
-            _target.SelectionColor = color;
-
-            _target.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
-
-            _target.SelectionColor = _target.ForeColor;
-            _target.ScrollToCaret();
+            Append(message, color);
+            return;
         }
 
-        if (_target.InvokeRequired)
-            _target.Invoke((Action)Append);
-        else
-            Append();
+        _dispatcher.TryEnqueue(() => Append(message, color));
+    }
+
+    private void Append(string message, Color color)
+    {
+        var doc = _target.Document;
+        doc.GetText(TextGetOptions.None, out var existing);
+        int length = existing?.Length ?? 0;
+        string line = $"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}";
+
+        var range = doc.GetRange(length, length);
+        range.CharacterFormat.ForegroundColor = color;
+        range.SetText(TextSetOptions.None, line);
+
+        var selection = doc.Selection;
+        int caret = length + line.Length;
+        selection.SetRange(caret, caret);
+        selection.ScrollIntoView(PointOptions.None);
     }
 }

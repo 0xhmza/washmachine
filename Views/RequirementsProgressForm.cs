@@ -1,55 +1,89 @@
+using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+
 namespace Washmachine.Views;
 
-public sealed class RequirementsProgressForm : Form
+public sealed class RequirementsProgressDialog : IDisposable
 {
-    private readonly Label _statusLabel;
+    private readonly ContentDialog _dialog;
+    private readonly TextBlock _statusText;
     private readonly ProgressBar _progressBar;
+    private readonly DispatcherQueue _dispatcher;
+    private bool _isShown;
 
-    public RequirementsProgressForm()
+    public RequirementsProgressDialog(XamlRoot xamlRoot)
     {
-        Text = "Downloading Requirements";
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(420, 140);
-        MaximizeBox = false;
-        MinimizeBox = false;
-        ShowInTaskbar = false;
-        ControlBox = false;
-        TopMost = true;
-        Font = new Font("Segoe UI", 9f);
-
-        _statusLabel = new Label
+        _statusText = new TextBlock
         {
-            Dock = DockStyle.Top,
-            Height = 70,
-            Padding = new Padding(16, 16, 16, 8),
-            TextAlign = ContentAlignment.MiddleLeft,
-            Text = "Preparing downloads..."
+            Text = "Preparing downloads...",
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 12)
         };
 
         _progressBar = new ProgressBar
         {
-            Dock = DockStyle.Bottom,
-            Height = 30,
             Minimum = 0,
             Maximum = 100,
-            Style = ProgressBarStyle.Continuous,
-            MarqueeAnimationSpeed = 0
+            Height = 18
         };
 
-        Controls.Add(_progressBar);
-        Controls.Add(_statusLabel);
+        _dialog = new ContentDialog
+        {
+            XamlRoot = xamlRoot,
+            Title = "Downloading Requirements",
+            Content = new StackPanel
+            {
+                Spacing = 10,
+                Children =
+                {
+                    _statusText,
+                    _progressBar
+                }
+            },
+            DefaultButton = ContentDialogButton.None
+        };
+
+        _dispatcher = _dialog.DispatcherQueue;
+    }
+
+    public void Show()
+    {
+        if (_isShown)
+            return;
+
+        _isShown = true;
+        _ = _dialog.ShowAsync();
     }
 
     public void UpdateStatus(string message, int progressPercent)
     {
-        if (InvokeRequired)
+        if (_dispatcher.HasThreadAccess)
         {
-            BeginInvoke(new Action(() => UpdateStatus(message, progressPercent)));
+            SetStatus(message, progressPercent);
             return;
         }
 
-        _statusLabel.Text = message;
-        _progressBar.Value = Math.Clamp(progressPercent, _progressBar.Minimum, _progressBar.Maximum);
+        _dispatcher.TryEnqueue(() => SetStatus(message, progressPercent));
+    }
+
+    public void Close()
+    {
+        if (!_isShown)
+            return;
+
+        _isShown = false;
+        _dialog.Hide();
+    }
+
+    public void Dispose()
+    {
+        Close();
+    }
+
+    private void SetStatus(string message, int progressPercent)
+    {
+        _statusText.Text = message;
+        _progressBar.Value = Math.Clamp(progressPercent, 0, 100);
     }
 }

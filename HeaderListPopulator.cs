@@ -1,3 +1,5 @@
+using Microsoft.UI.Xaml.Controls;
+
 namespace Washmachine.Services;
 
 public interface IHeaderListProvider
@@ -20,24 +22,16 @@ public sealed class HeaderListProvider : IHeaderListProvider
         ArgumentNullException.ThrowIfNull(combo);
         var items = LoadEntries(sectionName);
 
-        combo.BeginUpdate();
-        try
-        {
-            combo.DisplayMember = nameof(SnippetListEntry.Display);
-            combo.Items.Clear();
+        combo.DisplayMemberPath = nameof(SnippetListEntry.Display);
+        combo.Items.Clear();
 
-            foreach (var entry in items)
-            {
-                combo.Items.Add(entry);
-            }
-
-            combo.Items.Add(SnippetListEntry.Empty);
-            combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
-        }
-        finally
+        foreach (var entry in items)
         {
-            combo.EndUpdate();
+            combo.Items.Add(entry);
         }
+
+        combo.Items.Add(SnippetListEntry.Empty);
+        combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
     }
 
     public void PopulateListFromHeaderSection(ListBox list, string sectionName)
@@ -45,20 +39,12 @@ public sealed class HeaderListProvider : IHeaderListProvider
         ArgumentNullException.ThrowIfNull(list);
         var items = LoadEntries(sectionName);
 
-        list.BeginUpdate();
-        try
-        {
-            list.DisplayMember = nameof(SnippetListEntry.Display);
-            list.Items.Clear();
+        list.DisplayMemberPath = nameof(SnippetListEntry.Display);
+        list.Items.Clear();
 
-            foreach (var entry in items)
-            {
-                list.Items.Add(entry);
-            }
-        }
-        finally
+        foreach (var entry in items)
         {
-            list.EndUpdate();
+            list.Items.Add(entry);
         }
     }
 
