@@ -1,8 +1,11 @@
+using System.Windows;
+using System.Windows.Controls;
+
 namespace Washmachine.Views;
 
-public interface IMainFormView : IWin32Window
+public interface IMainFormView
 {
-    Control RootControl { get; }
+    Window RootWindow { get; }
 
     ComboBox EncoderCombo { get; }
     ComboBox EnvelopeCombo { get; }

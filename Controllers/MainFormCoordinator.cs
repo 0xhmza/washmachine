@@ -1,6 +1,10 @@
-﻿using System.Globalization;
+using System.Globalization;
+using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 using Washmachine.Logging;
 using Washmachine.Models;
 using Washmachine.Services;
@@ -9,7 +13,7 @@ using Washmachine.Views;
 namespace Washmachine.Controllers;
 
 /// <summary>
-/// Coordinates MainForm UI events with application services and logging.
+/// Coordinates MainWindow UI events with application services and logging.
 /// </summary>
 public sealed class MainFormCoordinator
 {
@@ -35,6 +39,7 @@ public sealed class MainFormCoordinator
     private IReadOnlyList<CodeTemplateDefinition> _templates = Array.Empty<CodeTemplateDefinition>();
     private TemplateOptionsState _templateOptions = new();
     private string _templateOptionsTemplateId = string.Empty;
+    private bool _suppressTemplateOptionsDialog;
 
     public MainFormCoordinator(
         IAppLogger logger,
@@ -56,6 +61,36 @@ public sealed class MainFormCoordinator
         _interaction = interaction ?? throw new ArgumentNullException(nameof(interaction));
     }
 
+    private MessageBoxResult ShowMessage(
+        IMainFormView view,
+        string message,
+        string title,
+        MessageBoxButton buttons,
+        MessageBoxImage icon,
+        MessageBoxResult defaultResult = MessageBoxResult.OK)
+        => _interaction.ShowMessage(view.RootWindow, message, title, buttons, icon, defaultResult);
+
+    private string? SelectFile(
+        IMainFormView view,
+        string title,
+        string filter,
+        string initialDirectory)
+        => _interaction.SelectFile(view.RootWindow, title, filter, initialDirectory);
+
+    private string? PromptText(
+        IMainFormView view,
+        string title,
+        string message,
+        string? placeholder = null,
+        string? initialValue = null)
+        => _interaction.PromptText(view.RootWindow, title, message, placeholder, initialValue);
+
+    private void ShowLargeText(IMainFormView view, string title, string content, string? header = null)
+        => _interaction.ShowLargeText(view.RootWindow, title, content, header);
+
+    private void ShowCopyableText(IMainFormView view, string title, string content, string? header = null)
+        => _interaction.ShowCopyableText(view.RootWindow, title, content, header);
+
     public async Task InitializeAsync(IMainFormView view)
     {
         ArgumentNullException.ThrowIfNull(view);
@@ -65,8 +100,8 @@ public sealed class MainFormCoordinator
         {
             var message = string.Join(Environment.NewLine, pathIssues);
             _logger.Error(message);
-            _interaction.ShowMessage(view, message, "Missing Assets", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            view.SubmitButton.Enabled = false;
+            ShowMessage(view, message, "Missing Assets", MessageBoxButton.OK, MessageBoxImage.Error);
+            view.SubmitButton.IsEnabled = false;
             return;
         }
 
@@ -82,7 +117,7 @@ public sealed class MainFormCoordinator
         ArgumentNullException.ThrowIfNull(view);
 
         _logger.Info("Selecting shellcode file...");
-        string? selected = _interaction.SelectFile(
+        string? selected = SelectFile(
             view,
             "Select Shellcode File",
             "All files (*.*)|*.*",
@@ -108,8 +143,8 @@ public sealed class MainFormCoordinator
         if (!_clipboard.ContainsText())
         {
             _logger.Warn("Clipboard does not contain text.");
-            _interaction.ShowMessage(view, "Clipboard does not contain text.", "Clipboard",
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            ShowMessage(view, "Clipboard does not contain text.", "Clipboard",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
@@ -121,21 +156,21 @@ public sealed class MainFormCoordinator
         catch (Exception ex)
         {
             _logger.Error($"Failed to read clipboard: {ex.Message}");
-            _interaction.ShowMessage(view, $"Failed to read clipboard: {ex.Message}", "Clipboard",
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            ShowMessage(view, $"Failed to read clipboard: {ex.Message}", "Clipboard",
+                MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
 
         if (!string.IsNullOrWhiteSpace(target.Text))
         {
-            var result = _interaction.ShowMessage(view,
+            var result = ShowMessage(view,
                 "Replace existing text with clipboard contents?",
                 "Replace Text?",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question,
-                MessageBoxDefaultButton.Button2);
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question,
+                MessageBoxResult.No);
 
-            if (result != DialogResult.Yes)
+            if (result != MessageBoxResult.Yes)
             {
                 _logger.Info("User cancelled clipboard paste.");
                 return;
@@ -143,8 +178,7 @@ public sealed class MainFormCoordinator
         }
 
         target.Text = content;
-        target.SelectionStart = target.TextLength;
-        target.SelectionLength = 0;
+        target.CaretIndex = target.Text.Length;
         target.Focus();
         _logger.Ok("Clipboard contents pasted.");
     }
@@ -156,17 +190,17 @@ public sealed class MainFormCoordinator
         if (!ValidateShellcodeSource(view, out string? validationError))
         {
             _logger.Error(validationError!);
-            _interaction.ShowMessage(view, validationError!, "Validation Error",
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            ShowMessage(view, validationError!, "Validation Error",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
-        view.SubmitButton.Enabled = false;
+        view.SubmitButton.IsEnabled = false;
 
         try
         {
             _logger.Ok("Validation passed. Collecting UI data...");
-            var data = new UiData(view.RootControl);
+            var data = new UiData(view.RootWindow);
             MergeTemplateOptions(data);
             LogCollectedData(data);
 
@@ -193,11 +227,11 @@ public sealed class MainFormCoordinator
 
             if (!result.Success)
             {
-                _interaction.ShowMessage(view,
+                ShowMessage(view,
                     "Generation failed. Check the log for details.",
                     "Generate",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
                 return;
             }
 
@@ -211,7 +245,7 @@ public sealed class MainFormCoordinator
 
             string preview = result.GeneratedSourceCode ?? string.Empty;
 
-            _interaction.ShowLargeText(
+            ShowLargeText(
                 view,
                 "Generated Source",
                 preview,
@@ -220,15 +254,15 @@ public sealed class MainFormCoordinator
         catch (Exception ex)
         {
             _logger.Error($"Unexpected error during generation: {ex.Message}");
-            _interaction.ShowMessage(view,
+            ShowMessage(view,
                 $"Unexpected error: {ex.Message}",
                 "Generate",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
         }
         finally
         {
-            view.SubmitButton.Enabled = true;
+            view.SubmitButton.IsEnabled = true;
         }
     }
 
@@ -236,14 +270,14 @@ public sealed class MainFormCoordinator
     {
         ArgumentNullException.ThrowIfNull(view);
 
-        _interaction.ShowShellcodeTip(view);
+        _interaction.ShowShellcodeTip(view.RootWindow);
     }
 
     public void ShowGuardRailInfo(IMainFormView view)
     {
         ArgumentNullException.ThrowIfNull(view);
 
-        _interaction.ShowGuardRailInfo(view);
+        _interaction.ShowGuardRailInfo(view.RootWindow);
     }
 
     public async Task GenerateWebPayloadAsync(IMainFormView view)
@@ -257,12 +291,12 @@ public sealed class MainFormCoordinator
         {
             const string message = "Select a shellcode file before generating a web payload.";
             _logger.Warn(message);
-            _interaction.ShowMessage(
+            ShowMessage(
                 view,
                 message,
                 "Web Payload",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
             return;
         }
 
@@ -270,12 +304,12 @@ public sealed class MainFormCoordinator
         {
             string message = $"Shellcode file not found: {filePath}";
             _logger.Warn(message);
-            _interaction.ShowMessage(
+            ShowMessage(
                 view,
                 message,
                 "Web Payload",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
             return;
         }
 
@@ -284,12 +318,12 @@ public sealed class MainFormCoordinator
         if (encoderCombo != null && encoderCombo.SelectedIndex > 0)
         {
             _logger.Warn("Web payload generation does not support encoders. Clearing selection.");
-            _interaction.ShowMessage(
+            ShowMessage(
                 view,
                 "Web payload generation does not support encoders. The encoder selection has been reset to None.",
                 "Web Payload",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
 
             if (encoderCombo.Items.Count > 0)
             {
@@ -306,12 +340,12 @@ public sealed class MainFormCoordinator
         {
             const string message = "Envelope selection control is unavailable.";
             _logger.Warn(message);
-            _interaction.ShowMessage(
+            ShowMessage(
                 view,
                 message,
                 "Web Payload",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
             return;
         }
 
@@ -319,12 +353,12 @@ public sealed class MainFormCoordinator
         {
             const string message = "Select an envelope (Base32, Base64, or Base91) before generating a web payload.";
             _logger.Warn(message);
-            _interaction.ShowMessage(
+            ShowMessage(
                 view,
                 message,
                 "Web Payload",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
             return;
         }
 
@@ -332,12 +366,12 @@ public sealed class MainFormCoordinator
         {
             const string message = "Envelope 'None' is not supported. Choose Base32, Base64, or Base91.";
             _logger.Warn(message);
-            _interaction.ShowMessage(
+            ShowMessage(
                 view,
                 message,
                 "Web Payload",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
             return;
         }
 
@@ -345,12 +379,12 @@ public sealed class MainFormCoordinator
         {
             string message = $"Envelope '{envelopeDisplay}' is not supported. Choose Base32, Base64, or Base91.";
             _logger.Warn(message);
-            _interaction.ShowMessage(
+            ShowMessage(
                 view,
                 message,
                 "Web Payload",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
             return;
         }
 
@@ -371,12 +405,12 @@ public sealed class MainFormCoordinator
         catch (Exception ex)
         {
             _logger.Error($"Bin2Shell failed during web payload generation: {ex.Message}");
-            _interaction.ShowMessage(
+            ShowMessage(
                 view,
                 $"Failed to generate web payload:{Environment.NewLine}{ex.Message}",
                 "Web Payload",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
             return;
         }
 
@@ -384,12 +418,12 @@ public sealed class MainFormCoordinator
         {
             const string message = "Bin2Shell returned no output while generating the web payload.";
             _logger.Warn(message);
-            _interaction.ShowMessage(
+            ShowMessage(
                 view,
                 message,
                 "Web Payload",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
             return;
         }
 
@@ -406,24 +440,24 @@ public sealed class MainFormCoordinator
         else
         {
             _logger.Warn("Bin2Shell output did not contain a recognizable payload segment.");
-            _interaction.ShowMessage(
+            ShowMessage(
                 view,
                 "Bin2Shell output did not contain a recognizable payload segment.",
                 "Web Payload",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
             return;
         }
 
         if (string.IsNullOrWhiteSpace(payload))
         {
             _logger.Warn("Extracted payload content was empty.");
-            _interaction.ShowMessage(
+            ShowMessage(
                 view,
                 "Extracted payload content was empty.",
                 "Web Payload",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
             return;
         }
 
@@ -434,7 +468,7 @@ public sealed class MainFormCoordinator
             header.Append($" (from {payloadSource})");
         }
 
-        _interaction.ShowCopyableText(view, "Web Payload", payload, header.ToString());
+        ShowCopyableText(view, "Web Payload", payload, header.ToString());
         _logger.Ok("Web payload generated successfully.");
     }
 
@@ -450,6 +484,8 @@ public sealed class MainFormCoordinator
             return;
         }
 
+        bool previousSuppress = _suppressTemplateOptionsDialog;
+        _suppressTemplateOptionsDialog = true;
         try
         {
             var allTemplates = _snippetCatalog.GetTemplates()
@@ -462,38 +498,34 @@ public sealed class MainFormCoordinator
 
             _templates = allTemplates;
 
-            combo.BeginUpdate();
-            try
-            {
-                combo.DisplayMember = nameof(TemplateComboItem.Display);
-                combo.ValueMember = nameof(TemplateComboItem.Id);
-                combo.DropDownStyle = ComboBoxStyle.DropDownList;
-                combo.Items.Clear();
+            combo.DisplayMemberPath = nameof(TemplateComboItem.Display);
+            combo.SelectedValuePath = nameof(TemplateComboItem.Id);
+            combo.IsEditable = false;
+            combo.Items.Clear();
 
-                combo.Items.Add(new TemplateComboItem(string.Empty, "None"));
+            combo.Items.Add(new TemplateComboItem(string.Empty, "None"));
 
-                foreach (var template in _templates)
-                    combo.Items.Add(new TemplateComboItem(template.Id, template.Display));
+            foreach (var template in _templates)
+                combo.Items.Add(new TemplateComboItem(template.Id, template.Display));
 
-                combo.SelectedIndex = 0;
-            }
-            finally
-            {
-                combo.EndUpdate();
-            }
+            combo.SelectedIndex = 0;
 
             _logger.Ok($"Loaded {_templates.Count} template(s) into chooser (default None).");
         }
         catch (Exception ex)
         {
             _logger.Error($"Failed to populate template list: {ex.Message}");
-            _interaction.ShowMessage(
+            ShowMessage(
                 view,
                 $"Unable to load templates:{Environment.NewLine}{ex.Message}",
                 "Initialization Error",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
             _templates = Array.Empty<CodeTemplateDefinition>();
+        }
+        finally
+        {
+            _suppressTemplateOptionsDialog = previousSuppress;
         }
     }
 
@@ -505,9 +537,22 @@ public sealed class MainFormCoordinator
         ResetTemplateOptions(selectedTemplate);
         UpdateTemplateContext(view, selectedTemplate);
 
-        if (selectedTemplate != null)
+        if (selectedTemplate != null && !_suppressTemplateOptionsDialog)
         {
-            OpenTemplateConfig(view, selectedTemplate);
+            try
+            {
+                OpenTemplateConfig(view, selectedTemplate);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to open template options: {ex}");
+                ShowMessage(
+                    view,
+                    $"Failed to open template options.{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+                    "Template Options",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
         }
     }
 
@@ -515,8 +560,204 @@ public sealed class MainFormCoordinator
     {
         ArgumentNullException.ThrowIfNull(view);
 
-        var template = GetSelectedTemplate(view);
-        OpenTemplateConfig(view, template);
+        try
+        {
+            var template = GetSelectedTemplate(view);
+            OpenTemplateConfig(view, template);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Failed to open template options: {ex}");
+            ShowMessage(
+                view,
+                $"Failed to open template options.{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+                "Template Options",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    public async Task ImportTemplateCatalogAsync(IMainFormView view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+
+        var choice = ShowMessage(
+            view,
+            "Import snippet catalog from a file or URL?\r\n\r\nYes = File, No = URL.",
+            "Import Template Catalog",
+            MessageBoxButton.YesNoCancel,
+            MessageBoxImage.Question,
+            MessageBoxResult.Yes);
+
+        if (choice == MessageBoxResult.Cancel)
+            return;
+
+        string content;
+        string sourceLabel;
+
+        if (choice == MessageBoxResult.Yes)
+        {
+            string? selected = SelectFile(
+                view,
+                "Select Snippet Catalog",
+                "YAML files (*.yaml;*.yml)|*.yaml;*.yml|All files (*.*)|*.*",
+                _paths.AssetsDirectory);
+
+            if (string.IsNullOrWhiteSpace(selected))
+            {
+                _logger.Warn("Snippet catalog import cancelled.");
+                return;
+            }
+
+            try
+            {
+                content = File.ReadAllText(selected);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to read snippet catalog file: {ex.Message}");
+                ShowMessage(
+                    view,
+                    $"Unable to read the selected file.{Environment.NewLine}{ex.Message}",
+                    "Import Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                return;
+            }
+
+            sourceLabel = selected;
+        }
+        else
+        {
+            string? rawUrl = PromptText(
+                view,
+                "Import Catalog from URL",
+                "Enter the URL that returns YAML content:",
+                "https://example.com/vx_api_snippets.yaml",
+                null);
+
+            if (string.IsNullOrWhiteSpace(rawUrl))
+            {
+                _logger.Warn("Snippet catalog import cancelled.");
+                return;
+            }
+
+            string trimmed = rawUrl.Trim();
+            if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) ||
+                (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                ShowMessage(
+                    view,
+                    "The URL must start with http:// or https://",
+                    "Import Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+                content = await client.GetStringAsync(uri).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to download snippet catalog: {ex.Message}");
+                ShowMessage(
+                    view,
+                    $"Failed to download the catalog.{Environment.NewLine}{ex.Message}",
+                    "Import Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                return;
+            }
+
+            sourceLabel = uri.ToString();
+        }
+
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            ShowMessage(
+                view,
+                "The imported catalog content is empty.",
+                "Import Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        string targetPath = _paths.SnippetCatalogFile;
+        string? backup = null;
+
+        try
+        {
+            Directory.CreateDirectory(_paths.AssetsDirectory);
+            if (File.Exists(targetPath))
+                backup = File.ReadAllText(targetPath);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"Failed to backup existing snippet catalog: {ex.Message}");
+            backup = null;
+        }
+
+        try
+        {
+            File.WriteAllText(targetPath, content);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Failed to write snippet catalog: {ex.Message}");
+            ShowMessage(
+                view,
+                $"Unable to write the catalog to disk.{Environment.NewLine}{ex.Message}",
+                "Import Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            return;
+        }
+
+        if (!_snippetCatalog.TryReload(out var error))
+        {
+            _logger.Error($"Imported catalog is invalid: {error}");
+
+            if (backup != null)
+            {
+                try
+                {
+                    File.WriteAllText(targetPath, backup);
+                    _snippetCatalog.TryReload(out _);
+                }
+                catch (Exception restoreEx)
+                {
+                    _logger.Warn($"Failed to restore previous catalog: {restoreEx.Message}");
+                }
+            }
+
+            ShowMessage(
+                view,
+                $"Imported catalog could not be loaded.{Environment.NewLine}{error}",
+                "Import Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            return;
+        }
+
+        _templateOptions = new TemplateOptionsState();
+        _templateOptionsTemplateId = string.Empty;
+
+        PopulateTemplateCombo(view);
+        var selectedTemplate = GetSelectedTemplate(view);
+        ResetTemplateOptions(selectedTemplate);
+        UpdateTemplateContext(view, selectedTemplate);
+
+        _logger.Ok($"Snippet catalog imported from {sourceLabel}.");
+        ShowMessage(
+            view,
+            "Snippet catalog imported successfully.",
+            "Import Complete",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
     }
 
     private void OpenTemplateConfig(IMainFormView view, CodeTemplateDefinition? template)
@@ -525,11 +766,11 @@ public sealed class MainFormCoordinator
 
         if (template == null)
         {
-            _interaction.ShowMessage(view,
+            ShowMessage(view,
                 "Select a template before configuring options.",
                 "Template Options",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
             return;
         }
 
@@ -538,13 +779,14 @@ public sealed class MainFormCoordinator
         var sections = GetTemplateSections(template, out var genericSection, out _);
         PopulateGenericShellcodeCombo(view, genericSection);
 
-        using var dialog = new TemplateOptionsForm(
+        var dialog = new TemplateOptionsWindow(
             template,
             sections,
             _templateOptions,
             action => HandleTemplateInfoAction(view, action));
 
-        if (dialog.ShowDialog(view) == DialogResult.OK)
+        dialog.Owner = view.RootWindow;
+        if (dialog.ShowDialog() == true)
         {
             _templateOptions = dialog.ResultState ?? new TemplateOptionsState();
             _logger.Ok($"Template options saved for '{template.Display}'.");
@@ -748,7 +990,7 @@ public sealed class MainFormCoordinator
             header = "Generation failed; preview shown for debugging.";
         }
 
-        _interaction.ShowLargeText(
+        ShowLargeText(
             view,
             result.Success ? "Generated Source" : "Generated Source (Debug Preview)",
             result.GeneratedSourceCode,
@@ -763,29 +1005,21 @@ public sealed class MainFormCoordinator
         if (combo == null)
             return;
 
-        combo.BeginUpdate();
-        try
-        {
-            combo.DisplayMember = nameof(SnippetComboItem.Display);
-            combo.ValueMember = nameof(SnippetComboItem.Id);
-            combo.Items.Clear();
-            combo.DropDownStyle = ComboBoxStyle.DropDownList;
-            combo.Items.Add(SnippetComboItem.None);
+        combo.DisplayMemberPath = nameof(SnippetComboItem.Display);
+        combo.SelectedValuePath = nameof(SnippetComboItem.Id);
+        combo.IsEditable = false;
+        combo.Items.Clear();
+        combo.Items.Add(SnippetComboItem.None);
 
-            if (section != null)
+        if (section != null)
+        {
+            foreach (var item in section.Items)
             {
-                foreach (var item in section.Items)
-                {
-                    combo.Items.Add(new SnippetComboItem(item.Id, item.Display));
-                }
+                combo.Items.Add(new SnippetComboItem(item.Id, item.Display));
             }
+        }
 
-            combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
-        }
-        finally
-        {
-            combo.EndUpdate();
-        }
+        combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
     }
 
     private async Task HandleCompilerDiscoveryAsync(IMainFormView view, CompilerToolDiscoveryResult discovery)
@@ -810,26 +1044,26 @@ public sealed class MainFormCoordinator
         }
 
         const string browsePrompt = "Are MSVS Build tools installed and you wanna browse folder for: \"vcvars64.bat\"?";
-        var response = _interaction.ShowMessage(
+        var response = ShowMessage(
             view,
             browsePrompt,
             "Visual Studio Build Tools",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Question,
-            MessageBoxDefaultButton.Button1);
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question,
+            MessageBoxResult.Yes);
 
-        if (response != DialogResult.Yes)
+        if (response != MessageBoxResult.Yes)
         {
-            _interaction.ShowMessage(
+            ShowMessage(
                 view,
                 "MSVS Build Tools should be installed.\r\nDownload: https://visualstudio.microsoft.com/downloads/",
                 "Visual Studio Build Tools Required",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
             return;
         }
 
-        string? selected = _interaction.SelectFile(
+        string? selected = SelectFile(
             view,
             "Locate vcvars64.bat",
             "Batch files (*.bat)|*.bat|All files (*.*)|*.*",
@@ -849,12 +1083,12 @@ public sealed class MainFormCoordinator
         catch (Exception ex)
         {
             _logger.Error($"Manual compiler validation failed: {ex.Message}");
-            _interaction.ShowMessage(
+            ShowMessage(
                 view,
                 $"Failed to validate the selected compiler script: {ex.Message}",
                 "Visual Studio Build Tools",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
             return;
         }
 
@@ -868,12 +1102,12 @@ public sealed class MainFormCoordinator
 
         if (manualResult.Best == null)
         {
-            _interaction.ShowMessage(
+            ShowMessage(
                 view,
                 "Selected script could not be validated. MSVS Build Tools should be installed.\r\nDownload: https://visualstudio.microsoft.com/downloads/",
                 "Visual Studio Build Tools",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
             return;
         }
 
@@ -882,12 +1116,12 @@ public sealed class MainFormCoordinator
 
         if (!manualResult.Best.Validated)
         {
-            _interaction.ShowMessage(
+            ShowMessage(
                 view,
                 "Selected script was not validated successfully. MSVS Build Tools may be incomplete.",
                 "Visual Studio Build Tools",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
         }
     }
 
@@ -904,11 +1138,11 @@ public sealed class MainFormCoordinator
         catch (Exception ex)
         {
             _logger.Error($"Failed to load Bin2Shell catalog: {ex.Message}");
-            _interaction.ShowMessage(view,
+            ShowMessage(view,
                 $"Unable to load Bin2Shell algorithms:{Environment.NewLine}{ex.Message}",
                 "Bin2Shell",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
         }
     }
 
@@ -917,23 +1151,15 @@ public sealed class MainFormCoordinator
         if (combo == null)
             return;
 
-        combo.BeginUpdate();
-        try
-        {
-            combo.Items.Clear();
-            combo.Items.Add(string.Empty);
+        combo.Items.Clear();
+        combo.Items.Add(string.Empty);
 
-            foreach (var item in items.OrderBy(i => i.Index))
-            {
-                combo.Items.Add(item.DisplayText);
-            }
-
-            combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
-        }
-        finally
+        foreach (var item in items.OrderBy(i => i.Index))
         {
-            combo.EndUpdate();
+            combo.Items.Add(item.DisplayText);
         }
+
+        combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
     }
 
     private static void BindEnvelopeCombo(ComboBox? combo, IReadOnlyCollection<ShellcodeEncodingItem> items)
@@ -941,37 +1167,29 @@ public sealed class MainFormCoordinator
         if (combo == null)
             return;
 
-        combo.BeginUpdate();
-        try
+        combo.Items.Clear();
+        combo.Items.Add(string.Empty);
+
+        int preferredIndex = -1;
+        foreach (var item in items.OrderBy(i => i.Index))
         {
-            combo.Items.Clear();
-            combo.Items.Add(string.Empty);
+            var display = item.DisplayText;
+            combo.Items.Add(display);
 
-            int preferredIndex = -1;
-            foreach (var item in items.OrderBy(i => i.Index))
+            if (preferredIndex < 0 &&
+                string.Equals(item.Name, "base64", StringComparison.OrdinalIgnoreCase))
             {
-                var display = item.DisplayText;
-                combo.Items.Add(display);
-
-                if (preferredIndex < 0 &&
-                    string.Equals(item.Name, "base64", StringComparison.OrdinalIgnoreCase))
-                {
-                    preferredIndex = combo.Items.Count - 1;
-                }
-            }
-
-            if (preferredIndex >= 0)
-            {
-                combo.SelectedIndex = preferredIndex;
-            }
-            else
-            {
-                combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
+                preferredIndex = combo.Items.Count - 1;
             }
         }
-        finally
+
+        if (preferredIndex >= 0)
         {
-            combo.EndUpdate();
+            combo.SelectedIndex = preferredIndex;
+        }
+        else
+        {
+            combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
         }
     }
 
@@ -1072,28 +1290,20 @@ public sealed class MainFormCoordinator
             return;
         }
 
-        combo.BeginUpdate();
-        try
-        {
-            combo.Items.Clear();
-            combo.Items.Add(string.Empty);
+        combo.Items.Clear();
+        combo.Items.Add(string.Empty);
 
-            foreach (var option in options.OrderBy(o => o.Index))
-            {
-                combo.Items.Add(option.DisplayText);
-            }
-
-            combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
-        }
-        finally
+        foreach (var option in options.OrderBy(o => o.Index))
         {
-            combo.EndUpdate();
+            combo.Items.Add(option.DisplayText);
         }
+
+        combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
     }
 
     private static ComboBox? FindAntiEmulationCombo(IMainFormView view)
     {
-        if (view?.RootControl == null)
+        if (view?.RootWindow == null)
             return null;
 
         string[] candidateNames =
@@ -1114,13 +1324,35 @@ public sealed class MainFormCoordinator
 
         foreach (var name in candidateNames)
         {
-            var combo = view.RootControl.Controls
-                .Find(name, searchAllChildren: true)
-                .OfType<ComboBox>()
-                .FirstOrDefault();
-
+            var combo = FindByName<ComboBox>(view.RootWindow, name);
             if (combo != null)
                 return combo;
+        }
+
+        return null;
+    }
+
+    private static T? FindByName<T>(DependencyObject root, string name) where T : FrameworkElement
+    {
+        if (root == null || string.IsNullOrWhiteSpace(name))
+            return null;
+
+        var stack = new Stack<DependencyObject>();
+        stack.Push(root);
+
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            if (current is T typed && string.Equals(typed.Name, name, StringComparison.Ordinal))
+                return typed;
+
+            int count = VisualTreeHelper.GetChildrenCount(current);
+            for (int i = 0; i < count; i++)
+            {
+                var child = VisualTreeHelper.GetChild(current, i);
+                if (child != null)
+                    stack.Push(child);
+            }
         }
 
         return null;
@@ -1265,6 +1497,9 @@ public sealed class MainFormCoordinator
         public override string ToString() => Id;
     }
 }
+
+
+
 
 
 

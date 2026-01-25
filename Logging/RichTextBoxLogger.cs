@@ -1,41 +1,61 @@
+using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Media;
+
 namespace Washmachine.Logging;
 
 public sealed class RichTextBoxLogger : IAppLogger
 {
     private readonly RichTextBox _target;
+    private readonly Brush _infoBrush;
 
     public RichTextBoxLogger(RichTextBox target)
     {
         _target = target ?? throw new ArgumentNullException(nameof(target));
-        _target.ReadOnly = true;
-        _target.WordWrap = false;
-        _target.ScrollBars = RichTextBoxScrollBars.Both;
+        _target.IsReadOnly = true;
+        if (_target.Foreground is SolidColorBrush solid)
+        {
+            _infoBrush = new SolidColorBrush(solid.Color);
+            _infoBrush.Freeze();
+        }
+        else
+        {
+            _infoBrush = Brushes.Gainsboro;
+        }
     }
 
-    public void Info(string message) => Write(message, _target.ForeColor);
-    public void Warn(string message) => Write(message, Color.Goldenrod);
-    public void Error(string message) => Write(message, Color.OrangeRed);
-    public void Ok(string message) => Write(message, Color.ForestGreen);
+    public void Info(string message) => Write(message, _infoBrush);
+    public void Warn(string message) => Write(message, Brushes.Goldenrod);
+    public void Error(string message) => Write(message, Brushes.OrangeRed);
+    public void Ok(string message) => Write(message, Brushes.ForestGreen);
 
-    private void Write(string message, Color color)
+    private void Write(string message, Brush color)
     {
-        if (_target.IsDisposed) return;
-
-        void Append()
+        if (_target.Dispatcher.CheckAccess())
         {
-            _target.SelectionStart = _target.TextLength;
-            _target.SelectionLength = 0;
-            _target.SelectionColor = color;
+            Append(message, color);
+        }
+        else
+        {
+            _target.Dispatcher.Invoke(() => Append(message, color));
+        }
+    }
 
-            _target.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
-
-            _target.SelectionColor = _target.ForeColor;
-            _target.ScrollToCaret();
+    private void Append(string message, Brush color)
+    {
+        var paragraph = _target.Document.Blocks.LastBlock as Paragraph;
+        if (paragraph == null)
+        {
+            paragraph = new Paragraph { Margin = new System.Windows.Thickness(0) };
+            _target.Document.Blocks.Add(paragraph);
         }
 
-        if (_target.InvokeRequired)
-            _target.Invoke((Action)Append);
-        else
-            Append();
+        var run = new Run($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}")
+        {
+            Foreground = color
+        };
+
+        paragraph.Inlines.Add(run);
+        _target.ScrollToEnd();
     }
 }

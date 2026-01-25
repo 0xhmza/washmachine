@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using Washmachine.Logging;
 using Washmachine.Views;
@@ -46,10 +47,12 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
 
         _logger.Warn($"Missing external requirements detected: {string.Join(", ", missing.Select(m => m.Name))}.");
 
-        using var progressForm = new RequirementsProgressForm();
-        progressForm.Show(view);
+        var progressForm = new RequirementsProgressWindow
+        {
+            Owner = view.RootWindow
+        };
+        progressForm.Show();
         progressForm.UpdateStatus("Preparing downloads...", 0);
-        progressForm.Refresh();
 
         int totalStages = missing.Count * 2;
         int completedStages = 0;
@@ -67,10 +70,7 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
         }
         finally
         {
-            if (!progressForm.IsDisposed)
-            {
-                progressForm.Close();
-            }
+            progressForm.Close();
         }
     }
 
@@ -97,7 +97,7 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
 
     private async Task<int> InstallRequirementAsync(
         RequirementData requirement,
-        RequirementsProgressForm progressForm,
+        RequirementsProgressWindow progressForm,
         int totalStages,
         int completedStages,
         CancellationToken cancellationToken)

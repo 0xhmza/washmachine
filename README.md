@@ -1,13 +1,13 @@
 # Washmachine
 
-Washmachine is a Windows **loader builder** designed to streamline the process of composing, encoding, and packaging shellcode payloads. It combines a .NET 8 Windows Forms front-end with a modular services layer that reads structured snippets from YAML and orchestrates the generation pipeline.
+Washmachine is a Windows **loader builder** designed to streamline the process of composing, encoding, and packaging shellcode payloads. It combines a .NET 8 WPF front-end with a modular services layer that reads structured snippets from YAML and orchestrates the generation pipeline.
 
 > ?? **Security notice**: Washmachine manipulates and embeds shellcode. Use it only in environments where you have explicit permission, and treat all payloads as sensitive.
 
 ---
 
 ## Key Features
-- **WinForms UI:** Modernised entry form (`MainForm`) with asynchronous operations and contextual logging.
+- **WPF UI:** Main window (`MainWindow`) with asynchronous operations and contextual logging.
 - **Coordinator pattern:** `MainFormCoordinator` owns all UI workflows, leaving the code-behind thin and test-friendly.
 - **Snippet-driven generation:** YAML-backed catalog powers every drop-down and produces a composed C++ source file without needing the VX-UG repository.
 - **Python integration:** Executes Bin2Shell tooling with safe argument handling and rich error reporting.
@@ -27,7 +27,7 @@ Washmachine/
 +-- Models/
 ¦   +-- CodeSnippetModels.cs
 ¦   +-- CppCompilationPlan.cs
-¦   +-- UiData.cs                   # Snapshot of WinForms control state
+¦   +-- UiData.cs                   # Snapshot of WPF visual state
 +-- Services/
 ¦   +-- AppPaths.cs                 # Centralised path resolution/validation
 ¦   +-- Bin2ShellRunner.cs          # Python process execution helper
@@ -39,14 +39,14 @@ Washmachine/
 ¦   +-- ShellcodeEncodingCatalogService.cs
 ¦   +-- UserInteractionService.cs
 +-- Views/
-¦   +-- IMainFormView.cs            # Contract implemented by MainForm
-¦   +-- RequirementsProgressForm.cs
+¦   +-- IMainFormView.cs            # Contract implemented by MainWindow
+¦   +-- RequirementsProgressWindow.cs
 +-- Assets/
 ¦   +-- vx_api_snippets.yaml        # Snippet catalog consumed at runtime
-+-- MainForm.cs
-+-- MainForm.Designer.cs
-+-- MainForm.resx
-+-- Program.cs
++-- MainWindow.xaml
++-- MainWindow.xaml.cs
++-- App.xaml
++-- App.xaml.cs
 +-- washmachine.csproj
 ```
 
@@ -83,7 +83,7 @@ dotnet restore
 dotnet build
 ```
 
-### 4. Run the WinForms application
+### 4. Run the WPF application
 ```powershell
 dotnet run --project washmachine.csproj
 ```
@@ -111,7 +111,7 @@ Alternatively, open the solution in Visual Studio and press **F5**.
 ---
 
 ## Architectural Highlights
-- **Coordinator-driven UI**: `MainForm` delegates all logic to `MainFormCoordinator`, keeping WinForms code-behind minimal and easing unit testing.
+- **Coordinator-driven UI**: `MainWindow` delegates all logic to `MainFormCoordinator`, keeping WPF code-behind minimal and easing unit testing.
 - **Dependency inversion**: Behaviours (logging, dialogs, clipboard, file IO) flow through interfaces (`IAppLogger`, `IUserInteractionService`, etc.). Swap implementations for tests or future platforms.
 - **Async-ready**: Long-running tasks (Python invocations, file IO) run asynchronously to maintain UI responsiveness.
 - **Centralised validation**: `AppPaths.Validate()` consolidates filesystem checks and surfaces actionable messages to the user.
@@ -123,7 +123,7 @@ Alternatively, open the solution in Visual Studio and press **F5**.
 - **Additional shellcode workflows**: Implement new strategies inside `CompilerService` or create decorator services that plug in before/after generation.
 - **Alternative logging**: Implement `IAppLogger` to log to disk, structured logs, or remote sinks.
 - **CLI/automation**: Reuse `CompilerService` in a console host by providing non-UI implementations of `IUserInteractionService` and `IClipboardService`.
-- **Unit testing**: Mock the view and services to exercise `MainFormCoordinator` without WinForms (e.g., using Moq or NSubstitute).
+- **Unit testing**: Mock the view and services to exercise `MainFormCoordinator` without WPF (e.g., using Moq or NSubstitute).
 
 ---
 
@@ -133,7 +133,7 @@ Alternatively, open the solution in Visual Studio and press **F5**.
 | *"Missing Assets" dialog on startup* | Ensure the snippet catalog (and optional Bin2Shell files) exist or adjust `AppPaths`. |
 | Python process fails | Verify Python 3 is installed and accessible. Check the console log for stderr output. |
 | UI freezes during generation | Confirm Bin2Shell scripts finish; long-running external scripts can hold the coordinator. |
-| Designer errors after renames | Rebuild the project and reopen `MainForm` in the WinForms designer to regenerate partial classes. |
+| Designer errors after renames | Rebuild the project and reopen `MainWindow.xaml` in the WPF designer. |
 
 ---
 

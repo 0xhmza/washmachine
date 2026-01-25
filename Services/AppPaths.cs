@@ -20,7 +20,6 @@ public interface IAppPaths
 /// </summary>
 public sealed class AppPaths : IAppPaths
 {
-    private const string EmbeddedCatalogResourceName = "Washmachine.Assets.vx_api_snippets.yaml";
     private readonly Lazy<string> _tempShellcodeDir;
     private readonly Lazy<string> _tempSourceDir;
 
@@ -51,18 +50,10 @@ public sealed class AppPaths : IAppPaths
     {
         var errors = new List<string>();
 
-        if (!File.Exists(SnippetCatalogFile) && !HasEmbeddedSnippetCatalog())
+        if (!File.Exists(SnippetCatalogFile))
             errors.Add($"Snippet catalog missing: '{SnippetCatalogFile}'.");
 
         return errors;
-    }
-
-    private static bool HasEmbeddedSnippetCatalog()
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        return assembly.GetManifestResourceNames().Any(name =>
-            name.Equals(EmbeddedCatalogResourceName, StringComparison.OrdinalIgnoreCase) ||
-            name.EndsWith("vx_api_snippets.yaml", StringComparison.OrdinalIgnoreCase));
     }
 
     private string CreateTempShellcodeDir()

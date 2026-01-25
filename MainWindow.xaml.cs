@@ -1,17 +1,21 @@
-﻿using Washmachine.Controllers;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using Washmachine.Controllers;
 using Washmachine.Logging;
 using Washmachine.Services;
 using Washmachine.Views;
+using FluentWindow = Wpf.Ui.Controls.FluentWindow;
 
 namespace Washmachine;
 
-public partial class MainForm : Form, IMainFormView
+public partial class MainWindow : FluentWindow, IMainFormView
 {
     private readonly IAppLogger _logger;
     private readonly MainFormCoordinator _coordinator;
     private readonly IRequirementProvisioner _requirements;
 
-    public MainForm()
+    public MainWindow()
     {
         InitializeComponent();
 
@@ -38,9 +42,10 @@ public partial class MainForm : Form, IMainFormView
             interaction);
 
         _logger.Info("Initializing application...");
+        Loaded += MainWindow_Loaded;
     }
 
-    public Control RootControl => this;
+    public Window RootWindow => this;
     public ComboBox EncoderCombo => bin2hexEncoder;
     public ComboBox EnvelopeCombo => bin2hexEnvelope;
     public ComboBox TemplateCombo => templateComboBox;
@@ -50,7 +55,7 @@ public partial class MainForm : Form, IMainFormView
     public TextBox ShellcodeUrlTextBox => shellcodeURL;
     public Button SubmitButton => submitButton;
 
-    private async void MainForm_Load(object sender, EventArgs e)
+    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         try
         {
@@ -64,53 +69,57 @@ public partial class MainForm : Form, IMainFormView
                 this,
                 $"Failed to prepare the application's requirements.{Environment.NewLine}{Environment.NewLine}{ex.Message}",
                 "Startup Error",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
-            submitButton.Enabled = false;
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            submitButton.IsEnabled = false;
         }
     }
 
-    private void button1_Click(object sender, EventArgs e)
+    private void button1_Click(object sender, RoutedEventArgs e)
     {
         _coordinator.SelectShellcodeFile(this);
     }
 
-    private void button2_Click(object sender, EventArgs e)
+    private void button2_Click(object sender, RoutedEventArgs e)
     {
         _coordinator.PasteShellcodeFromClipboard(this, shellcodeRAW);
     }
 
-    private void button3_Click(object sender, EventArgs e)
+    private void button3_Click(object sender, RoutedEventArgs e)
     {
         _coordinator.PasteShellcodeFromClipboard(this, shellcodeURL);
     }
 
-    private void RAWShellcodeInfo_Click(object sender, EventArgs e)
+    private void RAWShellcodeInfo_Click(object sender, MouseButtonEventArgs e)
     {
         _coordinator.ShowShellcodeTip(this);
+        e.Handled = true;
     }
 
-    private void guardRailsFormat_Click(object sender, EventArgs e)
-    {
-        _coordinator.ShowGuardRailInfo(this);
-    }
-
-    private async void submitButton_Click(object sender, EventArgs e)
+    private async void submitButton_Click(object sender, RoutedEventArgs e)
     {
         await _coordinator.HandleSubmitAsync(this);
     }
 
-    private void templateComboBox_SelectedIndexChanged(object sender, EventArgs e)
+    private void templateComboBox_SelectedIndexChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (!IsLoaded)
+            return;
+
         _coordinator.HandleTemplateChanged(this);
     }
 
-    private void button4_Click(object sender, EventArgs e)
+    private void button4_Click(object sender, RoutedEventArgs e)
     {
         _coordinator.OpenTemplateConfig(this);
     }
 
-    private async void WebPayloadGenerator_Click(object sender, EventArgs e)
+    private async void importTemplateButton_Click(object sender, RoutedEventArgs e)
+    {
+        await _coordinator.ImportTemplateCatalogAsync(this);
+    }
+
+    private async void WebPayloadGenerator_Click(object sender, RoutedEventArgs e)
     {
         await _coordinator.GenerateWebPayloadAsync(this);
     }

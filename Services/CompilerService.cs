@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -706,7 +707,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     private bool TryGetSectionSelections(
         UiData data,
         string templateKey,
-        out CodeSnippetSection section,
+        [NotNullWhen(true)] out CodeSnippetSection? section,
         out IReadOnlyList<CodeSnippetItem> selections,
         string? missingMessage = null)
     {
@@ -724,11 +725,11 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     private bool TryGetFirstSelection(
         UiData data,
         string templateKey,
-        out CodeSnippetSection section,
-        out CodeSnippetItem selection,
+        [NotNullWhen(true)] out CodeSnippetSection? section,
+        [NotNullWhen(true)] out CodeSnippetItem? selection,
         string? missingMessage = null)
     {
-        selection = default!;
+        selection = null;
         if (!TryGetSectionSelections(data, templateKey, out section, out var selections, missingMessage))
             return false;
 

@@ -1,27 +1,26 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
+using System.Windows;
 
 namespace Washmachine;
 
-internal static class Program
+public partial class App
 {
     private const string ElevationArg = "--elevated";
     private const uint TokenQuery = 0x0008;
 
-    /// <summary>
-    ///  The main entry point for the application.
-    /// </summary>
-    [STAThread]
-    private static void Main()
+    protected override void OnStartup(StartupEventArgs e)
     {
-        // Request elevation up-front so downstream discovery can read protected paths.
         if (!EnsureElevated())
+        {
+            Shutdown();
             return;
+        }
 
-        ApplicationConfiguration.Initialize();
-        Application.Run(new MainForm());
+        base.OnStartup(e);
     }
 
     private static bool EnsureElevated()
@@ -35,8 +34,8 @@ internal static class Program
             MessageBox.Show(
                 "Failed to obtain administrator access. Please restart the app and approve the UAC prompt.",
                 "Elevation required",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
             return false;
         }
 
@@ -44,8 +43,8 @@ internal static class Program
             "Administrator access is required to locate Visual Studio C++ compilers.\r\n\r\n" +
             "The app will request elevation now.",
             "Administrator Required",
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Information);
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
 
         try
         {
@@ -55,8 +54,8 @@ internal static class Program
                 MessageBox.Show(
                     "Unable to locate the executable path needed to relaunch with elevation.",
                     "Elevation error",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
                 return false;
             }
 
@@ -83,19 +82,19 @@ internal static class Program
                 MessageBox.Show(
                     "Failed to launch the elevated instance.",
                     "Elevation error",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
             }
         }
         catch (Win32Exception ex) when (ex.NativeErrorCode == 1223) // user cancelled
         {
             MessageBox.Show("This app needs administrator rights to continue.", "Elevation required",
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         catch (Exception ex)
         {
             MessageBox.Show($"Failed to elevate: {ex.Message}", "Elevation error",
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBoxButton.OK, MessageBoxImage.Error);
         }
 
         return false;
@@ -175,9 +174,8 @@ internal static class Program
             // ignored
         }
 
-        return string.IsNullOrWhiteSpace(Application.ExecutablePath)
-            ? null
-            : Application.ExecutablePath;
+        var entryLocation = Assembly.GetEntryAssembly()?.Location;
+        return string.IsNullOrWhiteSpace(entryLocation) ? null : entryLocation;
     }
 
     private static string QuoteArg(string value)
@@ -215,3 +213,4 @@ internal static class Program
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr handle);
 }
+

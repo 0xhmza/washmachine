@@ -1,3 +1,5 @@
+using System.Windows;
+
 namespace Washmachine.Services;
 
 public interface IClipboardService

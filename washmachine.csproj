@@ -4,7 +4,7 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
-    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
     <BaseOutputPath>C:\Users\hamza\Documents\GitHub\washmachine\Output</BaseOutputPath>
     <RootNamespace>Washmachine</RootNamespace>
@@ -12,6 +12,9 @@
     <SignAssembly>False</SignAssembly>
     <GeneratePackageOnBuild>False</GeneratePackageOnBuild>
     <ProduceReferenceAssembly>False</ProduceReferenceAssembly>
+    <PublishAll Condition="'$(PublishAll)'==''">false</PublishAll>
+    <PublishAllPass Condition="'$(PublishAllPass)'==''">false</PublishAllPass>
+    <PublishDirSingle Condition="'$(PublishDirSingle)'==''">$(BaseOutputPath)\$(Configuration)\publish\single\</PublishDirSingle>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)'=='Debug'">
@@ -24,21 +27,30 @@
     <WarningLevel>6</WarningLevel>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
+    <PublishSingleFile>false</PublishSingleFile>
     <PublishReadyToRun>false</PublishReadyToRun>
     <StripSymbols>true</StripSymbols>
-    <PublishDir>$(BaseOutputPath)\Release\singlefile\</PublishDir>
+    <PublishDir>$(BaseOutputPath)\Release\publish\multi\</PublishDir>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Remove="Assets\vx_api_snippets.yaml" />
-    <EmbeddedResource Include="Assets\vx_api_snippets.yaml" LogicalName="Washmachine.Assets.vx_api_snippets.yaml" />
+    <Content Include="Assets\vx_api_snippets.yaml"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest"
+             ExcludeFromSingleFile="true" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="WPF-UI" Version="4.2.0" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
+
+  <Target Name="PublishSingleFileVariant"
+          AfterTargets="Publish"
+          Condition="'$(PublishAll)'=='true' and '$(PublishAllPass)'!='true'">
+    <MSBuild Projects="$(MSBuildProjectFullPath)"
+             Targets="Publish"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=$(SelfContained);PublishSingleFile=true;PublishDir=$(PublishDirSingle);PublishAll=false;PublishAllPass=true" />
+  </Target>
 
 </Project>

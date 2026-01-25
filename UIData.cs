@@ -1,7 +1,11 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+
 namespace Washmachine.Models;
 
 /// <summary>
-/// Snapshot of a WinForms control tree, keyed by control name with fallback to type name.
+/// Snapshot of a WPF visual tree, keyed by control name with fallback to type name.
 /// </summary>
 public sealed class UiData
 {
@@ -9,21 +13,26 @@ public sealed class UiData
     public Dictionary<string, string> ComboBoxes { get; } = new();
     public Dictionary<string, List<string>> ListBoxes { get; } = new();
 
-    public UiData(Control root)
+    public UiData(DependencyObject root)
     {
         ArgumentNullException.ThrowIfNull(root);
 
         foreach (var control in EnumerateAllControls(root))
         {
-            string key = string.IsNullOrWhiteSpace(control.Name) ? control.GetType().Name : control.Name;
+            string key = control is FrameworkElement element && !string.IsNullOrWhiteSpace(element.Name)
+                ? element.Name
+                : control.GetType().Name;
 
             switch (control)
             {
                 case TextBox textBox:
-                    TextBoxes[key] = textBox.Text;
+                    TextBoxes[key] = textBox.Text ?? string.Empty;
                     break;
                 case ComboBox comboBox:
-                    ComboBoxes[key] = comboBox.SelectedItem?.ToString() ?? comboBox.Text ?? string.Empty;
+                    ComboBoxes[key] = comboBox.SelectedValue?.ToString()
+                                      ?? comboBox.SelectedItem?.ToString()
+                                      ?? comboBox.Text
+                                      ?? string.Empty;
                     break;
                 case ListBox listBox:
                     var items = listBox.SelectedItems.Cast<object>()
@@ -35,9 +44,9 @@ public sealed class UiData
         }
     }
 
-    private static IEnumerable<Control> EnumerateAllControls(Control root)
+    private static IEnumerable<DependencyObject> EnumerateAllControls(DependencyObject root)
     {
-        var stack = new Stack<Control>();
+        var stack = new Stack<DependencyObject>();
         stack.Push(root);
 
         while (stack.Count > 0)
@@ -46,8 +55,13 @@ public sealed class UiData
             // Depth-first walk keeps memory small; order is irrelevant for snapshots.
             yield return current;
 
-            foreach (Control child in current.Controls)
-                stack.Push(child);
+            int count = VisualTreeHelper.GetChildrenCount(current);
+            for (int i = 0; i < count; i++)
+            {
+                var child = VisualTreeHelper.GetChild(current, i);
+                if (child != null)
+                    stack.Push(child);
+            }
         }
     }
 }

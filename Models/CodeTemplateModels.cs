@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Washmachine.Models;
 
@@ -29,11 +30,11 @@ public sealed class CodeTemplateCatalog
 
     public IReadOnlyList<CodeTemplateDefinition> Templates => _templates;
 
-    public bool TryGetById(string id, out CodeTemplateDefinition template)
+    public bool TryGetById(string id, [NotNullWhen(true)] out CodeTemplateDefinition? template)
     {
         if (string.IsNullOrWhiteSpace(id))
         {
-            template = default!;
+            template = null;
             return false;
         }
 
