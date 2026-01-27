@@ -1,8 +1,13 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Microsoft.Win32;
 using FluentWindow = Wpf.Ui.Controls.FluentWindow;
 using TitleBar = Wpf.Ui.Controls.TitleBar;
+using UiButton = Wpf.Ui.Controls.Button;
+using UiCard = Wpf.Ui.Controls.Card;
+using UiTextBlock = Wpf.Ui.Controls.TextBlock;
+using UiTextBox = Wpf.Ui.Controls.TextBox;
 
 namespace Washmachine.Services;
 
@@ -152,35 +157,49 @@ public sealed class UserInteractionService : IUserInteractionService
 
     private static Window CreateTextWindow(string title, string content, string? header, bool canCopy)
     {
-        var window = new Window
+        var window = new FluentWindow
         {
             Title = title,
             Width = canCopy ? 760 : 960,
-            Height = canCopy ? 480 : 640,
-            MinWidth = 520,
-            MinHeight = 360,
+            Height = canCopy ? 520 : 680,
+            MinWidth = 560,
+            MinHeight = 420,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            ShowInTaskbar = false
+            ShowInTaskbar = false,
+            ExtendsContentIntoTitleBar = true,
+            WindowBackdropType = Wpf.Ui.Controls.WindowBackdropType.Mica,
+            WindowCornerPreference = Wpf.Ui.Controls.WindowCornerPreference.Round,
+            Background = Brushes.Transparent
         };
+        window.SetResourceReference(Control.ForegroundProperty, "TextFillColorPrimaryBrush");
 
         var root = new Grid();
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
+        var titleBar = new TitleBar { Title = title };
+        Grid.SetRow(titleBar, 0);
+        root.Children.Add(titleBar);
+
         if (!string.IsNullOrWhiteSpace(header))
         {
-            var headerText = new TextBlock
+            var headerCard = new UiCard { Margin = new Thickness(16, 12, 16, 0) };
+            var headerPanel = new StackPanel { Margin = new Thickness(12, 8, 12, 8) };
+            headerPanel.Children.Add(new UiTextBlock
             {
                 Text = header,
-                Margin = new Thickness(16, 16, 16, 8),
-                FontWeight = FontWeights.SemiBold
-            };
-            Grid.SetRow(headerText, 0);
-            root.Children.Add(headerText);
+                FontWeight = FontWeights.SemiBold,
+                FontTypography = Wpf.Ui.Controls.FontTypography.Subtitle
+            });
+            headerCard.Content = headerPanel;
+            Grid.SetRow(headerCard, 1);
+            root.Children.Add(headerCard);
         }
 
-        var textBox = new TextBox
+        var contentCard = new UiCard { Margin = new Thickness(16, 12, 16, 0) };
+        var textBox = new UiTextBox
         {
             Text = content ?? string.Empty,
             IsReadOnly = true,
@@ -188,26 +207,29 @@ public sealed class UserInteractionService : IUserInteractionService
             TextWrapping = TextWrapping.NoWrap,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            FontFamily = new System.Windows.Media.FontFamily("Consolas"),
-            Margin = new Thickness(16, 0, 16, 0)
+            FontFamily = new FontFamily("Consolas"),
+            MinHeight = 240
         };
-        Grid.SetRow(textBox, 1);
-        root.Children.Add(textBox);
+        contentCard.Content = textBox;
+        Grid.SetRow(contentCard, 2);
+        root.Children.Add(contentCard);
 
+        var buttonCard = new UiCard { Margin = new Thickness(16, 12, 16, 12) };
         var buttonPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(16, 10, 16, 12)
+            Margin = new Thickness(12, 8, 12, 8)
         };
 
         if (canCopy)
         {
-            var copyButton = new Button
+            var copyButton = new UiButton
             {
                 Content = "Copy",
                 MinWidth = 90,
-                Margin = new Thickness(0, 0, 8, 0)
+                Margin = new Thickness(0, 0, 8, 0),
+                Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary
             };
             copyButton.Click += (_, _) =>
             {
@@ -223,16 +245,18 @@ public sealed class UserInteractionService : IUserInteractionService
             buttonPanel.Children.Add(copyButton);
         }
 
-        var closeButton = new Button
+        var closeButton = new UiButton
         {
             Content = "Close",
-            MinWidth = 90
+            MinWidth = 90,
+            Appearance = Wpf.Ui.Controls.ControlAppearance.Primary
         };
         closeButton.Click += (_, _) => window.Close();
         buttonPanel.Children.Add(closeButton);
 
-        Grid.SetRow(buttonPanel, 2);
-        root.Children.Add(buttonPanel);
+        buttonCard.Content = buttonPanel;
+        Grid.SetRow(buttonCard, 3);
+        root.Children.Add(buttonCard);
 
         window.Content = root;
         return window;
@@ -249,14 +273,15 @@ public sealed class UserInteractionService : IUserInteractionService
             MinHeight = 220,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             ShowInTaskbar = false,
-            ExtendsContentIntoTitleBar = true
+            ExtendsContentIntoTitleBar = true,
+            WindowBackdropType = Wpf.Ui.Controls.WindowBackdropType.Mica,
+            WindowCornerPreference = Wpf.Ui.Controls.WindowCornerPreference.Round,
+            Background = Brushes.Transparent
         };
 
-        window.SetResourceReference(Control.BackgroundProperty, "ApplicationBackgroundBrush");
         window.SetResourceReference(Control.ForegroundProperty, "TextFillColorPrimaryBrush");
 
         var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -268,42 +293,41 @@ public sealed class UserInteractionService : IUserInteractionService
         Grid.SetRow(titleBar, 0);
         root.Children.Add(titleBar);
 
-        var promptText = new TextBlock
+        var contentCard = new UiCard { Margin = new Thickness(16, 12, 16, 0) };
+        var contentPanel = new StackPanel { Margin = new Thickness(12, 8, 12, 8) };
+        contentPanel.Children.Add(new UiTextBlock
         {
             Text = message,
-            Margin = new Thickness(16, 10, 16, 6),
             TextWrapping = TextWrapping.Wrap
-        };
-        Grid.SetRow(promptText, 1);
-        root.Children.Add(promptText);
+        });
 
-        var textBox = new TextBox
+        var textBox = new UiTextBox
         {
-            Margin = new Thickness(16, 0, 16, 6),
-            Text = initialValue ?? string.Empty
+            Margin = new Thickness(0, 8, 0, 0),
+            Text = initialValue ?? string.Empty,
+            PlaceholderText = placeholder ?? string.Empty
         };
 
-        if (!string.IsNullOrWhiteSpace(placeholder))
-        {
-            textBox.ToolTip = placeholder;
-        }
+        contentPanel.Children.Add(textBox);
+        contentCard.Content = contentPanel;
+        Grid.SetRow(contentCard, 1);
+        root.Children.Add(contentCard);
 
-        Grid.SetRow(textBox, 2);
-        root.Children.Add(textBox);
-
+        var buttonCard = new UiCard { Margin = new Thickness(16, 12, 16, 12) };
         var buttonPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(16, 6, 16, 12)
+            Margin = new Thickness(12, 8, 12, 8)
         };
 
-        var okButton = new Button
+        var okButton = new UiButton
         {
             Content = "OK",
             MinWidth = 90,
             IsDefault = true,
-            Margin = new Thickness(0, 0, 8, 0)
+            Margin = new Thickness(0, 0, 8, 0),
+            Appearance = Wpf.Ui.Controls.ControlAppearance.Primary
         };
         okButton.Click += (_, _) =>
         {
@@ -311,18 +335,20 @@ public sealed class UserInteractionService : IUserInteractionService
             window.DialogResult = true;
         };
 
-        var cancelButton = new Button
+        var cancelButton = new UiButton
         {
             Content = "Cancel",
             MinWidth = 90,
-            IsCancel = true
+            IsCancel = true,
+            Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary
         };
         cancelButton.Click += (_, _) => window.DialogResult = false;
 
         buttonPanel.Children.Add(okButton);
         buttonPanel.Children.Add(cancelButton);
-        Grid.SetRow(buttonPanel, 3);
-        root.Children.Add(buttonPanel);
+        buttonCard.Content = buttonPanel;
+        Grid.SetRow(buttonCard, 2);
+        root.Children.Add(buttonCard);
 
         window.Content = root;
         return window;
@@ -330,42 +356,59 @@ public sealed class UserInteractionService : IUserInteractionService
 
     private static Window CreateInfoWindow(string title, string headerText, string bodyText, string exampleText)
     {
-        var window = new Window
+        var window = new FluentWindow
         {
             Title = title,
-            Width = 600,
-            Height = 420,
-            MinWidth = 520,
-            MinHeight = 320,
+            Width = 640,
+            Height = 440,
+            MinWidth = 560,
+            MinHeight = 360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            ShowInTaskbar = false
+            ShowInTaskbar = false,
+            ExtendsContentIntoTitleBar = true,
+            WindowBackdropType = Wpf.Ui.Controls.WindowBackdropType.Mica,
+            WindowCornerPreference = Wpf.Ui.Controls.WindowCornerPreference.Round,
+            Background = Brushes.Transparent
         };
+        window.SetResourceReference(Control.ForegroundProperty, "TextFillColorPrimaryBrush");
 
-        var root = new Grid { Margin = new Thickness(16, 16, 16, 12) };
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        var header = new TextBlock
+        var titleBar = new TitleBar { Title = title };
+        Grid.SetRow(titleBar, 0);
+        root.Children.Add(titleBar);
+
+        var scrollViewer = new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Margin = new Thickness(16, 12, 16, 0)
+        };
+
+        var contentPanel = new StackPanel();
+
+        var infoCard = new UiCard { Margin = new Thickness(0, 0, 0, 12) };
+        var infoPanel = new StackPanel { Margin = new Thickness(12, 8, 12, 8) };
+        infoPanel.Children.Add(new UiTextBlock
         {
             Text = headerText,
             FontWeight = FontWeights.SemiBold,
+            FontTypography = Wpf.Ui.Controls.FontTypography.Subtitle,
             Margin = new Thickness(0, 0, 0, 6)
-        };
-        Grid.SetRow(header, 0);
-        root.Children.Add(header);
-
-        var info = new TextBlock
+        });
+        infoPanel.Children.Add(new UiTextBlock
         {
             Text = bodyText,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 10)
-        };
-        Grid.SetRow(info, 1);
-        root.Children.Add(info);
+            TextWrapping = TextWrapping.Wrap
+        });
+        infoCard.Content = infoPanel;
+        contentPanel.Children.Add(infoCard);
 
-        var exampleBox = new TextBox
+        var exampleCard = new UiCard();
+        var exampleBox = new UiTextBox
         {
             Text = exampleText,
             IsReadOnly = true,
@@ -373,21 +416,34 @@ public sealed class UserInteractionService : IUserInteractionService
             TextWrapping = TextWrapping.NoWrap,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            FontFamily = new System.Windows.Media.FontFamily("Consolas")
+            FontFamily = new FontFamily("Consolas"),
+            MinHeight = 160
         };
-        Grid.SetRow(exampleBox, 2);
-        root.Children.Add(exampleBox);
+        exampleCard.Content = exampleBox;
+        contentPanel.Children.Add(exampleCard);
 
-        var okButton = new Button
+        scrollViewer.Content = contentPanel;
+        Grid.SetRow(scrollViewer, 1);
+        root.Children.Add(scrollViewer);
+
+        var buttonCard = new UiCard { Margin = new Thickness(16, 12, 16, 12) };
+        var okPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(12, 8, 12, 8)
+        };
+        var okButton = new UiButton
         {
             Content = "OK",
             MinWidth = 90,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 10, 0, 0)
+            Appearance = Wpf.Ui.Controls.ControlAppearance.Primary
         };
         okButton.Click += (_, _) => window.Close();
-        Grid.SetRow(okButton, 3);
-        root.Children.Add(okButton);
+        okPanel.Children.Add(okButton);
+        buttonCard.Content = okPanel;
+        Grid.SetRow(buttonCard, 2);
+        root.Children.Add(buttonCard);
 
         window.Content = root;
         return window;

@@ -23,6 +23,17 @@ bld/
 [Ll]og/
 [Ll]ogs/
 
+# IDE / Editor folders
+.vs/
+.idea/
+.vscode/
+
+# Visual Studio user-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
 # .NET Core
 project.lock.json
 project.fragment.lock.json
@@ -40,6 +51,10 @@ ScaffoldingReadMe.txt
 ~$*
 *~
 CodeCoverage/
+
+# Local publish/output folders
+Output/
+OutputRelease/
 
 # MSBuild Binary and Structured Log
 *.binlog

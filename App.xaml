@@ -13,6 +13,31 @@
             <Style TargetType="GroupBox" BasedOn="{StaticResource {x:Type GroupBox}}">
                 <Setter Property="BorderThickness" Value="1" />
             </Style>
+            <Thickness x:Key="PageMargin">24,18,24,28</Thickness>
+            <Thickness x:Key="SectionMargin">0,0,0,16</Thickness>
+            <Style x:Key="PageTitleText" TargetType="ui:TextBlock">
+                <Setter Property="FontTypography" Value="TitleLarge" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+            <Style x:Key="PageSubtitleText" TargetType="ui:TextBlock">
+                <Setter Property="FontTypography" Value="Body" />
+                <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
+            </Style>
+            <Style x:Key="SectionTitleText" TargetType="ui:TextBlock">
+                <Setter Property="FontTypography" Value="Subtitle" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+            <Style x:Key="SectionSubtitleText" TargetType="ui:TextBlock">
+                <Setter Property="FontTypography" Value="Body" />
+                <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
+            </Style>
+            <Style x:Key="SectionDivider" TargetType="Border">
+                <Setter Property="Height" Value="1" />
+                <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
+                <Setter Property="Opacity" Value="0.25" />
+                <Setter Property="Margin" Value="0,12,0,16" />
+                <Setter Property="SnapsToDevicePixels" Value="True" />
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

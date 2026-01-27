@@ -1,9 +1,16 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Media;
 using Washmachine.Models;
 using FluentWindow = Wpf.Ui.Controls.FluentWindow;
 using TitleBar = Wpf.Ui.Controls.TitleBar;
+using UiButton = Wpf.Ui.Controls.Button;
+using UiCard = Wpf.Ui.Controls.Card;
+using UiCardExpander = Wpf.Ui.Controls.CardExpander;
+using UiSymbolIcon = Wpf.Ui.Controls.SymbolIcon;
+using UiTextBlock = Wpf.Ui.Controls.TextBlock;
+using UiTextBox = Wpf.Ui.Controls.TextBox;
 
 namespace Washmachine.Views;
 
@@ -67,7 +74,9 @@ public sealed class TemplateOptionsWindow : FluentWindow
         MinWidth = 720;
         MinHeight = 480;
         ExtendsContentIntoTitleBar = true;
-        SetResourceReference(BackgroundProperty, "ApplicationBackgroundBrush");
+        WindowBackdropType = Wpf.Ui.Controls.WindowBackdropType.Mica;
+        WindowCornerPreference = Wpf.Ui.Controls.WindowCornerPreference.Round;
+        Background = Brushes.Transparent;
         SetResourceReference(ForegroundProperty, "TextFillColorPrimaryBrush");
 
         var root = new Grid();
@@ -98,11 +107,12 @@ public sealed class TemplateOptionsWindow : FluentWindow
         Grid.SetRow(scrollViewer, 2);
         root.Children.Add(scrollViewer);
 
-        _emptyLabel = new TextBlock
+        _emptyLabel = new UiTextBlock
         {
             Text = "No options are available for this template.",
             Foreground = SystemColors.GrayTextBrush,
-            Margin = new Thickness(12, 12, 12, 0)
+            Margin = new Thickness(12, 12, 12, 0),
+            FontTypography = Wpf.Ui.Controls.FontTypography.Body
         };
 
         var bottomPanel = BuildBottomPanel();
@@ -118,47 +128,54 @@ public sealed class TemplateOptionsWindow : FluentWindow
 
     private UIElement BuildHeaderPanel()
     {
+        var card = new UiCard { Margin = new Thickness(12, 10, 12, 4) };
         var panel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Margin = new Thickness(12, 10, 12, 4)
+            Margin = new Thickness(12, 8, 12, 8)
         };
 
-        var expandButton = new Button
+        var expandButton = new UiButton
         {
-            Content = "Expand All",
-            Margin = new Thickness(0, 0, 6, 0),
-            MinWidth = 90
+            Content = "Expand all",
+            Margin = new Thickness(0, 0, 8, 0),
+            MinWidth = 110,
+            Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary,
+            Icon = new UiSymbolIcon { Symbol = Wpf.Ui.Controls.SymbolRegular.ChevronDown24 }
         };
         expandButton.Click += (_, _) => SetAllSectionsCollapsed(false);
 
-        var collapseButton = new Button
+        var collapseButton = new UiButton
         {
-            Content = "Collapse All",
-            Margin = new Thickness(0, 0, 6, 0),
-            MinWidth = 90
+            Content = "Collapse all",
+            MinWidth = 110,
+            Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary,
+            Icon = new UiSymbolIcon { Symbol = Wpf.Ui.Controls.SymbolRegular.ChevronUp24 }
         };
         collapseButton.Click += (_, _) => SetAllSectionsCollapsed(true);
 
         panel.Children.Add(expandButton);
         panel.Children.Add(collapseButton);
+        card.Content = panel;
 
-        return panel;
+        return card;
     }
 
     private UIElement BuildBottomPanel()
     {
+        var card = new UiCard { Margin = new Thickness(12, 0, 12, 12) };
         var panel = new DockPanel
         {
-            Margin = new Thickness(12, 0, 12, 10),
+            Margin = new Thickness(12, 8, 12, 8),
             LastChildFill = false
         };
 
-        var okButton = new Button
+        var okButton = new UiButton
         {
-            Content = "OK",
-            MinWidth = 90,
+            Content = "Save",
+            MinWidth = 110,
             IsDefault = true,
+            Appearance = Wpf.Ui.Controls.ControlAppearance.Primary,
             Margin = new Thickness(0, 0, 8, 0)
         };
         okButton.Click += (_, _) =>
@@ -167,11 +184,12 @@ public sealed class TemplateOptionsWindow : FluentWindow
             DialogResult = true;
         };
 
-        var cancelButton = new Button
+        var cancelButton = new UiButton
         {
             Content = "Cancel",
-            MinWidth = 90,
-            IsCancel = true
+            MinWidth = 110,
+            IsCancel = true,
+            Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary
         };
         cancelButton.Click += (_, _) => DialogResult = false;
 
@@ -179,8 +197,9 @@ public sealed class TemplateOptionsWindow : FluentWindow
         DockPanel.SetDock(okButton, Dock.Right);
         panel.Children.Add(cancelButton);
         panel.Children.Add(okButton);
+        card.Content = panel;
 
-        return panel;
+        return card;
     }
 
     private void BuildSections(IReadOnlyList<CodeSnippetSection> sections)
@@ -206,21 +225,23 @@ public sealed class TemplateOptionsWindow : FluentWindow
 
     private SectionUi CreateSection(CodeSnippetSection section)
     {
-        var expander = new Expander
+        var expander = new UiCardExpander
         {
-            Header = new TextBlock
+            Header = new UiTextBlock
             {
                 Text = string.IsNullOrWhiteSpace(section.Display) ? "Section" : section.Display,
-                FontWeight = FontWeights.SemiBold
+                FontWeight = FontWeights.SemiBold,
+                FontTypography = Wpf.Ui.Controls.FontTypography.Subtitle
             },
             IsExpanded = true,
-            Margin = new Thickness(12, 8, 12, 0)
+            Margin = new Thickness(12, 8, 12, 0),
+            ContentPadding = new Thickness(12)
         };
 
         var body = new StackPanel
         {
             Orientation = Orientation.Vertical,
-            Margin = new Thickness(12, 6, 12, 6)
+            Margin = new Thickness(0, 4, 0, 0)
         };
 
         AddInputs(body, section, SnippetInputPlacement.BeforeSelector);
@@ -229,7 +250,7 @@ public sealed class TemplateOptionsWindow : FluentWindow
 
         if (body.Children.Count == 0)
         {
-            body.Children.Add(new TextBlock
+            body.Children.Add(new UiTextBlock
             {
                 Text = "No options available.",
                 Foreground = SystemColors.GrayTextBrush,
@@ -256,7 +277,7 @@ public sealed class TemplateOptionsWindow : FluentWindow
         string labelText = BuildInputLabel(input);
         if (!string.IsNullOrWhiteSpace(labelText))
         {
-            row.Children.Add(new TextBlock
+            row.Children.Add(new UiTextBlock
             {
                 Text = labelText,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -265,7 +286,7 @@ public sealed class TemplateOptionsWindow : FluentWindow
         }
 
         string key = input.Id ?? string.Empty;
-        var textBox = new TextBox
+        var textBox = new UiTextBox
         {
             Width = input.Width.HasValue && input.Width.Value > 0 ? input.Width.Value : DefaultInputWidth,
             Margin = new Thickness(0, 0, 8, 0),
@@ -279,10 +300,12 @@ public sealed class TemplateOptionsWindow : FluentWindow
 
         if (!string.IsNullOrWhiteSpace(input.InfoAction))
         {
-            var infoButton = new Button
+            var infoButton = new UiButton
             {
                 Content = string.IsNullOrWhiteSpace(input.InfoButtonLabel) ? "Info" : input.InfoButtonLabel,
-                MinWidth = 64
+                MinWidth = 64,
+                Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary,
+                Icon = new UiSymbolIcon { Symbol = Wpf.Ui.Controls.SymbolRegular.Info20 }
             };
             infoButton.Click += (_, _) => _infoAction?.Invoke(input.InfoAction);
             row.Children.Add(infoButton);
@@ -297,7 +320,7 @@ public sealed class TemplateOptionsWindow : FluentWindow
     private void AddSnippetSelector(Panel host, CodeSnippetSection section)
     {
         var row = CreateRow();
-        row.Children.Add(new TextBlock
+        row.Children.Add(new UiTextBlock
         {
             Text = section.AllowMultiple ? "Snippets" : "Snippet",
             VerticalAlignment = VerticalAlignment.Center,
@@ -313,7 +336,7 @@ public sealed class TemplateOptionsWindow : FluentWindow
 
             if (options.Count == 0)
             {
-                row.Children.Add(new TextBlock
+                row.Children.Add(new UiTextBlock
                 {
                     Text = "No snippets defined.",
                     Foreground = SystemColors.GrayTextBrush,

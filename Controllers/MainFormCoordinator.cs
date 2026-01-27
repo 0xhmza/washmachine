@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Net.Http;
 using System.Text;
@@ -472,7 +473,7 @@ public sealed class MainFormCoordinator
         _logger.Ok("Web payload generated successfully.");
     }
 
-    private void PopulateTemplateCombo(IMainFormView view)
+    private void PopulateTemplateCombo(IMainFormView view, string? preferredTemplateId = null)
     {
         ArgumentNullException.ThrowIfNull(view);
 
@@ -508,7 +509,21 @@ public sealed class MainFormCoordinator
             foreach (var template in _templates)
                 combo.Items.Add(new TemplateComboItem(template.Id, template.Display));
 
-            combo.SelectedIndex = 0;
+            if (!string.IsNullOrWhiteSpace(preferredTemplateId))
+            {
+                int selectedIndex = combo.Items
+                    .OfType<TemplateComboItem>()
+                    .Select((item, index) => new { item, index })
+                    .Where(entry => string.Equals(entry.item.Id, preferredTemplateId, StringComparison.OrdinalIgnoreCase))
+                    .Select(entry => entry.index)
+                    .FirstOrDefault();
+
+                combo.SelectedIndex = selectedIndex;
+            }
+            else
+            {
+                combo.SelectedIndex = 0;
+            }
 
             _logger.Ok($"Loaded {_templates.Count} template(s) into chooser (default None).");
         }
@@ -592,40 +607,9 @@ public sealed class MainFormCoordinator
         if (choice == MessageBoxResult.Cancel)
             return;
 
-        string content;
-        string sourceLabel;
-
         if (choice == MessageBoxResult.Yes)
         {
-            string? selected = SelectFile(
-                view,
-                "Select Snippet Catalog",
-                "YAML files (*.yaml;*.yml)|*.yaml;*.yml|All files (*.*)|*.*",
-                _paths.AssetsDirectory);
-
-            if (string.IsNullOrWhiteSpace(selected))
-            {
-                _logger.Warn("Snippet catalog import cancelled.");
-                return;
-            }
-
-            try
-            {
-                content = File.ReadAllText(selected);
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"Failed to read snippet catalog file: {ex.Message}");
-                ShowMessage(
-                    view,
-                    $"Unable to read the selected file.{Environment.NewLine}{ex.Message}",
-                    "Import Error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-                return;
-            }
-
-            sourceLabel = selected;
+            await ImportTemplateCatalogFromFileAsync(view).ConfigureAwait(true);
         }
         else
         {
@@ -636,45 +620,147 @@ public sealed class MainFormCoordinator
                 "https://example.com/vx_api_snippets.yaml",
                 null);
 
-            if (string.IsNullOrWhiteSpace(rawUrl))
-            {
-                _logger.Warn("Snippet catalog import cancelled.");
-                return;
-            }
+            await ImportTemplateCatalogFromUrlAsync(view, rawUrl).ConfigureAwait(true);
+        }
+    }
 
-            string trimmed = rawUrl.Trim();
-            if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) ||
-                (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-            {
-                ShowMessage(
-                    view,
-                    "The URL must start with http:// or https://",
-                    "Import Error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-                return;
-            }
+    public async Task ImportTemplateCatalogFromFileAsync(IMainFormView view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
 
-            try
-            {
-                using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-                content = await client.GetStringAsync(uri).ConfigureAwait(true);
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"Failed to download snippet catalog: {ex.Message}");
-                ShowMessage(
-                    view,
-                    $"Failed to download the catalog.{Environment.NewLine}{ex.Message}",
-                    "Import Error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-                return;
-            }
+        string? selected = SelectFile(
+            view,
+            "Select Snippet Catalog",
+            "YAML files (*.yaml;*.yml)|*.yaml;*.yml|All files (*.*)|*.*",
+            _paths.AssetsDirectory);
 
-            sourceLabel = uri.ToString();
+        if (string.IsNullOrWhiteSpace(selected))
+        {
+            _logger.Warn("Snippet catalog import cancelled.");
+            return;
         }
 
+        string content;
+        try
+        {
+            content = File.ReadAllText(selected);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Failed to read snippet catalog file: {ex.Message}");
+            ShowMessage(
+                view,
+                $"Unable to read the selected file.{Environment.NewLine}{ex.Message}",
+                "Import Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            return;
+        }
+
+        await ImportTemplateCatalogContentAsync(view, content, selected).ConfigureAwait(true);
+    }
+
+    public async Task ImportTemplateCatalogFromUrlAsync(IMainFormView view, string? rawUrl)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+
+        if (string.IsNullOrWhiteSpace(rawUrl))
+        {
+            ShowMessage(
+                view,
+                "Enter a URL to import the catalog.",
+                "Import Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        string trimmed = rawUrl.Trim();
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            ShowMessage(
+                view,
+                "The URL must start with http:// or https://",
+                "Import Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        string content;
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            content = await client.GetStringAsync(uri).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Failed to download snippet catalog: {ex.Message}");
+            ShowMessage(
+                view,
+                $"Failed to download the catalog.{Environment.NewLine}{ex.Message}",
+                "Import Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            return;
+        }
+
+        await ImportTemplateCatalogContentAsync(view, content, uri.ToString()).ConfigureAwait(true);
+    }
+
+    public void RefreshTemplateCatalog(IMainFormView view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+
+        string? preferredTemplateId = GetSelectedTemplate(view)?.Id;
+
+        if (!_snippetCatalog.TryReload(out var error))
+        {
+            _logger.Error($"Failed to reload snippet catalog: {error}");
+            ShowMessage(
+                view,
+                $"Failed to reload the catalog.{Environment.NewLine}{error}",
+                "Refresh Failed",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            return;
+        }
+
+        PopulateTemplateCombo(view, preferredTemplateId);
+        var selectedTemplate = GetSelectedTemplate(view);
+        ResetTemplateOptions(selectedTemplate);
+        UpdateTemplateContext(view, selectedTemplate);
+        _logger.Ok("Snippet catalog refreshed.");
+    }
+
+    public void OpenTemplateCatalogLocation(IMainFormView view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+
+        try
+        {
+            var info = new ProcessStartInfo
+            {
+                FileName = _paths.AssetsDirectory,
+                UseShellExecute = true
+            };
+            Process.Start(info);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"Failed to open catalog folder: {ex.Message}");
+            ShowMessage(
+                view,
+                $"Unable to open the catalog folder.{Environment.NewLine}{ex.Message}",
+                "Open Folder",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
+    private Task ImportTemplateCatalogContentAsync(IMainFormView view, string content, string sourceLabel)
+    {
         if (string.IsNullOrWhiteSpace(content))
         {
             ShowMessage(
@@ -683,7 +769,7 @@ public sealed class MainFormCoordinator
                 "Import Error",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
-            return;
+            return Task.CompletedTask;
         }
 
         string targetPath = _paths.SnippetCatalogFile;
@@ -714,7 +800,7 @@ public sealed class MainFormCoordinator
                 "Import Error",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
-            return;
+            return Task.CompletedTask;
         }
 
         if (!_snippetCatalog.TryReload(out var error))
@@ -740,7 +826,7 @@ public sealed class MainFormCoordinator
                 "Import Error",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
-            return;
+            return Task.CompletedTask;
         }
 
         _templateOptions = new TemplateOptionsState();
@@ -758,6 +844,7 @@ public sealed class MainFormCoordinator
             "Import Complete",
             MessageBoxButton.OK,
             MessageBoxImage.Information);
+        return Task.CompletedTask;
     }
 
     private void OpenTemplateConfig(IMainFormView view, CodeTemplateDefinition? template)

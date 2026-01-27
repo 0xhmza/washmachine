@@ -3,184 +3,85 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:local="clr-namespace:Washmachine"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 xmlns:views="clr-namespace:Washmachine.Views"
+                 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                 mc:Ignorable="d"
+                 ui:Design.Background="{DynamicResource ApplicationBackgroundBrush}"
+                 ui:Design.Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                  Title="Washmachine - Loader Builder"
-                 Width="860"
-                 Height="780"
-                 MinWidth="820"
-                 MinHeight="720"
+                 Width="980"
+                 Height="820"
+                 MinWidth="920"
+                 MinHeight="760"
                  WindowStartupLocation="CenterScreen"
-                 ExtendsContentIntoTitleBar="True">
-    <Grid>
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round"
+                 ExtendsContentIntoTitleBar="True"
+                 Background="Transparent">
+
+    <Grid Background="Transparent">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Title="Washmachine - Loader Builder" Grid.Row="0" />
+        <ui:TitleBar Title="Washmachine - Loader Builder" VerticalAlignment="Center" />
 
-        <Grid Grid.Row="1" Margin="12">
-            <TabControl x:Name="tabControl">
-            <TabItem Header="Main">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="6" Orientation="Vertical">
-                        <GroupBox x:Name="shellcode" Header="Shellcode" Margin="0,0,0,12">
-                            <TabControl x:Name="shellcodeType" Margin="2">
-                                <TabItem Header="File">
-                                    <Grid Margin="8">
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
-                                        <TextBlock Text="Shellcode file (typically .bin):" Margin="0,0,0,6" />
-                                        <Grid Grid.Row="1">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBox x:Name="shellcodeFile" Margin="0,0,8,0" />
-                                            <Button x:Name="button1" Grid.Column="1" Content="Browse" MinWidth="72" Margin="0,0,8,0" Click="button1_Click" />
-                                            <Button x:Name="WebPayloadGenerator" Grid.Column="2" Content="Web Payload" MinWidth="110" Click="WebPayloadGenerator_Click" />
-                                        </Grid>
-                                    </Grid>
-                                </TabItem>
-                                <TabItem Header="Raw">
-                                    <Grid Margin="8">
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="*" />
-                                        </Grid.RowDefinitions>
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                            <TextBlock Text="Paste a raw shellcode:" Margin="0,0,6,0" />
-                                            <TextBlock x:Name="RAWShellcodeInfo"
-                                                       Text="Format?"
-                                                       Foreground="{DynamicResource {x:Static SystemColors.HotTrackBrushKey}}"
-                                                       TextDecorations="Underline"
-                                                       Cursor="Hand"
-                                                       MouseLeftButtonUp="RAWShellcodeInfo_Click" />
-                                        </StackPanel>
-                                        <Grid Grid.Row="1">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBox x:Name="shellcodeRAW"
-                                                     FontFamily="Consolas"
-                                                     AcceptsReturn="True"
-                                                     TextWrapping="NoWrap"
-                                                     VerticalScrollBarVisibility="Auto"
-                                                     HorizontalScrollBarVisibility="Auto"
-                                                     Margin="0,0,8,0" />
-                                            <Button x:Name="button2" Grid.Column="1" Content="Paste" MinWidth="72" VerticalAlignment="Bottom" Click="button2_Click" />
-                                        </Grid>
-                                    </Grid>
-                                </TabItem>
-                                <TabItem Header="URL">
-                                    <Grid Margin="8">
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                            <TextBlock Text="From a URL:" Margin="0,0,6,0" />
-                                            <TextBlock Text="Guide"
-                                                       Foreground="{DynamicResource {x:Static SystemColors.HotTrackBrushKey}}"
-                                                       TextDecorations="Underline"
-                                                       Cursor="Hand"
-                                                       MouseLeftButtonUp="RAWShellcodeInfo_Click" />
-                                        </StackPanel>
-                                        <Grid Grid.Row="1">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBox x:Name="shellcodeURL" Margin="0,0,8,0" />
-                                            <Button x:Name="button3" Grid.Column="1" Content="Paste" MinWidth="72" Click="button3_Click" />
-                                        </Grid>
-                                    </Grid>
-                                </TabItem>
-                                <TabItem Header="Generic">
-                                    <Grid Margin="8">
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
-                                        <TextBlock Text="Choose a generic shellcode (for testing purposes):" Margin="0,0,0,6" />
-                                        <ComboBox x:Name="genericShellcodeComboBox" Grid.Row="1" Width="360" />
-                                    </Grid>
-                                </TabItem>
-                            </TabControl>
-                        </GroupBox>
-
-                        <GroupBox Header="Payload Encoding" Margin="0,0,0,12">
-                            <Grid Margin="6">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Encoder:" VerticalAlignment="Center" Margin="0,0,6,0" />
-                                <ComboBox x:Name="bin2hexEncoder" Grid.Column="1" Margin="0,0,16,0" />
-                                <TextBlock Grid.Column="2" Text="Envelope:" VerticalAlignment="Center" Margin="0,0,6,0" />
-                                <ComboBox x:Name="bin2hexEnvelope" Grid.Column="3" />
-                            </Grid>
-                        </GroupBox>
-
-                        <GroupBox Header="Template" Margin="0,0,0,12">
-                            <Grid Margin="6">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <ComboBox x:Name="templateComboBox" Margin="0,0,8,0" SelectionChanged="templateComboBox_SelectedIndexChanged" />
-                                <Button x:Name="importTemplateButton" Grid.Column="1" Content="Import..." MinWidth="90" Margin="0,0,8,0" Click="importTemplateButton_Click" />
-                                <Button x:Name="button4" Grid.Column="2" Content="Config Template" MinWidth="130" Click="button4_Click" />
-                            </Grid>
-                        </GroupBox>
-
-                        <Button x:Name="submitButton" Content="Compile" Width="140" HorizontalAlignment="Center" Margin="0,0,0,12" Click="submitButton_Click" />
-
-                        <GroupBox Header="Logs" Margin="0,0,0,12">
-                            <Grid Margin="6">
-                                <RichTextBox x:Name="debugBox" Height="140" IsReadOnly="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
-                            </Grid>
-                        </GroupBox>
-
-                        <TextBox x:Name="textBox4"
-                                 Text="{x:Static local:UiStrings.DisclaimerText}"
-                                 IsReadOnly="True"
-                                 TextWrapping="Wrap"
-                                 BorderThickness="0"
-                                 Background="Transparent"
-                                 Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                                 Padding="0"
-                                 Margin="4,0,4,8"
-                                 IsTabStop="False" />
+        <ui:NavigationView x:Name="mainNavigationView"
+                           Grid.Row="1"
+                           Background="Transparent"
+                           PaneDisplayMode="Left"
+                           IsPaneOpen="True"
+                           IsPaneToggleVisible="True"
+                           IsBackButtonVisible="Collapsed"
+                           PaneTitle="Washmachine"
+                           OpenPaneLength="240"
+                           CompactPaneLength="56"
+                           Transition="FadeInWithSlide"
+                           TransitionDuration="280">
+            <ui:NavigationView.PaneHeader>
+                <StackPanel Orientation="Horizontal" Margin="12,16,12,8">
+                    <ui:SymbolIcon Symbol="{x:Static ui:SymbolRegular.Wrench24}" FontSize="20" />
+                    <StackPanel Margin="10,0,0,0">
+                        <ui:TextBlock Text="Washmachine" FontSize="16" FontWeight="SemiBold" />
+                        <ui:TextBlock Text="Loader Builder" FontSize="12"
+                                      Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
                     </StackPanel>
-                </ScrollViewer>
-            </TabItem>
+                </StackPanel>
+            </ui:NavigationView.PaneHeader>
 
-            <TabItem Header="Packing">
-                <Grid>
-                    <TextBlock Text="Packing features are not available yet."
-                               Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center" />
-                </Grid>
-            </TabItem>
+            <ui:NavigationView.PaneFooter>
+                <StackPanel Margin="12,8,12,12">
+                    <ui:TextBlock Text="Github: 0xhmza" FontSize="12"
+                                  Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
+                </StackPanel>
+            </ui:NavigationView.PaneFooter>
 
-            <TabItem Header="Backdooring">
-                <Grid>
-                    <TextBlock Text="Backdooring features are not available yet."
-                               Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center" />
-                </Grid>
-            </TabItem>
-            </TabControl>
-        </Grid>
+            <ui:NavigationView.MenuItems>
+                <ui:NavigationViewItem Content="Main"
+                                       TargetPageType="{x:Type views:MainPage}"
+                                       NavigationCacheMode="Required"
+                                       IsActive="True">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="{x:Static ui:SymbolRegular.Home24}" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem Content="Packing"
+                                       TargetPageType="{x:Type views:PackingPage}"
+                                       NavigationCacheMode="Required">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="{x:Static ui:SymbolRegular.Box24}" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem Content="Backdooring"
+                                       TargetPageType="{x:Type views:BackdooringPage}"
+                                       NavigationCacheMode="Required">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="{x:Static ui:SymbolRegular.ShieldLock24}" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+            </ui:NavigationView.MenuItems>
+        </ui:NavigationView>
     </Grid>
 </ui:FluentWindow>
-

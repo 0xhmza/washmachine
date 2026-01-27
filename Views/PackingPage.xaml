@@ -1,0 +1,45 @@
+<Page x:Class="Washmachine.Views.PackingPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      mc:Ignorable="d"
+      Title="Packing">
+
+    <Grid x:Name="Root" Background="Transparent">
+        <StackPanel Margin="{StaticResource PageMargin}">
+            <ui:BreadcrumbBar Margin="0,0,0,8">
+                <ui:BreadcrumbBarItem Content="Home">
+                    <ui:BreadcrumbBarItem.Icon>
+                        <ui:SymbolIcon Symbol="{x:Static ui:SymbolRegular.Home16}" />
+                    </ui:BreadcrumbBarItem.Icon>
+                </ui:BreadcrumbBarItem>
+                <ui:BreadcrumbBarItem Content="Packing" IsLast="True" />
+            </ui:BreadcrumbBar>
+
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                <ui:SymbolIcon Symbol="{x:Static ui:SymbolRegular.Box24}" FontSize="22" Margin="0,2,12,0" />
+                <StackPanel>
+                    <ui:TextBlock Text="Packing" Style="{StaticResource PageTitleText}" />
+                    <ui:TextBlock Text="Pack and obfuscate output artifacts (coming soon)."
+                                  Style="{StaticResource PageSubtitleText}"
+                                  Margin="0,4,0,0" />
+                </StackPanel>
+            </StackPanel>
+
+            <Border Style="{StaticResource SectionDivider}" />
+
+            <ui:Card Width="460">
+                <Grid Margin="16">
+                    <StackPanel>
+                        <ui:TextBlock Text="This section is under construction." Style="{StaticResource SectionTitleText}" />
+                        <ui:TextBlock Text="Packing features will appear here once available."
+                                      Style="{StaticResource SectionSubtitleText}"
+                                      Margin="0,6,0,0" />
+                    </StackPanel>
+                </Grid>
+            </ui:Card>
+        </StackPanel>
+    </Grid>
+</Page>
