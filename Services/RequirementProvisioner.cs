@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using Washmachine.Logging;
 using Washmachine.Views;
@@ -46,9 +47,9 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
 
         _logger.Warn($"Missing external requirements detected: {string.Join(", ", missing.Select(m => m.Name))}.");
 
-        using var progressDialog = new RequirementsProgressDialog(view.XamlRoot);
-        progressDialog.Show();
-        progressDialog.UpdateStatus("Preparing downloads...", 0);
+        var progressForm = new RequirementsProgressWindow();
+        progressForm.Show();
+        progressForm.UpdateStatus("Preparing downloads...", 0);
 
         int totalStages = missing.Count * 2;
         int completedStages = 0;
@@ -57,16 +58,16 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
         {
             foreach (var requirement in missing)
             {
-                completedStages = await InstallRequirementAsync(requirement, progressDialog, totalStages, completedStages, cancellationToken);
+                completedStages = await InstallRequirementAsync(requirement, progressForm, totalStages, completedStages, cancellationToken);
             }
 
-            progressDialog.UpdateStatus("Requirements ready.", 100);
+            progressForm.UpdateStatus("Requirements ready.", 100);
             await Task.Delay(400, cancellationToken);
             _logger.Ok("All external requirements downloaded successfully.");
         }
         finally
         {
-            progressDialog.Close();
+            progressForm.Close();
         }
     }
 
@@ -93,7 +94,7 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
 
     private async Task<int> InstallRequirementAsync(
         RequirementData requirement,
-        RequirementsProgressDialog progressDialog,
+        RequirementsProgressWindow progressForm,
         int totalStages,
         int completedStages,
         CancellationToken cancellationToken)
@@ -103,15 +104,15 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
 
         try
         {
-            progressDialog.UpdateStatus($"Downloading {requirement.Name}...", CalculatePercent(completedStages, totalStages));
+            progressForm.UpdateStatus($"Downloading {requirement.Name}...", CalculatePercent(completedStages, totalStages));
             await DownloadToFileAsync(requirement, tempZip, cancellationToken);
             completedStages++;
 
-            progressDialog.UpdateStatus($"Installing {requirement.Name}...", CalculatePercent(completedStages, totalStages));
+            progressForm.UpdateStatus($"Installing {requirement.Name}...", CalculatePercent(completedStages, totalStages));
             await ExtractAndMoveAsync(requirement, tempZip, tempExtractRoot, cancellationToken);
             completedStages++;
 
-            progressDialog.UpdateStatus($"{requirement.Name} ready.", CalculatePercent(completedStages, totalStages));
+            progressForm.UpdateStatus($"{requirement.Name} ready.", CalculatePercent(completedStages, totalStages));
             return completedStages;
         }
         finally

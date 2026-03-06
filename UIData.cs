@@ -5,7 +5,7 @@ using Microsoft.UI.Xaml.Media;
 namespace Washmachine.Models;
 
 /// <summary>
-/// Snapshot of a WinUI control tree, keyed by element name with fallback to type name.
+/// Snapshot of a WinUI 3 visual tree, keyed by control name with fallback to type name.
 /// </summary>
 public sealed class UiData
 {
@@ -13,39 +13,37 @@ public sealed class UiData
     public Dictionary<string, string> ComboBoxes { get; } = new();
     public Dictionary<string, List<string>> ListBoxes { get; } = new();
 
-    public UiData(FrameworkElement root)
+    public UiData(DependencyObject root)
     {
         ArgumentNullException.ThrowIfNull(root);
 
-        foreach (var element in EnumerateAllElements(root))
+        foreach (var control in EnumerateAllControls(root))
         {
-            string key = string.IsNullOrWhiteSpace(element.Name) ? element.GetType().Name : element.Name;
+            string key = control is FrameworkElement element && !string.IsNullOrWhiteSpace(element.Name)
+                ? element.Name
+                : control.GetType().Name;
 
-            switch (element)
+            switch (control)
             {
                 case TextBox textBox:
                     TextBoxes[key] = textBox.Text ?? string.Empty;
                     break;
                 case ComboBox comboBox:
-                    ComboBoxes[key] = comboBox.SelectedItem?.ToString() ?? comboBox.Text ?? string.Empty;
+                    ComboBoxes[key] = comboBox.SelectedValue?.ToString()
+                                      ?? comboBox.SelectedItem?.ToString()
+                                      ?? string.Empty;
                     break;
                 case ListBox listBox:
-                    ListBoxes[key] = listBox.SelectedItems
-                        .Cast<object>()
+                    var items = listBox.SelectedItems.Cast<object>()
                         .Select(item => item?.ToString() ?? string.Empty)
                         .ToList();
-                    break;
-                case ListView listView:
-                    ListBoxes[key] = listView.SelectedItems
-                        .Cast<object>()
-                        .Select(item => item?.ToString() ?? string.Empty)
-                        .ToList();
+                    ListBoxes[key] = items;
                     break;
             }
         }
     }
 
-    private static IEnumerable<FrameworkElement> EnumerateAllElements(FrameworkElement root)
+    private static IEnumerable<DependencyObject> EnumerateAllControls(DependencyObject root)
     {
         var stack = new Stack<DependencyObject>();
         stack.Push(root);
@@ -53,13 +51,15 @@ public sealed class UiData
         while (stack.Count > 0)
         {
             var current = stack.Pop();
-            if (current is FrameworkElement element)
-                yield return element;
+            // Depth-first walk keeps memory small; order is irrelevant for snapshots.
+            yield return current;
 
             int count = VisualTreeHelper.GetChildrenCount(current);
             for (int i = 0; i < count; i++)
             {
-                stack.Push(VisualTreeHelper.GetChild(current, i));
+                var child = VisualTreeHelper.GetChild(current, i);
+                if (child != null)
+                    stack.Push(child);
             }
         }
     }

@@ -4,22 +4,22 @@ namespace Washmachine.Services;
 
 public interface IClipboardService
 {
-    Task<bool> ContainsTextAsync();
+    bool ContainsText();
     Task<string> GetTextAsync();
 }
 
 public sealed class ClipboardService : IClipboardService
 {
-    public Task<bool> ContainsTextAsync()
+    public bool ContainsText()
     {
         var content = Clipboard.GetContent();
-        return Task.FromResult(content != null && content.Contains(StandardDataFormats.Text));
+        return content.Contains(StandardDataFormats.Text);
     }
 
     public async Task<string> GetTextAsync()
     {
         var content = Clipboard.GetContent();
-        if (content == null || !content.Contains(StandardDataFormats.Text))
+        if (!content.Contains(StandardDataFormats.Text))
             throw new InvalidOperationException("Clipboard does not contain text.");
 
         return await content.GetTextAsync();

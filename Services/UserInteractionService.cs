@@ -1,395 +1,367 @@
-using Microsoft.UI;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Windows.ApplicationModel.DataTransfer;
+using System.Runtime.InteropServices;
+using Washmachine.Models;
+using Windows.Graphics;
 using Windows.Storage.Pickers;
-using Washmachine.Views;
 using WinRT.Interop;
 
 namespace Washmachine.Services;
 
 public interface IUserInteractionService
 {
-    Task<DialogResult> ShowMessageAsync(
-        IMainFormView view,
+    MsgBoxResult ShowMessage(
+        nint hwnd,
         string message,
         string title,
-        DialogButtons buttons,
-        DialogIcon icon,
-        DialogDefaultButton defaultButton = DialogDefaultButton.Primary);
+        MsgBoxButton buttons,
+        MsgBoxIcon icon);
 
     Task<string?> SelectFileAsync(
-        IMainFormView view,
+        nint hwnd,
         string title,
         string filter,
         string initialDirectory);
 
-    Task ShowLargeTextAsync(
-        IMainFormView view,
+    void ShowLargeText(
+        nint hwnd,
         string title,
         string content,
         string? header = null);
 
-    Task ShowCopyableTextAsync(
-        IMainFormView view,
+    void ShowCopyableText(
+        nint hwnd,
         string title,
         string content,
         string? header = null);
 
-    Task ShowShellcodeTipAsync(IMainFormView view);
-    Task ShowGuardRailInfoAsync(IMainFormView view);
+    Task<string?> PromptTextAsync(
+        XamlRoot xamlRoot,
+        string title,
+        string message,
+        string? placeholder = null,
+        string? initialValue = null);
+
+    void ShowShellcodeTip(nint hwnd);
+    void ShowGuardRailInfo(nint hwnd);
 }
 
 public sealed class UserInteractionService : IUserInteractionService
 {
-    public async Task<DialogResult> ShowMessageAsync(
-        IMainFormView view,
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int MessageBoxW(nint hWnd, string text, string caption, uint type);
+
+    private const uint MB_OK               = 0x00000000;
+    private const uint MB_OKCANCEL         = 0x00000001;
+    private const uint MB_YESNOCANCEL      = 0x00000003;
+    private const uint MB_YESNO            = 0x00000004;
+    private const uint MB_ICONERROR        = 0x00000010;
+    private const uint MB_ICONQUESTION     = 0x00000020;
+    private const uint MB_ICONWARNING      = 0x00000030;
+    private const uint MB_ICONINFORMATION  = 0x00000040;
+    private const uint MB_DEFBUTTON1       = 0x00000000;
+
+    public MsgBoxResult ShowMessage(
+        nint hwnd,
         string message,
         string title,
-        DialogButtons buttons,
-        DialogIcon icon,
-        DialogDefaultButton defaultButton = DialogDefaultButton.Primary)
+        MsgBoxButton buttons,
+        MsgBoxIcon icon)
     {
-        ArgumentNullException.ThrowIfNull(view);
-
-        var dialog = new ContentDialog
+        uint uType = buttons switch
         {
-            XamlRoot = view.XamlRoot,
-            Title = title,
-            Content = BuildMessageContent(message, icon)
+            MsgBoxButton.OKCancel    => MB_OKCANCEL,
+            MsgBoxButton.YesNo       => MB_YESNO,
+            MsgBoxButton.YesNoCancel => MB_YESNOCANCEL,
+            _                        => MB_OK
         };
 
-        ConfigureButtons(dialog, buttons, defaultButton);
+        uType |= icon switch
+        {
+            MsgBoxIcon.Error       => MB_ICONERROR,
+            MsgBoxIcon.Warning     => MB_ICONWARNING,
+            MsgBoxIcon.Information => MB_ICONINFORMATION,
+            MsgBoxIcon.Question    => MB_ICONQUESTION,
+            _                      => 0
+        };
 
-        var result = await dialog.ShowAsync();
-        return MapDialogResult(buttons, result);
+        uType |= MB_DEFBUTTON1;
+        int result = MessageBoxW(hwnd, message ?? string.Empty, title ?? string.Empty, uType);
+        return (MsgBoxResult)result;
     }
 
     public async Task<string?> SelectFileAsync(
-        IMainFormView view,
+        nint hwnd,
         string title,
         string filter,
         string initialDirectory)
     {
-        ArgumentNullException.ThrowIfNull(view);
-
         var picker = new FileOpenPicker
         {
-            ViewMode = PickerViewMode.List,
-            SuggestedStartLocation = PickerLocationId.DocumentsLibrary
+            SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+            ViewMode = PickerViewMode.List
         };
 
-        foreach (var extension in ParseFileTypes(filter))
+        InitializeWithWindow.Initialize(picker, hwnd);
+
+        // Parse WPF-style filter: "YAML files (*.yaml;*.yml)|*.yaml;*.yml|All files (*.*)|*.*"
+        // Extract extensions from even-indexed segments after splitting by |
+        var parts = (filter ?? string.Empty).Split('|');
+        bool addedAny = false;
+        for (int i = 1; i < parts.Length; i += 2)
         {
-            picker.FileTypeFilter.Add(extension);
+            foreach (var ext in parts[i].Split(';'))
+            {
+                string clean = ext.Trim().TrimStart('*');
+                if (clean == ".*" || clean == ".*")
+                {
+                    picker.FileTypeFilter.Add("*");
+                    addedAny = true;
+                }
+                else if (!string.IsNullOrWhiteSpace(clean))
+                {
+                    picker.FileTypeFilter.Add(clean);
+                    addedAny = true;
+                }
+            }
         }
 
-        var hwnd = WindowNative.GetWindowHandle(view.Window);
-        InitializeWithWindow.Initialize(picker, hwnd);
+        if (!addedAny)
+            picker.FileTypeFilter.Add("*");
 
         var file = await picker.PickSingleFileAsync();
         return file?.Path;
     }
 
-    public async Task ShowLargeTextAsync(
-        IMainFormView view,
+    public void ShowLargeText(nint hwnd, string title, string content, string? header = null)
+    {
+        var w = CreateTextWindow(title, content, header, canCopy: false, hwnd);
+        w.Activate();
+    }
+
+    public void ShowCopyableText(nint hwnd, string title, string content, string? header = null)
+    {
+        var w = CreateTextWindow(title, content, header, canCopy: true, hwnd);
+        w.Activate();
+    }
+
+    public async Task<string?> PromptTextAsync(
+        XamlRoot xamlRoot,
         string title,
-        string content,
-        string? header = null)
+        string message,
+        string? placeholder = null,
+        string? initialValue = null)
     {
-        ArgumentNullException.ThrowIfNull(view);
+        var textBox = new TextBox
+        {
+            PlaceholderText = placeholder ?? string.Empty,
+            Text = initialValue ?? string.Empty,
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+
+        var panel = new StackPanel();
+        panel.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(textBox);
 
         var dialog = new ContentDialog
         {
-            XamlRoot = view.XamlRoot,
             Title = title,
-            CloseButtonText = "Close"
+            Content = panel,
+            PrimaryButtonText = "OK",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = xamlRoot
         };
 
-        dialog.Content = BuildTextDialogContent(content, header, isCopyable: false);
-
-        await dialog.ShowAsync();
+        var result = await dialog.ShowAsync();
+        return result == ContentDialogResult.Primary ? textBox.Text?.Trim() : null;
     }
 
-    public async Task ShowCopyableTextAsync(
-        IMainFormView view,
-        string title,
-        string content,
-        string? header = null)
+    public void ShowShellcodeTip(nint hwnd)
     {
-        ArgumentNullException.ThrowIfNull(view);
+        const string tip =
+            "Please paste shellcode as hexadecimal byte escapes.\r\n\r\n" +
+            "- Use \\x followed by exactly two hex digits per byte.\r\n" +
+            "- No spaces, commas, or 0x prefixes.\r\n" +
+            "- Line breaks are okay; format is validated before continuing.\r\n\r\n" +
+            "Example:";
 
-        var dialog = new ContentDialog
-        {
-            XamlRoot = view.XamlRoot,
-            Title = title,
-            PrimaryButtonText = "Copy",
-            CloseButtonText = "Close"
-        };
+        const string example =
+            "\\x48\\xB8\\x44\\x44\\x44\\x44\\x44\\x44\\x44\\x44\\x50\\x48\\xB8\\x55\\x55\\x55\\x55" +
+            "\\x55\\x55\\x55\\x55\\x50\\x48\\x31\\xC9\\x48\\x89\\xE2\\x49\\x89\\xE0\\x49\\x83\\xC0" +
+            "\\x08\\x4D\\x31\\xC9\\x48\\xB8\\x33\\x33\\x33\\x33\\x33\\x33\\x33\\x33\\x48\\x83\\xEC" +
+            "\\x28\\xFF\\xD0\\x48\\x83\\xC4\\x38\\x48\\xB8\\xEF\\xBE\\xAD\\xDE\\x00\\x00\\x00\\x00\\xEB\\xFE";
 
-        dialog.Content = BuildTextDialogContent(content, header, isCopyable: true);
-        dialog.PrimaryButtonClick += (_, args) =>
-        {
-            try
-            {
-                var package = new DataPackage();
-                package.SetText(content ?? string.Empty);
-                Clipboard.SetContent(package);
-                Clipboard.Flush();
-            }
-            catch (Exception ex)
-            {
-                _ = ShowMessageAsync(
-                    view,
-                    $"Failed to copy payload: {ex.Message}",
-                    "Copy",
-                    DialogButtons.Ok,
-                    DialogIcon.Error);
-            }
-
-            args.Cancel = true;
-        };
-
-        await dialog.ShowAsync();
+        CreateInfoWindow("Shellcode Tip", "Shellcode Input Format", tip, example, hwnd).Activate();
     }
 
-    public async Task ShowShellcodeTipAsync(IMainFormView view)
+    public void ShowGuardRailInfo(nint hwnd)
     {
-        const string tipText = "Please paste shellcode as hexadecimal byte escapes.\r\n\r\n" +
-                               "- Use \\x followed by exactly two hex digits per byte.\r\n" +
-                               "- No spaces, commas, or 0x prefixes.\r\n" +
-                               "- Line breaks are okay; format is validated before continuing.\r\n\r\n" +
-                               "Example:";
+        const string info =
+            "Enter environment conditions in the form NAME#operator#value.\r\n\r\n" +
+            "Operators include equals, contains, biggerthan, and smallerthan.\r\n" +
+            "Separate multiple conditions with commas.";
 
-        const string example = "\\x48\\xB8\\x44\\x44\\x44\\x44\\x44\\x44\\x44\\x44\\x50\\x48\\xB8\\x55\\x55\\x55\\x55\\x55\\x55\\x55\\x55\\x50\\x48\\x31\\xC9\\x48\\x89\\xE2\\x49\\x89\\xE0\\x49\\x83\\xC0\\x08\\x4D\\x31\\xC9\\x48\\xB8\\x33\\x33\\x33\\x33\\x33\\x33\\x33\\x33\\x48\\x83\\xEC\\x28\\xFF\\xD0\\x48\\x83\\xC4\\x38\\x48\\xB8\\xEF\\xBE\\xAD\\xDE\\x00\\x00\\x00\\x00\\xEB\\xFE";
+        const string example =
+            "\"PROCESSOR_LEVEL#equals#6\", \"PATH#contains#System32\"\r\n" +
+            "NUMBER_OF_PROCESSORS#biggerthan#4, USERDOMAIN#equals#ACME\r\n" +
+            "PROCESSOR_LEVEL#smallerthan#10";
 
-        var dialog = new ContentDialog
-        {
-            XamlRoot = view.XamlRoot,
-            Title = "Shellcode Tip",
-            CloseButtonText = "OK",
-            Content = BuildInfoDialogContent("Shellcode Input Format", tipText, example)
-        };
-
-        await dialog.ShowAsync();
+        CreateInfoWindow("Environment Condition Format", "Environment Condition Format", info, example, hwnd).Activate();
     }
 
-    public async Task ShowGuardRailInfoAsync(IMainFormView view)
+    private static Window CreateTextWindow(string title, string content, string? header, bool canCopy, nint ownerHwnd)
     {
-        const string infoText = "Enter environment conditions in the form NAME#operator#value.\r\n\r\n" +
-                                "Operators include equals, contains, biggerthan, and smallerthan.\r\n" +
-                                "Separate multiple conditions with commas.";
+        int width  = canCopy ? 760 : 960;
+        int height = canCopy ? 520 : 680;
 
-        const string example = "\"PROCESSOR_LEVEL#equals#6\", \"PATH#contains#System32\"\r\n" +
-                               "NUMBER_OF_PROCESSORS#biggerthan#4, USERDOMAIN#equals#ACME\r\n" +
-                               "PROCESSOR_LEVEL#smallerthan#10";
-
-        var dialog = new ContentDialog
-        {
-            XamlRoot = view.XamlRoot,
-            Title = "Environment Condition Format",
-            CloseButtonText = "OK",
-            Content = BuildInfoDialogContent("Environment Condition Format", infoText, example)
-        };
-
-        await dialog.ShowAsync();
-    }
-
-    private static UIElement BuildMessageContent(string message, DialogIcon icon)
-    {
-        var text = new TextBlock
-        {
-            Text = message ?? string.Empty,
-            TextWrapping = TextWrapping.Wrap,
-            MaxWidth = 420
-        };
-
-        if (icon == DialogIcon.None)
-            return text;
-
-        var iconElement = new SymbolIcon
-        {
-            Symbol = icon switch
-            {
-                DialogIcon.Warning => Symbol.Warning,
-                DialogIcon.Error => Symbol.Clear,
-                DialogIcon.Question => Symbol.Help,
-                DialogIcon.Information => Symbol.Info,
-                _ => Symbol.Info
-            },
-            Foreground = new SolidColorBrush(icon switch
-            {
-                DialogIcon.Warning => Colors.Goldenrod,
-                DialogIcon.Error => Colors.OrangeRed,
-                DialogIcon.Question => Colors.LightSkyBlue,
-                DialogIcon.Information => Colors.DeepSkyBlue,
-                _ => Colors.Gray
-            })
-        };
-
-        var panel = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 12
-        };
-
-        panel.Children.Add(iconElement);
-        panel.Children.Add(text);
-        return panel;
-    }
-
-    private static void ConfigureButtons(ContentDialog dialog, DialogButtons buttons, DialogDefaultButton defaultButton)
-    {
-        dialog.PrimaryButtonText = string.Empty;
-        dialog.SecondaryButtonText = string.Empty;
-        dialog.CloseButtonText = string.Empty;
-        dialog.DefaultButton = ContentDialogButton.None;
-
-        switch (buttons)
-        {
-            case DialogButtons.Ok:
-                dialog.CloseButtonText = "OK";
-                dialog.DefaultButton = ContentDialogButton.Close;
-                break;
-            case DialogButtons.YesNo:
-                dialog.PrimaryButtonText = "Yes";
-                dialog.SecondaryButtonText = "No";
-                dialog.DefaultButton = defaultButton == DialogDefaultButton.Secondary
-                    ? ContentDialogButton.Secondary
-                    : ContentDialogButton.Primary;
-                break;
-        }
-    }
-
-    private static DialogResult MapDialogResult(DialogButtons buttons, ContentDialogResult result)
-    {
-        return buttons switch
-        {
-            DialogButtons.Ok => DialogResult.Ok,
-            DialogButtons.YesNo => result switch
-            {
-                ContentDialogResult.Primary => DialogResult.Yes,
-                ContentDialogResult.Secondary => DialogResult.No,
-                _ => DialogResult.Cancel
-            },
-            _ => DialogResult.None
-        };
-    }
-
-    private static UIElement BuildTextDialogContent(string content, string? header, bool isCopyable)
-    {
-        var container = new StackPanel
-        {
-            Spacing = 10
-        };
+        var root = new Grid();
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         if (!string.IsNullOrWhiteSpace(header))
         {
-            container.Children.Add(new TextBlock
+            var headerBlock = new TextBlock
             {
                 Text = header,
-                FontWeight = Windows.UI.Text.FontWeights.SemiBold
-            });
+                FontSize = 14,
+                Margin = new Thickness(16, 12, 16, 0),
+                TextWrapping = TextWrapping.Wrap
+            };
+            Grid.SetRow(headerBlock, 0);
+            root.Children.Add(headerBlock);
         }
 
         var textBox = new TextBox
         {
             Text = content ?? string.Empty,
-            FontFamily = new FontFamily("Consolas"),
-            TextWrapping = TextWrapping.NoWrap,
-            AcceptsReturn = true,
             IsReadOnly = true,
-            MinHeight = isCopyable ? 260 : 360,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
-        };
-
-        container.Children.Add(textBox);
-        return container;
-    }
-
-    private static UIElement BuildInfoDialogContent(string header, string info, string example)
-    {
-        var container = new StackPanel
-        {
-            Spacing = 10
-        };
-
-        container.Children.Add(new TextBlock
-        {
-            Text = header,
-            FontSize = 18,
-            FontWeight = Windows.UI.Text.FontWeights.SemiBold
-        });
-
-        container.Children.Add(new TextBlock
-        {
-            Text = info,
-            TextWrapping = TextWrapping.Wrap
-        });
-
-        container.Children.Add(new TextBlock
-        {
-            Text = "Examples:",
-            FontWeight = Windows.UI.Text.FontWeights.SemiBold
-        });
-
-        container.Children.Add(new TextBox
-        {
-            Text = example,
-            FontFamily = new FontFamily("Consolas"),
             AcceptsReturn = true,
-            IsReadOnly = true,
             TextWrapping = TextWrapping.NoWrap,
-            MinHeight = 120,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
-        });
+            FontFamily = new FontFamily("Consolas"),
+            MinHeight = 240,
+            Margin = new Thickness(16, 12, 16, 0)
+        };
+        ScrollViewer.SetVerticalScrollBarVisibility(textBox, ScrollBarVisibility.Auto);
+        ScrollViewer.SetHorizontalScrollBarVisibility(textBox, ScrollBarVisibility.Auto);
+        Grid.SetRow(textBox, 1);
+        root.Children.Add(textBox);
 
-        return container;
-    }
-
-    private static IReadOnlyList<string> ParseFileTypes(string filter)
-    {
-        if (string.IsNullOrWhiteSpace(filter))
-            return new[] { "*" };
-
-        var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var segments = filter.Split('|');
-
-        for (int i = 1; i < segments.Length; i += 2)
+        var buttonPanel = new StackPanel
         {
-            var patterns = segments[i].Split(';', StringSplitOptions.RemoveEmptyEntries);
-            foreach (var pattern in patterns)
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(16, 12, 16, 12),
+            Spacing = 8
+        };
+        Grid.SetRow(buttonPanel, 2);
+
+        var window = new Window { Title = title, Content = root };
+        window.AppWindow.Resize(new SizeInt32(width, height));
+
+        var display = DisplayArea.GetFromWindowId(window.AppWindow.Id, DisplayAreaFallback.Primary);
+        var work = display.WorkArea;
+        window.AppWindow.Move(new PointInt32(
+            work.X + (work.Width - width) / 2,
+            work.Y + (work.Height - height) / 2));
+
+        if (canCopy)
+        {
+            var copyBtn = new Button { Content = "Copy", MinWidth = 90 };
+            copyBtn.Click += (_, _) =>
             {
-                var trimmed = pattern.Trim();
-                if (string.IsNullOrEmpty(trimmed))
-                    continue;
-
-                if (trimmed == "*" || trimmed == "*.*")
-                {
-                    results.Add("*");
-                    continue;
-                }
-
-                if (trimmed.StartsWith("*.", StringComparison.Ordinal))
-                {
-                    results.Add(trimmed[1..]);
-                    continue;
-                }
-
-                if (trimmed.StartsWith(".", StringComparison.Ordinal))
-                {
-                    results.Add(trimmed);
-                    continue;
-                }
-            }
+                var dp = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                dp.SetText(textBox.Text ?? string.Empty);
+                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
+            };
+            buttonPanel.Children.Add(copyBtn);
         }
 
-        if (results.Count == 0)
-            results.Add("*");
+        var closeBtn = new Button
+        {
+            Content = "Close",
+            MinWidth = 90,
+            Style = (Style)Application.Current.Resources["AccentButtonStyle"]
+        };
+        closeBtn.Click += (_, _) => window.Close();
+        buttonPanel.Children.Add(closeBtn);
 
-        return results.ToList();
+        root.Children.Add(buttonPanel);
+        return window;
+    }
+
+    private static Window CreateInfoWindow(string title, string headerText, string bodyText, string exampleText, nint ownerHwnd)
+    {
+        var root = new Grid();
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var contentPanel = new StackPanel { Margin = new Thickness(16, 12, 16, 0) };
+
+        contentPanel.Children.Add(new TextBlock
+        {
+            Text = headerText,
+            FontSize = 14,
+            FontWeight = new Windows.UI.Text.FontWeight(600),
+            Margin = new Thickness(0, 0, 0, 6)
+        });
+
+        contentPanel.Children.Add(new TextBlock
+        {
+            Text = bodyText,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 12)
+        });
+
+        contentPanel.Children.Add(new TextBox
+        {
+            Text = exampleText,
+            IsReadOnly = true,
+            AcceptsReturn = true,
+            //TextWrapping = TextWrapping.NoWrap,
+            FontFamily = new FontFamily("Consolas"),
+            MinHeight = 100
+        });
+
+        var sv = new ScrollViewer
+        {
+            Content = contentPanel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+        };
+        Grid.SetRow(sv, 0);
+
+        var buttonPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(16, 12, 16, 12)
+        };
+        Grid.SetRow(buttonPanel, 1);
+
+        var window = new Window { Title = title, Content = root };
+        window.AppWindow.Resize(new SizeInt32(640, 440));
+
+        var display = DisplayArea.GetFromWindowId(window.AppWindow.Id, DisplayAreaFallback.Primary);
+        var work = display.WorkArea;
+        window.AppWindow.Move(new PointInt32(
+            work.X + (work.Width - 640) / 2,
+            work.Y + (work.Height - 440) / 2));
+
+        root.Children.Add(sv);
+
+        var okBtn = new Button
+        {
+            Content = "OK",
+            MinWidth = 90,
+            Style = (Style)Application.Current.Resources["AccentButtonStyle"]
+        };
+        okBtn.Click += (_, _) => window.Close();
+        buttonPanel.Children.Add(okBtn);
+
+        root.Children.Add(buttonPanel);
+        return window;
     }
 }

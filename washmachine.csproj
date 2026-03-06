@@ -1,19 +1,31 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- When building via dotnet CLI, MSBuildExtensionsPath does not include AppxPackage tools.
+       Override the path to point at the installed Visual Studio MSBuild directory. -->
+  <PropertyGroup>
+    <_VsAppxPackagePath>$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\AppxPackage\</_VsAppxPackagePath>
+    <AppxMSBuildToolsPath Condition="'$(AppxMSBuildToolsPath)' == '' And !Exists('$(_VsAppxPackagePath)Microsoft.Build.Packaging.Pri.Tasks.dll')">C:\Program Files\Microsoft Visual Studio\18\Insiders\MSBuild\Microsoft\VisualStudio\v18.0\AppxPackage\</AppxMSBuildToolsPath>
+  </PropertyGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <Nullable>enable</Nullable>
     <UseWinUI>true</UseWinUI>
     <ImplicitUsings>enable</ImplicitUsings>
-    <BaseOutputPath>C:\Users\hamza\Documents\GitHub\washmachine\Output</BaseOutputPath>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <WindowsPackageType>None</WindowsPackageType>
+    <BaseOutputPath>$(MSBuildProjectDirectory)\Output</BaseOutputPath>
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
     <RootNamespace>Washmachine</RootNamespace>
     <PlatformTarget>x64</PlatformTarget>
-    <WindowsPackageType>None</WindowsPackageType>
-    <WindowsSdkPackageVersion>10.0.22621.38</WindowsSdkPackageVersion>
     <SignAssembly>False</SignAssembly>
     <GeneratePackageOnBuild>False</GeneratePackageOnBuild>
     <ProduceReferenceAssembly>False</ProduceReferenceAssembly>
+    <PublishAll Condition="'$(PublishAll)'==''">false</PublishAll>
+    <PublishAllPass Condition="'$(PublishAllPass)'==''">false</PublishAllPass>
+    <PublishDirSingle Condition="'$(PublishDirSingle)'==''">$(BaseOutputPath)\$(Configuration)\publish\single\</PublishDirSingle>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)'=='Debug'">
@@ -26,22 +38,31 @@
     <WarningLevel>6</WarningLevel>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
+    <PublishSingleFile>false</PublishSingleFile>
     <PublishReadyToRun>false</PublishReadyToRun>
     <StripSymbols>true</StripSymbols>
-    <PublishDir>$(BaseOutputPath)\Release\singlefile\</PublishDir>
+    <PublishDir>$(BaseOutputPath)\Release\publish\multi\</PublishDir>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Remove="Assets\vx_api_snippets.yaml" />
-    <EmbeddedResource Include="Assets\vx_api_snippets.yaml" LogicalName="Washmachine.Assets.vx_api_snippets.yaml" />
+    <Content Include="Assets\vx_api_snippets.yaml"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest"
+             ExcludeFromSingleFile="true" />
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Check NuGet for the latest stable Microsoft.WindowsAppSDK version -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.1" />
   </ItemGroup>
+
+  <Target Name="PublishSingleFileVariant"
+          AfterTargets="Publish"
+          Condition="'$(PublishAll)'=='true' and '$(PublishAllPass)'!='true'">
+    <MSBuild Projects="$(MSBuildProjectFullPath)"
+             Targets="Publish"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=$(SelfContained);PublishSingleFile=true;PublishDir=$(PublishDirSingle);PublishAll=false;PublishAllPass=true" />
+  </Target>
 
 </Project>

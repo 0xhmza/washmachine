@@ -1,4 +1,4 @@
-using System.Reflection;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Washmachine.Models;
 using YamlDotNet.Core;
@@ -11,13 +11,14 @@ public interface ICodeSnippetCatalogService
 {
     IReadOnlyList<CodeSnippetSection> GetAllSections();
     CodeSnippetSection GetSectionByHeader(string header);
-    bool TryGetSectionByHeader(string header, out CodeSnippetSection section);
+    bool TryGetSectionByHeader(string header, [NotNullWhen(true)] out CodeSnippetSection? section);
     IReadOnlyList<CodeSnippetItem> GetItemsForHeader(string header);
-    bool TryGetSectionByTemplate(string template, out CodeSnippetSection section);
-    bool TryResolveSection(string key, out CodeSnippetSection section);
+    bool TryGetSectionByTemplate(string template, [NotNullWhen(true)] out CodeSnippetSection? section);
+    bool TryResolveSection(string key, [NotNullWhen(true)] out CodeSnippetSection? section);
     IReadOnlyList<CodeTemplateDefinition> GetTemplates();
     CodeTemplateDefinition GetTemplate(string templateId);
-    bool TryGetTemplate(string templateId, out CodeTemplateDefinition template);
+    bool TryGetTemplate(string templateId, [NotNullWhen(true)] out CodeTemplateDefinition? template);
+    bool TryReload(out string? error);
 }
 
 /// <summary>
@@ -26,8 +27,7 @@ public interface ICodeSnippetCatalogService
 public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
 {
     private readonly IAppPaths _paths;
-    private readonly Lazy<CatalogBundle> _catalog;
-    private const string EmbeddedCatalogResourceName = "Washmachine.Assets.vx_api_snippets.yaml";
+    private Lazy<CatalogBundle> _catalog;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -44,7 +44,7 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
     public YamlCodeSnippetCatalogService(IAppPaths paths)
     {
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
-        _catalog = new Lazy<CatalogBundle>(LoadCatalog, LazyThreadSafetyMode.ExecutionAndPublication);
+        _catalog = CreateCatalog();
     }
 
     public IReadOnlyList<CodeSnippetSection> GetAllSections()
@@ -58,7 +58,7 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
         return section;
     }
 
-    public bool TryGetSectionByHeader(string header, out CodeSnippetSection section)
+    public bool TryGetSectionByHeader(string header, [NotNullWhen(true)] out CodeSnippetSection? section)
     {
         return _catalog.Value.Snippets.TryGetByHeader(header, out section);
     }
@@ -68,14 +68,14 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
         return GetSectionByHeader(header).Items;
     }
 
-    public bool TryGetSectionByTemplate(string template, out CodeSnippetSection section)
+    public bool TryGetSectionByTemplate(string template, [NotNullWhen(true)] out CodeSnippetSection? section)
     {
         return _catalog.Value.Snippets.TryGetByTemplate(template, out section);
     }
 
-    public bool TryResolveSection(string key, out CodeSnippetSection section)
+    public bool TryResolveSection(string key, [NotNullWhen(true)] out CodeSnippetSection? section)
     {
-        section = default!;
+        section = null;
         if (string.IsNullOrWhiteSpace(key))
             return false;
 
@@ -113,9 +113,25 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
         return template;
     }
 
-    public bool TryGetTemplate(string templateId, out CodeTemplateDefinition template)
+    public bool TryGetTemplate(string templateId, [NotNullWhen(true)] out CodeTemplateDefinition? template)
     {
         return _catalog.Value.Templates.TryGetById(templateId, out template);
+    }
+
+    public bool TryReload(out string? error)
+    {
+        try
+        {
+            _catalog = CreateCatalog();
+            _ = _catalog.Value;
+            error = null;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
+        }
     }
 
     private CatalogBundle LoadCatalog()
@@ -170,27 +186,11 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
     {
         if (File.Exists(_paths.SnippetCatalogFile))
             return File.ReadAllText(_paths.SnippetCatalogFile);
-
-        var assembly = Assembly.GetExecutingAssembly();
-        Stream? stream = assembly.GetManifestResourceStream(EmbeddedCatalogResourceName);
-        if (stream == null)
-        {
-            var resourceName = assembly
-                .GetManifestResourceNames()
-                .FirstOrDefault(name => name.EndsWith("vx_api_snippets.yaml", StringComparison.OrdinalIgnoreCase));
-            if (!string.IsNullOrWhiteSpace(resourceName))
-                stream = assembly.GetManifestResourceStream(resourceName);
-        }
-
-        if (stream == null)
-            throw new FileNotFoundException("Snippet catalog file not found.", _paths.SnippetCatalogFile);
-
-        using (stream)
-        {
-            using var reader = new StreamReader(stream);
-            return reader.ReadToEnd();
-        }
+        throw new FileNotFoundException("Snippet catalog file not found.", _paths.SnippetCatalogFile);
     }
+
+    private Lazy<CatalogBundle> CreateCatalog()
+        => new(LoadCatalog, LazyThreadSafetyMode.ExecutionAndPublication);
 
 
     private static IEnumerable<CodeTemplateDefinition> BuildTemplates(SnippetCatalogDto dto)

@@ -1,0 +1,42 @@
+<Page x:Class="Washmachine.Views.PackingPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      mc:Ignorable="d"
+      NavigationCacheMode="Required">
+
+    <Grid Background="Transparent">
+        <StackPanel Margin="{StaticResource PageMargin}">
+            <!-- Breadcrumb -->
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,8" Spacing="4">
+                <TextBlock Text="Home" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock Text="›" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock Text="Packing" />
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                <FontIcon Glyph="&#xE7B8;" FontSize="22" Margin="0,2,12,0" />
+                <StackPanel>
+                    <TextBlock Text="Packing" Style="{StaticResource PageTitleText}" />
+                    <TextBlock Text="Pack and obfuscate output artifacts (coming soon)."
+                               Style="{StaticResource PageSubtitleText}"
+                               Margin="0,4,0,0" />
+                </StackPanel>
+            </StackPanel>
+
+            <Border Style="{StaticResource SectionDivider}" />
+
+            <Border Style="{StaticResource CardBorder}" Width="460" HorizontalAlignment="Left">
+                <Grid Margin="16">
+                    <StackPanel>
+                        <TextBlock Text="This section is under construction." Style="{StaticResource SectionTitleText}" />
+                        <TextBlock Text="Packing features will appear here once available."
+                                   Style="{StaticResource SectionSubtitleText}"
+                                   Margin="0,6,0,0" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </StackPanel>
+    </Grid>
+</Page>

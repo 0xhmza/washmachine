@@ -5,9 +5,14 @@ namespace Washmachine.Views;
 
 public interface IMainFormView
 {
-    Window Window { get; }
-    XamlRoot XamlRoot { get; }
-    FrameworkElement RootElement { get; }
+    /// <summary>XamlRoot for ContentDialog and file pickers.</summary>
+    XamlRoot ViewXamlRoot { get; }
+
+    /// <summary>Win32 HWND for MessageBoxW and Win32 interop.</summary>
+    nint WindowHandle { get; }
+
+    /// <summary>Root DependencyObject for visual-tree walking.</summary>
+    DependencyObject ContentRoot { get; }
 
     ComboBox EncoderCombo { get; }
     ComboBox EnvelopeCombo { get; }

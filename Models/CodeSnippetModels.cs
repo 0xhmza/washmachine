@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Washmachine.Models;
 
@@ -35,22 +36,22 @@ public sealed class CodeSnippetCatalog
 
     public IReadOnlyList<CodeSnippetSection> Sections => _sections;
 
-    public bool TryGetByHeader(string header, out CodeSnippetSection section)
+    public bool TryGetByHeader(string header, [NotNullWhen(true)] out CodeSnippetSection? section)
     {
         if (string.IsNullOrWhiteSpace(header))
         {
-            section = default!;
+            section = null;
             return false;
         }
 
         return _sectionsByHeader.TryGetValue(header, out section);
     }
 
-    public bool TryGetByTemplate(string template, out CodeSnippetSection section)
+    public bool TryGetByTemplate(string template, [NotNullWhen(true)] out CodeSnippetSection? section)
     {
         if (string.IsNullOrWhiteSpace(template))
         {
-            section = default!;
+            section = null;
             return false;
         }
 
@@ -103,11 +104,11 @@ public sealed class CodeSnippetSection
     public IReadOnlyList<CodeSnippetItem> Items => _items;
     public IReadOnlyList<CodeSnippetInput> Inputs => _inputs;
 
-    public bool TryGetItem(string id, out CodeSnippetItem item)
+    public bool TryGetItem(string id, [NotNullWhen(true)] out CodeSnippetItem? item)
     {
         if (string.IsNullOrWhiteSpace(id))
         {
-            item = default!;
+            item = null;
             return false;
         }
 

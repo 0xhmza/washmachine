@@ -1,14 +1,22 @@
 using Microsoft.UI.Xaml;
-using WinRT;
+using Microsoft.Windows.ApplicationModel.DynamicDependency;
 
 namespace Washmachine;
 
-internal static class Program
+public static class Program
 {
     [STAThread]
-    private static void Main(string[] args)
+    static void Main(string[] args)
     {
-        ComWrappersSupport.InitializeComWrappers();
-        Application.Start(_ => new App());
+        Bootstrap.Initialize(0x00010008); // WindowsAppSDK 1.8
+        WinRT.ComWrappersSupport.InitializeComWrappers();
+        Application.Start(p =>
+        {
+            var context = new Microsoft.UI.Dispatching.DispatcherQueueSynchronizationContext(
+                Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
+            System.Threading.SynchronizationContext.SetSynchronizationContext(context);
+            _ = new App();
+        });
+        Bootstrap.Shutdown();
     }
 }
