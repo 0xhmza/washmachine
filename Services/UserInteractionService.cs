@@ -1,129 +1,187 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
-using Microsoft.Win32;
-using FluentWindow = Wpf.Ui.Controls.FluentWindow;
-using TitleBar = Wpf.Ui.Controls.TitleBar;
-using UiButton = Wpf.Ui.Controls.Button;
-using UiCard = Wpf.Ui.Controls.Card;
-using UiTextBlock = Wpf.Ui.Controls.TextBlock;
-using UiTextBox = Wpf.Ui.Controls.TextBox;
+using Microsoft.UI.Windowing;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using System.Runtime.InteropServices;
+using Washmachine.Models;
+using Windows.Graphics;
+using Windows.Storage.Pickers;
+using WinRT.Interop;
 
 namespace Washmachine.Services;
 
 public interface IUserInteractionService
 {
-    MessageBoxResult ShowMessage(
-        Window owner,
+    MsgBoxResult ShowMessage(
+        nint hwnd,
         string message,
         string title,
-        MessageBoxButton buttons,
-        MessageBoxImage icon,
-        MessageBoxResult defaultButton = MessageBoxResult.OK);
+        MsgBoxButton buttons,
+        MsgBoxIcon icon);
 
-    string? SelectFile(
-        Window owner,
+    Task<string?> SelectFileAsync(
+        nint hwnd,
         string title,
         string filter,
         string initialDirectory);
 
     void ShowLargeText(
-        Window owner,
+        nint hwnd,
         string title,
         string content,
         string? header = null);
 
     void ShowCopyableText(
-        Window owner,
+        nint hwnd,
         string title,
         string content,
         string? header = null);
 
-    string? PromptText(
-        Window owner,
+    Task<string?> PromptTextAsync(
+        XamlRoot xamlRoot,
         string title,
         string message,
         string? placeholder = null,
         string? initialValue = null);
 
-    void ShowShellcodeTip(Window owner);
-    void ShowGuardRailInfo(Window owner);
+    void ShowShellcodeTip(nint hwnd);
+    void ShowGuardRailInfo(nint hwnd);
 }
 
-/// <summary>
-/// Thin wrapper around WPF dialogs to keep UI interactions centralized.
-/// </summary>
 public sealed class UserInteractionService : IUserInteractionService
 {
-    public MessageBoxResult ShowMessage(
-        Window owner,
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int MessageBoxW(nint hWnd, string text, string caption, uint type);
+
+    private const uint MB_OK               = 0x00000000;
+    private const uint MB_OKCANCEL         = 0x00000001;
+    private const uint MB_YESNOCANCEL      = 0x00000003;
+    private const uint MB_YESNO            = 0x00000004;
+    private const uint MB_ICONERROR        = 0x00000010;
+    private const uint MB_ICONQUESTION     = 0x00000020;
+    private const uint MB_ICONWARNING      = 0x00000030;
+    private const uint MB_ICONINFORMATION  = 0x00000040;
+    private const uint MB_DEFBUTTON1       = 0x00000000;
+
+    public MsgBoxResult ShowMessage(
+        nint hwnd,
         string message,
         string title,
-        MessageBoxButton buttons,
-        MessageBoxImage icon,
-        MessageBoxResult defaultButton = MessageBoxResult.OK)
-        => MessageBox.Show(owner, message, title, buttons, icon, defaultButton);
+        MsgBoxButton buttons,
+        MsgBoxIcon icon)
+    {
+        uint uType = buttons switch
+        {
+            MsgBoxButton.OKCancel    => MB_OKCANCEL,
+            MsgBoxButton.YesNo       => MB_YESNO,
+            MsgBoxButton.YesNoCancel => MB_YESNOCANCEL,
+            _                        => MB_OK
+        };
 
-    public string? SelectFile(
-        Window owner,
+        uType |= icon switch
+        {
+            MsgBoxIcon.Error       => MB_ICONERROR,
+            MsgBoxIcon.Warning     => MB_ICONWARNING,
+            MsgBoxIcon.Information => MB_ICONINFORMATION,
+            MsgBoxIcon.Question    => MB_ICONQUESTION,
+            _                      => 0
+        };
+
+        uType |= MB_DEFBUTTON1;
+        int result = MessageBoxW(hwnd, message ?? string.Empty, title ?? string.Empty, uType);
+        return (MsgBoxResult)result;
+    }
+
+    public async Task<string?> SelectFileAsync(
+        nint hwnd,
         string title,
         string filter,
         string initialDirectory)
     {
-        var dialog = new OpenFileDialog
+        var picker = new FileOpenPicker
         {
-            Title = title,
-            Filter = filter,
-            InitialDirectory = string.IsNullOrWhiteSpace(initialDirectory)
-                ? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
-                : initialDirectory,
-            CheckFileExists = true,
-            CheckPathExists = true,
-            Multiselect = false
+            SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+            ViewMode = PickerViewMode.List
         };
 
-        return dialog.ShowDialog(owner) == true
-            ? dialog.FileName
-            : null;
+        InitializeWithWindow.Initialize(picker, hwnd);
+
+        // Parse WPF-style filter: "YAML files (*.yaml;*.yml)|*.yaml;*.yml|All files (*.*)|*.*"
+        // Extract extensions from even-indexed segments after splitting by |
+        var parts = (filter ?? string.Empty).Split('|');
+        bool addedAny = false;
+        for (int i = 1; i < parts.Length; i += 2)
+        {
+            foreach (var ext in parts[i].Split(';'))
+            {
+                string clean = ext.Trim().TrimStart('*');
+                if (clean == ".*" || clean == ".*")
+                {
+                    picker.FileTypeFilter.Add("*");
+                    addedAny = true;
+                }
+                else if (!string.IsNullOrWhiteSpace(clean))
+                {
+                    picker.FileTypeFilter.Add(clean);
+                    addedAny = true;
+                }
+            }
+        }
+
+        if (!addedAny)
+            picker.FileTypeFilter.Add("*");
+
+        var file = await picker.PickSingleFileAsync();
+        return file?.Path;
     }
 
-    public void ShowLargeText(
-        Window owner,
-        string title,
-        string content,
-        string? header = null)
+    public void ShowLargeText(nint hwnd, string title, string content, string? header = null)
     {
-        var dialog = CreateTextWindow(title, content, header, canCopy: false);
-        dialog.Owner = owner;
-        dialog.ShowDialog();
+        var w = CreateTextWindow(title, content, header, canCopy: false, hwnd);
+        w.Activate();
     }
 
-    public void ShowCopyableText(
-        Window owner,
-        string title,
-        string content,
-        string? header = null)
+    public void ShowCopyableText(nint hwnd, string title, string content, string? header = null)
     {
-        var dialog = CreateTextWindow(title, content, header, canCopy: true);
-        dialog.Owner = owner;
-        dialog.ShowDialog();
+        var w = CreateTextWindow(title, content, header, canCopy: true, hwnd);
+        w.Activate();
     }
 
-    public string? PromptText(
-        Window owner,
+    public async Task<string?> PromptTextAsync(
+        XamlRoot xamlRoot,
         string title,
         string message,
         string? placeholder = null,
         string? initialValue = null)
     {
-        var dialog = CreateInputWindow(title, message, placeholder, initialValue);
-        dialog.Owner = owner;
-        return dialog.ShowDialog() == true ? dialog.Tag as string : null;
+        var textBox = new TextBox
+        {
+            PlaceholderText = placeholder ?? string.Empty,
+            Text = initialValue ?? string.Empty,
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+
+        var panel = new StackPanel();
+        panel.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(textBox);
+
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = panel,
+            PrimaryButtonText = "OK",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = xamlRoot
+        };
+
+        var result = await dialog.ShowAsync();
+        return result == ContentDialogResult.Primary ? textBox.Text?.Trim() : null;
     }
 
-    public void ShowShellcodeTip(Window owner)
+    public void ShowShellcodeTip(nint hwnd)
     {
-        const string tipText =
+        const string tip =
             "Please paste shellcode as hexadecimal byte escapes.\r\n\r\n" +
             "- Use \\x followed by exactly two hex digits per byte.\r\n" +
             "- No spaces, commas, or 0x prefixes.\r\n" +
@@ -131,16 +189,17 @@ public sealed class UserInteractionService : IUserInteractionService
             "Example:";
 
         const string example =
-            "\\x48\\xB8\\x44\\x44\\x44\\x44\\x44\\x44\\x44\\x44\\x50\\x48\\xB8\\x55\\x55\\x55\\x55\\x55\\x55\\x55\\x55\\x50\\x48\\x31\\xC9\\x48\\x89\\xE2\\x49\\x89\\xE0\\x49\\x83\\xC0\\x08\\x4D\\x31\\xC9\\x48\\xB8\\x33\\x33\\x33\\x33\\x33\\x33\\x33\\x33\\x48\\x83\\xEC\\x28\\xFF\\xD0\\x48\\x83\\xC4\\x38\\x48\\xB8\\xEF\\xBE\\xAD\\xDE\\x00\\x00\\x00\\x00\\xEB\\xFE";
+            "\\x48\\xB8\\x44\\x44\\x44\\x44\\x44\\x44\\x44\\x44\\x50\\x48\\xB8\\x55\\x55\\x55\\x55" +
+            "\\x55\\x55\\x55\\x55\\x50\\x48\\x31\\xC9\\x48\\x89\\xE2\\x49\\x89\\xE0\\x49\\x83\\xC0" +
+            "\\x08\\x4D\\x31\\xC9\\x48\\xB8\\x33\\x33\\x33\\x33\\x33\\x33\\x33\\x33\\x48\\x83\\xEC" +
+            "\\x28\\xFF\\xD0\\x48\\x83\\xC4\\x38\\x48\\xB8\\xEF\\xBE\\xAD\\xDE\\x00\\x00\\x00\\x00\\xEB\\xFE";
 
-        var dialog = CreateInfoWindow("Shellcode Tip", "Shellcode Input Format", tipText, example);
-        dialog.Owner = owner;
-        dialog.ShowDialog();
+        CreateInfoWindow("Shellcode Tip", "Shellcode Input Format", tip, example, hwnd).Activate();
     }
 
-    public void ShowGuardRailInfo(Window owner)
+    public void ShowGuardRailInfo(nint hwnd)
     {
-        const string infoText =
+        const string info =
             "Enter environment conditions in the form NAME#operator#value.\r\n\r\n" +
             "Operators include equals, contains, biggerthan, and smallerthan.\r\n" +
             "Separate multiple conditions with commas.";
@@ -150,306 +209,159 @@ public sealed class UserInteractionService : IUserInteractionService
             "NUMBER_OF_PROCESSORS#biggerthan#4, USERDOMAIN#equals#ACME\r\n" +
             "PROCESSOR_LEVEL#smallerthan#10";
 
-        var dialog = CreateInfoWindow("Environment Condition Format", "Environment Condition Format", infoText, example);
-        dialog.Owner = owner;
-        dialog.ShowDialog();
+        CreateInfoWindow("Environment Condition Format", "Environment Condition Format", info, example, hwnd).Activate();
     }
 
-    private static Window CreateTextWindow(string title, string content, string? header, bool canCopy)
+    private static Window CreateTextWindow(string title, string content, string? header, bool canCopy, nint ownerHwnd)
     {
-        var window = new FluentWindow
-        {
-            Title = title,
-            Width = canCopy ? 760 : 960,
-            Height = canCopy ? 520 : 680,
-            MinWidth = 560,
-            MinHeight = 420,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            ShowInTaskbar = false,
-            ExtendsContentIntoTitleBar = true,
-            WindowBackdropType = Wpf.Ui.Controls.WindowBackdropType.Mica,
-            WindowCornerPreference = Wpf.Ui.Controls.WindowCornerPreference.Round,
-            Background = Brushes.Transparent
-        };
-        window.SetResourceReference(Control.ForegroundProperty, "TextFillColorPrimaryBrush");
+        int width  = canCopy ? 760 : 960;
+        int height = canCopy ? 520 : 680;
 
         var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        var titleBar = new TitleBar { Title = title };
-        Grid.SetRow(titleBar, 0);
-        root.Children.Add(titleBar);
-
         if (!string.IsNullOrWhiteSpace(header))
         {
-            var headerCard = new UiCard { Margin = new Thickness(16, 12, 16, 0) };
-            var headerPanel = new StackPanel { Margin = new Thickness(12, 8, 12, 8) };
-            headerPanel.Children.Add(new UiTextBlock
+            var headerBlock = new TextBlock
             {
                 Text = header,
-                FontWeight = FontWeights.SemiBold,
-                FontTypography = Wpf.Ui.Controls.FontTypography.Subtitle
-            });
-            headerCard.Content = headerPanel;
-            Grid.SetRow(headerCard, 1);
-            root.Children.Add(headerCard);
+                FontSize = 14,
+                Margin = new Thickness(16, 12, 16, 0),
+                TextWrapping = TextWrapping.Wrap
+            };
+            Grid.SetRow(headerBlock, 0);
+            root.Children.Add(headerBlock);
         }
 
-        var contentCard = new UiCard { Margin = new Thickness(16, 12, 16, 0) };
-        var textBox = new UiTextBox
+        var textBox = new TextBox
         {
             Text = content ?? string.Empty,
             IsReadOnly = true,
             AcceptsReturn = true,
             TextWrapping = TextWrapping.NoWrap,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
             FontFamily = new FontFamily("Consolas"),
-            MinHeight = 240
+            MinHeight = 240,
+            Margin = new Thickness(16, 12, 16, 0)
         };
-        contentCard.Content = textBox;
-        Grid.SetRow(contentCard, 2);
-        root.Children.Add(contentCard);
+        ScrollViewer.SetVerticalScrollBarVisibility(textBox, ScrollBarVisibility.Auto);
+        ScrollViewer.SetHorizontalScrollBarVisibility(textBox, ScrollBarVisibility.Auto);
+        Grid.SetRow(textBox, 1);
+        root.Children.Add(textBox);
 
-        var buttonCard = new UiCard { Margin = new Thickness(16, 12, 16, 12) };
         var buttonPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(12, 8, 12, 8)
+            Margin = new Thickness(16, 12, 16, 12),
+            Spacing = 8
         };
+        Grid.SetRow(buttonPanel, 2);
+
+        var window = new Window { Title = title, Content = root };
+        window.AppWindow.Resize(new SizeInt32(width, height));
+
+        var display = DisplayArea.GetFromWindowId(window.AppWindow.Id, DisplayAreaFallback.Primary);
+        var work = display.WorkArea;
+        window.AppWindow.Move(new PointInt32(
+            work.X + (work.Width - width) / 2,
+            work.Y + (work.Height - height) / 2));
 
         if (canCopy)
         {
-            var copyButton = new UiButton
+            var copyBtn = new Button { Content = "Copy", MinWidth = 90 };
+            copyBtn.Click += (_, _) =>
             {
-                Content = "Copy",
-                MinWidth = 90,
-                Margin = new Thickness(0, 0, 8, 0),
-                Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary
+                var dp = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                dp.SetText(textBox.Text ?? string.Empty);
+                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
             };
-            copyButton.Click += (_, _) =>
-            {
-                try
-                {
-                    Clipboard.SetText(textBox.Text ?? string.Empty);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show(window, $"Failed to copy payload: {ex.Message}", "Copy", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            };
-            buttonPanel.Children.Add(copyButton);
+            buttonPanel.Children.Add(copyBtn);
         }
 
-        var closeButton = new UiButton
+        var closeBtn = new Button
         {
             Content = "Close",
             MinWidth = 90,
-            Appearance = Wpf.Ui.Controls.ControlAppearance.Primary
+            Style = (Style)Application.Current.Resources["AccentButtonStyle"]
         };
-        closeButton.Click += (_, _) => window.Close();
-        buttonPanel.Children.Add(closeButton);
+        closeBtn.Click += (_, _) => window.Close();
+        buttonPanel.Children.Add(closeBtn);
 
-        buttonCard.Content = buttonPanel;
-        Grid.SetRow(buttonCard, 3);
-        root.Children.Add(buttonCard);
-
-        window.Content = root;
+        root.Children.Add(buttonPanel);
         return window;
     }
 
-    private static Window CreateInputWindow(string title, string message, string? placeholder, string? initialValue)
+    private static Window CreateInfoWindow(string title, string headerText, string bodyText, string exampleText, nint ownerHwnd)
     {
-        var window = new FluentWindow
-        {
-            Title = title,
-            Width = 560,
-            Height = 260,
-            MinWidth = 420,
-            MinHeight = 220,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            ShowInTaskbar = false,
-            ExtendsContentIntoTitleBar = true,
-            WindowBackdropType = Wpf.Ui.Controls.WindowBackdropType.Mica,
-            WindowCornerPreference = Wpf.Ui.Controls.WindowCornerPreference.Round,
-            Background = Brushes.Transparent
-        };
-
-        window.SetResourceReference(Control.ForegroundProperty, "TextFillColorPrimaryBrush");
-
         var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var titleBar = new TitleBar
-        {
-            Title = title
-        };
-        Grid.SetRow(titleBar, 0);
-        root.Children.Add(titleBar);
-
-        var contentCard = new UiCard { Margin = new Thickness(16, 12, 16, 0) };
-        var contentPanel = new StackPanel { Margin = new Thickness(12, 8, 12, 8) };
-        contentPanel.Children.Add(new UiTextBlock
-        {
-            Text = message,
-            TextWrapping = TextWrapping.Wrap
-        });
-
-        var textBox = new UiTextBox
-        {
-            Margin = new Thickness(0, 8, 0, 0),
-            Text = initialValue ?? string.Empty,
-            PlaceholderText = placeholder ?? string.Empty
-        };
-
-        contentPanel.Children.Add(textBox);
-        contentCard.Content = contentPanel;
-        Grid.SetRow(contentCard, 1);
-        root.Children.Add(contentCard);
-
-        var buttonCard = new UiCard { Margin = new Thickness(16, 12, 16, 12) };
-        var buttonPanel = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(12, 8, 12, 8)
-        };
-
-        var okButton = new UiButton
-        {
-            Content = "OK",
-            MinWidth = 90,
-            IsDefault = true,
-            Margin = new Thickness(0, 0, 8, 0),
-            Appearance = Wpf.Ui.Controls.ControlAppearance.Primary
-        };
-        okButton.Click += (_, _) =>
-        {
-            window.Tag = textBox.Text?.Trim();
-            window.DialogResult = true;
-        };
-
-        var cancelButton = new UiButton
-        {
-            Content = "Cancel",
-            MinWidth = 90,
-            IsCancel = true,
-            Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary
-        };
-        cancelButton.Click += (_, _) => window.DialogResult = false;
-
-        buttonPanel.Children.Add(okButton);
-        buttonPanel.Children.Add(cancelButton);
-        buttonCard.Content = buttonPanel;
-        Grid.SetRow(buttonCard, 2);
-        root.Children.Add(buttonCard);
-
-        window.Content = root;
-        return window;
-    }
-
-    private static Window CreateInfoWindow(string title, string headerText, string bodyText, string exampleText)
-    {
-        var window = new FluentWindow
-        {
-            Title = title,
-            Width = 640,
-            Height = 440,
-            MinWidth = 560,
-            MinHeight = 360,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            ShowInTaskbar = false,
-            ExtendsContentIntoTitleBar = true,
-            WindowBackdropType = Wpf.Ui.Controls.WindowBackdropType.Mica,
-            WindowCornerPreference = Wpf.Ui.Controls.WindowCornerPreference.Round,
-            Background = Brushes.Transparent
-        };
-        window.SetResourceReference(Control.ForegroundProperty, "TextFillColorPrimaryBrush");
-
-        var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        var titleBar = new TitleBar { Title = title };
-        Grid.SetRow(titleBar, 0);
-        root.Children.Add(titleBar);
+        var contentPanel = new StackPanel { Margin = new Thickness(16, 12, 16, 0) };
 
-        var scrollViewer = new ScrollViewer
-        {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Margin = new Thickness(16, 12, 16, 0)
-        };
-
-        var contentPanel = new StackPanel();
-
-        var infoCard = new UiCard { Margin = new Thickness(0, 0, 0, 12) };
-        var infoPanel = new StackPanel { Margin = new Thickness(12, 8, 12, 8) };
-        infoPanel.Children.Add(new UiTextBlock
+        contentPanel.Children.Add(new TextBlock
         {
             Text = headerText,
-            FontWeight = FontWeights.SemiBold,
-            FontTypography = Wpf.Ui.Controls.FontTypography.Subtitle,
+            FontSize = 14,
+            FontWeight = new Windows.UI.Text.FontWeight(600),
             Margin = new Thickness(0, 0, 0, 6)
         });
-        infoPanel.Children.Add(new UiTextBlock
+
+        contentPanel.Children.Add(new TextBlock
         {
             Text = bodyText,
-            TextWrapping = TextWrapping.Wrap
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 12)
         });
-        infoCard.Content = infoPanel;
-        contentPanel.Children.Add(infoCard);
 
-        var exampleCard = new UiCard();
-        var exampleBox = new UiTextBox
+        contentPanel.Children.Add(new TextBox
         {
             Text = exampleText,
             IsReadOnly = true,
             AcceptsReturn = true,
-            TextWrapping = TextWrapping.NoWrap,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            //TextWrapping = TextWrapping.NoWrap,
             FontFamily = new FontFamily("Consolas"),
-            MinHeight = 160
+            MinHeight = 100
+        });
+
+        var sv = new ScrollViewer
+        {
+            Content = contentPanel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
         };
-        exampleCard.Content = exampleBox;
-        contentPanel.Children.Add(exampleCard);
+        Grid.SetRow(sv, 0);
 
-        scrollViewer.Content = contentPanel;
-        Grid.SetRow(scrollViewer, 1);
-        root.Children.Add(scrollViewer);
-
-        var buttonCard = new UiCard { Margin = new Thickness(16, 12, 16, 12) };
-        var okPanel = new StackPanel
+        var buttonPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(12, 8, 12, 8)
+            Margin = new Thickness(16, 12, 16, 12)
         };
-        var okButton = new UiButton
+        Grid.SetRow(buttonPanel, 1);
+
+        var window = new Window { Title = title, Content = root };
+        window.AppWindow.Resize(new SizeInt32(640, 440));
+
+        var display = DisplayArea.GetFromWindowId(window.AppWindow.Id, DisplayAreaFallback.Primary);
+        var work = display.WorkArea;
+        window.AppWindow.Move(new PointInt32(
+            work.X + (work.Width - 640) / 2,
+            work.Y + (work.Height - 440) / 2));
+
+        root.Children.Add(sv);
+
+        var okBtn = new Button
         {
             Content = "OK",
             MinWidth = 90,
-            Appearance = Wpf.Ui.Controls.ControlAppearance.Primary
+            Style = (Style)Application.Current.Resources["AccentButtonStyle"]
         };
-        okButton.Click += (_, _) => window.Close();
-        okPanel.Children.Add(okButton);
-        buttonCard.Content = okPanel;
-        Grid.SetRow(buttonCard, 2);
-        root.Children.Add(buttonCard);
+        okBtn.Click += (_, _) => window.Close();
+        buttonPanel.Children.Add(okBtn);
 
-        window.Content = root;
+        root.Children.Add(buttonPanel);
         return window;
     }
 }
-
-
-
-

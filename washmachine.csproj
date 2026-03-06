@@ -1,12 +1,23 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- When building via dotnet CLI, MSBuildExtensionsPath does not include AppxPackage tools.
+       Override the path to point at the installed Visual Studio MSBuild directory. -->
+  <PropertyGroup>
+    <_VsAppxPackagePath>$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\AppxPackage\</_VsAppxPackagePath>
+    <AppxMSBuildToolsPath Condition="'$(AppxMSBuildToolsPath)' == '' And !Exists('$(_VsAppxPackagePath)Microsoft.Build.Packaging.Pri.Tasks.dll')">C:\Program Files\Microsoft Visual Studio\18\Insiders\MSBuild\Microsoft\VisualStudio\v18.0\AppxPackage\</AppxMSBuildToolsPath>
+  </PropertyGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <Nullable>enable</Nullable>
-    <UseWPF>true</UseWPF>
+    <UseWinUI>true</UseWinUI>
     <ImplicitUsings>enable</ImplicitUsings>
-    <BaseOutputPath>C:\Users\hamza\Documents\GitHub\washmachine\Output</BaseOutputPath>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <WindowsPackageType>None</WindowsPackageType>
+    <BaseOutputPath>$(MSBuildProjectDirectory)\Output</BaseOutputPath>
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
     <RootNamespace>Washmachine</RootNamespace>
     <PlatformTarget>x64</PlatformTarget>
     <SignAssembly>False</SignAssembly>
@@ -41,7 +52,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="WPF-UI" Version="4.2.0" />
+    <!-- Check NuGet for the latest stable Microsoft.WindowsAppSDK version -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
 

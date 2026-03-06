@@ -1,61 +1,73 @@
-using System.Windows.Controls;
-using System.Windows.Documents;
-using System.Windows.Media;
+using Microsoft.UI.Text;
+using Microsoft.UI.Xaml.Controls;
+using Windows.UI;
 
 namespace Washmachine.Logging;
 
-public sealed class RichTextBoxLogger : IAppLogger
+public sealed class RichEditBoxLogger : IAppLogger
 {
-    private readonly RichTextBox _target;
-    private readonly Brush _infoBrush;
+    private readonly RichEditBox _target;
+    private readonly List<(string message, Color color)> _pending = [];
+    private bool _ready;
 
-    public RichTextBoxLogger(RichTextBox target)
+    public RichEditBoxLogger(RichEditBox target)
     {
         _target = target ?? throw new ArgumentNullException(nameof(target));
-        _target.IsReadOnly = true;
-        if (_target.Foreground is SolidColorBrush solid)
+        _target.Loaded += (_, _) =>
         {
-            _infoBrush = new SolidColorBrush(solid.Color);
-            _infoBrush.Freeze();
-        }
-        else
-        {
-            _infoBrush = Brushes.Gainsboro;
-        }
-    }
-
-    public void Info(string message) => Write(message, _infoBrush);
-    public void Warn(string message) => Write(message, Brushes.Goldenrod);
-    public void Error(string message) => Write(message, Brushes.OrangeRed);
-    public void Ok(string message) => Write(message, Brushes.ForestGreen);
-
-    private void Write(string message, Brush color)
-    {
-        if (_target.Dispatcher.CheckAccess())
-        {
-            Append(message, color);
-        }
-        else
-        {
-            _target.Dispatcher.Invoke(() => Append(message, color));
-        }
-    }
-
-    private void Append(string message, Brush color)
-    {
-        var paragraph = _target.Document.Blocks.LastBlock as Paragraph;
-        if (paragraph == null)
-        {
-            paragraph = new Paragraph { Margin = new System.Windows.Thickness(0) };
-            _target.Document.Blocks.Add(paragraph);
-        }
-
-        var run = new Run($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}")
-        {
-            Foreground = color
+            _ready = true;
+            var toFlush = _pending.ToList();
+            _pending.Clear();
+            // Defer one dispatch cycle so the underlying Win32 RichEdit is fully initialized
+            _target.DispatcherQueue.TryEnqueue(
+                Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+                () => { foreach (var (msg, col) in toFlush) Append(msg, col); });
         };
+    }
 
-        paragraph.Inlines.Add(run);
-        _target.ScrollToEnd();
+    public void Info(string message)  => Write(message, Color.FromArgb(255, 220, 220, 220));
+    public void Warn(string message)  => Write(message, Color.FromArgb(255, 218, 165,  32));
+    public void Error(string message) => Write(message, Color.FromArgb(255, 255,  69,   0));
+    public void Ok(string message)    => Write(message, Color.FromArgb(255,  34, 139,  34));
+
+    private void Write(string message, Color color)
+    {
+        var dq = _target.DispatcherQueue;
+        if (dq.HasThreadAccess)
+            WriteOnUiThread(message, color);
+        else
+            dq.TryEnqueue(() => WriteOnUiThread(message, color));
+    }
+
+    private void WriteOnUiThread(string message, Color color)
+    {
+        if (!_ready)
+        {
+            _pending.Add((message, color));
+            return;
+        }
+        Append(message, color);
+    }
+
+    private void Append(string message, Color color)
+    {
+        _target.IsReadOnly = false;
+        try
+        {
+            var doc = _target.Document;
+            doc.GetText(TextGetOptions.None, out string existing);
+            int endPos = existing.Length;
+
+            var range = doc.GetRange(endPos, endPos);
+            range.CharacterFormat.ForegroundColor = color;
+            string text = $"[{DateTime.Now:HH:mm:ss}] {message}\r\n";
+            range.SetText(TextSetOptions.None, text);
+
+            _target.Document.Selection.SetRange(endPos + text.Length, endPos + text.Length);
+        }
+        finally
+        {
+            _target.IsReadOnly = true;
+        }
     }
 }

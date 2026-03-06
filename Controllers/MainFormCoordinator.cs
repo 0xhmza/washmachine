@@ -3,9 +3,9 @@ using System.Globalization;
 using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Washmachine.Logging;
 using Washmachine.Models;
 using Washmachine.Services;
@@ -62,35 +62,35 @@ public sealed class MainFormCoordinator
         _interaction = interaction ?? throw new ArgumentNullException(nameof(interaction));
     }
 
-    private MessageBoxResult ShowMessage(
+    private MsgBoxResult ShowMessage(
         IMainFormView view,
         string message,
         string title,
-        MessageBoxButton buttons,
-        MessageBoxImage icon,
-        MessageBoxResult defaultResult = MessageBoxResult.OK)
-        => _interaction.ShowMessage(view.RootWindow, message, title, buttons, icon, defaultResult);
+        MsgBoxButton buttons,
+        MsgBoxIcon icon,
+        MsgBoxResult defaultResult = MsgBoxResult.OK)
+        => _interaction.ShowMessage(view.WindowHandle, message, title, buttons, icon);
 
-    private string? SelectFile(
+    private Task<string?> SelectFileAsync(
         IMainFormView view,
         string title,
         string filter,
         string initialDirectory)
-        => _interaction.SelectFile(view.RootWindow, title, filter, initialDirectory);
+        => _interaction.SelectFileAsync(view.WindowHandle, title, filter, initialDirectory);
 
-    private string? PromptText(
+    private Task<string?> PromptTextAsync(
         IMainFormView view,
         string title,
         string message,
         string? placeholder = null,
         string? initialValue = null)
-        => _interaction.PromptText(view.RootWindow, title, message, placeholder, initialValue);
+        => _interaction.PromptTextAsync(view.ViewXamlRoot, title, message, placeholder, initialValue);
 
     private void ShowLargeText(IMainFormView view, string title, string content, string? header = null)
-        => _interaction.ShowLargeText(view.RootWindow, title, content, header);
+        => _interaction.ShowLargeText(view.WindowHandle, title, content, header);
 
     private void ShowCopyableText(IMainFormView view, string title, string content, string? header = null)
-        => _interaction.ShowCopyableText(view.RootWindow, title, content, header);
+        => _interaction.ShowCopyableText(view.WindowHandle, title, content, header);
 
     public async Task InitializeAsync(IMainFormView view)
     {
@@ -101,7 +101,7 @@ public sealed class MainFormCoordinator
         {
             var message = string.Join(Environment.NewLine, pathIssues);
             _logger.Error(message);
-            ShowMessage(view, message, "Missing Assets", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowMessage(view, message, "Missing Assets", MsgBoxButton.OK, MsgBoxIcon.Error);
             view.SubmitButton.IsEnabled = false;
             return;
         }
@@ -113,12 +113,12 @@ public sealed class MainFormCoordinator
         await LoadEncodingCombosAsync(view);
     }
 
-    public void SelectShellcodeFile(IMainFormView view)
+    public async Task SelectShellcodeFile(IMainFormView view)
     {
         ArgumentNullException.ThrowIfNull(view);
 
         _logger.Info("Selecting shellcode file...");
-        string? selected = SelectFile(
+        string? selected = await SelectFileAsync(
             view,
             "Select Shellcode File",
             "All files (*.*)|*.*",
@@ -134,7 +134,7 @@ public sealed class MainFormCoordinator
         _logger.Ok($"Shellcode file selected: {selected}");
     }
 
-    public void PasteShellcodeFromClipboard(IMainFormView view, TextBox target)
+    public async Task PasteShellcodeFromClipboard(IMainFormView view, TextBox target)
     {
         ArgumentNullException.ThrowIfNull(view);
         ArgumentNullException.ThrowIfNull(target);
@@ -145,20 +145,20 @@ public sealed class MainFormCoordinator
         {
             _logger.Warn("Clipboard does not contain text.");
             ShowMessage(view, "Clipboard does not contain text.", "Clipboard",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+                MsgBoxButton.OK, MsgBoxIcon.Warning);
             return;
         }
 
         string content;
         try
         {
-            content = _clipboard.GetText();
+            content = await _clipboard.GetTextAsync();
         }
         catch (Exception ex)
         {
             _logger.Error($"Failed to read clipboard: {ex.Message}");
             ShowMessage(view, $"Failed to read clipboard: {ex.Message}", "Clipboard",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+                MsgBoxButton.OK, MsgBoxIcon.Error);
             return;
         }
 
@@ -167,11 +167,10 @@ public sealed class MainFormCoordinator
             var result = ShowMessage(view,
                 "Replace existing text with clipboard contents?",
                 "Replace Text?",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question,
-                MessageBoxResult.No);
+                MsgBoxButton.YesNo,
+                MsgBoxIcon.Question);
 
-            if (result != MessageBoxResult.Yes)
+            if (result != MsgBoxResult.Yes)
             {
                 _logger.Info("User cancelled clipboard paste.");
                 return;
@@ -179,8 +178,8 @@ public sealed class MainFormCoordinator
         }
 
         target.Text = content;
-        target.CaretIndex = target.Text.Length;
-        target.Focus();
+        target.SelectionStart = target.Text.Length;
+        target.Focus(FocusState.Programmatic);
         _logger.Ok("Clipboard contents pasted.");
     }
 
@@ -192,7 +191,7 @@ public sealed class MainFormCoordinator
         {
             _logger.Error(validationError!);
             ShowMessage(view, validationError!, "Validation Error",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+                MsgBoxButton.OK, MsgBoxIcon.Warning);
             return;
         }
 
@@ -201,7 +200,7 @@ public sealed class MainFormCoordinator
         try
         {
             _logger.Ok("Validation passed. Collecting UI data...");
-            var data = new UiData(view.RootWindow);
+            var data = new UiData(view.ContentRoot);
             MergeTemplateOptions(data);
             LogCollectedData(data);
 
@@ -231,8 +230,8 @@ public sealed class MainFormCoordinator
                 ShowMessage(view,
                     "Generation failed. Check the log for details.",
                     "Generate",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                    MsgBoxButton.OK,
+                    MsgBoxIcon.Error);
                 return;
             }
 
@@ -258,8 +257,8 @@ public sealed class MainFormCoordinator
             ShowMessage(view,
                 $"Unexpected error: {ex.Message}",
                 "Generate",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Error);
         }
         finally
         {
@@ -271,14 +270,14 @@ public sealed class MainFormCoordinator
     {
         ArgumentNullException.ThrowIfNull(view);
 
-        _interaction.ShowShellcodeTip(view.RootWindow);
+        _interaction.ShowShellcodeTip(view.WindowHandle);
     }
 
     public void ShowGuardRailInfo(IMainFormView view)
     {
         ArgumentNullException.ThrowIfNull(view);
 
-        _interaction.ShowGuardRailInfo(view.RootWindow);
+        _interaction.ShowGuardRailInfo(view.WindowHandle);
     }
 
     public async Task GenerateWebPayloadAsync(IMainFormView view)
@@ -296,8 +295,8 @@ public sealed class MainFormCoordinator
                 view,
                 message,
                 "Web Payload",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Warning);
             return;
         }
 
@@ -309,8 +308,8 @@ public sealed class MainFormCoordinator
                 view,
                 message,
                 "Web Payload",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Warning);
             return;
         }
 
@@ -323,8 +322,8 @@ public sealed class MainFormCoordinator
                 view,
                 "Web payload generation does not support encoders. The encoder selection has been reset to None.",
                 "Web Payload",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Warning);
 
             if (encoderCombo.Items.Count > 0)
             {
@@ -345,8 +344,8 @@ public sealed class MainFormCoordinator
                 view,
                 message,
                 "Web Payload",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Error);
             return;
         }
 
@@ -358,8 +357,8 @@ public sealed class MainFormCoordinator
                 view,
                 message,
                 "Web Payload",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Warning);
             return;
         }
 
@@ -371,8 +370,8 @@ public sealed class MainFormCoordinator
                 view,
                 message,
                 "Web Payload",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Warning);
             return;
         }
 
@@ -384,8 +383,8 @@ public sealed class MainFormCoordinator
                 view,
                 message,
                 "Web Payload",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Warning);
             return;
         }
 
@@ -410,8 +409,8 @@ public sealed class MainFormCoordinator
                 view,
                 $"Failed to generate web payload:{Environment.NewLine}{ex.Message}",
                 "Web Payload",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Error);
             return;
         }
 
@@ -423,8 +422,8 @@ public sealed class MainFormCoordinator
                 view,
                 message,
                 "Web Payload",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Error);
             return;
         }
 
@@ -445,8 +444,8 @@ public sealed class MainFormCoordinator
                 view,
                 "Bin2Shell output did not contain a recognizable payload segment.",
                 "Web Payload",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Error);
             return;
         }
 
@@ -457,8 +456,8 @@ public sealed class MainFormCoordinator
                 view,
                 "Extracted payload content was empty.",
                 "Web Payload",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Warning);
             return;
         }
 
@@ -534,8 +533,8 @@ public sealed class MainFormCoordinator
                 view,
                 $"Unable to load templates:{Environment.NewLine}{ex.Message}",
                 "Initialization Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Error);
             _templates = Array.Empty<CodeTemplateDefinition>();
         }
         finally
@@ -544,7 +543,7 @@ public sealed class MainFormCoordinator
         }
     }
 
-    public void HandleTemplateChanged(IMainFormView view)
+    public async Task HandleTemplateChanged(IMainFormView view)
     {
         ArgumentNullException.ThrowIfNull(view);
 
@@ -556,7 +555,7 @@ public sealed class MainFormCoordinator
         {
             try
             {
-                OpenTemplateConfig(view, selectedTemplate);
+                await OpenTemplateConfig(view, selectedTemplate);
             }
             catch (Exception ex)
             {
@@ -565,20 +564,20 @@ public sealed class MainFormCoordinator
                     view,
                     $"Failed to open template options.{Environment.NewLine}{Environment.NewLine}{ex.Message}",
                     "Template Options",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                    MsgBoxButton.OK,
+                    MsgBoxIcon.Error);
             }
         }
     }
 
-    public void OpenTemplateConfig(IMainFormView view)
+    public async Task OpenTemplateConfig(IMainFormView view)
     {
         ArgumentNullException.ThrowIfNull(view);
 
         try
         {
             var template = GetSelectedTemplate(view);
-            OpenTemplateConfig(view, template);
+            await OpenTemplateConfig(view, template);
         }
         catch (Exception ex)
         {
@@ -587,8 +586,8 @@ public sealed class MainFormCoordinator
                 view,
                 $"Failed to open template options.{Environment.NewLine}{Environment.NewLine}{ex.Message}",
                 "Template Options",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Error);
         }
     }
 
@@ -600,20 +599,20 @@ public sealed class MainFormCoordinator
             view,
             "Import snippet catalog from a file or URL?\r\n\r\nYes = File, No = URL.",
             "Import Template Catalog",
-            MessageBoxButton.YesNoCancel,
-            MessageBoxImage.Question,
-            MessageBoxResult.Yes);
+            MsgBoxButton.YesNoCancel,
+            MsgBoxIcon.Question,
+            MsgBoxResult.Yes);
 
-        if (choice == MessageBoxResult.Cancel)
+        if (choice == MsgBoxResult.Cancel)
             return;
 
-        if (choice == MessageBoxResult.Yes)
+        if (choice == MsgBoxResult.Yes)
         {
             await ImportTemplateCatalogFromFileAsync(view).ConfigureAwait(true);
         }
         else
         {
-            string? rawUrl = PromptText(
+            string? rawUrl = await PromptTextAsync(
                 view,
                 "Import Catalog from URL",
                 "Enter the URL that returns YAML content:",
@@ -628,7 +627,7 @@ public sealed class MainFormCoordinator
     {
         ArgumentNullException.ThrowIfNull(view);
 
-        string? selected = SelectFile(
+        string? selected = await SelectFileAsync(
             view,
             "Select Snippet Catalog",
             "YAML files (*.yaml;*.yml)|*.yaml;*.yml|All files (*.*)|*.*",
@@ -652,8 +651,8 @@ public sealed class MainFormCoordinator
                 view,
                 $"Unable to read the selected file.{Environment.NewLine}{ex.Message}",
                 "Import Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Error);
             return;
         }
 
@@ -670,8 +669,8 @@ public sealed class MainFormCoordinator
                 view,
                 "Enter a URL to import the catalog.",
                 "Import Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Warning);
             return;
         }
 
@@ -683,8 +682,8 @@ public sealed class MainFormCoordinator
                 view,
                 "The URL must start with http:// or https://",
                 "Import Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Warning);
             return;
         }
 
@@ -701,8 +700,8 @@ public sealed class MainFormCoordinator
                 view,
                 $"Failed to download the catalog.{Environment.NewLine}{ex.Message}",
                 "Import Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Error);
             return;
         }
 
@@ -722,8 +721,8 @@ public sealed class MainFormCoordinator
                 view,
                 $"Failed to reload the catalog.{Environment.NewLine}{error}",
                 "Refresh Failed",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Error);
             return;
         }
 
@@ -754,8 +753,8 @@ public sealed class MainFormCoordinator
                 view,
                 $"Unable to open the catalog folder.{Environment.NewLine}{ex.Message}",
                 "Open Folder",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Warning);
         }
     }
 
@@ -767,8 +766,8 @@ public sealed class MainFormCoordinator
                 view,
                 "The imported catalog content is empty.",
                 "Import Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Warning);
             return Task.CompletedTask;
         }
 
@@ -798,8 +797,8 @@ public sealed class MainFormCoordinator
                 view,
                 $"Unable to write the catalog to disk.{Environment.NewLine}{ex.Message}",
                 "Import Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Error);
             return Task.CompletedTask;
         }
 
@@ -824,8 +823,8 @@ public sealed class MainFormCoordinator
                 view,
                 $"Imported catalog could not be loaded.{Environment.NewLine}{error}",
                 "Import Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Error);
             return Task.CompletedTask;
         }
 
@@ -842,12 +841,12 @@ public sealed class MainFormCoordinator
             view,
             "Snippet catalog imported successfully.",
             "Import Complete",
-            MessageBoxButton.OK,
-            MessageBoxImage.Information);
+            MsgBoxButton.OK,
+            MsgBoxIcon.Information);
         return Task.CompletedTask;
     }
 
-    private void OpenTemplateConfig(IMainFormView view, CodeTemplateDefinition? template)
+    private async Task OpenTemplateConfig(IMainFormView view, CodeTemplateDefinition? template)
     {
         ArgumentNullException.ThrowIfNull(view);
 
@@ -856,8 +855,8 @@ public sealed class MainFormCoordinator
             ShowMessage(view,
                 "Select a template before configuring options.",
                 "Template Options",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Information);
             return;
         }
 
@@ -866,16 +865,16 @@ public sealed class MainFormCoordinator
         var sections = GetTemplateSections(template, out var genericSection, out _);
         PopulateGenericShellcodeCombo(view, genericSection);
 
-        var dialog = new TemplateOptionsWindow(
+        var result = await TemplateOptionsWindow.ShowAsync(
+            view.WindowHandle,
             template,
             sections,
             _templateOptions,
             action => HandleTemplateInfoAction(view, action));
 
-        dialog.Owner = view.RootWindow;
-        if (dialog.ShowDialog() == true)
+        if (result != null)
         {
-            _templateOptions = dialog.ResultState ?? new TemplateOptionsState();
+            _templateOptions = result;
             _logger.Ok($"Template options saved for '{template.Display}'.");
         }
     }
@@ -1135,22 +1134,22 @@ public sealed class MainFormCoordinator
             view,
             browsePrompt,
             "Visual Studio Build Tools",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question,
-            MessageBoxResult.Yes);
+            MsgBoxButton.YesNo,
+            MsgBoxIcon.Question,
+            MsgBoxResult.Yes);
 
-        if (response != MessageBoxResult.Yes)
+        if (response != MsgBoxResult.Yes)
         {
             ShowMessage(
                 view,
                 "MSVS Build Tools should be installed.\r\nDownload: https://visualstudio.microsoft.com/downloads/",
                 "Visual Studio Build Tools Required",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Information);
             return;
         }
 
-        string? selected = SelectFile(
+        string? selected = await SelectFileAsync(
             view,
             "Locate vcvars64.bat",
             "Batch files (*.bat)|*.bat|All files (*.*)|*.*",
@@ -1174,8 +1173,8 @@ public sealed class MainFormCoordinator
                 view,
                 $"Failed to validate the selected compiler script: {ex.Message}",
                 "Visual Studio Build Tools",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Error);
             return;
         }
 
@@ -1193,8 +1192,8 @@ public sealed class MainFormCoordinator
                 view,
                 "Selected script could not be validated. MSVS Build Tools should be installed.\r\nDownload: https://visualstudio.microsoft.com/downloads/",
                 "Visual Studio Build Tools",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Warning);
             return;
         }
 
@@ -1207,8 +1206,8 @@ public sealed class MainFormCoordinator
                 view,
                 "Selected script was not validated successfully. MSVS Build Tools may be incomplete.",
                 "Visual Studio Build Tools",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Warning);
         }
     }
 
@@ -1228,8 +1227,8 @@ public sealed class MainFormCoordinator
             ShowMessage(view,
                 $"Unable to load Bin2Shell algorithms:{Environment.NewLine}{ex.Message}",
                 "Bin2Shell",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                MsgBoxButton.OK,
+                MsgBoxIcon.Error);
         }
     }
 
@@ -1390,7 +1389,7 @@ public sealed class MainFormCoordinator
 
     private static ComboBox? FindAntiEmulationCombo(IMainFormView view)
     {
-        if (view?.RootWindow == null)
+        if (view?.ContentRoot == null)
             return null;
 
         string[] candidateNames =
@@ -1411,7 +1410,7 @@ public sealed class MainFormCoordinator
 
         foreach (var name in candidateNames)
         {
-            var combo = FindByName<ComboBox>(view.RootWindow, name);
+            var combo = FindByName<ComboBox>(view.ContentRoot, name);
             if (combo != null)
                 return combo;
         }

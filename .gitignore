@@ -67,3 +67,8 @@ OutputRelease/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+/.vs
+/OutputRelease
+/.claude
+/OutputRelease
+/OutputRelease

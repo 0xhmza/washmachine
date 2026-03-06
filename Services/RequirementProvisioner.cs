@@ -47,10 +47,7 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
 
         _logger.Warn($"Missing external requirements detected: {string.Join(", ", missing.Select(m => m.Name))}.");
 
-        var progressForm = new RequirementsProgressWindow
-        {
-            Owner = view.RootWindow
-        };
+        var progressForm = new RequirementsProgressWindow();
         progressForm.Show();
         progressForm.UpdateStatus("Preparing downloads...", 0);
 

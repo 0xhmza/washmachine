@@ -1,11 +1,11 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace Washmachine.Models;
 
 /// <summary>
-/// Snapshot of a WPF visual tree, keyed by control name with fallback to type name.
+/// Snapshot of a WinUI 3 visual tree, keyed by control name with fallback to type name.
 /// </summary>
 public sealed class UiData
 {
@@ -31,7 +31,6 @@ public sealed class UiData
                 case ComboBox comboBox:
                     ComboBoxes[key] = comboBox.SelectedValue?.ToString()
                                       ?? comboBox.SelectedItem?.ToString()
-                                      ?? comboBox.Text
                                       ?? string.Empty;
                     break;
                 case ListBox listBox:

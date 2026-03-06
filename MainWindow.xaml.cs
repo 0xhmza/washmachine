@@ -1,33 +1,47 @@
-using System.Windows;
+using Microsoft.UI.Windowing;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Washmachine.Views;
-using FluentWindow = Wpf.Ui.Controls.FluentWindow;
-using Wpf.Ui.Controls;
+using Windows.Graphics;
 
 namespace Washmachine;
 
-public partial class MainWindow : FluentWindow
+public sealed partial class MainWindow : Window
 {
     public MainWindow()
     {
         InitializeComponent();
-        Loaded += MainWindow_Loaded;
+
+        SystemBackdrop = new MicaBackdrop();
+        ExtendsContentIntoTitleBar = true;
+        Title = "Washmachine - Loader Builder";
+
+        AppWindow.Resize(new SizeInt32(980, 820));
+        var display = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
+        var work = display.WorkArea;
+        AppWindow.Move(new PointInt32(
+            work.X + (work.Width - 980) / 2,
+            work.Y + (work.Height - 820) / 2));
+
+        ContentFrame.Navigate(typeof(MainPage));
+        mainNavigationView.SelectedItem = mainNavigationView.MenuItems[0];
     }
 
-    private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        mainNavigationView.ApplyTemplate();
-        if (mainNavigationView.Template != null)
+        if (args.SelectedItem is not NavigationViewItem item || item.Tag is not string tag)
+            return;
+
+        var pageType = tag switch
         {
-            var presenter = mainNavigationView.Template.FindName(
-                "NavigationViewContentPresenter",
-                mainNavigationView) as Wpf.Ui.Controls.NavigationViewContentPresenter;
-            if (presenter != null)
-            {
-                presenter.SetValue(
-                    Wpf.Ui.Controls.NavigationViewContentPresenter.IsDynamicScrollViewerEnabledProperty,
-                    true);
-            }
-        }
-        mainNavigationView.Navigate(typeof(MainPage));
+            "MainPage" => typeof(MainPage),
+            "PackingPage" => typeof(PackingPage),
+            "BackdooringPage" => typeof(BackdooringPage),
+            _ => (Type?)null
+        };
+
+        if (pageType != null && ContentFrame.CurrentSourcePageType != pageType)
+            ContentFrame.Navigate(pageType);
     }
 }

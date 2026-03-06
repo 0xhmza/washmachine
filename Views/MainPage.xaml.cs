@@ -1,15 +1,15 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Controls.Primitives;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Input;
 using Washmachine.Controllers;
 using Washmachine.Logging;
 using Washmachine.Services;
-using Wpf.Ui.Animations;
+using WinRT.Interop;
 
 namespace Washmachine.Views;
 
-public partial class MainPage : Page, IMainFormView
+public sealed partial class MainPage : Page, IMainFormView
 {
     private readonly IAppLogger _logger;
     private readonly MainFormCoordinator _coordinator;
@@ -19,9 +19,10 @@ public partial class MainPage : Page, IMainFormView
 
     public MainPage()
     {
+        NavigationCacheMode = Microsoft.UI.Xaml.Navigation.NavigationCacheMode.Required;
         InitializeComponent();
 
-        _logger = new RichTextBoxLogger(debugBox);
+        _logger = new RichEditBoxLogger(debugBox);
 
         _paths = new AppPaths();
         var clipboard = new ClipboardService();
@@ -49,14 +50,9 @@ public partial class MainPage : Page, IMainFormView
         Loaded += MainPage_Loaded;
     }
 
-    public Window RootWindow
-    {
-        get
-        {
-            var window = Window.GetWindow(this);
-            return window ?? throw new InvalidOperationException("Main window is not available yet.");
-        }
-    }
+    public XamlRoot ViewXamlRoot => XamlRoot;
+    public nint WindowHandle => WindowNative.GetWindowHandle(App.ActiveWindow!);
+    public DependencyObject ContentRoot => this;
 
     public ComboBox EncoderCombo => bin2hexEncoder;
     public ComboBox EnvelopeCombo => bin2hexEnvelope;
@@ -71,183 +67,130 @@ public partial class MainPage : Page, IMainFormView
     {
         try
         {
-            TransitionAnimationProvider.ApplyTransition(Root, Transition.FadeInWithSlide, 240);
             await _requirements.EnsureRequirementsAsync(this);
             await _coordinator.InitializeAsync(this);
         }
         catch (Exception ex)
         {
             _logger.Error($"Failed to initialize application: {ex.Message}");
-            MessageBox.Show(
-                RootWindow,
-                $"Failed to prepare the application's requirements.{Environment.NewLine}{Environment.NewLine}{ex.Message}",
-                "Startup Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            var dialog = new ContentDialog
+            {
+                Title = "Startup Error",
+                Content = $"Failed to prepare the application's requirements.\n\n{ex.Message}",
+                CloseButtonText = "OK",
+                XamlRoot = XamlRoot
+            };
+            await dialog.ShowAsync();
             submitButton.IsEnabled = false;
         }
     }
 
-    private void button1_Click(object sender, RoutedEventArgs e)
-    {
-        _coordinator.SelectShellcodeFile(this);
-    }
+    private async void button1_Click(object sender, RoutedEventArgs e) =>
+        await _coordinator.SelectShellcodeFile(this);
 
-    private void button2_Click(object sender, RoutedEventArgs e)
-    {
-        _coordinator.PasteShellcodeFromClipboard(this, shellcodeRAW);
-    }
+    private async void button2_Click(object sender, RoutedEventArgs e) =>
+        await _coordinator.PasteShellcodeFromClipboard(this, shellcodeRAW);
 
-    private void button3_Click(object sender, RoutedEventArgs e)
-    {
-        _coordinator.PasteShellcodeFromClipboard(this, shellcodeURL);
-    }
+    private async void button3_Click(object sender, RoutedEventArgs e) =>
+        await _coordinator.PasteShellcodeFromClipboard(this, shellcodeURL);
 
-    private void RAWShellcodeInfo_Click(object sender, MouseButtonEventArgs e)
+    private void RAWShellcodeInfo_Click(object sender, TappedRoutedEventArgs e)
     {
         _coordinator.ShowShellcodeTip(this);
         e.Handled = true;
     }
 
-    private async void submitButton_Click(object sender, RoutedEventArgs e)
-    {
+    private async void submitButton_Click(object sender, RoutedEventArgs e) =>
         await _coordinator.HandleSubmitAsync(this);
+
+    private async void templateComboBox_SelectedIndexChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        await _coordinator.HandleTemplateChanged(this);
     }
 
-    private void templateComboBox_SelectedIndexChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (!IsLoaded)
-            return;
+    private async void button4_Click(object sender, RoutedEventArgs e) =>
+        await _coordinator.OpenTemplateConfig(this);
 
-        _coordinator.HandleTemplateChanged(this);
-    }
-
-    private void button4_Click(object sender, RoutedEventArgs e)
-    {
-        _coordinator.OpenTemplateConfig(this);
-    }
-
-    private async void importTemplateButton_Click(object sender, RoutedEventArgs e)
-    {
-        await _coordinator.ImportTemplateCatalogAsync(this);
-    }
-
-    private async void WebPayloadGenerator_Click(object sender, RoutedEventArgs e)
-    {
+    private async void WebPayloadGenerator_Click(object sender, RoutedEventArgs e) =>
         await _coordinator.GenerateWebPayloadAsync(this);
-    }
 
-    private async void importTemplateFileButton_Click(object sender, RoutedEventArgs e)
-    {
+    private async void importTemplateFileButton_Click(object sender, RoutedEventArgs e) =>
         await _coordinator.ImportTemplateCatalogFromFileAsync(this);
-    }
 
-    private async void importTemplateUrlButton_Click(object sender, RoutedEventArgs e)
-    {
+    private async void importTemplateUrlButton_Click(object sender, RoutedEventArgs e) =>
         await _coordinator.ImportTemplateCatalogFromUrlAsync(this, templateCatalogUrl.Text);
-    }
 
-    private void refreshTemplateButton_Click(object sender, RoutedEventArgs e)
-    {
+    private void refreshTemplateButton_Click(object sender, RoutedEventArgs e) =>
         _coordinator.RefreshTemplateCatalog(this);
-    }
 
-    private void openTemplateFolderButton_Click(object sender, RoutedEventArgs e)
-    {
+    private void openTemplateFolderButton_Click(object sender, RoutedEventArgs e) =>
         _coordinator.OpenTemplateCatalogLocation(this);
-    }
 
     private void ShellcodeSourceSelect_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not ButtonBase button || button.Tag is not string tag)
-            return;
-
+        if (sender is not ButtonBase button || button.Tag is not string tag) return;
         switch (tag)
         {
-            case "File":
-                SetShellcodeSource(ShellcodeSource.File);
-                break;
-            case "Raw":
-                SetShellcodeSource(ShellcodeSource.Raw);
-                break;
-            case "Url":
-                SetShellcodeSource(ShellcodeSource.Url);
-                break;
-            case "Generic":
-                SetShellcodeSource(ShellcodeSource.Generic);
-                break;
+            case "File":    SetShellcodeSource(ShellcodeSource.File);    break;
+            case "Raw":     SetShellcodeSource(ShellcodeSource.Raw);     break;
+            case "Url":     SetShellcodeSource(ShellcodeSource.Url);     break;
+            case "Generic": SetShellcodeSource(ShellcodeSource.Generic); break;
         }
     }
 
-    private void ChangeShellcodeSource_Click(object sender, RoutedEventArgs e)
-    {
+    private void ChangeShellcodeSource_Click(object sender, RoutedEventArgs e) =>
         SetShellcodeSource(ShellcodeSource.None, clearInputs: false);
-    }
 
     private void SetShellcodeSource(ShellcodeSource source, bool clearInputs = true)
     {
         _currentSource = source;
 
-        ShellcodeSourcePicker.Visibility = source == ShellcodeSource.None ? Visibility.Visible : Visibility.Collapsed;
+        ShellcodeSourcePicker.Visibility  = source == ShellcodeSource.None ? Visibility.Visible : Visibility.Collapsed;
         ShellcodeSourceDetails.Visibility = source == ShellcodeSource.None ? Visibility.Collapsed : Visibility.Visible;
 
-        FileSourcePanel.Visibility = source == ShellcodeSource.File ? Visibility.Visible : Visibility.Collapsed;
-        RawSourcePanel.Visibility = source == ShellcodeSource.Raw ? Visibility.Visible : Visibility.Collapsed;
-        UrlSourcePanel.Visibility = source == ShellcodeSource.Url ? Visibility.Visible : Visibility.Collapsed;
+        FileSourcePanel.Visibility    = source == ShellcodeSource.File    ? Visibility.Visible : Visibility.Collapsed;
+        RawSourcePanel.Visibility     = source == ShellcodeSource.Raw     ? Visibility.Visible : Visibility.Collapsed;
+        UrlSourcePanel.Visibility     = source == ShellcodeSource.Url     ? Visibility.Visible : Visibility.Collapsed;
         GenericSourcePanel.Visibility = source == ShellcodeSource.Generic ? Visibility.Visible : Visibility.Collapsed;
 
         if (source == ShellcodeSource.None)
         {
             ShellcodeSourceSummary.Text = "Selected source: None";
-            ShellcodeSourceIcon.Symbol = Wpf.Ui.Controls.SymbolRegular.CodeBlock24;
+            ShellcodeSourceIcon.Glyph  = "\uE943";
             return;
         }
 
-        if (clearInputs)
-            ClearOtherSources(source);
+        if (clearInputs) ClearOtherSources(source);
 
         switch (source)
         {
             case ShellcodeSource.File:
                 ShellcodeSourceSummary.Text = "Selected source: File";
-                ShellcodeSourceIcon.Symbol = Wpf.Ui.Controls.SymbolRegular.Document24;
+                ShellcodeSourceIcon.Glyph   = "\uE8A5";
                 break;
             case ShellcodeSource.Raw:
                 ShellcodeSourceSummary.Text = "Selected source: Raw bytes";
-                ShellcodeSourceIcon.Symbol = Wpf.Ui.Controls.SymbolRegular.CodeBlock24;
+                ShellcodeSourceIcon.Glyph   = "\uE943";
                 break;
             case ShellcodeSource.Url:
                 ShellcodeSourceSummary.Text = "Selected source: URL";
-                ShellcodeSourceIcon.Symbol = Wpf.Ui.Controls.SymbolRegular.Link24;
+                ShellcodeSourceIcon.Glyph   = "\uE71B";
                 break;
             case ShellcodeSource.Generic:
                 ShellcodeSourceSummary.Text = "Selected source: Generic";
-                ShellcodeSourceIcon.Symbol = Wpf.Ui.Controls.SymbolRegular.Box24;
+                ShellcodeSourceIcon.Glyph   = "\uE7B8";
                 break;
         }
     }
 
-    private void ClearOtherSources(ShellcodeSource selectedSource)
+    private void ClearOtherSources(ShellcodeSource s)
     {
-        if (selectedSource != ShellcodeSource.File)
-            shellcodeFile.Text = string.Empty;
-
-        if (selectedSource != ShellcodeSource.Raw)
-            shellcodeRAW.Text = string.Empty;
-
-        if (selectedSource != ShellcodeSource.Url)
-            shellcodeURL.Text = string.Empty;
-
-        if (selectedSource != ShellcodeSource.Generic)
-            genericShellcodeComboBox.SelectedIndex = -1;
+        if (s != ShellcodeSource.File)    shellcodeFile.Text = string.Empty;
+        if (s != ShellcodeSource.Raw)     shellcodeRAW.Text  = string.Empty;
+        if (s != ShellcodeSource.Url)     shellcodeURL.Text  = string.Empty;
+        if (s != ShellcodeSource.Generic) genericShellcodeComboBox.SelectedIndex = -1;
     }
 
-    private enum ShellcodeSource
-    {
-        None,
-        File,
-        Raw,
-        Url,
-        Generic
-    }
+    private enum ShellcodeSource { None, File, Raw, Url, Generic }
 }
