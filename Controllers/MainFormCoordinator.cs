@@ -41,6 +41,7 @@ public sealed class MainFormCoordinator
     private TemplateOptionsState _templateOptions = new();
     private string _templateOptionsTemplateId = string.Empty;
     private bool _suppressTemplateOptionsDialog;
+    private Bin2ShellWebOutput? _activeWebPayload;
 
     public MainFormCoordinator(
         IAppLogger logger,
@@ -106,6 +107,11 @@ public sealed class MainFormCoordinator
             return;
         }
 
+        _logger.Debug("All required assets present.");
+
+        if (!File.Exists(_paths.Bin2ShellScript))
+            _logger.Warn("Bin2Shell not found. Web payload and encoding features will be unavailable.");
+
         PopulateTemplateCombo(view);
         var selectedTemplate = GetSelectedTemplate(view);
         ResetTemplateOptions(selectedTemplate);
@@ -117,7 +123,7 @@ public sealed class MainFormCoordinator
     {
         ArgumentNullException.ThrowIfNull(view);
 
-        _logger.Info("Selecting shellcode file...");
+        _logger.Debug("Selecting shellcode file...");
         string? selected = await SelectFileAsync(
             view,
             "Select Shellcode File",
@@ -126,12 +132,12 @@ public sealed class MainFormCoordinator
 
         if (string.IsNullOrWhiteSpace(selected))
         {
-            _logger.Warn("File selection cancelled by user.");
+            _logger.Debug("File selection cancelled.");
             return;
         }
 
         view.ShellcodeFileTextBox.Text = selected;
-        _logger.Ok($"Shellcode file selected: {selected}");
+        _logger.Info($"Shellcode file: {Path.GetFileName(selected)}");
     }
 
     public async Task PasteShellcodeFromClipboard(IMainFormView view, TextBox target)
@@ -139,7 +145,7 @@ public sealed class MainFormCoordinator
         ArgumentNullException.ThrowIfNull(view);
         ArgumentNullException.ThrowIfNull(target);
 
-        _logger.Info("Paste invoked for text box.");
+        _logger.Debug("Paste invoked for text box.");
 
         if (!_clipboard.ContainsText())
         {
@@ -172,7 +178,7 @@ public sealed class MainFormCoordinator
 
             if (result != MsgBoxResult.Yes)
             {
-                _logger.Info("User cancelled clipboard paste.");
+                _logger.Debug("User cancelled clipboard paste.");
                 return;
             }
         }
@@ -180,7 +186,7 @@ public sealed class MainFormCoordinator
         target.Text = content;
         target.SelectionStart = target.Text.Length;
         target.Focus(FocusState.Programmatic);
-        _logger.Ok("Clipboard contents pasted.");
+        _logger.Debug("Clipboard contents pasted.");
     }
 
     public async Task HandleSubmitAsync(IMainFormView view)
@@ -199,12 +205,13 @@ public sealed class MainFormCoordinator
 
         try
         {
-            _logger.Ok("Validation passed. Collecting UI data...");
+            _logger.Debug("Validation passed. Collecting UI data...");
             var data = new UiData(view.ContentRoot);
             MergeTemplateOptions(data);
+            MergeWebPayload(data);
             LogCollectedData(data);
 
-            _logger.Info("Generating source from selected snippets...");
+            _logger.Info("Generating source...");
             var result = await _compiler.CompileAsync(data);
 
             var loggedNotes = new HashSet<string>(StringComparer.Ordinal);
@@ -215,7 +222,7 @@ public sealed class MainFormCoordinator
 
                 if (loggedNotes.Add(note))
                 {
-                    _logger.Info(note);
+                    _logger.Debug(note);
                 }
             }
             if (result.Discovery != null)
@@ -223,42 +230,17 @@ public sealed class MainFormCoordinator
                 await HandleCompilerDiscoveryAsync(view, result.Discovery);
             }
 
-            ShowGeneratedSourcePreview(view, result);
-
             if (!result.Success)
             {
-                ShowMessage(view,
-                    "Generation failed. Check the log for details.",
-                    "Generate",
-                    MsgBoxButton.OK,
-                    MsgBoxIcon.Error);
+                _logger.Error("Build failed. Check the log panel for details.");
                 return;
             }
 
-            _logger.Ok("Snippet generation completed.");
-
-            string? header = null;
-            if (!string.IsNullOrWhiteSpace(result.GeneratedSourcePath))
-            {
-                header = $"Source saved to: {result.GeneratedSourcePath}";
-            }
-
-            string preview = result.GeneratedSourceCode ?? string.Empty;
-
-            ShowLargeText(
-                view,
-                "Generated Source",
-                preview,
-                header);
+            _logger.Ok("Done.");
         }
         catch (Exception ex)
         {
-            _logger.Error($"Unexpected error during generation: {ex.Message}");
-            ShowMessage(view,
-                $"Unexpected error: {ex.Message}",
-                "Generate",
-                MsgBoxButton.OK,
-                MsgBoxIcon.Error);
+            _logger.Error($"Build failed: {ex.Message}");
         }
         finally
         {
@@ -280,23 +262,39 @@ public sealed class MainFormCoordinator
         _interaction.ShowGuardRailInfo(view.WindowHandle);
     }
 
+    public async Task SelectShellcodeFileForUrl(IMainFormView view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+
+        _logger.Debug("Selecting shellcode file for web payload...");
+        string? selected = await SelectFileAsync(
+            view,
+            "Select Shellcode File",
+            "All files (*.*)|*.*",
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
+
+        if (string.IsNullOrWhiteSpace(selected))
+        {
+            _logger.Debug("File selection cancelled.");
+            return;
+        }
+
+        view.ShellcodeUrlFileTextBox.Text = selected;
+        _logger.Info($"Shellcode file: {Path.GetFileName(selected)}");
+    }
+
     public async Task GenerateWebPayloadAsync(IMainFormView view)
     {
         ArgumentNullException.ThrowIfNull(view);
 
-        string filePathRaw = view.ShellcodeFileTextBox?.Text ?? string.Empty;
+        string filePathRaw = view.ShellcodeUrlFileTextBox?.Text ?? string.Empty;
         string filePath = filePathRaw.Trim();
 
         if (string.IsNullOrWhiteSpace(filePath))
         {
             const string message = "Select a shellcode file before generating a web payload.";
             _logger.Warn(message);
-            ShowMessage(
-                view,
-                message,
-                "Web Payload",
-                MsgBoxButton.OK,
-                MsgBoxIcon.Warning);
+            ShowMessage(view, message, "Web Payload", MsgBoxButton.OK, MsgBoxIcon.Warning);
             return;
         }
 
@@ -304,172 +302,68 @@ public sealed class MainFormCoordinator
         {
             string message = $"Shellcode file not found: {filePath}";
             _logger.Warn(message);
-            ShowMessage(
-                view,
-                message,
-                "Web Payload",
-                MsgBoxButton.OK,
-                MsgBoxIcon.Warning);
+            ShowMessage(view, message, "Web Payload", MsgBoxButton.OK, MsgBoxIcon.Warning);
             return;
         }
 
-        // Web payloads only support envelope wrapping (no encoders).
-        var encoderCombo = view.EncoderCombo;
-        if (encoderCombo != null && encoderCombo.SelectedIndex > 0)
-        {
-            _logger.Warn("Web payload generation does not support encoders. Clearing selection.");
-            ShowMessage(
-                view,
-                "Web payload generation does not support encoders. The encoder selection has been reset to None.",
-                "Web Payload",
-                MsgBoxButton.OK,
-                MsgBoxIcon.Warning);
-
-            if (encoderCombo.Items.Count > 0)
-            {
-                encoderCombo.SelectedIndex = 0;
-            }
-            else
-            {
-                encoderCombo.SelectedIndex = -1;
-            }
-        }
-
-        var envelopeCombo = view.EnvelopeCombo;
-        if (envelopeCombo == null)
-        {
-            const string message = "Envelope selection control is unavailable.";
-            _logger.Warn(message);
-            ShowMessage(
-                view,
-                message,
-                "Web Payload",
-                MsgBoxButton.OK,
-                MsgBoxIcon.Error);
-            return;
-        }
-
-        if (!TryResolveEnvelopeSelection(envelopeCombo, out int envelopeIndex, out string envelopeName, out string envelopeDisplay))
-        {
-            const string message = "Select an envelope (Base32, Base64, or Base91) before generating a web payload.";
-            _logger.Warn(message);
-            ShowMessage(
-                view,
-                message,
-                "Web Payload",
-                MsgBoxButton.OK,
-                MsgBoxIcon.Warning);
-            return;
-        }
-
-        if (envelopeIndex <= 0 || string.Equals(envelopeName, "none", StringComparison.OrdinalIgnoreCase))
-        {
-            const string message = "Envelope 'None' is not supported. Choose Base32, Base64, or Base91.";
-            _logger.Warn(message);
-            ShowMessage(
-                view,
-                message,
-                "Web Payload",
-                MsgBoxButton.OK,
-                MsgBoxIcon.Warning);
-            return;
-        }
-
-        if (!AllowedEnvelopeNames.Contains(envelopeName))
-        {
-            string message = $"Envelope '{envelopeDisplay}' is not supported. Choose Base32, Base64, or Base91.";
-            _logger.Warn(message);
-            ShowMessage(
-                view,
-                message,
-                "Web Payload",
-                MsgBoxButton.OK,
-                MsgBoxIcon.Warning);
-            return;
-        }
-
-        var args = new List<string>
-        {
-            "-y", _paths.Bin2ShellAlgos,
-            "-env", envelopeIndex.ToString(CultureInfo.InvariantCulture),
-            filePath
-        };
-
-        _logger.Info($"Running Bin2Shell for web payload: envelope='{envelopeDisplay}', file='{filePath}'.");
-
-        string output;
+        ShellcodeEncodingCatalog catalog;
         try
         {
-            output = await _bin2ShellRunner.RunAsync(args, cancellationToken: default);
+            catalog = await _encodingCatalog.GetCatalogAsync();
         }
         catch (Exception ex)
         {
-            _logger.Error($"Bin2Shell failed during web payload generation: {ex.Message}");
-            ShowMessage(
-                view,
-                $"Failed to generate web payload:{Environment.NewLine}{ex.Message}",
-                "Web Payload",
-                MsgBoxButton.OK,
-                MsgBoxIcon.Error);
+            _logger.Error($"Failed to load Bin2Shell catalog: {ex.Message}");
+            ShowMessage(view, $"Failed to load encoding catalog:\n{ex.Message}",
+                "Web Payload", MsgBoxButton.OK, MsgBoxIcon.Error);
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(output))
+        var wizardResult = await WebPayloadWizardWindow.ShowAsync(
+            view.WindowHandle,
+            catalog,
+            async (encoderIdx, envelopeIdx, webHelperIdx) =>
+            {
+                var args = new List<string>();
+
+                if (!string.IsNullOrWhiteSpace(_paths.Bin2ShellAlgos) && File.Exists(_paths.Bin2ShellAlgos))
+                {
+                    args.Add("-y");
+                    args.Add(_paths.Bin2ShellAlgos);
+                }
+
+                args.Add("-w");
+                args.Add("-e");
+                args.Add(encoderIdx.ToString(CultureInfo.InvariantCulture));
+                args.Add("-v");
+                args.Add(envelopeIdx.ToString(CultureInfo.InvariantCulture));
+                args.Add("-wh");
+                args.Add(webHelperIdx.ToString(CultureInfo.InvariantCulture));
+
+                args.Add(filePath);
+
+                _logger.Debug($"Running Bin2Shell web mode: encoder={encoderIdx}, envelope={envelopeIdx}, webHelper={webHelperIdx}");
+                string output = await _bin2ShellRunner.RunAsync(args, cancellationToken: default);
+
+                if (string.IsNullOrWhiteSpace(output))
+                    throw new InvalidOperationException("Bin2Shell returned empty output.");
+
+                return Bin2ShellWebOutputParser.Parse(output);
+            });
+
+        if (wizardResult == null)
         {
-            const string message = "Bin2Shell returned no output while generating the web payload.";
-            _logger.Warn(message);
-            ShowMessage(
-                view,
-                message,
-                "Web Payload",
-                MsgBoxButton.OK,
-                MsgBoxIcon.Error);
+            _logger.Debug("Web payload wizard cancelled.");
             return;
         }
 
-        string payload;
-        string payloadSource;
-        if (TryExtractCodeBlobArray(output, out payload))
-        {
-            payloadSource = "code_blob[]";
-        }
-        else if (TryExtractEnvelopeString(output, out payload))
-        {
-            payloadSource = "code_blob_text[]";
-        }
-        else
-        {
-            _logger.Warn("Bin2Shell output did not contain a recognizable payload segment.");
-            ShowMessage(
-                view,
-                "Bin2Shell output did not contain a recognizable payload segment.",
-                "Web Payload",
-                MsgBoxButton.OK,
-                MsgBoxIcon.Error);
-            return;
-        }
+        _activeWebPayload = wizardResult.WebOutput;
+        view.SetPayloadEncodingEnabled(false);
 
-        if (string.IsNullOrWhiteSpace(payload))
-        {
-            _logger.Warn("Extracted payload content was empty.");
-            ShowMessage(
-                view,
-                "Extracted payload content was empty.",
-                "Web Payload",
-                MsgBoxButton.OK,
-                MsgBoxIcon.Warning);
-            return;
-        }
+        // Populate the hidden URL textbox so source validation passes.
+        view.ShellcodeUrlTextBox.Text = wizardResult.PayloadUrl;
 
-        var header = new StringBuilder();
-        header.Append($"Envelope: {envelopeDisplay}");
-        if (!string.Equals(payloadSource, "code_blob[]", StringComparison.Ordinal))
-        {
-            header.Append($" (from {payloadSource})");
-        }
-
-        ShowCopyableText(view, "Web Payload", payload, header.ToString());
-        _logger.Ok("Web payload generated successfully.");
+        _logger.Ok($"Web payload ready. URL: {wizardResult.PayloadUrl}");
     }
 
     private void PopulateTemplateCombo(IMainFormView view, string? preferredTemplateId = null)
@@ -503,8 +397,6 @@ public sealed class MainFormCoordinator
             combo.IsEditable = false;
             combo.Items.Clear();
 
-            combo.Items.Add(new TemplateComboItem(string.Empty, "None"));
-
             foreach (var template in _templates)
                 combo.Items.Add(new TemplateComboItem(template.Id, template.Display));
 
@@ -524,7 +416,7 @@ public sealed class MainFormCoordinator
                 combo.SelectedIndex = 0;
             }
 
-            _logger.Ok($"Loaded {_templates.Count} template(s) into chooser (default None).");
+            _logger.Debug($"Loaded {_templates.Count} template(s).");
         }
         catch (Exception ex)
         {
@@ -965,6 +857,18 @@ public sealed class MainFormCoordinator
         }
     }
 
+    private void MergeWebPayload(UiData data)
+    {
+        if (data == null || _activeWebPayload == null)
+            return;
+
+        // Inject structured web payload blocks so CompilerService can place them correctly.
+        // Body (declarations, init, decode) goes into {{SHELLCODE_SOURCE}} inside main().
+        data.TextBoxes["__webPayloadCodeBlock__"] = _activeWebPayload.BuildBody();
+        // Preamble (#includes, fetch helper function) goes at file scope before main().
+        data.TextBoxes["__webPayloadPreamble__"] = _activeWebPayload.BuildPreamble();
+    }
+
     private void UpdateTemplateContext(IMainFormView view, CodeTemplateDefinition? template)
     {
         ArgumentNullException.ThrowIfNull(view);
@@ -974,21 +878,21 @@ public sealed class MainFormCoordinator
 
         if (template == null)
         {
-            _logger.Info("Template set to None. Select a template to configure options.");
+            _logger.Debug("Template set to None.");
             return;
         }
 
         if (!templateProvided)
         {
-            _logger.Info($"Template '{template.Display}' does not declare snippet placeholders; showing all sections.");
+            _logger.Debug($"Template '{template.Display}' has no snippet placeholders; showing all sections.");
         }
         else if (sections.Count == 0)
         {
-            _logger.Info($"Template '{template.Display}' has no configurable sections.");
+            _logger.Debug($"Template '{template.Display}' has no configurable sections.");
         }
         else
         {
-            _logger.Info($"Template '{template.Display}' ready with {sections.Count} configurable section(s).");
+            _logger.Info($"Template: {template.Display} ({sections.Count} section(s))");
         }
     }
 
@@ -1125,7 +1029,7 @@ public sealed class MainFormCoordinator
         if (discovery.Best != null)
         {
             string state = discovery.Best.Validated ? "validated" : "not validated";
-            _logger.Info($"Compiler candidate available: {discovery.Best.Path} ({state}).");
+            _logger.Info($"Compiler: {Path.GetFileName(discovery.Best.Path)} ({state}).");
             return;
         }
 
@@ -1238,7 +1142,6 @@ public sealed class MainFormCoordinator
             return;
 
         combo.Items.Clear();
-        combo.Items.Add(string.Empty);
 
         foreach (var item in items.OrderBy(i => i.Index))
         {
@@ -1254,7 +1157,6 @@ public sealed class MainFormCoordinator
             return;
 
         combo.Items.Clear();
-        combo.Items.Add(string.Empty);
 
         int preferredIndex = -1;
         foreach (var item in items.OrderBy(i => i.Index))
@@ -1492,31 +1394,31 @@ public sealed class MainFormCoordinator
             return value.Substring(0, head) + ".." + value.Substring(value.Length - tail);
         }
 
-        _logger.Info("UI snapshot -> begin");
+        _logger.Debug("UI snapshot -> begin");
 
         foreach (var entry in data.TextBoxes.OrderBy(k => k.Key))
         {
             string raw = entry.Value ?? string.Empty;
-            _logger.Info($"TextBox '{entry.Key}': len={raw.Length}, value='{Ellipsize(raw, 100)}'");
+            _logger.Debug($"TextBox '{entry.Key}': len={raw.Length}, value='{Ellipsize(raw, 100)}'");
         }
 
         foreach (var entry in data.ComboBoxes.OrderBy(k => k.Key))
         {
             string raw = entry.Value ?? string.Empty;
-            _logger.Info($"ComboBox '{entry.Key}': value='{Ellipsize(raw, 100)}'");
+            _logger.Debug($"ComboBox '{entry.Key}': value='{Ellipsize(raw, 100)}'");
         }
 
         foreach (var entry in data.ListBoxes.OrderBy(k => k.Key))
         {
             var selections = entry.Value ?? new List<string>();
-            _logger.Info($"ListBox '{entry.Key}': selectedCount={selections.Count}");
+            _logger.Debug($"ListBox '{entry.Key}': selectedCount={selections.Count}");
             foreach (var item in selections)
             {
-                _logger.Info($"  - '{Ellipsize(item ?? string.Empty, 100)}'");
+                _logger.Debug($"  - '{Ellipsize(item ?? string.Empty, 100)}'");
             }
         }
 
-        _logger.Info("UI snapshot -> end");
+        _logger.Debug("UI snapshot -> end");
     }
 
     private static string GetSelectedSnippetId(ComboBox? combo)
@@ -1583,11 +1485,6 @@ public sealed class MainFormCoordinator
         public override string ToString() => Id;
     }
 }
-
-
-
-
-
 
 
 

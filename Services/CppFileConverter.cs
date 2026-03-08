@@ -53,12 +53,12 @@ public static class CppFileConverter
             return Fail(msg);
         }
 
-        logger.Info($"Discovered {sources.Length} .cpp file(s) to compile. First few: {string.Join(", ", sources.Take(3).Select(Path.GetFileName))}{(sources.Length > 3 ? ", ..." : string.Empty)}");
+        logger.Debug($"Discovered {sources.Length} .cpp file(s) to compile. First few: {string.Join(", ", sources.Take(3).Select(Path.GetFileName))}{(sources.Length > 3 ? ", ..." : string.Empty)}");
 
         // Ensure output directory exists (exact casing/spaces requested)
         var outputDir = Path.Combine(directory, "Compiled BInaries");
         Directory.CreateDirectory(outputDir);
-        logger.Info($"Output directory: {outputDir}");
+        logger.Debug($"Output directory: {outputDir}");
 
         // Pick compiler
         var (compilerPath, family) = DetectCompiler(compilerDirectory);
@@ -68,17 +68,18 @@ public static class CppFileConverter
             return Fail(msg);
         }
 
-        logger.Info($"Detected compiler: '{compilerPath}' ({family})");
+        logger.Debug($"Detected compiler: '{compilerPath}' ({family})");
 
         // Build to a temporary exe name first, then hash and rename after compilation succeeds.
         var tempExe = Path.Combine(outputDir, $"build-{Guid.NewGuid():N}.exe");
-        var args = BuildCompilerArgs(family, sources, tempExe);
+        var extraLibs = DetectRequiredLibraries(sources);
+        var args = BuildCompilerArgs(family, sources, tempExe, extraLibs);
         var vcVarsScript = family == CompilerFamily.MSVC
             ? FindVcVarsScript(compilerDirectory)
             : null;
 
-        logger.Info($"Compiler args: {Truncate(args, 600)}");
-        logger.Info("Launching compiler process...");
+        logger.Debug($"Compiler args: {Truncate(args, 600)}");
+        logger.Debug("Launching compiler process...");
 
         ProcessStartInfo startInfo;
 
@@ -152,7 +153,7 @@ public static class CppFileConverter
             return Fail($"Compiler failed to launch: {ex.Message}");
         }
 
-        logger.Info($"Compiler exited with code {proc.ExitCode}.");
+        logger.Debug($"Compiler exited with code {proc.ExitCode}.");
         if (proc.ExitCode != 0 || !File.Exists(tempExe))
         {
             SafeDelete(tempExe);
@@ -180,7 +181,7 @@ public static class CppFileConverter
 #endif
             var hex = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
             hashFirst5 = hex.Substring(0, 5);
-            logger.Info($"SHA-256 (first 5): {hashFirst5}");
+            logger.Debug($"SHA-256 (first 5): {hashFirst5}");
         }
         catch (Exception ex)
         {
@@ -200,7 +201,7 @@ public static class CppFileConverter
             }
 
             File.Move(tempExe, finalExe);
-            logger.Ok($"Compilation succeeded. Output: {finalExe}");
+            logger.Ok($"Build succeeded: {Path.GetFileName(finalExe)}");
         }
         catch (Exception ex)
         {
@@ -231,19 +232,50 @@ public static class CppFileConverter
         return (null, default);
     }
 
-    private static string BuildCompilerArgs(CompilerFamily family, string[] sources, string outputExe)
+    private static string BuildCompilerArgs(CompilerFamily family, string[] sources, string outputExe, IReadOnlyList<string> extraLibs)
     {
         static string Q(string s) => $"\"{s}\"";
         var src = string.Join(" ", sources.Select(Q));
 
         if (family == CompilerFamily.MSVC)
         {
-            // Size-focused build
-            return $"/nologo /O1 /Gy /DNDEBUG /EHsc /Fe:{Q(outputExe)} {src} /link /OPT:REF /OPT:ICF /INCREMENTAL:NO";
+            // MSVC: extra libs use #pragma comment(lib, ...) in the source; no args needed.
+            // /std:c++17 required for std::wstring::data() non-const overload,
+            // std::string_view, and [[maybe_unused]] used by bin2shell web helpers.
+            return $"/nologo /O1 /Gy /DNDEBUG /EHsc /std:c++17 /Fe:{Q(outputExe)} {src} /link /OPT:REF /OPT:ICF /INCREMENTAL:NO";
         }
 
-        // GCC/Clang size-focused build
-        return $"-Os -s -ffunction-sections -fdata-sections -Wl,--gc-sections -DNDEBUG -o {Q(outputExe)} {src}";
+        // GCC/Clang size-focused build: append -l flags for required libraries.
+        var libs = extraLibs.Count > 0 ? " " + string.Join(" ", extraLibs) : string.Empty;
+        return $"-Os -s -std=c++17 -ffunction-sections -fdata-sections -Wl,--gc-sections -DNDEBUG -o {Q(outputExe)} {src}{libs}";
+    }
+
+    /// <summary>
+    /// Scans source files for known #include directives and returns the additional
+    /// linker libraries required (e.g. -lwinhttp when winhttp.h is included).
+    /// </summary>
+    private static IReadOnlyList<string> DetectRequiredLibraries(string[] sourceFiles)
+    {
+        var libs = new List<string>();
+        bool needsWinHttp = false;
+
+        foreach (var file in sourceFiles)
+        {
+            try
+            {
+                var content = File.ReadAllText(file);
+                if (content.Contains("#include <winhttp.h>", StringComparison.OrdinalIgnoreCase))
+                    needsWinHttp = true;
+            }
+            catch { /* ignore read errors */ }
+        }
+
+        if (needsWinHttp)
+        {
+            libs.Add("-lwinhttp");
+        }
+
+        return libs;
     }
 
     private static void TryKill(Process p)

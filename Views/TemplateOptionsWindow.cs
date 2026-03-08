@@ -119,7 +119,7 @@ public sealed class TemplateOptionsWindow
         {
             Title = $"Template Options — {template.Display}",
             Content = root,
-            SystemBackdrop = new MicaBackdrop()
+            SystemBackdrop = new DesktopAcrylicBackdrop()
         };
         _window.ExtendsContentIntoTitleBar = true;
         _window.SetTitleBar(titleBar);
@@ -149,9 +149,19 @@ public sealed class TemplateOptionsWindow
             work.X + (work.Width - 900) / 2,
             work.Y + (work.Height - 620) / 2));
 
+        // Make modal: disable the owner window until this window closes.
+        if (ownerHandle != 0)
+        {
+            EnableWindow(ownerHandle, false);
+            dlg._window.Closed += (_, _) => EnableWindow(ownerHandle, true);
+        }
+
         dlg._window.Activate();
         return tcs.Task;
     }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool EnableWindow(nint hWnd, bool bEnable);
 
     private FrameworkElement BuildHeaderPanel()
     {

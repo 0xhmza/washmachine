@@ -1,0 +1,617 @@
+using System.Diagnostics;
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
+using Washmachine.Logging;
+using Washmachine.Models;
+using Washmachine.Services;
+
+namespace Washmachine.Testing;
+
+/// <summary>
+/// Headless test harness that exercises the full pipeline:
+///   bin2shell → template rendering → g++ compilation → exe execution.
+///
+/// Phase 1: all encoder × envelope × webhelper combos (default template + default snippets).
+/// Phase 2: all template × snippet permutations (encoder=0, envelope=0, file source).
+///
+/// Output: JSON results array to stdout, suitable for agent consumption.
+/// </summary>
+public static class TestHarness
+{
+    private sealed class TestResult
+    {
+        public int Id { get; set; }
+        public string Phase { get; set; } = "";
+        public string Description { get; set; } = "";
+        public bool CompileOk { get; set; }
+        public bool RunOk { get; set; }
+        public int? ExitCode { get; set; }
+        public string? Error { get; set; }
+        public double DurationMs { get; set; }
+    }
+
+    public static async Task<int> RunAsync(string[] args)
+    {
+        // Parse arguments
+        string? shellcodeFile = null;
+        string? payloadUrl = null;
+        string? phase = null;
+        bool stopOnFail = false;
+
+        for (int i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--shellcode" when i + 1 < args.Length:
+                    shellcodeFile = args[++i];
+                    break;
+                case "--url" when i + 1 < args.Length:
+                    payloadUrl = args[++i];
+                    break;
+                case "--phase" when i + 1 < args.Length:
+                    phase = args[++i];
+                    break;
+                case "--stop-on-fail":
+                    stopOnFail = true;
+                    break;
+            }
+        }
+
+        if (string.IsNullOrEmpty(shellcodeFile) || !File.Exists(shellcodeFile))
+        {
+            Console.Error.WriteLine("Usage: --shellcode <path-to-.bin> [--url <payload-url>] [--phase 1|2|all]");
+            return 1;
+        }
+
+        phase ??= "all";
+        var paths = new AppPaths();
+        var logger = new ConsoleLogger();
+        var runner = new Bin2ShellRunner(paths);
+        var snippetService = new YamlCodeSnippetCatalogService(paths);
+        var toolLocator = new CompilerToolLocator(logger);
+        var compiler = new CompilerService(paths, runner, snippetService, toolLocator, logger);
+
+        // Load encoding catalog
+        var encodingCatalog = new ShellcodeEncodingCatalogService(runner, paths);
+        var catalog = await encodingCatalog.GetCatalogAsync();
+
+        var results = new List<TestResult>();
+        int id = 0;
+
+        // ─── Phase 1: all encoder × envelope × webhelper combos ─────────────
+        if (phase is "all" or "1")
+        {
+            logger.Info($"=== PHASE 1: Encoding combos (file source) ===");
+            logger.Info($"  Encoders: {catalog.Encoders.Count}, Envelopes: {catalog.Envelopes.Count}, WebHelpers: {catalog.WebHelpers.Count}");
+
+            foreach (var enc in catalog.Encoders)
+            foreach (var env in catalog.Envelopes)
+            {
+                id++;
+                var desc = $"P1 File: enc={enc.Index}({enc.Name}), env={env.Index}({env.Name})";
+                var data = BuildPhase1Data(shellcodeFile, null, enc, env, null, snippetService);
+                var result = await RunTestAsync(id, "P1-File", desc, data, compiler, paths, logger);
+                results.Add(result);
+                if (stopOnFail && (!result.CompileOk || !result.RunOk)) goto done;
+            }
+
+            // URL source: all encoder × envelope × webhelper
+            if (!string.IsNullOrEmpty(payloadUrl))
+            {
+                foreach (var enc in catalog.Encoders)
+                foreach (var env in catalog.Envelopes)
+                {
+                    // For URL mode, bin2shell web mode produces the payload.
+                    // We pass the payload URL and let the harness run bin2shell -w.
+                    foreach (var wh in catalog.WebHelpers.DefaultIfEmpty(null))
+                    {
+                        id++;
+                        var desc = $"P1 URL: enc={enc.Index}({enc.Name}), env={env.Index}({env.Name}), wh={wh?.Index ?? 0}({wh?.Name ?? "none"})";
+                        var urlData = await BuildPhase1WebDataAsync(
+                            shellcodeFile, payloadUrl, enc, env, wh,
+                            snippetService, runner, paths, logger);
+                        if (urlData != null)
+                        {
+                            var result = await RunTestAsync(id, "P1-URL", desc, urlData, compiler, paths, logger);
+                            results.Add(result);
+                            if (stopOnFail && (!result.CompileOk || !result.RunOk)) goto done;
+                        }
+                        else
+                        {
+                            results.Add(new TestResult
+                            {
+                                Id = id, Phase = "P1-URL", Description = desc,
+                                CompileOk = false, RunOk = false,
+                                Error = "bin2shell -w failed to produce output"
+                            });
+                            if (stopOnFail) goto done;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ─── Phase 2: all template × snippet combos (encoding defaults) ─────
+        if (phase is "all" or "2")
+        {
+            logger.Info($"=== PHASE 2: Template + snippet combos ===");
+            var templates = snippetService.GetTemplates();
+            var allSections = snippetService.GetAllSections();
+
+            foreach (var template in templates)
+            {
+                // Skip templates that need Win32Helper.h unless the header is available
+                if (TemplateNeedsExternalHeaders(template, paths))
+                {
+                    logger.Warn($"Skipping template '{template.Id}': requires Win32Helper.h (not found in temp dir)");
+                    continue;
+                }
+
+                // For each template, enumerate its snippet placeholders
+                var snippetPlaceholders = template.Placeholders
+                    .Where(p => p.Kind == TemplatePlaceholderKind.Snippet)
+                    .ToList();
+
+                // Build all snippet combinations for this template
+                var combos = EnumerateSnippetCombinations(snippetPlaceholders, allSections, snippetService);
+
+                foreach (var combo in combos)
+                {
+                    id++;
+                    var desc = $"P2: template={template.Id}, snippets=[{string.Join(", ", combo.Select(kv => $"{kv.Key}={kv.Value}"))}]";
+                    var data = BuildPhase2Data(shellcodeFile, template.Id, combo, snippetService);
+                    var result = await RunTestAsync(id, "P2", desc, data, compiler, paths, logger);
+                    results.Add(result);
+                    if (stopOnFail && (!result.CompileOk || !result.RunOk)) goto done;
+                }
+            }
+        }
+
+        done:
+        // Output results
+        int passed = results.Count(r => r.CompileOk && r.RunOk);
+        int compileFailed = results.Count(r => !r.CompileOk);
+        int runFailed = results.Count(r => r.CompileOk && !r.RunOk);
+
+        logger.Info($"\n=== RESULTS: {passed}/{results.Count} passed, {compileFailed} compile failures, {runFailed} runtime failures ===");
+
+        var json = JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true });
+        var resultPath = Path.Combine(paths.ExecutableDirectory, "test_results.json");
+        await File.WriteAllTextAsync(resultPath, json);
+        logger.Info($"Results written to: {resultPath}");
+
+        // Print failures
+        foreach (var r in results.Where(r => !r.CompileOk || !r.RunOk))
+        {
+            logger.Error($"  FAIL #{r.Id}: {r.Description} — {r.Error}");
+        }
+
+        return compileFailed + runFailed > 0 ? 1 : 0;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Data builders
+    // ═══════════════════════════════════════════════════════════════════════
+
+    private static UiData BuildPhase1Data(
+        string shellcodeFile,
+        string? payloadUrl,
+        ShellcodeEncodingItem encoder,
+        ShellcodeEncodingItem envelope,
+        ShellcodeEncodingItem? webHelper,
+        ICodeSnippetCatalogService snippets)
+    {
+        var textBoxes = new Dictionary<string, string>
+        {
+            ["shellcodeFile"] = shellcodeFile,
+            ["shellcodeRAW"] = "",
+            ["shellcodeURL"] = payloadUrl ?? "",
+            ["shellcodeURLFile"] = "",
+        };
+
+        var comboBoxes = new Dictionary<string, string>
+        {
+            ["templateComboBox"] = "shellcode-minimal",
+            ["bin2hexEncoder"] = encoder.DisplayText,
+            ["bin2hexEnvelope"] = envelope.DisplayText,
+        };
+
+        // Set default snippets for the minimal template
+        SetDefaultSnippets(comboBoxes, textBoxes, snippets, "shellcode-minimal");
+
+        return new UiData(textBoxes, comboBoxes);
+    }
+
+    private static async Task<UiData?> BuildPhase1WebDataAsync(
+        string shellcodeFile,
+        string payloadUrl,
+        ShellcodeEncodingItem encoder,
+        ShellcodeEncodingItem envelope,
+        ShellcodeEncodingItem? webHelper,
+        ICodeSnippetCatalogService snippets,
+        IBin2ShellRunner runner,
+        IAppPaths paths,
+        IAppLogger logger)
+    {
+        try
+        {
+            var args = new List<string>();
+            if (!string.IsNullOrWhiteSpace(paths.Bin2ShellAlgos) && File.Exists(paths.Bin2ShellAlgos))
+            {
+                args.Add("-y");
+                args.Add(paths.Bin2ShellAlgos);
+            }
+            args.Add("-w");
+            args.Add("-e");
+            args.Add(encoder.Index.ToString(CultureInfo.InvariantCulture));
+            args.Add("-v");
+            args.Add(envelope.Index.ToString(CultureInfo.InvariantCulture));
+            if (webHelper != null)
+            {
+                args.Add("-wh");
+                args.Add(webHelper.Index.ToString(CultureInfo.InvariantCulture));
+            }
+            args.Add(shellcodeFile);
+
+            string output = await runner.RunAsync(args);
+            if (string.IsNullOrWhiteSpace(output)) return null;
+
+            var webOutput = Bin2ShellWebOutputParser.Parse(output);
+            webOutput.ReplacePayloadUrl(payloadUrl);
+
+            var textBoxes = new Dictionary<string, string>
+            {
+                ["shellcodeFile"] = "",
+                ["shellcodeRAW"] = "",
+                ["shellcodeURL"] = payloadUrl,
+                ["shellcodeURLFile"] = shellcodeFile,
+                ["__webPayloadCodeBlock__"] = webOutput.BuildBody(),
+                ["__webPayloadPreamble__"] = webOutput.BuildPreamble(),
+            };
+
+            var comboBoxes = new Dictionary<string, string>
+            {
+                ["templateComboBox"] = "shellcode-minimal",
+                ["bin2hexEncoder"] = encoder.DisplayText,
+                ["bin2hexEnvelope"] = envelope.DisplayText,
+            };
+
+            SetDefaultSnippets(comboBoxes, textBoxes, snippets, "shellcode-minimal");
+            return new UiData(textBoxes, comboBoxes);
+        }
+        catch (Exception ex)
+        {
+            logger.Error($"bin2shell -w failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static UiData BuildPhase2Data(
+        string shellcodeFile,
+        string templateId,
+        Dictionary<string, string> snippetSelections,
+        ICodeSnippetCatalogService snippets)
+    {
+        var textBoxes = new Dictionary<string, string>
+        {
+            ["shellcodeFile"] = shellcodeFile,
+            ["shellcodeRAW"] = "",
+            ["shellcodeURL"] = "",
+            ["shellcodeURLFile"] = "",
+        };
+
+        var comboBoxes = new Dictionary<string, string>
+        {
+            ["templateComboBox"] = templateId,
+            ["bin2hexEncoder"] = "0 - none",
+            ["bin2hexEnvelope"] = "0 - none",
+        };
+
+        // Apply snippet selections
+        foreach (var kv in snippetSelections)
+        {
+            comboBoxes[kv.Key] = kv.Value;
+        }
+
+        // Apply default text input values for any required inputs
+        SetDefaultInputValues(textBoxes, snippets);
+
+        return new UiData(textBoxes, comboBoxes);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Snippet combinatorics
+    // ═══════════════════════════════════════════════════════════════════════
+
+    private static IEnumerable<Dictionary<string, string>> EnumerateSnippetCombinations(
+        IReadOnlyList<CodeTemplatePlaceholder> placeholders,
+        IReadOnlyList<CodeSnippetSection> allSections,
+        ICodeSnippetCatalogService snippetService)
+    {
+        // Build a list of (comboBoxName, possibleValues[]) per placeholder
+        var axes = new List<(string ComboName, string[] Values)>();
+
+        foreach (var ph in placeholders)
+        {
+            if (!snippetService.TryResolveSection(ph.SnippetTemplateKey, out var section))
+                continue;
+
+            // The control name the CompilerService looks for
+            string comboName = $"snippetCombo_{ph.SnippetTemplateKey}_0";
+
+            // "" = no selection, plus each item
+            var values = new List<string> { "" };
+            foreach (var item in section.Items)
+                values.Add(item.Id);
+
+            axes.Add((comboName, values.ToArray()));
+        }
+
+        if (axes.Count == 0)
+        {
+            yield return new Dictionary<string, string>();
+            yield break;
+        }
+
+        // Cartesian product
+        foreach (var combo in CartesianProduct(axes))
+            yield return combo;
+    }
+
+    private static IEnumerable<Dictionary<string, string>> CartesianProduct(
+        List<(string ComboName, string[] Values)> axes)
+    {
+        var indices = new int[axes.Count];
+        while (true)
+        {
+            var dict = new Dictionary<string, string>();
+            for (int i = 0; i < axes.Count; i++)
+                dict[axes[i].ComboName] = axes[i].Values[indices[i]];
+            yield return dict;
+
+            // Advance
+            int carry = axes.Count - 1;
+            while (carry >= 0)
+            {
+                indices[carry]++;
+                if (indices[carry] < axes[carry].Values.Length)
+                    break;
+                indices[carry] = 0;
+                carry--;
+            }
+            if (carry < 0) break;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Default helpers
+    // ═══════════════════════════════════════════════════════════════════════
+
+    private static void SetDefaultSnippets(
+        Dictionary<string, string> comboBoxes,
+        Dictionary<string, string> textBoxes,
+        ICodeSnippetCatalogService snippets,
+        string templateId)
+    {
+        if (!snippets.TryGetTemplate(templateId, out var template))
+            return;
+
+        foreach (var ph in template.Placeholders.Where(p => p.Kind == TemplatePlaceholderKind.Snippet))
+        {
+            if (!snippets.TryResolveSection(ph.SnippetTemplateKey, out var section))
+                continue;
+
+            string comboName = $"snippetCombo_{ph.SnippetTemplateKey}_0";
+            var defaultItem = section.Items.FirstOrDefault(i => i.IsDefault)
+                              ?? section.Items.FirstOrDefault();
+            if (defaultItem != null)
+                comboBoxes[comboName] = defaultItem.Id;
+        }
+
+        SetDefaultInputValues(textBoxes, snippets);
+    }
+
+    private static void SetDefaultInputValues(
+        Dictionary<string, string> textBoxes,
+        ICodeSnippetCatalogService snippets)
+    {
+        foreach (var section in snippets.GetAllSections())
+        {
+            foreach (var input in section.Inputs)
+            {
+                if (!string.IsNullOrWhiteSpace(input.DefaultValue) &&
+                    !textBoxes.ContainsKey(input.Id))
+                {
+                    textBoxes[input.Id] = input.DefaultValue;
+                }
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Test execution
+    // ═══════════════════════════════════════════════════════════════════════
+
+    private static async Task<TestResult> RunTestAsync(
+        int id, string phase, string description,
+        UiData data, CompilerService compiler, IAppPaths paths, IAppLogger logger)
+    {
+        // Clean up temp cpp files from previous test (keep Compiled BInaries dir)
+        CleanTempCpp(paths);
+
+        var sw = Stopwatch.StartNew();
+        var result = new TestResult { Id = id, Phase = phase, Description = description };
+
+        try
+        {
+            logger.Info($"[#{id}] {description}");
+            var compileResult = await compiler.CompileAsync(data);
+            sw.Stop();
+            result.DurationMs = sw.Elapsed.TotalMilliseconds;
+
+            if (!compileResult.Success || !compileResult.ConversionResult.Success)
+            {
+                result.CompileOk = false;
+                result.Error = compileResult.ConversionResult.Error ?? "Compilation failed";
+                logger.Error($"  [#{id}] COMPILE FAILED: {Truncate(result.Error, 200)}");
+                return result;
+            }
+
+            result.CompileOk = true;
+
+            // Find the produced exe
+            var exePath = FindProducedExe(compileResult);
+            if (exePath == null || !File.Exists(exePath))
+            {
+                result.RunOk = false;
+                result.Error = "No exe produced";
+                logger.Error($"  [#{id}] No exe found after compilation");
+                return result;
+            }
+
+            // Execute the exe with a timeout
+            var (exitCode, runError) = await ExecuteExeAsync(exePath, TimeSpan.FromSeconds(15));
+            result.ExitCode = exitCode;
+            if (runError != null)
+            {
+                result.RunOk = false;
+                result.Error = runError;
+                logger.Error($"  [#{id}] RUN FAILED: exit={exitCode}, {Truncate(runError, 200)}");
+            }
+            else
+            {
+                result.RunOk = true;
+                logger.Ok($"  [#{id}] OK (exit={exitCode}, {result.DurationMs:F0}ms)");
+            }
+
+            // Clean up exe
+            try { File.Delete(exePath); } catch { }
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            result.DurationMs = sw.Elapsed.TotalMilliseconds;
+            result.Error = ex.Message;
+            logger.Error($"  [#{id}] EXCEPTION: {Truncate(ex.Message, 200)}");
+        }
+
+        return result;
+    }
+
+    private static string? FindProducedExe(CompilerResult result)
+    {
+        // Look for the newest exe in the Compiled BInaries directory
+        var tempDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "temp", "cpp", "Compiled BInaries");
+        if (!Directory.Exists(tempDir)) return null;
+        return Directory.GetFiles(tempDir, "*.exe")
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
+    }
+
+    private static async Task<(int exitCode, string? error)> ExecuteExeAsync(string exePath, TimeSpan timeout)
+    {
+        try
+        {
+            using var proc = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = exePath,
+                    UseShellExecute = false,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true,
+                    CreateNoWindow = true
+                },
+                EnableRaisingEvents = true
+            };
+
+            var stderr = new StringBuilder();
+            proc.ErrorDataReceived += (_, e) => { if (e.Data != null) stderr.AppendLine(e.Data); };
+
+            if (!proc.Start())
+                return (-1, "Failed to start process");
+
+            proc.BeginErrorReadLine();
+
+            using var cts = new CancellationTokenSource(timeout);
+            try
+            {
+                await proc.WaitForExitAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { }
+                return (-1, $"Timed out after {timeout.TotalSeconds}s");
+            }
+
+            // exitCode 0 or messagebox-related codes are acceptable
+            // For messagebox.bin, the process may show a dialog — we accept timeout as OK
+            if (proc.ExitCode != 0 && stderr.Length > 0)
+                return (proc.ExitCode, $"Exit {proc.ExitCode}: {stderr.ToString().Trim()}");
+
+            return (proc.ExitCode, null);
+        }
+        catch (Exception ex)
+        {
+            return (-1, ex.Message);
+        }
+    }
+
+    private static string Truncate(string s, int max)
+        => s.Length <= max ? s : s[..max] + "...";
+
+    /// <summary>
+    /// Returns true if the template content includes headers that are not bundled
+    /// (e.g. Win32Helper.h from VX-API). We check if the file exists in the temp dir.
+    /// </summary>
+    private static bool TemplateNeedsExternalHeaders(CodeTemplateDefinition template, IAppPaths paths)
+    {
+        if (string.IsNullOrWhiteSpace(template.Content))
+            return false;
+
+        // Check for uncommented #include "Win32Helper.h" (skip // commented lines)
+        foreach (var line in template.Content.Split('\n'))
+        {
+            var trimmed = line.TrimStart();
+            if (trimmed.StartsWith("//", StringComparison.Ordinal))
+                continue;
+            if (trimmed.Contains("#include \"Win32Helper.h\"", StringComparison.Ordinal))
+            {
+                var tempDir = Path.Combine(paths.ExecutableDirectory, "temp", "cpp");
+                if (!File.Exists(Path.Combine(tempDir, "Win32Helper.h")))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Removes .cpp files from the temp directory between tests so each test
+    /// compiles only its own source. Preserves the Compiled BInaries subfolder.
+    /// </summary>
+    private static void CleanTempCpp(IAppPaths paths)
+    {
+        var tempDir = Path.Combine(paths.ExecutableDirectory, "temp", "cpp");
+        if (!Directory.Exists(tempDir)) return;
+        foreach (var f in Directory.GetFiles(tempDir, "*.cpp"))
+        {
+            try { File.Delete(f); } catch { }
+        }
+        foreach (var f in Directory.GetFiles(tempDir, "*.obj"))
+        {
+            try { File.Delete(f); } catch { }
+        }
+    }
+}
+
+/// <summary>Minimal console logger for the test harness.</summary>
+internal sealed class ConsoleLogger : IAppLogger
+{
+    public void Debug(string message) { }
+    public void Info(string message) => Console.WriteLine(message);
+    public void Ok(string message) => Console.WriteLine($"  OK: {message}");
+    public void Warn(string message) => Console.Error.WriteLine($"  WARN: {message}");
+    public void Error(string message) => Console.Error.WriteLine($"  ERROR: {message}");
+}

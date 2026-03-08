@@ -7,6 +7,7 @@ public sealed class CppCompilationPlan
     public Dictionary<string, List<string>> CustomSnippetBlocks { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     public bool UsesGenericShellcode { get; set; }
+    public bool UsesWebPayload { get; set; }
 
     public string? EncodedShellcodeSnippet { get; set; }
     public string? UrlShellcodeSnippet { get; set; }
@@ -15,4 +16,16 @@ public sealed class CppCompilationPlan
     public string? ProcessInjectionSnippet { get; set; }
     public string? ShellcodeExecutionSnippet { get; set; }
     public string? ProcessLookupHelper { get; set; }
+
+    /// <summary>
+    /// Assembled C++ code block from Bin2Shell web mode output (includes, declarations,
+    /// fetch helper, payload init, decode). Set when the user completes the web payload wizard.
+    /// </summary>
+    public string? WebPayloadCodeBlock { get; set; }
+
+    /// <summary>
+    /// File-scope preamble from web payload (#includes + fetch helper function).
+    /// Must be injected before main().
+    /// </summary>
+    public string? WebPayloadPreamble { get; set; }
 }

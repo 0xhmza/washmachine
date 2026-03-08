@@ -22,6 +22,16 @@ public interface IMainFormView
     TextBox ShellcodeFileTextBox { get; }
     TextBox ShellcodeRawTextBox { get; }
     TextBox ShellcodeUrlTextBox { get; }
+    TextBox ShellcodeUrlFileTextBox { get; }
 
     Button SubmitButton { get; }
+
+    /// <summary>
+    /// Sets whether the Payload Encoding section is interactive.
+    /// When <paramref name="enabled"/> is false the section should appear greyed out.
+    /// </summary>
+    void SetPayloadEncodingEnabled(bool enabled);
+
+    /// <summary>The coordinator that drives this view.</summary>
+    Controllers.MainFormCoordinator Coordinator { get; }
 }

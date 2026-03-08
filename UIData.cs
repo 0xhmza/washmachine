@@ -13,6 +13,20 @@ public sealed class UiData
     public Dictionary<string, string> ComboBoxes { get; } = new();
     public Dictionary<string, List<string>> ListBoxes { get; } = new();
 
+    /// <summary>
+    /// Headless constructor for testing — pre-populates from dictionaries.
+    /// </summary>
+    public UiData(
+        Dictionary<string, string> textBoxes,
+        Dictionary<string, string> comboBoxes,
+        Dictionary<string, List<string>>? listBoxes = null)
+    {
+        foreach (var kv in textBoxes) TextBoxes[kv.Key] = kv.Value;
+        foreach (var kv in comboBoxes) ComboBoxes[kv.Key] = kv.Value;
+        if (listBoxes != null)
+            foreach (var kv in listBoxes) ListBoxes[kv.Key] = kv.Value;
+    }
+
     public UiData(DependencyObject root)
     {
         ArgumentNullException.ThrowIfNull(root);

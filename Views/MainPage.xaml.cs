@@ -2,6 +2,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Washmachine.Controllers;
 using Washmachine.Logging;
 using Washmachine.Services;
@@ -16,6 +17,7 @@ public sealed partial class MainPage : Page, IMainFormView
     private readonly IRequirementProvisioner _requirements;
     private readonly AppPaths _paths;
     private ShellcodeSource _currentSource = ShellcodeSource.None;
+    private DateTime _compileStartedAt;
 
     public MainPage()
     {
@@ -44,7 +46,7 @@ public sealed partial class MainPage : Page, IMainFormView
             clipboard,
             interaction);
 
-        _logger.Info("Initializing application...");
+        _logger.Debug("Initializing...");
         templateCatalogPath.Text = $"Catalog: {_paths.SnippetCatalogFile}";
         SetShellcodeSource(ShellcodeSource.None, clearInputs: false);
         Loaded += MainPage_Loaded;
@@ -61,7 +63,15 @@ public sealed partial class MainPage : Page, IMainFormView
     public TextBox ShellcodeFileTextBox => shellcodeFile;
     public TextBox ShellcodeRawTextBox => shellcodeRAW;
     public TextBox ShellcodeUrlTextBox => shellcodeURL;
+    public TextBox ShellcodeUrlFileTextBox => shellcodeURLFile;
     public Button SubmitButton => submitButton;
+    public MainFormCoordinator Coordinator => _coordinator;
+
+    public void SetPayloadEncodingEnabled(bool enabled)
+    {
+        PayloadEncodingExpander.IsEnabled = enabled;
+        PayloadEncodingExpander.Opacity = enabled ? 1.0 : 0.4;
+    }
 
     private async void MainPage_Loaded(object sender, RoutedEventArgs e)
     {
@@ -69,10 +79,11 @@ public sealed partial class MainPage : Page, IMainFormView
         {
             await _requirements.EnsureRequirementsAsync(this);
             await _coordinator.InitializeAsync(this);
+            _logger.Ok("Ready.");
         }
         catch (Exception ex)
         {
-            _logger.Error($"Failed to initialize application: {ex.Message}");
+            _logger.Error($"Startup failed: {ex.Message}");
             var dialog = new ContentDialog
             {
                 Title = "Startup Error",
@@ -91,8 +102,26 @@ public sealed partial class MainPage : Page, IMainFormView
     private async void button2_Click(object sender, RoutedEventArgs e) =>
         await _coordinator.PasteShellcodeFromClipboard(this, shellcodeRAW);
 
-    private async void button3_Click(object sender, RoutedEventArgs e) =>
-        await _coordinator.PasteShellcodeFromClipboard(this, shellcodeURL);
+    private async void urlBrowseButton_Click(object sender, RoutedEventArgs e)
+    {
+        await _coordinator.SelectShellcodeFileForUrl(this);
+
+        // Re-enable wizard if user picked a new file
+        startWizardButton.IsEnabled = true;
+        wizardStatusText.Text = string.Empty;
+    }
+
+    private async void StartWizard_Click(object sender, RoutedEventArgs e)
+    {
+        await _coordinator.GenerateWebPayloadAsync(this);
+
+        // After wizard completes, grey out the button and show guidance
+        if (!string.IsNullOrEmpty(shellcodeURL.Text))
+        {
+            startWizardButton.IsEnabled = false;
+            wizardStatusText.Text = "Now adjust the template and compile, or choose another source/file.";
+        }
+    }
 
     private void RAWShellcodeInfo_Click(object sender, TappedRoutedEventArgs e)
     {
@@ -100,8 +129,70 @@ public sealed partial class MainPage : Page, IMainFormView
         e.Handled = true;
     }
 
-    private async void submitButton_Click(object sender, RoutedEventArgs e) =>
+    private async void submitButton_Click(object sender, RoutedEventArgs e)
+    {
+        compileStatusPanel.Visibility = Visibility.Visible;
+        compileStatusIcon.Glyph = "\uE895"; // sync icon
+        compileStatusIcon.Foreground = null;
+        compileStatusText.Text = "Compiling...";
+        compileOutputLink.Visibility = Visibility.Collapsed;
+        _compileStartedAt = DateTime.UtcNow;
+
         await _coordinator.HandleSubmitAsync(this);
+
+        UpdateCompileStatus();
+    }
+
+    private void UpdateCompileStatus()
+    {
+        try
+        {
+            var outputDir = System.IO.Path.Combine(
+                _paths.EnsureTempSourceDirectory(), "Compiled BInaries");
+
+            if (System.IO.Directory.Exists(outputDir))
+            {
+                var latest = System.IO.Directory.GetFiles(outputDir, "*.exe")
+                    .Select(f => new System.IO.FileInfo(f))
+                    .Where(fi => fi.LastWriteTimeUtc >= _compileStartedAt.AddSeconds(-2))
+                    .OrderByDescending(fi => fi.LastWriteTimeUtc)
+                    .FirstOrDefault();
+
+                if (latest != null)
+                {
+                    compileStatusIcon.Glyph = "\uE73E"; // checkmark
+                    compileStatusIcon.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Green);
+                    compileStatusText.Text = "Compiled: ";
+                    compileOutputLinkText.Text = latest.Name;
+                    compileOutputLink.Tag = latest.DirectoryName;
+                    compileOutputLink.Visibility = Visibility.Visible;
+                    return;
+                }
+            }
+        }
+        catch
+        {
+            // If file-system access fails, fall through to the failure state.
+        }
+
+        compileStatusIcon.Glyph = "\uEA39"; // warning
+        compileStatusIcon.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Orange);
+        compileStatusText.Text = "Compilation failed. Check logs for details.";
+        compileOutputLink.Visibility = Visibility.Collapsed;
+    }
+
+    private void CompileOutputLink_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is HyperlinkButton btn && btn.Tag is string folder &&
+            System.IO.Directory.Exists(folder))
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = folder,
+                UseShellExecute = true
+            });
+        }
+    }
 
     private async void templateComboBox_SelectedIndexChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -112,20 +203,8 @@ public sealed partial class MainPage : Page, IMainFormView
     private async void button4_Click(object sender, RoutedEventArgs e) =>
         await _coordinator.OpenTemplateConfig(this);
 
-    private async void WebPayloadGenerator_Click(object sender, RoutedEventArgs e) =>
-        await _coordinator.GenerateWebPayloadAsync(this);
-
-    private async void importTemplateFileButton_Click(object sender, RoutedEventArgs e) =>
-        await _coordinator.ImportTemplateCatalogFromFileAsync(this);
-
-    private async void importTemplateUrlButton_Click(object sender, RoutedEventArgs e) =>
-        await _coordinator.ImportTemplateCatalogFromUrlAsync(this, templateCatalogUrl.Text);
-
     private void refreshTemplateButton_Click(object sender, RoutedEventArgs e) =>
         _coordinator.RefreshTemplateCatalog(this);
-
-    private void openTemplateFolderButton_Click(object sender, RoutedEventArgs e) =>
-        _coordinator.OpenTemplateCatalogLocation(this);
 
     private void ShellcodeSourceSelect_Click(object sender, RoutedEventArgs e)
     {
@@ -153,6 +232,16 @@ public sealed partial class MainPage : Page, IMainFormView
         RawSourcePanel.Visibility     = source == ShellcodeSource.Raw     ? Visibility.Visible : Visibility.Collapsed;
         UrlSourcePanel.Visibility     = source == ShellcodeSource.Url     ? Visibility.Visible : Visibility.Collapsed;
         GenericSourcePanel.Visibility = source == ShellcodeSource.Generic ? Visibility.Visible : Visibility.Collapsed;
+
+        // Disable Payload Encoding when URL source is selected (wizard handles encoding)
+        SetPayloadEncodingEnabled(source != ShellcodeSource.Url);
+
+        // Re-enable wizard button when switching sources
+        startWizardButton.IsEnabled = true;
+        wizardStatusText.Text = string.Empty;
+
+        // Reset compile status
+        compileStatusPanel.Visibility = Visibility.Collapsed;
 
         if (source == ShellcodeSource.None)
         {
@@ -188,7 +277,7 @@ public sealed partial class MainPage : Page, IMainFormView
     {
         if (s != ShellcodeSource.File)    shellcodeFile.Text = string.Empty;
         if (s != ShellcodeSource.Raw)     shellcodeRAW.Text  = string.Empty;
-        if (s != ShellcodeSource.Url)     shellcodeURL.Text  = string.Empty;
+        if (s != ShellcodeSource.Url)   { shellcodeURL.Text  = string.Empty; shellcodeURLFile.Text = string.Empty; }
         if (s != ShellcodeSource.Generic) genericShellcodeComboBox.SelectedIndex = -1;
     }
 

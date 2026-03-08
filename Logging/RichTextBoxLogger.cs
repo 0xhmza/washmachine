@@ -10,6 +10,9 @@ public sealed class RichEditBoxLogger : IAppLogger
     private readonly List<(string message, Color color)> _pending = [];
     private bool _ready;
 
+    /// <summary>When false, <see cref="Debug"/> messages are silently dropped.</summary>
+    public bool VerboseEnabled { get; set; }
+
     public RichEditBoxLogger(RichEditBox target)
     {
         _target = target ?? throw new ArgumentNullException(nameof(target));
@@ -18,7 +21,6 @@ public sealed class RichEditBoxLogger : IAppLogger
             _ready = true;
             var toFlush = _pending.ToList();
             _pending.Clear();
-            // Defer one dispatch cycle so the underlying Win32 RichEdit is fully initialized
             _target.DispatcherQueue.TryEnqueue(
                 Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
                 () => { foreach (var (msg, col) in toFlush) Append(msg, col); });
@@ -29,6 +31,12 @@ public sealed class RichEditBoxLogger : IAppLogger
     public void Warn(string message)  => Write(message, Color.FromArgb(255, 218, 165,  32));
     public void Error(string message) => Write(message, Color.FromArgb(255, 255,  69,   0));
     public void Ok(string message)    => Write(message, Color.FromArgb(255,  34, 139,  34));
+
+    public void Debug(string message)
+    {
+        if (!VerboseEnabled) return;
+        Write(message, Color.FromArgb(255, 120, 120, 120));
+    }
 
     private void Write(string message, Color color)
     {

@@ -41,7 +41,7 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
         var missing = GetMissingRequirements().ToList();
         if (missing.Count == 0)
         {
-            _logger.Ok("All external requirements present.");
+            _logger.Debug("All external requirements present.");
             return;
         }
 

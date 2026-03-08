@@ -11,6 +11,7 @@ public interface IAppPaths
     string Bin2ShellAlgos { get; }
     string EnsureTempShellcodeDirectory();
     string EnsureTempSourceDirectory();
+    string CreateCompilationSessionDirectory();
     IReadOnlyList<string> Validate();
 }
 
@@ -45,6 +46,14 @@ public sealed class AppPaths : IAppPaths
 
     public string EnsureTempShellcodeDirectory() => _tempShellcodeDir.Value;
     public string EnsureTempSourceDirectory() => _tempSourceDir.Value;
+
+    public string CreateCompilationSessionDirectory()
+    {
+        string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture);
+        string sessionDir = Path.Combine(ExecutableDirectory, "logging", $"session_{timestamp}_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(sessionDir);
+        return sessionDir;
+    }
 
     public IReadOnlyList<string> Validate()
     {

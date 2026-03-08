@@ -118,16 +118,18 @@ public sealed class CodeSnippetSection
 
 public sealed class CodeSnippetItem
 {
-    public CodeSnippetItem(string id, string display, string snippet)
+    public CodeSnippetItem(string id, string display, string snippet, bool isDefault = false)
     {
         Id = id ?? string.Empty;
         Display = string.IsNullOrWhiteSpace(display) ? Id : display;
         Snippet = snippet ?? string.Empty;
+        IsDefault = isDefault;
     }
 
     public string Id { get; }
     public string Display { get; }
     public string Snippet { get; }
+    public bool IsDefault { get; }
 }
 
 public sealed class CodeSnippetInput
@@ -141,7 +143,8 @@ public sealed class CodeSnippetInput
         int? width,
         string? placeholder,
         string? infoAction,
-        string? infoButtonLabel)
+        string? infoButtonLabel,
+        string? defaultValue = null)
     {
         Id = id ?? string.Empty;
         Label = label ?? string.Empty;
@@ -152,6 +155,7 @@ public sealed class CodeSnippetInput
         Placeholder = placeholder ?? string.Empty;
         InfoAction = infoAction ?? string.Empty;
         InfoButtonLabel = infoButtonLabel ?? string.Empty;
+        DefaultValue = defaultValue ?? string.Empty;
     }
 
     public string Id { get; }
@@ -163,6 +167,7 @@ public sealed class CodeSnippetInput
     public string Placeholder { get; }
     public string InfoAction { get; }
     public string InfoButtonLabel { get; }
+    public string DefaultValue { get; }
 }
 
 public enum SnippetInputType

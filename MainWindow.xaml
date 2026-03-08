@@ -16,6 +16,8 @@
                     IsBackButtonVisible="Collapsed"
                     OpenPaneLength="240"
                     CompactPaneLength="56"
+                    IsSettingsVisible="True"
+                    IsDoubleTapEnabled="False"
                     SelectionChanged="NavView_SelectionChanged">
 
         <NavigationView.PaneHeader>

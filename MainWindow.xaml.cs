@@ -17,6 +17,23 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         Title = "Washmachine - Loader Builder";
 
+        // Prevent the window from shrinking below a usable size (fixes double-click
+        // on the NavigationView toggle that would collapse the window).
+        var presenter = AppWindow.Presenter as OverlappedPresenter;
+        if (presenter != null)
+        {
+            presenter.IsMinimizable = true;
+            presenter.IsMaximizable = true;
+            presenter.IsResizable = true;
+        }
+        AppWindow.Changed += (s, e) =>
+        {
+            if (e.DidSizeChange && s.Size.Width < 700)
+            {
+                s.Resize(new SizeInt32(700, s.Size.Height));
+            }
+        };
+
         AppWindow.Resize(new SizeInt32(980, 820));
         var display = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
         var work = display.WorkArea;
@@ -30,6 +47,13 @@ public sealed partial class MainWindow : Window
 
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
+        if (args.IsSettingsSelected)
+        {
+            if (ContentFrame.CurrentSourcePageType != typeof(SettingsPage))
+                ContentFrame.Navigate(typeof(SettingsPage));
+            return;
+        }
+
         if (args.SelectedItem is not NavigationViewItem item || item.Tag is not string tag)
             return;
 

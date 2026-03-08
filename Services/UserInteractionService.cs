@@ -293,27 +293,58 @@ public sealed class UserInteractionService : IUserInteractionService
         return window;
     }
 
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool EnableWindow(nint hWnd, bool bEnable);
+
     private static Window CreateInfoWindow(string title, string headerText, string bodyText, string exampleText, nint ownerHwnd)
     {
-        var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        const int width = 640;
+        const int height = 440;
 
-        var contentPanel = new StackPanel { Margin = new Thickness(16, 12, 16, 0) };
+        var root = new Grid();
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });    // title bar
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // content
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });    // buttons
+
+        // Custom title bar (matching wizard style)
+        var titleBar = new Grid { Height = 48 };
+        titleBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        titleBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var titleIcon = new FontIcon
+        {
+            Glyph = "\uE946",
+            FontSize = 16,
+            Margin = new Thickness(16, 0, 8, 0),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        var titleText = new TextBlock
+        {
+            Text = title,
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 14
+        };
+        Grid.SetColumn(titleIcon, 0);
+        Grid.SetColumn(titleText, 1);
+        titleBar.Children.Add(titleIcon);
+        titleBar.Children.Add(titleText);
+        Grid.SetRow(titleBar, 0);
+        root.Children.Add(titleBar);
+
+        // Content
+        var contentPanel = new StackPanel { Margin = new Thickness(24, 8, 24, 0), Spacing = 12 };
 
         contentPanel.Children.Add(new TextBlock
         {
             Text = headerText,
-            FontSize = 14,
-            FontWeight = new Windows.UI.Text.FontWeight(600),
-            Margin = new Thickness(0, 0, 0, 6)
+            FontSize = 18,
+            FontWeight = new Windows.UI.Text.FontWeight(600)
         });
 
         contentPanel.Children.Add(new TextBlock
         {
             Text = bodyText,
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 12)
+            Foreground = new SolidColorBrush(Microsoft.UI.Colors.Gray)
         });
 
         contentPanel.Children.Add(new TextBox
@@ -321,7 +352,6 @@ public sealed class UserInteractionService : IUserInteractionService
             Text = exampleText,
             IsReadOnly = true,
             AcceptsReturn = true,
-            //TextWrapping = TextWrapping.NoWrap,
             FontFamily = new FontFamily("Consolas"),
             MinHeight = 100
         });
@@ -329,28 +359,44 @@ public sealed class UserInteractionService : IUserInteractionService
         var sv = new ScrollViewer
         {
             Content = contentPanel,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
         };
-        Grid.SetRow(sv, 0);
+        Grid.SetRow(sv, 1);
+        root.Children.Add(sv);
 
+        // Bottom button bar
         var buttonPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(16, 12, 16, 12)
+            Margin = new Thickness(24, 12, 24, 16),
+            Spacing = 8
         };
-        Grid.SetRow(buttonPanel, 1);
+        Grid.SetRow(buttonPanel, 2);
 
-        var window = new Window { Title = title, Content = root };
-        window.AppWindow.Resize(new SizeInt32(640, 440));
+        var window = new Window
+        {
+            Title = title,
+            Content = root,
+            SystemBackdrop = new DesktopAcrylicBackdrop()
+        };
+        window.ExtendsContentIntoTitleBar = true;
+        window.SetTitleBar(titleBar);
 
+        window.AppWindow.Resize(new SizeInt32(width, height));
         var display = DisplayArea.GetFromWindowId(window.AppWindow.Id, DisplayAreaFallback.Primary);
         var work = display.WorkArea;
         window.AppWindow.Move(new PointInt32(
-            work.X + (work.Width - 640) / 2,
-            work.Y + (work.Height - 440) / 2));
+            work.X + (work.Width - width) / 2,
+            work.Y + (work.Height - height) / 2));
 
-        root.Children.Add(sv);
+        // Make modal
+        if (ownerHwnd != 0)
+        {
+            EnableWindow(ownerHwnd, false);
+            window.Closed += (_, _) => EnableWindow(ownerHwnd, true);
+        }
 
         var okBtn = new Button
         {

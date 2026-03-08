@@ -11,7 +11,8 @@ public partial class App : Application
         UnhandledException += (_, e) =>
         {
             e.Handled = true;
-            ShowFatalError(e.Exception?.ToString() ?? e.Message);
+            System.Diagnostics.Debug.WriteLine($"[FATAL] {e.Exception}");
+            ShowFatalError(e.Exception?.Message ?? e.Message);
         };
         InitializeComponent();
     }
@@ -25,7 +26,8 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            ShowFatalError(ex.ToString());
+            System.Diagnostics.Debug.WriteLine($"[FATAL] {ex}");
+            ShowFatalError(ex.Message);
         }
     }
 
@@ -34,14 +36,34 @@ public partial class App : Application
         try
         {
             var errWindow = new Microsoft.UI.Xaml.Window();
-            var text = new Microsoft.UI.Xaml.Controls.TextBlock
+            var panel = new Microsoft.UI.Xaml.Controls.StackPanel
             {
-                Text = $"Startup error:\n\n{message}",
-                TextWrapping = Microsoft.UI.Xaml.TextWrapping.Wrap,
-                Margin = new Microsoft.UI.Xaml.Thickness(16)
+                Margin = new Thickness(20),
+                Spacing = 12
             };
-            errWindow.Content = text;
-            errWindow.Title = "Washmachine – Startup Error";
+            panel.Children.Add(new Microsoft.UI.Xaml.Controls.TextBlock
+            {
+                Text = "Something went wrong",
+                FontSize = 20,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+            });
+            panel.Children.Add(new Microsoft.UI.Xaml.Controls.TextBlock
+            {
+                Text = message,
+                TextWrapping = TextWrapping.Wrap,
+                IsTextSelectionEnabled = true,
+                Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                    Microsoft.UI.Colors.OrangeRed)
+            });
+            panel.Children.Add(new Microsoft.UI.Xaml.Controls.TextBlock
+            {
+                Text = "Please report this issue on GitHub.",
+                Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                    Microsoft.UI.Colors.Gray),
+                FontSize = 12
+            });
+            errWindow.Content = panel;
+            errWindow.Title = "Washmachine – Error";
             errWindow.Activate();
         }
         catch { /* last resort */ }
