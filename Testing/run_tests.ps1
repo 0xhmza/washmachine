@@ -52,7 +52,7 @@ if (-not (Test-Path $exePath)) {
 if (-not $ShellcodeFile) {
     $candidates = @(
         (Join-Path $outDir "messagebox.bin"),
-        "C:\Users\hamza\Desktop\Offensive\Evasion\Tools\Supermega\data\binary\shellcodes\messagebox.bin"
+        (Join-Path $repoRoot "messagebox.bin")
     )
     foreach ($c in $candidates) {
         if (Test-Path $c) { $ShellcodeFile = $c; break }

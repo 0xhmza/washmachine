@@ -60,7 +60,7 @@ public static class TestHarness
 
         if (string.IsNullOrEmpty(shellcodeFile) || !File.Exists(shellcodeFile))
         {
-            Console.Error.WriteLine("Usage: --shellcode <path-to-.bin> [--url <payload-url>] [--phase 1|2|all]");
+            Console.Error.WriteLine("Usage: --shellcode <path-to-.bin> [--url <payload-url>] [--phase 1|2|all] [--stop-on-fail]");
             return 1;
         }
 
@@ -141,13 +141,6 @@ public static class TestHarness
 
             foreach (var template in templates)
             {
-                // Skip templates that need Win32Helper.h unless the header is available
-                if (TemplateNeedsExternalHeaders(template, paths))
-                {
-                    logger.Warn($"Skipping template '{template.Id}': requires Win32Helper.h (not found in temp dir)");
-                    continue;
-                }
-
                 // For each template, enumerate its snippet placeholders
                 var snippetPlaceholders = template.Placeholders
                     .Where(p => p.Kind == TemplatePlaceholderKind.Snippet)
@@ -435,10 +428,11 @@ public static class TestHarness
 
     private static async Task<TestResult> RunTestAsync(
         int id, string phase, string description,
-        UiData data, CompilerService compiler, IAppPaths paths, IAppLogger logger)
+        UiData data, CompilerService compiler, IAppPaths paths, IAppLogger logger,
+        bool fullClean = true)
     {
-        // Clean up temp cpp files from previous test (keep Compiled BInaries dir)
-        CleanTempCpp(paths);
+        // Clean up temp cpp files from previous test
+        CleanTempCpp(paths, fullClean);
 
         var sw = Stopwatch.StartNew();
         var result = new TestResult { Id = id, Phase = phase, Description = description };
@@ -562,43 +556,18 @@ public static class TestHarness
         => s.Length <= max ? s : s[..max] + "...";
 
     /// <summary>
-    /// Returns true if the template content includes headers that are not bundled
-    /// (e.g. Win32Helper.h from VX-API). We check if the file exists in the temp dir.
+    /// Removes generated wash_*.cpp and .obj files from the temp directory between tests.
     /// </summary>
-    private static bool TemplateNeedsExternalHeaders(CodeTemplateDefinition template, IAppPaths paths)
-    {
-        if (string.IsNullOrWhiteSpace(template.Content))
-            return false;
-
-        // Check for uncommented #include "Win32Helper.h" (skip // commented lines)
-        foreach (var line in template.Content.Split('\n'))
-        {
-            var trimmed = line.TrimStart();
-            if (trimmed.StartsWith("//", StringComparison.Ordinal))
-                continue;
-            if (trimmed.Contains("#include \"Win32Helper.h\"", StringComparison.Ordinal))
-            {
-                var tempDir = Path.Combine(paths.ExecutableDirectory, "temp", "cpp");
-                if (!File.Exists(Path.Combine(tempDir, "Win32Helper.h")))
-                    return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Removes .cpp files from the temp directory between tests so each test
-    /// compiles only its own source. Preserves the Compiled BInaries subfolder.
-    /// </summary>
-    private static void CleanTempCpp(IAppPaths paths)
+    private static void CleanTempCpp(IAppPaths paths, bool fullClean = true)
     {
         var tempDir = Path.Combine(paths.ExecutableDirectory, "temp", "cpp");
         if (!Directory.Exists(tempDir)) return;
+
         foreach (var f in Directory.GetFiles(tempDir, "*.cpp"))
         {
             try { File.Delete(f); } catch { }
         }
+
         foreach (var f in Directory.GetFiles(tempDir, "*.obj"))
         {
             try { File.Delete(f); } catch { }

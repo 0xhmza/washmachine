@@ -73,7 +73,8 @@ public static class CppFileConverter
         // Build to a temporary exe name first, then hash and rename after compilation succeeds.
         var tempExe = Path.Combine(outputDir, $"build-{Guid.NewGuid():N}.exe");
         var extraLibs = DetectRequiredLibraries(sources);
-        var args = BuildCompilerArgs(family, sources, tempExe, extraLibs);
+        var staticLibs = Directory.GetFiles(directory, "*.lib", SearchOption.TopDirectoryOnly);
+        var args = BuildCompilerArgs(family, sources, tempExe, extraLibs, staticLibs);
         var vcVarsScript = family == CompilerFamily.MSVC
             ? FindVcVarsScript(compilerDirectory)
             : null;
@@ -232,22 +233,48 @@ public static class CppFileConverter
         return (null, default);
     }
 
-    private static string BuildCompilerArgs(CompilerFamily family, string[] sources, string outputExe, IReadOnlyList<string> extraLibs)
+    private static string BuildCompilerArgs(CompilerFamily family, string[] sources, string outputExe, IReadOnlyList<string> extraLibs, string[] staticLibs)
     {
         static string Q(string s) => $"\"{s}\"";
-        var src = string.Join(" ", sources.Select(Q));
+
+        // When the source list is large, write a response file to avoid exceeding
+        // the OS command-line length limit (~8192 chars on Windows).
+        string src;
+        string? responseFile = null;
+        string rawSrc = string.Join(" ", sources.Select(Q));
+        if (rawSrc.Length > 4000)
+        {
+            responseFile = Path.Combine(Path.GetDirectoryName(outputExe) ?? Path.GetTempPath(),
+                $"sources_{Guid.NewGuid():N}.rsp");
+            File.WriteAllText(responseFile, string.Join(Environment.NewLine, sources.Select(Q)));
+            src = $"@\"{responseFile}\"";
+        }
+        else
+        {
+            src = rawSrc;
+        }
+
+        // Append static libraries (.lib files found in the source directory)
+        var libArgs = staticLibs.Length > 0
+            ? " " + string.Join(" ", staticLibs.Select(Q))
+            : string.Empty;
 
         if (family == CompilerFamily.MSVC)
         {
             // MSVC: extra libs use #pragma comment(lib, ...) in the source; no args needed.
             // /std:c++17 required for std::wstring::data() non-const overload,
             // std::string_view, and [[maybe_unused]] used by bin2shell web helpers.
-            return $"/nologo /O1 /Gy /DNDEBUG /EHsc /std:c++17 /Fe:{Q(outputExe)} {src} /link /OPT:REF /OPT:ICF /INCREMENTAL:NO";
+            // Standard Win32 libraries are listed explicitly to support linking against
+            // pre-built static libs (.lib) where pragma-driven auto-linking doesn't propagate.
+            return $"/nologo /O1 /Gy /DNDEBUG /EHsc /std:c++17 /Fe:{Q(outputExe)} {src}" +
+                   $" /link /OPT:REF /OPT:ICF /INCREMENTAL:NO{libArgs}" +
+                   " kernel32.lib user32.lib gdi32.lib advapi32.lib shell32.lib ole32.lib" +
+                   " comdlg32.lib ntdll.lib";
         }
 
         // GCC/Clang size-focused build: append -l flags for required libraries.
         var libs = extraLibs.Count > 0 ? " " + string.Join(" ", extraLibs) : string.Empty;
-        return $"-Os -s -std=c++17 -ffunction-sections -fdata-sections -Wl,--gc-sections -DNDEBUG -o {Q(outputExe)} {src}{libs}";
+        return $"-Os -s -std=c++17 -ffunction-sections -fdata-sections -Wl,--gc-sections -DNDEBUG -o {Q(outputExe)} {src}{libs}{libArgs}";
     }
 
     /// <summary>

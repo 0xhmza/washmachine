@@ -65,10 +65,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="Assets\vx_api_snippets.yaml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>

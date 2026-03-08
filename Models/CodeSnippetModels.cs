@@ -118,18 +118,37 @@ public sealed class CodeSnippetSection
 
 public sealed class CodeSnippetItem
 {
-    public CodeSnippetItem(string id, string display, string snippet, bool isDefault = false)
+    public CodeSnippetItem(
+        string id,
+        string display,
+        string snippet,
+        bool isDefault = false,
+        string? includes = null,
+        string? implementation = null)
     {
         Id = id ?? string.Empty;
         Display = string.IsNullOrWhiteSpace(display) ? Id : display;
         Snippet = snippet ?? string.Empty;
         IsDefault = isDefault;
+        Includes = includes ?? string.Empty;
+        Implementation = implementation ?? string.Empty;
     }
 
     public string Id { get; }
     public string Display { get; }
     public string Snippet { get; }
     public bool IsDefault { get; }
+
+    /// <summary>
+    /// Additional <c>#include</c> directives this snippet requires beyond the template base.
+    /// </summary>
+    public string Includes { get; }
+
+    /// <summary>
+    /// Full C++ function implementation for this snippet. Placed before <c>main()</c>
+    /// so the call in <see cref="Snippet"/> can reference it.
+    /// </summary>
+    public string Implementation { get; }
 }
 
 public sealed class CodeSnippetInput

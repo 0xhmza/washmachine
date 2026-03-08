@@ -71,6 +71,11 @@ public sealed class RichEditBoxLogger : IAppLogger
             string text = $"[{DateTime.Now:HH:mm:ss}] {message}\r\n";
             range.SetText(TextSetOptions.None, text);
 
+            // Force the new paragraph to Left alignment so the BiDi algorithm
+            // never flips a log line to RTL (e.g. when the message contains
+            // backslash-heavy paths or certain Unicode characters).
+            range.ParagraphFormat.Alignment = ParagraphAlignment.Left;
+
             _target.Document.Selection.SetRange(endPos + text.Length, endPos + text.Length);
         }
         finally

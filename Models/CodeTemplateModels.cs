@@ -51,12 +51,14 @@ public sealed class CodeTemplateDefinition
         string display,
         string description,
         string content,
-        IEnumerable<CodeTemplatePlaceholder> placeholders)
+        IEnumerable<CodeTemplatePlaceholder> placeholders,
+        string? preamble = null)
     {
         Id = id ?? string.Empty;
         Display = string.IsNullOrWhiteSpace(display) ? Id : display;
         Description = description ?? string.Empty;
         Content = content ?? string.Empty;
+        Preamble = preamble ?? string.Empty;
         _placeholders = new ReadOnlyCollection<CodeTemplatePlaceholder>(
             (placeholders ?? Enumerable.Empty<CodeTemplatePlaceholder>()).ToList());
     }
@@ -65,6 +67,14 @@ public sealed class CodeTemplateDefinition
     public string Display { get; }
     public string Description { get; }
     public string Content { get; }
+
+    /// <summary>
+    /// Shared C++ infrastructure (type definitions, helper functions) placed before
+    /// <c>main()</c>. Templates use this to provide a common "ecosystem" so individual
+    /// snippet implementations can reference shared helpers without duplication.
+    /// </summary>
+    public string Preamble { get; }
+
     public IReadOnlyList<CodeTemplatePlaceholder> Placeholders => _placeholders;
 }
 

@@ -6,6 +6,16 @@ public sealed class CppCompilationPlan
     public List<string> GuardrailSnippets { get; } = new();
     public Dictionary<string, List<string>> CustomSnippetBlocks { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Collected <c>#include</c> lines from selected snippets. Deduplicated before rendering.
+    /// </summary>
+    public List<string> SnippetIncludes { get; } = new();
+
+    /// <summary>
+    /// Collected function implementations from selected snippets. Placed before <c>main()</c>.
+    /// </summary>
+    public List<string> SnippetImplementations { get; } = new();
+
     public bool UsesGenericShellcode { get; set; }
     public bool UsesWebPayload { get; set; }
 

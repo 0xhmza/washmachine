@@ -151,7 +151,9 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
                                 item.Id ?? string.Empty,
                                 item.Display ?? item.Id ?? string.Empty,
                                 item.Snippet ?? string.Empty,
-                                item.Default))
+                                item.Default,
+                                item.Includes,
+                                item.Implementation))
                             ?? Enumerable.Empty<CodeSnippetItem>();
 
                 var inputs = section.Inputs?.Select(input => new CodeSnippetInput(
@@ -212,7 +214,8 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
                 templateDto.Display ?? templateDto.Id ?? string.Empty,
                 templateDto.Description ?? string.Empty,
                 templateDto.Content ?? string.Empty,
-                placeholders);
+                placeholders,
+                templateDto.Preamble);
         }
     }
 
@@ -291,6 +294,8 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
         public string? Display { get; set; }
         public string? Snippet { get; set; }
         public bool Default { get; set; }
+        public string? Includes { get; set; }
+        public string? Implementation { get; set; }
     }
 
     private sealed class SnippetInputDto
@@ -313,6 +318,7 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
         public string? Display { get; set; }
         public string? Description { get; set; }
         public string? Content { get; set; }
+        public string? Preamble { get; set; }
         public List<TemplatePlaceholderDto>? Placeholders { get; set; }
     }
 

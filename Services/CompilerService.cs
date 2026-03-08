@@ -104,6 +104,9 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     private const string PlaceholderUacBypass = "UAC_BYPASS";
     private const string PlaceholderProcessInjection = "PROCESS_INJECTION";
     private const string PlaceholderShellcodeExecution = "SHELLCODE_EXECUTION";
+    private const string PlaceholderSnippetIncludes = "SNIPPET_INCLUDES";
+    private const string PlaceholderSnippetImplementations = "SNIPPET_IMPLEMENTATIONS";
+    private const string PlaceholderPreamble = "PREAMBLE";
 
     private static readonly string[] CompilerExecutables = { "cl.exe", "g++.exe", "clang++.exe" };
     private static readonly string[] EncoderKeys =
@@ -1031,6 +1034,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             return;
 
         apply(plan, selection);
+        CollectSnippetExtras(plan, selection);
         AddCustomSnippet(plan, placeholderName, selection.Snippet);
         LogSnippetEnabled(section.Template, selection.Id, notes);
     }
@@ -1060,6 +1064,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
                          .Replace("__GUARDRAIL_PARAM__", parameter);
 
         plan.GuardrailSnippets.Add(snippet);
+        CollectSnippetExtras(plan, selection);
         AddCustomSnippet(plan, placeholderName, snippet);
         LogSnippetEnabled(section.Template, selection.Id, notes);
     }
@@ -1081,6 +1086,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
         plan.ProcessInjectionSnippet = snippet;
         plan.ProcessLookupHelper = ProcessLookupHelper;
+        CollectSnippetExtras(plan, selection);
         AddCustomSnippet(plan, placeholderName, snippet);
 
         LogSnippetEnabled(section.Template, selection.Id, notes);
@@ -1102,6 +1108,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         foreach (var item in selections)
         {
             plan.AntiDebuggingSnippets.Add(item.Snippet);
+            CollectSnippetExtras(plan, item);
             AddCustomSnippet(plan, placeholderName, item.Snippet);
             LogSnippetEnabled(section.Template, item.Id, notes);
         }
@@ -1126,6 +1133,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
         foreach (var item in selections)
         {
+            CollectSnippetExtras(plan, item);
             AddCustomSnippet(plan, placeholder.Name, item.Snippet);
             LogSnippetEnabled(section.Template, item.Id, notes);
         }
@@ -1150,11 +1158,27 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             list.Add(normalized);
     }
 
+    /// <summary>
+    /// Collects the optional <c>includes</c> and <c>implementation</c> blocks from a
+    /// selected snippet item into the compilation plan.
+    /// </summary>
+    private static void CollectSnippetExtras(CppCompilationPlan plan, CodeSnippetItem item)
+    {
+        if (plan == null || item == null)
+            return;
+
+        if (!string.IsNullOrWhiteSpace(item.Includes))
+            plan.SnippetIncludes.Add(item.Includes);
+
+        if (!string.IsNullOrWhiteSpace(item.Implementation))
+            plan.SnippetImplementations.Add(item.Implementation);
+    }
+
     private string RenderTemplate(CppCompilationPlan plan, CodeTemplateDefinition template)
     {
         ArgumentNullException.ThrowIfNull(template);
 
-        var values = BuildPlaceholderValues(plan);
+        var values = BuildPlaceholderValues(plan, template);
         var rendered = ApplyTemplateContent(template.Content ?? string.Empty, values);
 
         // Inject web payload preamble (#includes + fetch helper function) at file scope
@@ -1168,7 +1192,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         return rendered;
     }
 
-    private static Dictionary<string, string> BuildPlaceholderValues(CppCompilationPlan plan)
+    private static Dictionary<string, string> BuildPlaceholderValues(CppCompilationPlan plan, CodeTemplateDefinition template)
     {
         // Map template placeholders to generated snippet blocks.
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -1181,6 +1205,26 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             var block = NormalizeBlock(string.Join(Environment.NewLine, entry.Value));
             if (!string.IsNullOrWhiteSpace(block))
                 values[entry.Key] = block;
+        }
+
+        // Template preamble (shared type definitions, helper functions).
+        if (!string.IsNullOrWhiteSpace(template.Preamble))
+            AddPlaceholder(values, PlaceholderPreamble, template.Preamble, overwrite: true);
+
+        // Deduplicate and inject snippet includes.
+        if (plan.SnippetIncludes.Count > 0)
+        {
+            var uniqueLines = DeduplicateIncludeLines(plan.SnippetIncludes);
+            if (!string.IsNullOrWhiteSpace(uniqueLines))
+                AddPlaceholder(values, PlaceholderSnippetIncludes, uniqueLines, overwrite: true);
+        }
+
+        // Collect snippet function implementations.
+        if (plan.SnippetImplementations.Count > 0)
+        {
+            var implBlock = NormalizeBlock(string.Join("\n\n", plan.SnippetImplementations));
+            if (!string.IsNullOrWhiteSpace(implBlock))
+                AddPlaceholder(values, PlaceholderSnippetImplementations, implBlock, overwrite: true);
         }
 
         AddPlaceholder(values, PlaceholderProcessLookupHelper, plan.ProcessLookupHelper);
@@ -1411,6 +1455,34 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             .TrimEnd();
     }
 
+    /// <summary>
+    /// Merges multiple include blocks into a single deduplicated block.
+    /// Each <c>#include</c> or <c>#pragma</c> line appears at most once.
+    /// </summary>
+    private static string DeduplicateIncludeLines(IEnumerable<string> blocks)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>();
+
+        foreach (var block in blocks)
+        {
+            if (string.IsNullOrWhiteSpace(block))
+                continue;
+
+            foreach (var rawLine in block.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
+            {
+                var trimmed = rawLine.Trim();
+                if (string.IsNullOrWhiteSpace(trimmed))
+                    continue;
+
+                if (seen.Add(trimmed))
+                    result.Add(trimmed);
+            }
+        }
+
+        return string.Join("\n", result);
+    }
+
     private IReadOnlyList<CodeSnippetItem> ResolveSnippetSelections(UiData data, CodeSnippetSection section)
     {
         ArgumentNullException.ThrowIfNull(data);
@@ -1598,6 +1670,9 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         foreach (var entry in data.ComboBoxes)
         {
             var key = entry.Key ?? string.Empty;
+            // Skip snippet combo boxes — those are template placeholder selectors, not bin2shell options.
+            if (key.StartsWith("snippetCombo_", StringComparison.OrdinalIgnoreCase))
+                continue;
             if (key.IndexOf("anti", StringComparison.OrdinalIgnoreCase) < 0 &&
                 key.IndexOf("emulation", StringComparison.OrdinalIgnoreCase) < 0)
             {

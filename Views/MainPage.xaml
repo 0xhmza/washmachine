@@ -335,6 +335,7 @@
                                  IsReadOnly="True"
                                  FontFamily="Consolas"
                                  FontSize="13"
+                                 FlowDirection="LeftToRight"
                                  Margin="0,8,0,0" />
                 </Expander>
 
