@@ -7,36 +7,464 @@
       NavigationCacheMode="Required">
 
     <Grid Background="Transparent">
-        <StackPanel Margin="{StaticResource PageMargin}">
-            <!-- Breadcrumb -->
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,8" Spacing="4">
-                <TextBlock Text="Home" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                <TextBlock Text="›" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                <TextBlock Text="Backdooring" />
-            </StackPanel>
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Padding="0,32,0,0">
+            <StackPanel Margin="{StaticResource PageMargin}" Orientation="Vertical">
 
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                <FontIcon Glyph="&#xEA18;" FontSize="22" Margin="0,2,12,0" />
-                <StackPanel>
-                    <TextBlock Text="Backdooring" Style="{StaticResource PageTitleText}" />
-                    <TextBlock Text="Plan and manage persistence modules (coming soon)."
-                               Style="{StaticResource PageSubtitleText}"
-                               Margin="0,4,0,0" />
-                </StackPanel>
-            </StackPanel>
-
-            <Border Style="{StaticResource SectionDivider}" />
-
-            <Border Style="{StaticResource CardBorder}" Width="460" HorizontalAlignment="Left">
-                <Grid Margin="16">
-                    <StackPanel>
-                        <TextBlock Text="This section is under construction." Style="{StaticResource SectionTitleText}" />
-                        <TextBlock Text="Backdooring features will appear here once available."
-                                   Style="{StaticResource SectionSubtitleText}"
-                                   Margin="0,6,0,0" />
+                <!-- Page header -->
+                <StackPanel Margin="0,0,0,16">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <FontIcon Glyph="&#xE80F;" FontSize="11" Margin="0,2,4,0" VerticalAlignment="Center"
+                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock Text="Pipeline" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text=" › " FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="Backdooring" FontSize="12" VerticalAlignment="Center" />
                     </StackPanel>
-                </Grid>
-            </Border>
-        </StackPanel>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <FontIcon Glyph="&#xE72E;" FontSize="22" Margin="0,2,12,0" />
+                        <StackPanel>
+                            <TextBlock Text="PE Backdooring" Style="{StaticResource PageTitleText}" />
+                            <TextBlock Text="Configure target executable for payload injection. Payload comes from the Payload page."
+                                       Style="{StaticResource PageSubtitleText}"
+                                       Margin="0,4,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+
+                <Border Style="{StaticResource SectionDivider}" />
+
+                <!-- Enable/Disable Backdooring -->
+                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,8">
+                    <Grid Margin="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Enable PE Backdooring" FontWeight="SemiBold" />
+                            <TextBlock Text="When enabled, the compiled payload will be injected into the target executable instead of generating a standalone loader."
+                                       Style="{StaticResource SectionSubtitleText}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,4,0,0" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="EnableBackdooringToggle" Grid.Column="1" 
+                                      IsOn="False" Toggled="EnableBackdooringToggle_Toggled" />
+                    </Grid>
+                </Border>
+
+                <!-- Target PE Section -->
+                <Expander x:Name="TargetPeExpander" IsExpanded="True"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <FontIcon Glyph="&#xE8A5;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Target Executable" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Expander.Header>
+                    <StackPanel Margin="0,12,0,4">
+                        <TextBlock Text="Select the PE file to inject the compiled payload into."
+                                   Style="{StaticResource SectionSubtitleText}"
+                                   Margin="0,0,0,12" />
+
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="TargetPePath" PlaceholderText="Path to target .exe or .dll" Margin="0,0,8,0" />
+                            <Button x:Name="BrowseTargetButton" Grid.Column="1" Content="Browse" MinWidth="90"
+                                    Click="BrowseTarget_Click" />
+                        </Grid>
+
+                        <!-- Analysis Progress -->
+                        <StackPanel x:Name="AnalysisProgressPanel" Visibility="Collapsed" Margin="0,8,0,8">
+                            <ProgressBar IsIndeterminate="True" />
+                            <TextBlock Text="Analyzing PE structure..." HorizontalAlignment="Center" Margin="0,8,0,0"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+
+                        <!-- PE Quick Info Card -->
+                        <Border x:Name="PeInfoCard" Style="{StaticResource CardBorder}" Visibility="Collapsed">
+                            <Grid Margin="12">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <FontIcon x:Name="PeTypeIcon" Glyph="&#xE8A5;" FontSize="32" Margin="0,0,16,0"
+                                          VerticalAlignment="Top" Grid.RowSpan="2" />
+
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock x:Name="PeFileName" Text="procexp64.exe" FontWeight="SemiBold" FontSize="14" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0" Spacing="6">
+                                        <Border x:Name="PeArchBadge" Background="{ThemeResource AccentFillColorDefaultBrush}" 
+                                                CornerRadius="4" Padding="6,2">
+                                            <TextBlock x:Name="PeArchText" Text="x64" FontSize="11" Foreground="White" />
+                                        </Border>
+                                        <Border x:Name="PeTypeBadge" Background="{ThemeResource SystemFillColorNeutralBrush}" 
+                                                CornerRadius="4" Padding="6,2">
+                                            <TextBlock x:Name="PeTypeText" Text="EXE" FontSize="11" />
+                                        </Border>
+                                        <Border x:Name="PeAslrBadge" Background="{ThemeResource SystemFillColorSuccessBackgroundBrush}" 
+                                                CornerRadius="4" Padding="6,2" Visibility="Collapsed">
+                                            <TextBlock Text="ASLR" FontSize="11" />
+                                        </Border>
+                                        <Border x:Name="PeDepBadge" Background="{ThemeResource SystemFillColorSuccessBackgroundBrush}" 
+                                                CornerRadius="4" Padding="6,2" Visibility="Collapsed">
+                                            <TextBlock Text="DEP" FontSize="11" />
+                                        </Border>
+                                        <Border x:Name="PeCfgBadge" Background="{ThemeResource SystemFillColorSuccessBackgroundBrush}" 
+                                                CornerRadius="4" Padding="6,2" Visibility="Collapsed">
+                                            <TextBlock Text="CFG" FontSize="11" />
+                                        </Border>
+                                        <Border x:Name="PePackedBadge" Background="{ThemeResource SystemFillColorCautionBackgroundBrush}" 
+                                                CornerRadius="4" Padding="6,2" Visibility="Collapsed">
+                                            <TextBlock x:Name="PePackedText" Text="Packed" FontSize="11" />
+                                        </Border>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <Grid Grid.Row="1" Grid.Column="1" Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="Sections" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock x:Name="PeSectionsCount" Text="6" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="Entry Point" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock x:Name="PeEntryPoint" Text="0x12345" FontWeight="SemiBold" FontFamily="Consolas" FontSize="12" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="File Size" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock x:Name="PeFileSize" Text="1.2 MB" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="3">
+                                        <TextBlock Text="Entropy" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock x:Name="PeEntropy" Text="5.8" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="4">
+                                        <TextBlock Text="Code Caves" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock x:Name="PeCodeCaves" Text="3 found" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </Expander>
+
+                <Border Style="{StaticResource SectionDivider}" />
+
+                <!-- Deep Analysis Section -->
+                <Expander x:Name="DeepAnalysisExpander" IsExpanded="False"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <FontIcon Glyph="&#xE9D9;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Deep PE Analysis" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Expander.Header>
+                    <StackPanel Margin="0,12,0,4" Spacing="12">
+                        
+                        <!-- ASCII Visualization -->
+                        <Border Style="{StaticResource CardBorder}">
+                            <StackPanel Margin="12">
+                                <TextBlock Text="PE Structure Visualization" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" MaxHeight="400">
+                                    <TextBlock x:Name="AsciiVisualization" 
+                                               FontFamily="Consolas" 
+                                               FontSize="11"
+                                               IsTextSelectionEnabled="True" />
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Sections Analysis -->
+                        <Border Style="{StaticResource CardBorder}">
+                            <StackPanel Margin="12">
+                                <TextBlock Text="Section Analysis" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <ScrollViewer MaxHeight="300" HorizontalScrollBarVisibility="Auto">
+                                    <ListView x:Name="SectionsListView" SelectionMode="None">
+                                        <ListView.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Padding="8,6" MinWidth="700">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="80" />
+                                                        <ColumnDefinition Width="90" />
+                                                        <ColumnDefinition Width="80" />
+                                                        <ColumnDefinition Width="50" />
+                                                        <ColumnDefinition Width="60" />
+                                                        <ColumnDefinition Width="180" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontFamily="Consolas" />
+                                                    <TextBlock Text="{Binding VirtualAddressHex}" Grid.Column="1" FontFamily="Consolas" 
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <TextBlock Text="{Binding SizeFormatted}" Grid.Column="2" />
+                                                    <TextBlock Text="{Binding PermissionsString}" Grid.Column="3" FontFamily="Consolas"
+                                                               Foreground="{ThemeResource AccentFillColorDefaultBrush}" />
+                                                    <TextBlock Text="{Binding EntropyFormatted}" Grid.Column="4" />
+                                                    <StackPanel Grid.Column="5" Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding AsciiBar}" FontFamily="Consolas" FontSize="10" 
+                                                                   VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding CaveInfo}" Grid.Column="6"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListView.ItemTemplate>
+                                    </ListView>
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Code Caves -->
+                        <Border Style="{StaticResource CardBorder}">
+                            <StackPanel Margin="12">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="Code Caves" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="CodeCavesSummary" Margin="8,0,0,0"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                </StackPanel>
+                                <ScrollViewer MaxHeight="200" HorizontalScrollBarVisibility="Auto">
+                                    <ListView x:Name="CodeCavesListView" SelectionMode="None">
+                                        <ListView.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Padding="8,4" MinWidth="600">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="30" />
+                                                        <ColumnDefinition Width="80" />
+                                                        <ColumnDefinition Width="100" />
+                                                        <ColumnDefinition Width="80" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <FontIcon Glyph="{Binding StatusIcon}" FontSize="12" 
+                                                              Foreground="{Binding StatusColor}" />
+                                                    <TextBlock Text="{Binding SectionName}" Grid.Column="1" FontFamily="Consolas" />
+                                                    <TextBlock Text="{Binding AddressHex}" Grid.Column="2" FontFamily="Consolas"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <TextBlock Text="{Binding SizeFormatted}" Grid.Column="3" FontWeight="SemiBold" />
+                                                    <TextBlock Text="{Binding Assessment}" Grid.Column="4"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListView.ItemTemplate>
+                                    </ListView>
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Imports -->
+                        <Border Style="{StaticResource CardBorder}">
+                            <StackPanel Margin="12">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="Imports" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="ImportsSummary" Margin="8,0,0,0"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                </StackPanel>
+                                <ScrollViewer MaxHeight="200">
+                                    <ItemsControl x:Name="ImportsItemsControl">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                                          Padding="4">
+                                                    <Expander.Header>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="{Binding DllName}" FontFamily="Consolas" FontWeight="SemiBold" />
+                                                            <TextBlock Text="{Binding FunctionCount}" Margin="8,0,0,0"
+                                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                        </StackPanel>
+                                                    </Expander.Header>
+                                                    <ItemsControl ItemsSource="{Binding Functions}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="11"
+                                                                           Margin="16,2,0,2" />
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </Expander>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Security Analysis -->
+                        <Border Style="{StaticResource CardBorder}">
+                            <StackPanel Margin="12">
+                                <TextBlock Text="Security Analysis" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="Security Score" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,4,0,8">
+                                            <TextBlock x:Name="SecurityScore" Text="65" FontSize="24" FontWeight="Bold" />
+                                            <TextBlock Text="/100" FontSize="14" VerticalAlignment="Bottom" Margin="0,0,0,3"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </StackPanel>
+                                        <ProgressBar x:Name="SecurityProgressBar" Value="65" Maximum="100" Height="8" />
+                                        <TextBlock x:Name="SecurityAssessment" Text="Moderate security posture" 
+                                                   FontSize="11" Margin="0,4,0,0"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="16,0,0,0">
+                                        <TextBlock Text="Protections" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" 
+                                                   Margin="0,0,0,4" />
+                                        <ItemsControl x:Name="ProtectionsItemsControl">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,2,0,2">
+                                                        <FontIcon Glyph="{Binding Icon}" FontSize="10" Margin="0,0,6,0"
+                                                                  Foreground="{Binding Color}" />
+                                                        <TextBlock Text="{Binding Name}" FontSize="11" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </Expander>
+
+                <Border Style="{StaticResource SectionDivider}" />
+
+                <!-- Injection Settings -->
+                <Expander x:Name="InjectionSettingsExpander" IsExpanded="True"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <FontIcon Glyph="&#xE90F;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Injection Settings" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Expander.Header>
+                    <StackPanel Margin="0,12,0,4">
+                        
+                        <!-- Injection Feasibility Warning -->
+                        <Border x:Name="InjectionWarningPanel" Visibility="Collapsed"
+                                Background="{ThemeResource SystemFillColorCautionBackgroundBrush}"
+                                CornerRadius="4" Padding="12" Margin="0,0,0,12">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <FontIcon Glyph="&#xE7BA;" FontSize="16" Margin="0,0,8,0" />
+                                    <TextBlock x:Name="InjectionWarningTitle" Text="Injection Warning" FontWeight="SemiBold" />
+                                </StackPanel>
+                                <TextBlock x:Name="InjectionWarningText" TextWrapping="Wrap" Margin="24,4,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Injection Blocked -->
+                        <Border x:Name="InjectionBlockedPanel" Visibility="Collapsed"
+                                Background="{ThemeResource SystemFillColorCriticalBackgroundBrush}"
+                                CornerRadius="4" Padding="12" Margin="0,0,0,12">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <FontIcon Glyph="&#xEA39;" FontSize="16" Margin="0,0,8,0" />
+                                    <TextBlock Text="Injection Not Possible" FontWeight="SemiBold" />
+                                </StackPanel>
+                                <TextBlock x:Name="InjectionBlockedText" TextWrapping="Wrap" Margin="24,4,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Margin="0,0,8,0">
+                                <TextBlock Text="Injection Method:" Margin="0,0,0,6" />
+                                <ComboBox x:Name="InjectionMethodCombo" HorizontalAlignment="Stretch" SelectedIndex="1"
+                                          SelectionChanged="InjectionMethodCombo_SelectionChanged">
+                                    <ComboBoxItem x:Name="CodeCaveMethodItem" Content="Code Cave (use existing space)" />
+                                    <ComboBoxItem x:Name="NewSectionMethodItem" Content="New Section (add .extra section)" />
+                                    <ComboBoxItem x:Name="SectionExtMethodItem" Content="Section Extension (extend .text)" />
+                                </ComboBox>
+                                <TextBlock x:Name="MethodFeasibilityText" FontSize="11" Margin="0,4,0,0"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                                <TextBlock Text="Carrier Invocation:" Margin="0,0,0,6" />
+                                <ComboBox x:Name="CarrierInvokeCombo" HorizontalAlignment="Stretch" SelectedIndex="0">
+                                    <ComboBoxItem Content="Entry Point Hijack" />
+                                    <ComboBoxItem Content="Function Backdoor (JMP patch)" />
+                                    <ComboBoxItem Content="TLS Callback" />
+                                </ComboBox>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Recommended Method -->
+                        <Border x:Name="RecommendedMethodPanel" Visibility="Collapsed"
+                                Background="{ThemeResource SystemFillColorSuccessBackgroundBrush}"
+                                CornerRadius="4" Padding="12" Margin="0,0,0,12">
+                            <StackPanel Orientation="Horizontal">
+                                <FontIcon Glyph="&#xE73E;" FontSize="16" Margin="0,0,8,0" />
+                                <TextBlock x:Name="RecommendedMethodText" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Options -->
+                        <Border Style="{StaticResource CardBorder}" Padding="12" Margin="0,0,0,8">
+                            <StackPanel>
+                                <TextBlock Text="Options" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <CheckBox x:Name="PreserveEntryCheck" Content="Preserve original entry point (return after payload)" IsChecked="True" />
+                                <CheckBox x:Name="PatchIatCheck" Content="Auto-patch IAT if required imports missing" IsChecked="True" Margin="0,4,0,0" />
+                                <CheckBox x:Name="RemoveSignatureCheck" Content="Remove PE signature (Authenticode)" IsChecked="True" Margin="0,4,0,0" />
+                                <CheckBox x:Name="PatchSubsystemCheck" Content="Patch subsystem to GUI (hide console window)" IsChecked="True" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Expander>
+
+                <Border Style="{StaticResource SectionDivider}" />
+
+                <!-- Next Step card -->
+                <Border Style="{StaticResource CardBorder}" Margin="0">
+                    <StackPanel Margin="12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="&#xE72A;" FontSize="20" Margin="0,2,12,0" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="Next: Packing" Style="{StaticResource SectionTitleText}" />
+                                <TextBlock Text="Continue to configure packing options, or skip to Compile."
+                                           Style="{StaticResource SectionSubtitleText}"
+                                           Margin="0,4,0,0" />
+                            </StackPanel>
+                            <Button x:Name="goToPackingButton"
+                                    Grid.Column="2"
+                                    Content="Configure Packing →"
+                                    Width="160"
+                                    Margin="8,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource AccentButtonStyle}"
+                                    Click="GoToPackingPage_Click" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
     </Grid>
 </Page>

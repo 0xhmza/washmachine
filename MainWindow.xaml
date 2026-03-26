@@ -34,9 +34,14 @@
 
 
         <NavigationView.MenuItems>
-            <NavigationViewItem Content="Main" Tag="MainPage">
+            <NavigationViewItem Content="Payload" Tag="MainPage">
                 <NavigationViewItem.Icon>
-                    <SymbolIcon Symbol="Home" />
+                    <FontIcon Glyph="&#xE943;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="Backdooring" Tag="BackdooringPage">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE72E;" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem Content="Packing" Tag="PackingPage">
@@ -44,9 +49,9 @@
                     <FontIcon Glyph="&#xE7B8;" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
-            <NavigationViewItem Content="Backdooring" Tag="BackdooringPage">
+            <NavigationViewItem Content="Compile" Tag="CompilePage">
                 <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE72E;" />
+                    <FontIcon Glyph="&#xE90F;" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
         </NavigationView.MenuItems>

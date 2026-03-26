@@ -19,15 +19,15 @@
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                         <FontIcon Glyph="&#xE80F;" FontSize="11" Margin="0,2,4,0" VerticalAlignment="Center"
                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock Text="Home" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="Pipeline" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
                         <TextBlock Text=" › " FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
-                        <TextBlock Text="Main" FontSize="12" VerticalAlignment="Center" />
+                        <TextBlock Text="Payload" FontSize="12" VerticalAlignment="Center" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <FontIcon Glyph="&#xE80F;" FontSize="22" Margin="0,2,12,0" />
+                        <FontIcon Glyph="&#xE943;" FontSize="22" Margin="0,2,12,0" />
                         <StackPanel>
-                            <TextBlock Text="Loader Builder" Style="{StaticResource PageTitleText}" />
-                            <TextBlock Text="Configure the build settings and compile your loader."
+                            <TextBlock Text="Payload Configuration" Style="{StaticResource PageTitleText}" />
+                            <TextBlock Text="Configure shellcode source, encoding, and loader template."
                                        Style="{StaticResource PageSubtitleText}"
                                        Margin="0,4,0,0" />
                         </StackPanel>
@@ -283,7 +283,7 @@
 
                 <Border Style="{StaticResource SectionDivider}" />
 
-                <!-- Compile card -->
+                <!-- Next Step card -->
                 <Border Style="{StaticResource CardBorder}" Margin="0">
                     <StackPanel Margin="12">
                         <Grid>
@@ -292,46 +292,37 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <FontIcon Glyph="&#xE90F;" FontSize="20" Margin="0,2,12,0" VerticalAlignment="Center" />
+                            <FontIcon Glyph="&#xE72A;" FontSize="20" Margin="0,2,12,0" VerticalAlignment="Center" />
                             <StackPanel Grid.Column="1">
-                                <TextBlock Text="Compile" Style="{StaticResource SectionTitleText}" />
-                                <TextBlock Text="Build the loader with the selected settings."
+                                <TextBlock Text="Next: Backdooring" Style="{StaticResource SectionTitleText}" />
+                                <TextBlock Text="Continue to configure PE injection target, or skip to Compile."
                                            Style="{StaticResource SectionSubtitleText}"
                                            Margin="0,4,0,0" />
                             </StackPanel>
-                            <Button x:Name="submitButton"
+                            <Button x:Name="goToBackdooringButton"
                                     Grid.Column="2"
-                                    Content="Compile"
-                                    Width="140"
-                                    Margin="16,0,0,0"
+                                    Content="Configure Backdooring →"
+                                    Width="180"
+                                    Margin="8,0,0,0"
                                     VerticalAlignment="Center"
                                     Style="{StaticResource AccentButtonStyle}"
-                                    Click="submitButton_Click" />
+                                    Click="GoToBackdooringPage_Click" />
                         </Grid>
-                        <StackPanel x:Name="compileStatusPanel" Orientation="Horizontal" Margin="0,8,0,0" Visibility="Collapsed">
-                            <FontIcon x:Name="compileStatusIcon" Glyph="&#xE73E;" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center" />
-                            <TextBlock x:Name="compileStatusText" VerticalAlignment="Center" FontSize="12"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                            <HyperlinkButton x:Name="compileOutputLink" Padding="4,0" VerticalAlignment="Center"
-                                             FontSize="12" Visibility="Collapsed" Click="CompileOutputLink_Click">
-                                <TextBlock x:Name="compileOutputLinkText" TextDecorations="Underline" FontSize="12" />
-                            </HyperlinkButton>
-                        </StackPanel>
                     </StackPanel>
                 </Border>
 
                 <Border Style="{StaticResource SectionDivider}" />
 
-                <!-- Logs section -->
-                <Expander IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
+                <!-- Status section (read-only) -->
+                <Expander IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
                     <Expander.Header>
                         <StackPanel Orientation="Horizontal">
                             <FontIcon Glyph="&#xF0E3;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Logs" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
+                            <TextBlock Text="Status Log" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Expander.Header>
                     <RichEditBox x:Name="debugBox"
-                                 Height="170"
+                                 Height="120"
                                  IsReadOnly="True"
                                  FontFamily="Consolas"
                                  FontSize="13"

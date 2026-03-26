@@ -79,6 +79,12 @@ public sealed class CompilerToolLocator : ICompilerToolLocator
             }
         }
 
+        // Check bundled Tools directory (MinGW installed via download)
+        foreach (var bundledPath in FindFromBundledTools(errors))
+        {
+            paths.Add(bundledPath);
+        }
+
         foreach (var envPath in FindFromHintVariables(errors))
         {
             paths.Add(envPath);
@@ -180,6 +186,40 @@ public sealed class CompilerToolLocator : ICompilerToolLocator
 
             foreach (var exe in EnumerateCompilerExecutables(value))
                 yield return exe;
+        }
+    }
+
+    private IEnumerable<string> FindFromBundledTools(ICollection<string> errors)
+    {
+        _ = errors;
+        var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+
+        // Check Tools/mingw64/bin for g++
+        var mingwBinDir = Path.Combine(baseDir, "Tools", "mingw64", "bin");
+        if (Directory.Exists(mingwBinDir))
+        {
+            _logger.Info($"Checking bundled MinGW at: {mingwBinDir}");
+            foreach (var name in ExecutableNames)
+            {
+                var candidate = Path.Combine(mingwBinDir, name);
+                if (File.Exists(candidate))
+                {
+                    _logger.Info($"Found bundled compiler: {candidate}");
+                    yield return candidate;
+                }
+            }
+        }
+
+        // Also check for LLVM/Clang in Tools
+        var llvmBinDir = Path.Combine(baseDir, "Tools", "LLVM", "bin");
+        if (Directory.Exists(llvmBinDir))
+        {
+            foreach (var name in ExecutableNames)
+            {
+                var candidate = Path.Combine(llvmBinDir, name);
+                if (File.Exists(candidate))
+                    yield return candidate;
+            }
         }
     }
 

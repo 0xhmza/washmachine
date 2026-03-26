@@ -255,7 +255,7 @@ public sealed class WebPayloadWizardWindow
         panel.Children.Add(_payloadTextBox);
 
         var copyButton = new Button { Content = "Copy to clipboard", MinWidth = 140 };
-        copyButton.Click += async (_, _) =>
+        copyButton.Click += (_, _) =>
         {
             var dp = new Windows.ApplicationModel.DataTransfer.DataPackage();
             dp.SetText(_payloadTextBox.Text ?? string.Empty);

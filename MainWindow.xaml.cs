@@ -9,6 +9,8 @@ namespace Washmachine;
 
 public sealed partial class MainWindow : Window
 {
+    public Frame GetContentFrame() => ContentFrame;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -60,6 +62,7 @@ public sealed partial class MainWindow : Window
         var pageType = tag switch
         {
             "MainPage" => typeof(MainPage),
+            "CompilePage" => typeof(CompilePage),
             "PackingPage" => typeof(PackingPage),
             "BackdooringPage" => typeof(BackdooringPage),
             _ => (Type?)null

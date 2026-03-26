@@ -12,17 +12,19 @@ namespace Washmachine.Views;
 
 public sealed partial class MainPage : Page, IMainFormView
 {
+    public static MainPage? Instance { get; private set; }
+
     private readonly IAppLogger _logger;
     private readonly MainFormCoordinator _coordinator;
     private readonly IRequirementProvisioner _requirements;
     private readonly AppPaths _paths;
     private ShellcodeSource _currentSource = ShellcodeSource.None;
-    private DateTime _compileStartedAt;
 
     public MainPage()
     {
         NavigationCacheMode = Microsoft.UI.Xaml.Navigation.NavigationCacheMode.Required;
         InitializeComponent();
+        Instance = this;
 
         _logger = new RichEditBoxLogger(debugBox);
 
@@ -64,7 +66,7 @@ public sealed partial class MainPage : Page, IMainFormView
     public TextBox ShellcodeRawTextBox => shellcodeRAW;
     public TextBox ShellcodeUrlTextBox => shellcodeURL;
     public TextBox ShellcodeUrlFileTextBox => shellcodeURLFile;
-    public Button SubmitButton => submitButton;
+    public Button SubmitButton => goToBackdooringButton;
     public MainFormCoordinator Coordinator => _coordinator;
 
     public void SetPayloadEncodingEnabled(bool enabled)
@@ -92,7 +94,7 @@ public sealed partial class MainPage : Page, IMainFormView
                 XamlRoot = XamlRoot
             };
             await dialog.ShowAsync();
-            submitButton.IsEnabled = false;
+            goToBackdooringButton.IsEnabled = false;
         }
     }
 
@@ -129,71 +131,6 @@ public sealed partial class MainPage : Page, IMainFormView
         e.Handled = true;
     }
 
-    private async void submitButton_Click(object sender, RoutedEventArgs e)
-    {
-        compileStatusPanel.Visibility = Visibility.Visible;
-        compileStatusIcon.Glyph = "\uE895"; // sync icon
-        compileStatusIcon.Foreground = null;
-        compileStatusText.Text = "Compiling...";
-        compileOutputLink.Visibility = Visibility.Collapsed;
-        _compileStartedAt = DateTime.UtcNow;
-
-        await _coordinator.HandleSubmitAsync(this);
-
-        UpdateCompileStatus();
-    }
-
-    private void UpdateCompileStatus()
-    {
-        try
-        {
-            var outputDir = System.IO.Path.Combine(
-                _paths.EnsureTempSourceDirectory(), "Compiled BInaries");
-
-            if (System.IO.Directory.Exists(outputDir))
-            {
-                var latest = System.IO.Directory.GetFiles(outputDir, "*.exe")
-                    .Select(f => new System.IO.FileInfo(f))
-                    .Where(fi => fi.LastWriteTimeUtc >= _compileStartedAt.AddSeconds(-2))
-                    .OrderByDescending(fi => fi.LastWriteTimeUtc)
-                    .FirstOrDefault();
-
-                if (latest != null)
-                {
-                    compileStatusIcon.Glyph = "\uE73E"; // checkmark
-                    compileStatusIcon.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Green);
-                    compileStatusText.Text = "Compiled: ";
-                    compileOutputLinkText.Text = latest.Name;
-                    compileOutputLink.Tag = latest.DirectoryName;
-                    compileOutputLink.Visibility = Visibility.Visible;
-                    return;
-                }
-            }
-        }
-        catch
-        {
-            // If file-system access fails, fall through to the failure state.
-        }
-
-        compileStatusIcon.Glyph = "\uEA39"; // warning
-        compileStatusIcon.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Orange);
-        compileStatusText.Text = "Compilation failed. Check logs for details.";
-        compileOutputLink.Visibility = Visibility.Collapsed;
-    }
-
-    private void CompileOutputLink_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is HyperlinkButton btn && btn.Tag is string folder &&
-            System.IO.Directory.Exists(folder))
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = folder,
-                UseShellExecute = true
-            });
-        }
-    }
-
     private async void templateComboBox_SelectedIndexChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!IsLoaded) return;
@@ -205,6 +142,24 @@ public sealed partial class MainPage : Page, IMainFormView
 
     private void refreshTemplateButton_Click(object sender, RoutedEventArgs e) =>
         _coordinator.RefreshTemplateCatalog(this);
+
+    private void GoToBackdooringPage_Click(object sender, RoutedEventArgs e)
+    {
+        // Navigate to BackdooringPage
+        if (App.ActiveWindow is MainWindow mainWindow)
+        {
+            var navView = mainWindow.Content as NavigationView;
+            if (navView != null)
+            {
+                var item = navView.MenuItems.OfType<NavigationViewItem>()
+                    .FirstOrDefault(i => i.Tag?.ToString() == "BackdooringPage");
+                if (item != null)
+                {
+                    navView.SelectedItem = item;
+                }
+            }
+        }
+    }
 
     private void ShellcodeSourceSelect_Click(object sender, RoutedEventArgs e)
     {
@@ -239,9 +194,6 @@ public sealed partial class MainPage : Page, IMainFormView
         // Re-enable wizard button when switching sources
         startWizardButton.IsEnabled = true;
         wizardStatusText.Text = string.Empty;
-
-        // Reset compile status
-        compileStatusPanel.Visibility = Visibility.Collapsed;
 
         if (source == ShellcodeSource.None)
         {

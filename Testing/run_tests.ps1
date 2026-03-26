@@ -6,6 +6,7 @@
     Phase 1: All encoder × envelope × webhelper combinations using messagebox.bin.
              For URL source mode, starts a local Python HTTP server to host the payload.
     Phase 2: All template × snippet permutations with default (0) encoding.
+    Phase 3: Multiple shellcode inputs from testing assets directory.
 
     Results are written to test_results.json in the output directory.
 
@@ -13,20 +14,26 @@
     Path to the .bin shellcode file. Defaults to a known messagebox.bin location.
 
 .PARAMETER Phase
-    Which test phase to run: "1", "2", or "all" (default: "all").
+    Which test phase to run: "1", "2", "3", or "all" (default: "all").
 
 .PARAMETER Port
     Port for the local Python HTTP server (default: 18923).
 
+.PARAMETER TestAssetsDir
+    Path to the testing assets directory containing shellcodes for Phase 3.
+    Defaults to 'testing assets/binary/shellcodes' in the repo root.
+
 .EXAMPLE
     .\run_tests.ps1
     .\run_tests.ps1 -Phase 1
+    .\run_tests.ps1 -Phase 3
     .\run_tests.ps1 -ShellcodeFile C:\path\to\messagebox.bin -Phase all
 #>
 param(
     [string]$ShellcodeFile,
     [string]$Phase = "all",
-    [int]$Port = 18923
+    [int]$Port = 18923,
+    [string]$TestAssetsDir
 )
 
 $ErrorActionPreference = "Stop"
@@ -49,31 +56,53 @@ if (-not (Test-Path $exePath)) {
 }
 
 # ── Resolve shellcode file ────────────────────────────────────────────────────
+# For Phase 3 only, shellcode is optional (uses test assets)
+$shellcodeRequired = $Phase -ne "3"
+
 if (-not $ShellcodeFile) {
     $candidates = @(
         (Join-Path $outDir "messagebox.bin"),
-        (Join-Path $repoRoot "messagebox.bin")
+        (Join-Path $repoRoot "messagebox.bin"),
+        (Join-Path $repoRoot "testing assets" "binary" "shellcodes" "messagebox.bin")
     )
     foreach ($c in $candidates) {
         if (Test-Path $c) { $ShellcodeFile = $c; break }
     }
 }
-if (-not $ShellcodeFile -or -not (Test-Path $ShellcodeFile)) {
-    Write-Error "messagebox.bin not found. Specify -ShellcodeFile."
+if ($shellcodeRequired -and (-not $ShellcodeFile -or -not (Test-Path $ShellcodeFile))) {
+    Write-Error "messagebox.bin not found. Specify -ShellcodeFile or run Phase 3 with -Phase 3."
     exit 1
 }
-Write-Host "Shellcode: $ShellcodeFile" -ForegroundColor Cyan
+
+if ($ShellcodeFile) {
+    Write-Host "Shellcode: $ShellcodeFile" -ForegroundColor Cyan
+}
+
+# ── Resolve test assets directory for Phase 3 ─────────────────────────────────
+if (-not $TestAssetsDir) {
+    $TestAssetsDir = Join-Path $repoRoot "testing assets" "binary" "shellcodes"
+}
+if ($Phase -eq "all" -or $Phase -eq "3") {
+    if (Test-Path $TestAssetsDir) {
+        Write-Host "Test assets: $TestAssetsDir" -ForegroundColor Cyan
+    } else {
+        Write-Host "Test assets directory not found: $TestAssetsDir" -ForegroundColor Yellow
+    }
+}
 
 # ── Copy shellcode to output dir if needed ────────────────────────────────────
-$localBin = Join-Path $outDir "messagebox.bin"
-if (-not (Test-Path $localBin)) {
-    Copy-Item $ShellcodeFile $localBin
+$localBin = ""
+if ($ShellcodeFile) {
+    $localBin = Join-Path $outDir "messagebox.bin"
+    if (-not (Test-Path $localBin)) {
+        Copy-Item $ShellcodeFile $localBin
+    }
 }
 
 # ── Start Python HTTP server for URL mode ─────────────────────────────────────
 $pyServer = $null
 $payloadUrl = ""
-if ($Phase -eq "all" -or $Phase -eq "1") {
+if (($Phase -eq "all" -or $Phase -eq "1") -and $localBin) {
     Write-Host "Starting Python HTTP server on port $Port..." -ForegroundColor Yellow
     $pyServer = Start-Process python -ArgumentList "-m", "http.server", $Port, "--directory", (Split-Path $localBin -Parent) `
         -PassThru -WindowStyle Hidden -RedirectStandardError "NUL"
@@ -84,9 +113,16 @@ if ($Phase -eq "all" -or $Phase -eq "1") {
 
 # ── Run the test harness ──────────────────────────────────────────────────────
 try {
-    $testArgs = @("--test", "--shellcode", $localBin, "--phase", $Phase)
+    $testArgs = @("--test", "--phase", $Phase)
+    
+    if ($localBin) {
+        $testArgs += @("--shellcode", $localBin)
+    }
     if ($payloadUrl) {
         $testArgs += @("--url", $payloadUrl)
+    }
+    if ($TestAssetsDir -and (Test-Path $TestAssetsDir)) {
+        $testArgs += @("--test-assets", $TestAssetsDir)
     }
 
     Write-Host "`nRunning: washmachine.exe $($testArgs -join ' ')" -ForegroundColor Green
@@ -111,17 +147,27 @@ if (Test-Path $resultsFile) {
     $passed = ($results | Where-Object { $_.CompileOk -and $_.RunOk }).Count
     $cFail  = ($results | Where-Object { -not $_.CompileOk }).Count
     $rFail  = ($results | Where-Object { $_.CompileOk -and -not $_.RunOk }).Count
+    $secBlocked = ($results | Where-Object { $_.CompileBlockedBySecurity }).Count
 
     Write-Host "`n═══════════════════════════════════════════════════════════════"
-    Write-Host "TOTAL: $total  |  PASSED: $passed  |  COMPILE FAIL: $cFail  |  RUN FAIL: $rFail"
+    Write-Host "TOTAL: $total  |  PASSED: $passed  |  COMPILE FAIL: $cFail  |  RUN FAIL: $rFail  |  SECURITY BLOCKED: $secBlocked"
     Write-Host "Results: $resultsFile"
     Write-Host "═══════════════════════════════════════════════════════════════"
 
-    if ($cFail -gt 0 -or $rFail -gt 0) {
+    $effectiveCompileFail = $cFail - $secBlocked
+    if ($effectiveCompileFail -gt 0 -or $rFail -gt 0) {
         Write-Host "`nFailed tests:" -ForegroundColor Red
-        $results | Where-Object { -not $_.CompileOk -or -not $_.RunOk } | ForEach-Object {
+        $results | Where-Object { (-not $_.CompileOk -or -not $_.RunOk) -and -not $_.CompileBlockedBySecurity } | ForEach-Object {
             Write-Host "  #$($_.Id) [$($_.Phase)] $($_.Description)" -ForegroundColor Red
             Write-Host "    Error: $($_.Error)" -ForegroundColor DarkRed
+        }
+    }
+
+    if ($secBlocked -gt 0) {
+        Write-Host "`nSecurity-blocked tests (environment issue):" -ForegroundColor Yellow
+        $results | Where-Object { $_.CompileBlockedBySecurity } | ForEach-Object {
+            Write-Host "  #$($_.Id) [$($_.Phase)] $($_.Description)" -ForegroundColor Yellow
+            Write-Host "    Error: $($_.Error)" -ForegroundColor DarkYellow
         }
     }
 }

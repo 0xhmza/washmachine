@@ -74,12 +74,25 @@ public static class CppFileConverter
         var tempExe = Path.Combine(outputDir, $"build-{Guid.NewGuid():N}.exe");
         var extraLibs = DetectRequiredLibraries(sources);
         var staticLibs = Directory.GetFiles(directory, "*.lib", SearchOption.TopDirectoryOnly);
-        var args = BuildCompilerArgs(family, sources, tempExe, extraLibs, staticLibs);
+        var args = family == CompilerFamily.GCC_LIKE
+            ? string.Empty
+            : BuildCompilerArgs(family, sources, tempExe, extraLibs, staticLibs);
+        var gccArgs = family == CompilerFamily.GCC_LIKE
+            ? BuildGccCompilerArgList(sources, tempExe, extraLibs, staticLibs)
+            : null;
         var vcVarsScript = family == CompilerFamily.MSVC
             ? FindVcVarsScript(compilerDirectory)
             : null;
 
-        logger.Debug($"Compiler args: {Truncate(args, 600)}");
+        if (family == CompilerFamily.GCC_LIKE && gccArgs != null)
+        {
+            var argPreview = string.Join(" ", gccArgs.Select(QuoteArgForLog));
+            logger.Debug($"Compiler args: {Truncate(argPreview, 600)}");
+        }
+        else
+        {
+            logger.Debug($"Compiler args: {Truncate(args, 600)}");
+        }
         logger.Debug("Launching compiler process...");
 
         ProcessStartInfo startInfo;
@@ -104,13 +117,29 @@ public static class CppFileConverter
             startInfo = new ProcessStartInfo
             {
                 FileName = compilerPath,
-                Arguments = args,
                 WorkingDirectory = directory,
                 UseShellExecute = false,
                 RedirectStandardError = true,
                 RedirectStandardOutput = true,
                 CreateNoWindow = true
             };
+
+            if (family == CompilerFamily.GCC_LIKE && gccArgs != null)
+            {
+                foreach (var arg in gccArgs)
+                    startInfo.ArgumentList.Add(arg);
+            }
+            else
+            {
+                startInfo.Arguments = args;
+            }
+
+            // Ensure GCC/Clang can resolve internal tools (cc1plus, as, collect2)
+            // even when the parent process environment is minimal.
+            var existingPath = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+            startInfo.Environment["PATH"] = string.IsNullOrWhiteSpace(existingPath)
+                ? compilerDirectory
+                : $"{compilerDirectory}{Path.PathSeparator}{existingPath}";
         }
 
         using var proc = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
@@ -132,6 +161,8 @@ public static class CppFileConverter
 
 #if NET6_0_OR_GREATER
             await proc.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            // Flush async output handlers before reading buffers.
+            proc.WaitForExit();
 #else
             while (!proc.HasExited)
             {
@@ -161,6 +192,7 @@ public static class CppFileConverter
 
             var msg = new StringBuilder();
             msg.AppendLine("Compilation failed.");
+            msg.AppendLine($"Compiler exit code: {proc.ExitCode}");
             if (stdOut.Length > 0) msg.AppendLine("-- stdout --").AppendLine(Truncate(stdOut.ToString(), 4000));
             if (stdErr.Length > 0) msg.AppendLine("-- stderr --").AppendLine(Truncate(stdErr.ToString(), 4000));
 
@@ -274,7 +306,35 @@ public static class CppFileConverter
 
         // GCC/Clang size-focused build: append -l flags for required libraries.
         var libs = extraLibs.Count > 0 ? " " + string.Join(" ", extraLibs) : string.Empty;
-        return $"-Os -s -std=c++17 -ffunction-sections -fdata-sections -Wl,--gc-sections -DNDEBUG -o {Q(outputExe)} {src}{libs}{libArgs}";
+        return $"-Os -s -std=c++17 -ffunction-sections -fdata-sections -Wl,--gc-sections -DNDEBUG -static -static-libgcc -static-libstdc++ -o {Q(outputExe)} {src}{libs}{libArgs}";
+    }
+
+    private static IReadOnlyList<string> BuildGccCompilerArgList(
+        string[] sources,
+        string outputExe,
+        IReadOnlyList<string> extraLibs,
+        string[] staticLibs)
+    {
+        var args = new List<string>
+        {
+            "-Os",
+            "-s",
+            "-std=c++17",
+            "-ffunction-sections",
+            "-fdata-sections",
+            "-Wl,--gc-sections",
+            "-DNDEBUG",
+            "-static",
+            "-static-libgcc",
+            "-static-libstdc++",
+            "-o",
+            outputExe
+        };
+
+        args.AddRange(sources);
+        args.AddRange(extraLibs);
+        args.AddRange(staticLibs);
+        return args;
     }
 
     /// <summary>
@@ -317,6 +377,9 @@ public static class CppFileConverter
 
     private static string Truncate(string? value, int max)
         => string.IsNullOrEmpty(value) ? string.Empty : (value.Length <= max ? value : value.Substring(0, max) + "...");
+
+    private static string QuoteArgForLog(string arg)
+        => arg.Contains(' ') ? $"\"{arg}\"" : arg;
 
     private static string? FindVcVarsScript(string compilerDirectory)
     {

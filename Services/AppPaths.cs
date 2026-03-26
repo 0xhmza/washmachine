@@ -29,7 +29,7 @@ public sealed class AppPaths : IAppPaths
         ExecutableDirectory = AppDomain.CurrentDomain.BaseDirectory;
 
         AssetsDirectory = Path.Combine(ExecutableDirectory, "Assets");
-        SnippetCatalogFile = Path.Combine(AssetsDirectory, "vx_api_snippets.yaml");
+        SnippetCatalogFile = Path.Combine(AssetsDirectory, "default.yaml");
 
         Bin2ShellScript = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "main.py");
         Bin2ShellAlgos = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "data", "yaml", "algos.yaml");

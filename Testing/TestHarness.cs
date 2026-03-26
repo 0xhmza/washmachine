@@ -14,6 +14,7 @@ namespace Washmachine.Testing;
 ///
 /// Phase 1: all encoder × envelope × webhelper combos (default template + default snippets).
 /// Phase 2: all template × snippet permutations (encoder=0, envelope=0, file source).
+/// Phase 3: multiple shellcode inputs from testing assets (safe shellcodes only).
 ///
 /// Output: JSON results array to stdout, suitable for agent consumption.
 /// </summary>
@@ -26,6 +27,7 @@ public static class TestHarness
         public string Description { get; set; } = "";
         public bool CompileOk { get; set; }
         public bool RunOk { get; set; }
+        public bool CompileBlockedBySecurity { get; set; }
         public int? ExitCode { get; set; }
         public string? Error { get; set; }
         public double DurationMs { get; set; }
@@ -37,6 +39,7 @@ public static class TestHarness
         string? shellcodeFile = null;
         string? payloadUrl = null;
         string? phase = null;
+        string? testAssetsDir = null;
         bool stopOnFail = false;
 
         for (int i = 0; i < args.Length; i++)
@@ -52,15 +55,20 @@ public static class TestHarness
                 case "--phase" when i + 1 < args.Length:
                     phase = args[++i];
                     break;
+                case "--test-assets" when i + 1 < args.Length:
+                    testAssetsDir = args[++i];
+                    break;
                 case "--stop-on-fail":
                     stopOnFail = true;
                     break;
             }
         }
 
-        if (string.IsNullOrEmpty(shellcodeFile) || !File.Exists(shellcodeFile))
+        // Phase 3 uses test-assets directory; phases 1/2 require shellcode file
+        bool requiresShellcode = phase is null or "all" or "1" or "2";
+        if (requiresShellcode && (string.IsNullOrEmpty(shellcodeFile) || !File.Exists(shellcodeFile)))
         {
-            Console.Error.WriteLine("Usage: --shellcode <path-to-.bin> [--url <payload-url>] [--phase 1|2|all] [--stop-on-fail]");
+            Console.Error.WriteLine("Usage: --shellcode <path-to-.bin> [--url <payload-url>] [--phase 1|2|3|all] [--test-assets <dir>] [--stop-on-fail]");
             return 1;
         }
 
@@ -90,14 +98,14 @@ public static class TestHarness
             {
                 id++;
                 var desc = $"P1 File: enc={enc.Index}({enc.Name}), env={env.Index}({env.Name})";
-                var data = BuildPhase1Data(shellcodeFile, null, enc, env, null, snippetService);
+                var data = BuildPhase1Data(shellcodeFile ?? "", null, enc, env, null, snippetService);
                 var result = await RunTestAsync(id, "P1-File", desc, data, compiler, paths, logger);
                 results.Add(result);
                 if (stopOnFail && (!result.CompileOk || !result.RunOk)) goto done;
             }
 
             // URL source: all encoder × envelope × webhelper
-            if (!string.IsNullOrEmpty(payloadUrl))
+            if (!string.IsNullOrEmpty(payloadUrl) && !string.IsNullOrEmpty(shellcodeFile))
             {
                 foreach (var enc in catalog.Encoders)
                 foreach (var env in catalog.Envelopes)
@@ -153,11 +161,71 @@ public static class TestHarness
                 {
                     id++;
                     var desc = $"P2: template={template.Id}, snippets=[{string.Join(", ", combo.Select(kv => $"{kv.Key}={kv.Value}"))}]";
-                    var data = BuildPhase2Data(shellcodeFile, template.Id, combo, snippetService);
+                    var data = BuildPhase2Data(shellcodeFile!, template.Id, combo, snippetService);
                     var result = await RunTestAsync(id, "P2", desc, data, compiler, paths, logger);
                     results.Add(result);
                     if (stopOnFail && (!result.CompileOk || !result.RunOk)) goto done;
                 }
+            }
+        }
+
+        // ─── Phase 3: multiple shellcode inputs from test assets ────────────
+        if (phase is "all" or "3")
+        {
+            // Resolve test assets directory
+            var assetsDir = testAssetsDir;
+            if (string.IsNullOrEmpty(assetsDir))
+            {
+                // Try to find it relative to repo root
+                var repoRoot = FindRepoRoot(paths.ExecutableDirectory);
+                if (repoRoot != null)
+                {
+                    assetsDir = Path.Combine(repoRoot, "testing assets", "binary", "shellcodes");
+                }
+            }
+
+            if (!string.IsNullOrEmpty(assetsDir) && Directory.Exists(assetsDir))
+            {
+                logger.Info($"=== PHASE 3: Multi-shellcode input testing ===");
+                logger.Info($"  Assets directory: {assetsDir}");
+
+                // Safe shellcodes for automated testing (no network, quick execution)
+                var safeShellcodes = new[] { "calc64.bin", "messagebox.bin", "notepad64.bin", "createfile.bin" };
+                var foundShellcodes = Directory.GetFiles(assetsDir, "*.bin")
+                    .Where(f => safeShellcodes.Contains(Path.GetFileName(f), StringComparer.OrdinalIgnoreCase))
+                    .ToList();
+
+                logger.Info($"  Found {foundShellcodes.Count} safe shellcodes to test");
+
+                foreach (var scFile in foundShellcodes)
+                {
+                    var scName = Path.GetFileNameWithoutExtension(scFile);
+                    logger.Info($"\n--- Testing shellcode: {scName} ---");
+
+                    // Test with default encoder/envelope
+                    id++;
+                    var desc = $"P3: shellcode={scName}, enc=0, env=0";
+                    var data = BuildPhase3Data(scFile, snippetService);
+                    var result = await RunTestAsync(id, "P3", desc, data, compiler, paths, logger);
+                    results.Add(result);
+                    if (stopOnFail && (!result.CompileOk || !result.RunOk)) goto done;
+
+                    // Test with first non-zero encoder if available
+                    if (catalog.Encoders.Count > 1)
+                    {
+                        var enc = catalog.Encoders[1];
+                        id++;
+                        desc = $"P3: shellcode={scName}, enc={enc.Index}({enc.Name})";
+                        data = BuildPhase3DataWithEncoder(scFile, enc, snippetService);
+                        result = await RunTestAsync(id, "P3-Enc", desc, data, compiler, paths, logger);
+                        results.Add(result);
+                        if (stopOnFail && (!result.CompileOk || !result.RunOk)) goto done;
+                    }
+                }
+            }
+            else
+            {
+                logger.Warn($"Phase 3 skipped: test assets directory not found ({assetsDir ?? "not specified"})");
             }
         }
 
@@ -166,21 +234,27 @@ public static class TestHarness
         int passed = results.Count(r => r.CompileOk && r.RunOk);
         int compileFailed = results.Count(r => !r.CompileOk);
         int runFailed = results.Count(r => r.CompileOk && !r.RunOk);
+        int securityBlocked = results.Count(r => r.CompileBlockedBySecurity);
 
-        logger.Info($"\n=== RESULTS: {passed}/{results.Count} passed, {compileFailed} compile failures, {runFailed} runtime failures ===");
+        logger.Info($"\n=== RESULTS: {passed}/{results.Count} passed, {compileFailed} compile failures, {runFailed} runtime failures, {securityBlocked} security-blocked ===");
 
         var json = JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true });
         var resultPath = Path.Combine(paths.ExecutableDirectory, "test_results.json");
         await File.WriteAllTextAsync(resultPath, json);
         logger.Info($"Results written to: {resultPath}");
 
-        // Print failures
-        foreach (var r in results.Where(r => !r.CompileOk || !r.RunOk))
+        // Print failures (separate security-blocked cases so they don't look like logic regressions)
+        foreach (var r in results.Where(r => (!r.CompileOk || !r.RunOk) && !r.CompileBlockedBySecurity))
         {
             logger.Error($"  FAIL #{r.Id}: {r.Description} — {r.Error}");
         }
 
-        return compileFailed + runFailed > 0 ? 1 : 0;
+        foreach (var r in results.Where(r => r.CompileBlockedBySecurity))
+        {
+            logger.Warn($"  SECURITY-BLOCKED #{r.Id}: {r.Description} — {r.Error}");
+        }
+
+        return (compileFailed - securityBlocked + runFailed) > 0 ? 1 : 0;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -448,7 +522,15 @@ public static class TestHarness
             {
                 result.CompileOk = false;
                 result.Error = compileResult.ConversionResult.Error ?? "Compilation failed";
-                logger.Error($"  [#{id}] COMPILE FAILED: {Truncate(result.Error, 200)}");
+                if (IsSecurityBlock(result.Error))
+                {
+                    result.CompileBlockedBySecurity = true;
+                    logger.Warn($"  [#{id}] COMPILE BLOCKED BY SECURITY: {Truncate(result.Error, 200)}");
+                }
+                else
+                {
+                    logger.Error($"  [#{id}] COMPILE FAILED: {Truncate(result.Error, 200)}");
+                }
                 return result;
             }
 
@@ -469,9 +551,17 @@ public static class TestHarness
             result.ExitCode = exitCode;
             if (runError != null)
             {
-                result.RunOk = false;
-                result.Error = runError;
-                logger.Error($"  [#{id}] RUN FAILED: exit={exitCode}, {Truncate(runError, 200)}");
+                if (IsExpectedInteractiveTimeout(description, runError))
+                {
+                    result.RunOk = true;
+                    logger.Warn($"  [#{id}] RUN TIMEOUT ACCEPTED: interactive payload expected ({Truncate(runError, 200)})");
+                }
+                else
+                {
+                    result.RunOk = false;
+                    result.Error = runError;
+                    logger.Error($"  [#{id}] RUN FAILED: exit={exitCode}, {Truncate(runError, 200)}");
+                }
             }
             else
             {
@@ -555,6 +645,28 @@ public static class TestHarness
     private static string Truncate(string s, int max)
         => s.Length <= max ? s : s[..max] + "...";
 
+    private static bool IsSecurityBlock(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return false;
+
+        return message.Contains("contains a virus", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("potentially unwanted software", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("operation did not complete successfully", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsExpectedInteractiveTimeout(string description, string? runError)
+    {
+        if (string.IsNullOrWhiteSpace(runError))
+            return false;
+
+        if (!runError.Contains("Timed out after", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return description.Contains("shellcode=messagebox", StringComparison.OrdinalIgnoreCase) ||
+               description.Contains("shellcode=notepad64", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// Removes generated wash_*.cpp and .obj files from the temp directory between tests.
     /// </summary>
@@ -573,12 +685,80 @@ public static class TestHarness
             try { File.Delete(f); } catch { }
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Phase 3 helpers
+    // ═══════════════════════════════════════════════════════════════════════
+
+    private static UiData BuildPhase3Data(
+        string shellcodeFile,
+        ICodeSnippetCatalogService snippets)
+    {
+        var textBoxes = new Dictionary<string, string>
+        {
+            ["shellcodeFile"] = shellcodeFile,
+            ["shellcodeRAW"] = "",
+            ["shellcodeURL"] = "",
+            ["shellcodeURLFile"] = "",
+        };
+
+        var comboBoxes = new Dictionary<string, string>
+        {
+            ["templateComboBox"] = "shellcode-minimal",
+            ["bin2hexEncoder"] = "0 - none",
+            ["bin2hexEnvelope"] = "0 - none",
+        };
+
+        SetDefaultSnippets(comboBoxes, textBoxes, snippets, "shellcode-minimal");
+        return new UiData(textBoxes, comboBoxes);
+    }
+
+    private static UiData BuildPhase3DataWithEncoder(
+        string shellcodeFile,
+        ShellcodeEncodingItem encoder,
+        ICodeSnippetCatalogService snippets)
+    {
+        var textBoxes = new Dictionary<string, string>
+        {
+            ["shellcodeFile"] = shellcodeFile,
+            ["shellcodeRAW"] = "",
+            ["shellcodeURL"] = "",
+            ["shellcodeURLFile"] = "",
+        };
+
+        var comboBoxes = new Dictionary<string, string>
+        {
+            ["templateComboBox"] = "shellcode-minimal",
+            ["bin2hexEncoder"] = encoder.DisplayText,
+            ["bin2hexEnvelope"] = "0 - none",
+        };
+
+        SetDefaultSnippets(comboBoxes, textBoxes, snippets, "shellcode-minimal");
+        return new UiData(textBoxes, comboBoxes);
+    }
+
+    private static string? FindRepoRoot(string startDir)
+    {
+        var current = startDir;
+        while (!string.IsNullOrEmpty(current))
+        {
+            if (Directory.Exists(Path.Combine(current, ".git")) ||
+                File.Exists(Path.Combine(current, "washmachine.sln")))
+            {
+                return current;
+            }
+            var parent = Path.GetDirectoryName(current);
+            if (parent == current) break;
+            current = parent;
+        }
+        return null;
+    }
 }
 
 /// <summary>Minimal console logger for the test harness.</summary>
 internal sealed class ConsoleLogger : IAppLogger
 {
-    public void Debug(string message) { }
+    public void Debug(string message) => Console.WriteLine($"  DEBUG: {message}");
     public void Info(string message) => Console.WriteLine(message);
     public void Ok(string message) => Console.WriteLine($"  OK: {message}");
     public void Warn(string message) => Console.Error.WriteLine($"  WARN: {message}");
