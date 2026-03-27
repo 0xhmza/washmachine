@@ -31,7 +31,6 @@ public sealed class CompilerToolLocator : ICompilerToolLocator
 
     private readonly IAppLogger _logger;
     private readonly HashSet<string> _manualCandidates = new(StringComparer.OrdinalIgnoreCase);
-    private CompilerToolDiscoveryResult? _cached;
 
     public CompilerToolLocator(IAppLogger logger)
     {
@@ -53,7 +52,6 @@ public sealed class CompilerToolLocator : ICompilerToolLocator
         lock (_manualCandidates)
         {
             _manualCandidates.Add(normalized);
-            _cached = null;
         }
 
         _logger.Info($"Manual compiler tool registered: {normalized}");
@@ -62,12 +60,6 @@ public sealed class CompilerToolLocator : ICompilerToolLocator
 
     private CompilerToolDiscoveryResult DiscoverInternal()
     {
-        if (_cached != null)
-        {
-            _logger.Info("Using cached compiler discovery result.");
-            return _cached;
-        }
-
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var errors = new List<string>();
 
@@ -121,7 +113,6 @@ public sealed class CompilerToolLocator : ICompilerToolLocator
             }, JsonOptions)
         };
 
-        _cached = result;
         LogSummary(result);
         return result;
     }
@@ -191,34 +182,33 @@ public sealed class CompilerToolLocator : ICompilerToolLocator
 
     private IEnumerable<string> FindFromBundledTools(ICollection<string> errors)
     {
-        _ = errors;
         var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        var toolsRoot = Path.Combine(baseDir, "Tools");
+        if (!Directory.Exists(toolsRoot))
+            yield break;
 
-        // Check Tools/mingw64/bin for g++
-        var mingwBinDir = Path.Combine(baseDir, "Tools", "mingw64", "bin");
-        if (Directory.Exists(mingwBinDir))
+        _logger.Info($"Scanning bundled toolchains under: {toolsRoot}");
+
+        foreach (var name in ExecutableNames)
         {
-            _logger.Info($"Checking bundled MinGW at: {mingwBinDir}");
-            foreach (var name in ExecutableNames)
+            IEnumerable<string> matches;
+            try
             {
-                var candidate = Path.Combine(mingwBinDir, name);
-                if (File.Exists(candidate))
+                matches = Directory.EnumerateFiles(toolsRoot, name, SearchOption.AllDirectories);
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Failed scanning bundled Tools for {name}: {ex.Message}");
+                continue;
+            }
+
+            foreach (var candidate in matches)
+            {
+                if (!string.IsNullOrWhiteSpace(candidate) && File.Exists(candidate))
                 {
                     _logger.Info($"Found bundled compiler: {candidate}");
                     yield return candidate;
                 }
-            }
-        }
-
-        // Also check for LLVM/Clang in Tools
-        var llvmBinDir = Path.Combine(baseDir, "Tools", "LLVM", "bin");
-        if (Directory.Exists(llvmBinDir))
-        {
-            foreach (var name in ExecutableNames)
-            {
-                var candidate = Path.Combine(llvmBinDir, name);
-                if (File.Exists(candidate))
-                    yield return candidate;
             }
         }
     }

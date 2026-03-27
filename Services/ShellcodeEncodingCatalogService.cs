@@ -17,6 +17,7 @@ public sealed record ShellcodeEncodingCatalog(
 
 public sealed record ShellcodeEncodingItem(int Index, string Name, string Description = "")
 {
+    public string ShortDisplay => Name;
     public string DisplayText => string.IsNullOrWhiteSpace(Description)
         ? $"{Index} - {Name}"
         : $"{Index} - {Name}  {Description}";

@@ -19,12 +19,6 @@ namespace Washmachine.Controllers;
 public sealed class MainFormCoordinator
 {
     private const string TemplateGenericShellcode = "GENERICSHELLCODE";
-    private static readonly HashSet<string> AllowedEnvelopeNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "base32",
-        "base64",
-        "base91"
-    };
     // Bin2Shell output patterns for array and envelope payloads.
     private static readonly Regex CodeBlobArrayRegex = new(@"unsigned\s+char\s+code_blob\[\]\s*=\s*\{(?<body>.*?)\};", RegexOptions.Compiled | RegexOptions.Singleline);
     private static readonly Regex CodeBlobTextBlockRegex = new(@"code_blob_text\[\]\s*=\s*(?<body>.*?)\s*;", RegexOptions.Compiled | RegexOptions.Singleline);
@@ -42,6 +36,8 @@ public sealed class MainFormCoordinator
     private string _templateOptionsTemplateId = string.Empty;
     private bool _suppressTemplateOptionsDialog;
     private Bin2ShellWebOutput? _activeWebPayload;
+    private IReadOnlyList<ShellcodeEncodingItem> _encoderItems = Array.Empty<ShellcodeEncodingItem>();
+    private IReadOnlyList<ShellcodeEncodingItem> _envelopeItems = Array.Empty<ShellcodeEncodingItem>();
 
     public MainFormCoordinator(
         IAppLogger logger,
@@ -108,6 +104,7 @@ public sealed class MainFormCoordinator
         }
 
         _logger.Debug("All required assets present.");
+        view.PlaybookPathTextBlock.Text = _paths.ActivePlaybookPath;
 
         if (!File.Exists(_paths.Bin2ShellScript))
             _logger.Warn("Bin2Shell not found. Web payload and encoding features will be unavailable.");
@@ -622,7 +619,14 @@ public sealed class MainFormCoordinator
         var selectedTemplate = GetSelectedTemplate(view);
         ResetTemplateOptions(selectedTemplate);
         UpdateTemplateContext(view, selectedTemplate);
+        view.PlaybookPathTextBlock.Text = _paths.ActivePlaybookPath;
         _logger.Ok("Snippet catalog refreshed.");
+    }
+
+    public async Task ReloadEncodingCatalogAsync(IMainFormView view)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        await LoadEncodingCombosAsync(view);
     }
 
     public void OpenTemplateCatalogLocation(IMainFormView view)
@@ -663,7 +667,7 @@ public sealed class MainFormCoordinator
             return Task.CompletedTask;
         }
 
-        string targetPath = _paths.SnippetCatalogFile;
+        string targetPath = _paths.ActivePlaybookPath;
         string? backup = null;
 
         try
@@ -1120,9 +1124,13 @@ public sealed class MainFormCoordinator
         try
         {
             var catalog = await _encodingCatalog.GetCatalogAsync();
-            BindEncodingCombo(view.EncoderCombo, catalog.Encoders);
-            BindEnvelopeCombo(view.EnvelopeCombo, catalog.Envelopes);
+            _encoderItems = catalog.Encoders.OrderBy(i => i.Index).ToArray();
+            _envelopeItems = catalog.Envelopes.OrderBy(i => i.Index).ToArray();
+
+            BindEncodingCombo(view.EncoderCombo, _encoderItems);
+            BindEnvelopeCombo(view.EnvelopeCombo, _envelopeItems);
             PopulateAntiEmulationCombo(view, catalog.AntiEmulation);
+            UpdateEncodingDescriptions(view);
             _logger.Ok("Bin2Shell catalog loaded.");
         }
         catch (Exception ex)
@@ -1142,10 +1150,12 @@ public sealed class MainFormCoordinator
             return;
 
         combo.Items.Clear();
+        combo.DisplayMemberPath = nameof(EncodingComboItem.Name);
+        combo.SelectedValuePath = nameof(EncodingComboItem.Index);
 
         foreach (var item in items.OrderBy(i => i.Index))
         {
-            combo.Items.Add(item.DisplayText);
+            combo.Items.Add(EncodingComboItem.From(item));
         }
 
         combo.SelectedIndex = combo.Items.Count > 0 ? 0 : -1;
@@ -1157,11 +1167,13 @@ public sealed class MainFormCoordinator
             return;
 
         combo.Items.Clear();
+        combo.DisplayMemberPath = nameof(EncodingComboItem.Name);
+        combo.SelectedValuePath = nameof(EncodingComboItem.Index);
 
         int preferredIndex = -1;
         foreach (var item in items.OrderBy(i => i.Index))
         {
-            var display = item.DisplayText;
+            var display = EncodingComboItem.From(item);
             combo.Items.Add(display);
 
             if (preferredIndex < 0 &&
@@ -1181,44 +1193,44 @@ public sealed class MainFormCoordinator
         }
     }
 
-    private static bool TryResolveEnvelopeSelection(
-        ComboBox combo,
-        out int index,
-        out string normalizedName,
-        out string displayText)
+    public void UpdateEncodingDescriptions(IMainFormView view)
     {
-        index = 0;
-        normalizedName = string.Empty;
-        displayText = string.Empty;
+        ArgumentNullException.ThrowIfNull(view);
 
-        if (combo == null)
-            return false;
+        var encoderDescription = ResolveSelectedDescription(view.EncoderCombo, _encoderItems);
+        var envelopeDescription = ResolveSelectedDescription(view.EnvelopeCombo, _envelopeItems);
 
-        string? selected = combo.SelectedItem?.ToString();
-        string rawCandidate = !string.IsNullOrWhiteSpace(selected)
-            ? selected
-            : combo.Text ?? string.Empty;
+        view.EncoderDescriptionTextBlock.Text = string.IsNullOrWhiteSpace(encoderDescription)
+            ? "No description available."
+            : encoderDescription;
 
-        if (string.IsNullOrWhiteSpace(rawCandidate))
-            return false;
+        view.EnvelopeDescriptionTextBlock.Text = string.IsNullOrWhiteSpace(envelopeDescription)
+            ? "No description available."
+            : envelopeDescription;
+    }
 
-        var trimmed = rawCandidate.Trim();
-        int dashIndex = trimmed.IndexOf('-');
-        string numberPart = dashIndex >= 0 ? trimmed[..dashIndex].Trim() : trimmed;
+    private static string ResolveSelectedDescription(ComboBox combo, IReadOnlyList<ShellcodeEncodingItem> items)
+    {
+        if (combo == null || items == null || items.Count == 0)
+            return string.Empty;
 
-        if (!int.TryParse(numberPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out index))
-            return false;
+        if (combo.SelectedItem is EncodingComboItem selectedItem)
+            return selectedItem.Description ?? string.Empty;
 
-        string namePart = dashIndex >= 0 ? trimmed[(dashIndex + 1)..].Trim() : string.Empty;
-        if (string.IsNullOrEmpty(namePart))
-            return false;
+        if (combo.SelectedValue != null &&
+            int.TryParse(combo.SelectedValue.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var selectedIndex))
+        {
+            return items.FirstOrDefault(item => item.Index == selectedIndex)?.Description ?? string.Empty;
+        }
 
-        normalizedName = namePart
-            .Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
-            .FirstOrDefault()?.ToLowerInvariant() ?? namePart.ToLowerInvariant();
+        var selectedName = combo.Text?.Trim();
+        if (!string.IsNullOrWhiteSpace(selectedName))
+        {
+            return items.FirstOrDefault(item => string.Equals(item.Name, selectedName, StringComparison.OrdinalIgnoreCase))?.Description
+                ?? string.Empty;
+        }
 
-        displayText = !string.IsNullOrWhiteSpace(selected) ? selected.Trim() : trimmed;
-        return true;
+        return string.Empty;
     }
 
     private static bool TryExtractCodeBlobArray(string output, out string payload)
@@ -1483,6 +1495,23 @@ public sealed class MainFormCoordinator
         public string Display { get; }
 
         public override string ToString() => Id;
+    }
+
+    private sealed class EncodingComboItem
+    {
+        private EncodingComboItem(int index, string name, string description)
+        {
+            Index = index;
+            Name = string.IsNullOrWhiteSpace(name) ? index.ToString(CultureInfo.InvariantCulture) : name;
+            Description = description ?? string.Empty;
+        }
+
+        public int Index { get; }
+        public string Name { get; }
+        public string Description { get; }
+
+        public static EncodingComboItem From(ShellcodeEncodingItem item)
+            => new(item.Index, item.Name, item.Description);
     }
 }
 

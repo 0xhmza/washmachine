@@ -330,7 +330,7 @@ public sealed class WebPayloadWizardWindow
         combo.Items.Clear();
         foreach (var item in items.OrderBy(i => i.Index))
             combo.Items.Add(item);
-        combo.DisplayMemberPath = nameof(ShellcodeEncodingItem.DisplayText);
+        combo.DisplayMemberPath = nameof(ShellcodeEncodingItem.ShortDisplay);
     }
 
     private void Navigate(int direction)

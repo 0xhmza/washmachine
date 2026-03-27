@@ -83,7 +83,7 @@ public sealed partial class CompilePage : Page
             {
                 foreach (var compiler in result.Candidates)
                 {
-                    var displayName = $"{compiler.Kind} ({Path.GetFileName(compiler.Path)})";
+                    var displayName = $"{compiler.Kind} ({compiler.Path})";
                     CompilerCombo.Items.Add(displayName);
                 }
                 CompilerCombo.SelectedIndex = 0;
@@ -238,7 +238,7 @@ public sealed partial class CompilePage : Page
             {
                 foreach (var compiler in result.Candidates)
                 {
-                    var displayName = $"{compiler.Kind} ({Path.GetFileName(compiler.Path)})";
+                    var displayName = $"{compiler.Kind} ({compiler.Path})";
                     CompilerCombo.Items.Add(displayName);
                     detectionWindow.AppendLog($"  ✓ Found: {compiler.Kind} at {compiler.Path}");
                 }

@@ -17,7 +17,11 @@ public interface IMainFormView
     ComboBox EncoderCombo { get; }
     ComboBox EnvelopeCombo { get; }
     ComboBox TemplateCombo { get; }
+    ComboBox PlaybookCombo { get; }
     ComboBox GenericShellcodeCombo { get; }
+    TextBlock EncoderDescriptionTextBlock { get; }
+    TextBlock EnvelopeDescriptionTextBlock { get; }
+    TextBlock PlaybookPathTextBlock { get; }
 
     TextBox ShellcodeFileTextBox { get; }
     TextBox ShellcodeRawTextBox { get; }

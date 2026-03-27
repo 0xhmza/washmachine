@@ -188,9 +188,9 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
 
     private string LoadCatalogContent()
     {
-        if (File.Exists(_paths.SnippetCatalogFile))
-            return File.ReadAllText(_paths.SnippetCatalogFile);
-        throw new FileNotFoundException("Snippet catalog file not found.", _paths.SnippetCatalogFile);
+        if (File.Exists(_paths.ActivePlaybookPath))
+            return File.ReadAllText(_paths.ActivePlaybookPath);
+        throw new FileNotFoundException("Snippet catalog file not found.", _paths.ActivePlaybookPath);
     }
 
     private Lazy<CatalogBundle> CreateCatalog()

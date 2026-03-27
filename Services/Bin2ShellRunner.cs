@@ -27,7 +27,8 @@ public sealed class Bin2ShellRunner : IBin2ShellRunner
     {
         ArgumentNullException.ThrowIfNull(arguments);
 
-        pythonExecutable ??= Environment.OSVersion.Platform == PlatformID.Win32NT ? "python" : "python3";
+        // Use py.exe launcher on Windows (more reliable than python alias)
+        pythonExecutable ??= Environment.OSVersion.Platform == PlatformID.Win32NT ? "py" : "python3";
 
         var workingDirectory = Path.GetDirectoryName(_paths.Bin2ShellScript);
         if (string.IsNullOrEmpty(workingDirectory))

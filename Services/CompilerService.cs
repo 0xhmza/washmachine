@@ -391,7 +391,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         encoded = PatchBin2ShellPayloadLambda(encoded, out patched);
         if (patched)
         {
-            _logger.Debug("Applied Bin2Shell lambda capture workaround.");
+            _logger.Debug("Normalized Bin2Shell payload lambda capture.");
         }
 
         encoded = RepairCStringLiteralQuotes(encoded);
@@ -443,15 +443,12 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             return output ?? string.Empty;
         }
 
-        // Some templates embed Bin2Shell lambdas in local scopes; capture by reference avoids invalid copies.
-        bool changed = false;
+        // Keep Bin2Shell payload initializers captureless. They are emitted at file scope,
+        // and capture-default lambdas are invalid outside local function scopes.
         string updated = Bin2ShellPayloadLambdaRegex.Replace(output, match =>
-        {
-            changed = true;
-            return match.Groups[1].Value + "[&](";
-        });
+            match.Groups[1].Value + "[]" + match.Groups[2].Value);
 
-        patched = changed;
+        patched = !string.Equals(output, updated, StringComparison.Ordinal);
         return updated;
     }
 
@@ -1309,7 +1306,11 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         var sb = new StringBuilder();
         if (!string.IsNullOrWhiteSpace(plan.EncodedShellcodeSnippet))
         {
-            sb.AppendLine(plan.EncodedShellcodeSnippet!.TrimEnd());
+            // Apply the same lambda capture fix as web payload mode - the shellcode
+            // snippet may contain lambdas that need to capture local variables when
+            // the template places SHELLCODE_SOURCE inside a function body.
+            var snippet = PatchCapturelessLambdas(plan.EncodedShellcodeSnippet!);
+            sb.AppendLine(snippet.TrimEnd());
             sb.Append("DWORD dwSize = (DWORD)code_blob_len;");
         }
         else if (plan.UsesGenericShellcode)
@@ -1317,7 +1318,9 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             sb.AppendLine("DWORD dwSize = 0;");
             sb.AppendLine();
             sb.AppendLine("// Generic shellcode payload");
-            sb.Append(plan.GenericShellcodeSnippet?.TrimEnd());
+            var genericSnippet = plan.GenericShellcodeSnippet ?? "";
+            genericSnippet = PatchCapturelessLambdas(genericSnippet);
+            sb.Append(genericSnippet.TrimEnd());
         }
         else
         {
@@ -1393,7 +1396,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
     private static readonly Regex PlaceholderLineRegex = new(@"^(?<indent>\s*)\{\{(?<name>[A-Z0-9_]+)\}\}\s*$", RegexOptions.Compiled);
     private static readonly Regex InlinePlaceholderRegex = new(@"\{\{(?<name>[A-Z0-9_]+)\}\}", RegexOptions.Compiled);
-    private static readonly Regex Bin2ShellPayloadLambdaRegex = new(@"(bin2shell_payload\s*=\s*)\[\s*\]\s*\(", RegexOptions.Compiled);
+    private static readonly Regex Bin2ShellPayloadLambdaRegex = new(@"(bin2shell_payload\s*=\s*)\[\s*&?\s*\](\s*\()", RegexOptions.Compiled);
 
     private static string ApplyTemplateContent(string content, IReadOnlyDictionary<string, string> values)
     {
@@ -1782,6 +1785,13 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
         raw = raw.Trim();
 
+        var matchedByName = TryResolveAlgorithmIndexByName(raw);
+        if (matchedByName > 0)
+        {
+            index = matchedByName;
+            return true;
+        }
+
         int idxEq = raw.IndexOf("Index", StringComparison.OrdinalIgnoreCase);
         if (idxEq >= 0)
         {
@@ -1819,6 +1829,54 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
         index = 0;
         return false;
+    }
+
+    private static int TryResolveAlgorithmIndexByName(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return 0;
+
+        string candidate = raw.Trim();
+
+        // Reject well-known aliases that are labels, not Bin2Shell algorithm IDs.
+        if (string.Equals(candidate, "none", StringComparison.OrdinalIgnoreCase))
+            return 0;
+
+        // Encoder names
+        if (string.Equals(candidate, "xor42", StringComparison.OrdinalIgnoreCase))
+            return 1;
+        if (string.Equals(candidate, "rc4", StringComparison.OrdinalIgnoreCase))
+            return 2;
+        if (string.Equals(candidate, "xor_key", StringComparison.OrdinalIgnoreCase))
+            return 3;
+        if (string.Equals(candidate, "caesar", StringComparison.OrdinalIgnoreCase))
+            return 4;
+        if (string.Equals(candidate, "rol3", StringComparison.OrdinalIgnoreCase))
+            return 5;
+
+        // Envelope names
+        if (string.Equals(candidate, "base91", StringComparison.OrdinalIgnoreCase))
+            return 1;
+        if (string.Equals(candidate, "base64", StringComparison.OrdinalIgnoreCase))
+            return 2;
+        if (string.Equals(candidate, "base32", StringComparison.OrdinalIgnoreCase))
+            return 3;
+        if (string.Equals(candidate, "hex", StringComparison.OrdinalIgnoreCase))
+            return 4;
+        if (string.Equals(candidate, "base58", StringComparison.OrdinalIgnoreCase))
+            return 5;
+        if (string.Equals(candidate, "base85", StringComparison.OrdinalIgnoreCase))
+            return 6;
+        if (string.Equals(candidate, "ipv4_array", StringComparison.OrdinalIgnoreCase))
+            return 7;
+        if (string.Equals(candidate, "mac_array", StringComparison.OrdinalIgnoreCase))
+            return 8;
+        if (string.Equals(candidate, "uuid_array", StringComparison.OrdinalIgnoreCase))
+            return 9;
+        if (string.Equals(candidate, "base32hex", StringComparison.OrdinalIgnoreCase))
+            return 10;
+
+        return 0;
     }
 
     private ShellcodeSource DetermineShellcodeSource(UiData data)

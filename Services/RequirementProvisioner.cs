@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Text.RegularExpressions;
 using Washmachine.Logging;
 using Washmachine.Views;
 
@@ -41,6 +42,7 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
         var missing = GetMissingRequirements().ToList();
         if (missing.Count == 0)
         {
+            EnsureBin2ShellAlgorithmDescriptions();
             _logger.Debug("All external requirements present.");
             return;
         }
@@ -60,6 +62,8 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
             {
                 completedStages = await InstallRequirementAsync(requirement, progressForm, totalStages, completedStages, cancellationToken);
             }
+
+            EnsureBin2ShellAlgorithmDescriptions();
 
             progressForm.UpdateStatus("Requirements ready.", 100);
             await Task.Delay(400, cancellationToken);
@@ -200,6 +204,39 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
 
         double percent = (double)completedStages / totalStages * 100d;
         return (int)Math.Clamp(Math.Round(percent, MidpointRounding.AwayFromZero), 0, 100);
+    }
+
+    private void EnsureBin2ShellAlgorithmDescriptions()
+    {
+        try
+        {
+            if (!File.Exists(_paths.Bin2ShellAlgos))
+                return;
+
+            var yaml = File.ReadAllText(_paths.Bin2ShellAlgos);
+            var updated = yaml;
+
+            updated = EnsureEnvelopeDescription(updated, 1, "base91", "Base91 text envelope");
+            updated = EnsureEnvelopeDescription(updated, 2, "base64", "Base64 text envelope");
+            updated = EnsureEnvelopeDescription(updated, 3, "base32", "Base32 text envelope");
+
+            if (!string.Equals(yaml, updated, StringComparison.Ordinal))
+            {
+                File.WriteAllText(_paths.Bin2ShellAlgos, updated);
+                _logger.Info("Updated Bin2Shell algorithm descriptions in algos.yaml.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"Failed to update Bin2Shell algorithm descriptions: {ex.Message}");
+        }
+    }
+
+    private static string EnsureEnvelopeDescription(string yaml, int index, string name, string description)
+    {
+        var pattern = $@"(?ms)(\r?\n- index:\s*{index}\s*\r?\n\s*name:\s*{Regex.Escape(name)}\s*\r?\n)(?!\s*desc:)";
+        var replacement = $"$1  desc: {description}{Environment.NewLine}";
+        return Regex.Replace(yaml, pattern, replacement);
     }
 
     private static void TryDeleteFile(string path)

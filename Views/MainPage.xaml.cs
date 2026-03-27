@@ -19,6 +19,7 @@ public sealed partial class MainPage : Page, IMainFormView
     private readonly IRequirementProvisioner _requirements;
     private readonly AppPaths _paths;
     private ShellcodeSource _currentSource = ShellcodeSource.None;
+    private bool _suppressPlaybookSelection;
 
     public MainPage()
     {
@@ -49,7 +50,8 @@ public sealed partial class MainPage : Page, IMainFormView
             interaction);
 
         _logger.Debug("Initializing...");
-        templateCatalogPath.Text = $"Catalog: {_paths.SnippetCatalogFile}";
+        templateCatalogPath.Text = $"Catalog: {_paths.ActivePlaybookPath}";
+        PopulatePlaybookCombo();
         SetShellcodeSource(ShellcodeSource.None, clearInputs: false);
         Loaded += MainPage_Loaded;
     }
@@ -61,7 +63,11 @@ public sealed partial class MainPage : Page, IMainFormView
     public ComboBox EncoderCombo => bin2hexEncoder;
     public ComboBox EnvelopeCombo => bin2hexEnvelope;
     public ComboBox TemplateCombo => templateComboBox;
+    public ComboBox PlaybookCombo => playbookComboBox;
     public ComboBox GenericShellcodeCombo => genericShellcodeComboBox;
+    public TextBlock EncoderDescriptionTextBlock => encoderDescriptionText;
+    public TextBlock EnvelopeDescriptionTextBlock => envelopeDescriptionText;
+    public TextBlock PlaybookPathTextBlock => playbookPathText;
     public TextBox ShellcodeFileTextBox => shellcodeFile;
     public TextBox ShellcodeRawTextBox => shellcodeRAW;
     public TextBox ShellcodeUrlTextBox => shellcodeURL;
@@ -80,6 +86,7 @@ public sealed partial class MainPage : Page, IMainFormView
         try
         {
             await _requirements.EnsureRequirementsAsync(this);
+            PopulatePlaybookCombo();
             await _coordinator.InitializeAsync(this);
             _logger.Ok("Ready.");
         }
@@ -137,11 +144,37 @@ public sealed partial class MainPage : Page, IMainFormView
         await _coordinator.HandleTemplateChanged(this);
     }
 
+    private void bin2hexEncoder_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
+        _coordinator.UpdateEncodingDescriptions(this);
+
+    private void bin2hexEnvelope_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
+        _coordinator.UpdateEncodingDescriptions(this);
+
     private async void button4_Click(object sender, RoutedEventArgs e) =>
         await _coordinator.OpenTemplateConfig(this);
 
     private void refreshTemplateButton_Click(object sender, RoutedEventArgs e) =>
         _coordinator.RefreshTemplateCatalog(this);
+
+    private async void playbookComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressPlaybookSelection || !IsLoaded)
+            return;
+
+        if (playbookComboBox.SelectedItem is not PlaybookComboItem selected)
+            return;
+
+        if (!_paths.SetActivePlaybook(selected.Path))
+        {
+            _logger.Warn($"Failed to activate playbook: {selected.Path}");
+            return;
+        }
+
+        playbookPathText.Text = selected.Path;
+        templateCatalogPath.Text = $"Catalog: {_paths.ActivePlaybookPath}";
+        _coordinator.RefreshTemplateCatalog(this);
+        await _coordinator.ReloadEncodingCatalogAsync(this);
+    }
 
     private void GoToBackdooringPage_Click(object sender, RoutedEventArgs e)
     {
@@ -231,6 +264,58 @@ public sealed partial class MainPage : Page, IMainFormView
         if (s != ShellcodeSource.Raw)     shellcodeRAW.Text  = string.Empty;
         if (s != ShellcodeSource.Url)   { shellcodeURL.Text  = string.Empty; shellcodeURLFile.Text = string.Empty; }
         if (s != ShellcodeSource.Generic) genericShellcodeComboBox.SelectedIndex = -1;
+    }
+
+    private void PopulatePlaybookCombo()
+    {
+        var playbooks = _paths.GetAvailablePlaybookFiles();
+        playbookComboBox.Items.Clear();
+
+        _suppressPlaybookSelection = true;
+        try
+        {
+            foreach (var path in playbooks)
+                playbookComboBox.Items.Add(new PlaybookComboItem(path));
+
+            playbookComboBox.DisplayMemberPath = nameof(PlaybookComboItem.Name);
+            playbookComboBox.SelectedValuePath = nameof(PlaybookComboItem.Path);
+            playbookComboBox.IsEnabled = playbookComboBox.Items.Count > 0;
+
+            string active = _paths.ActivePlaybookPath;
+            var selectedIndex = playbookComboBox.Items
+                .OfType<PlaybookComboItem>()
+                .Select((item, index) => new { item, index })
+                .Where(entry => string.Equals(entry.item.Path, active, StringComparison.OrdinalIgnoreCase))
+                .Select(entry => entry.index)
+                .DefaultIfEmpty(-1)
+                .First();
+
+            if (selectedIndex >= 0)
+                playbookComboBox.SelectedIndex = selectedIndex;
+            else if (playbookComboBox.Items.Count > 0)
+                playbookComboBox.SelectedIndex = 0;
+
+            if (playbookComboBox.Items.Count > 0)
+                playbookPathText.Text = active;
+            else
+                playbookPathText.Text = "No playbooks found in Assets.";
+        }
+        finally
+        {
+            _suppressPlaybookSelection = false;
+        }
+    }
+
+    private sealed class PlaybookComboItem
+    {
+        public PlaybookComboItem(string path)
+        {
+            Path = path ?? string.Empty;
+            Name = System.IO.Path.GetFileNameWithoutExtension(Path);
+        }
+
+        public string Name { get; }
+        public string Path { get; }
     }
 
     private enum ShellcodeSource { None, File, Raw, Url, Generic }

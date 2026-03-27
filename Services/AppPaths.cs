@@ -7,8 +7,11 @@ public interface IAppPaths
     string ExecutableDirectory { get; }
     string AssetsDirectory { get; }
     string SnippetCatalogFile { get; }
+    string ActivePlaybookPath { get; }
     string Bin2ShellScript { get; }
     string Bin2ShellAlgos { get; }
+    bool SetActivePlaybook(string playbookPath);
+    IReadOnlyList<string> GetAvailablePlaybookFiles();
     string EnsureTempShellcodeDirectory();
     string EnsureTempSourceDirectory();
     string CreateCompilationSessionDirectory();
@@ -23,6 +26,7 @@ public sealed class AppPaths : IAppPaths
 {
     private readonly Lazy<string> _tempShellcodeDir;
     private readonly Lazy<string> _tempSourceDir;
+    private readonly string _activePlaybookStateFile;
 
     public AppPaths()
     {
@@ -30,6 +34,7 @@ public sealed class AppPaths : IAppPaths
 
         AssetsDirectory = Path.Combine(ExecutableDirectory, "Assets");
         SnippetCatalogFile = Path.Combine(AssetsDirectory, "default.yaml");
+        _activePlaybookStateFile = Path.Combine(AssetsDirectory, ".active-playbook");
 
         Bin2ShellScript = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "main.py");
         Bin2ShellAlgos = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "data", "yaml", "algos.yaml");
@@ -41,8 +46,97 @@ public sealed class AppPaths : IAppPaths
     public string ExecutableDirectory { get; }
     public string AssetsDirectory { get; }
     public string SnippetCatalogFile { get; }
+    public string ActivePlaybookPath
+    {
+        get
+        {
+            var available = GetAvailablePlaybookFiles();
+            if (available.Count == 0)
+                return SnippetCatalogFile;
+
+            try
+            {
+                if (File.Exists(_activePlaybookStateFile))
+                {
+                    var stored = File.ReadAllText(_activePlaybookStateFile).Trim();
+                    if (!string.IsNullOrWhiteSpace(stored))
+                    {
+                        var candidate = Path.IsPathRooted(stored)
+                            ? Path.GetFullPath(stored)
+                            : Path.GetFullPath(Path.Combine(AssetsDirectory, stored));
+
+                        if (File.Exists(candidate) &&
+                            candidate.StartsWith(AssetsDirectory, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return candidate;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Fall back to default selection.
+            }
+
+            if (File.Exists(SnippetCatalogFile))
+                return SnippetCatalogFile;
+
+            return available
+                .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
+                .First();
+        }
+    }
     public string Bin2ShellScript { get; }
     public string Bin2ShellAlgos { get; }
+
+    public bool SetActivePlaybook(string playbookPath)
+    {
+        if (string.IsNullOrWhiteSpace(playbookPath))
+            return false;
+
+        string normalized;
+        try
+        {
+            normalized = Path.GetFullPath(playbookPath);
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (!File.Exists(normalized))
+            return false;
+
+        if (!normalized.StartsWith(AssetsDirectory, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        try
+        {
+            Directory.CreateDirectory(AssetsDirectory);
+            File.WriteAllText(_activePlaybookStateFile, Path.GetFileName(normalized));
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public IReadOnlyList<string> GetAvailablePlaybookFiles()
+    {
+        if (!Directory.Exists(AssetsDirectory))
+            return Array.Empty<string>();
+
+        return Directory.EnumerateFiles(AssetsDirectory, "*.*", SearchOption.TopDirectoryOnly)
+            .Where(path =>
+            {
+                var ext = Path.GetExtension(path);
+                return ext.Equals(".yaml", StringComparison.OrdinalIgnoreCase)
+                    || ext.Equals(".yml", StringComparison.OrdinalIgnoreCase);
+            })
+            .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
 
     public string EnsureTempShellcodeDirectory() => _tempShellcodeDir.Value;
     public string EnsureTempSourceDirectory() => _tempSourceDir.Value;
@@ -59,8 +153,8 @@ public sealed class AppPaths : IAppPaths
     {
         var errors = new List<string>();
 
-        if (!File.Exists(SnippetCatalogFile))
-            errors.Add($"Snippet catalog missing: '{SnippetCatalogFile}'.");
+        if (!File.Exists(ActivePlaybookPath))
+            errors.Add($"Snippet catalog missing: '{ActivePlaybookPath}'.");
 
         return errors;
     }
