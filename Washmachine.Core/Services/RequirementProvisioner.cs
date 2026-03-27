@@ -46,16 +46,26 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
 
         _logger.Warn($"Missing external requirements detected: {string.Join(", ", missing.Select(m => m.Name))}.");
 
-        progress?.UpdateStatus("Preparing downloads...", 0);
-
-        int totalStages = missing.Count * 2;
-        int completedStages = 0;
+        progress?.UpdateStatus("Preparing downloads...", -1);
 
         try
         {
-            foreach (var requirement in missing)
+            for (int i = 0; i < missing.Count; i++)
             {
-                completedStages = await InstallRequirementAsync(requirement, progress, totalStages, completedStages, cancellationToken);
+                var requirement = missing[i];
+                string tempZip = Path.Combine(Path.GetTempPath(), $"washmachine-{Guid.NewGuid():N}.zip");
+                string tempExtractRoot = Path.Combine(Path.GetTempPath(), $"washmachine-{Guid.NewGuid():N}");
+
+                try
+                {
+                    await DownloadToFileAsync(requirement, tempZip, progress, cancellationToken);
+                    await ExtractAndMoveAsync(requirement, tempZip, tempExtractRoot, progress, cancellationToken);
+                }
+                finally
+                {
+                    TryDeleteFile(tempZip);
+                    TryDeleteDirectory(tempExtractRoot);
+                }
             }
 
             EnsureBin2ShellAlgorithmDescriptions();
@@ -91,47 +101,19 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
         }
     }
 
-    private async Task<int> InstallRequirementAsync(
-        RequirementData requirement,
-        IProgressReporter? progress,
-        int totalStages,
-        int completedStages,
-        CancellationToken cancellationToken)
-    {
-        string tempZip = Path.Combine(Path.GetTempPath(), $"washmachine-{Guid.NewGuid():N}.zip");
-        string tempExtractRoot = Path.Combine(Path.GetTempPath(), $"washmachine-{Guid.NewGuid():N}");
-
-        try
-        {
-            progress?.UpdateStatus($"Downloading {requirement.Name}...", CalculatePercent(completedStages, totalStages));
-            await DownloadToFileAsync(requirement, tempZip, cancellationToken);
-            completedStages++;
-
-            progress?.UpdateStatus($"Installing {requirement.Name}...", CalculatePercent(completedStages, totalStages));
-            await ExtractAndMoveAsync(requirement, tempZip, tempExtractRoot, cancellationToken);
-            completedStages++;
-
-            progress?.UpdateStatus($"{requirement.Name} ready.", CalculatePercent(completedStages, totalStages));
-            return completedStages;
-        }
-        finally
-        {
-            TryDeleteFile(tempZip);
-            TryDeleteDirectory(tempExtractRoot);
-        }
-    }
-
-    private async Task DownloadToFileAsync(RequirementData requirement, string destinationFile, CancellationToken cancellationToken)
+    private async Task DownloadToFileAsync(RequirementData requirement, string destinationFile, IProgressReporter? progress, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(destinationFile) ?? Path.GetTempPath());
 
-        HttpRequestException? lastException = null;
+        Exception? lastException = null;
 
         foreach (var uri in requirement.DownloadUris)
         {
             try
             {
                 _logger.Info($"Downloading {requirement.Name} from {uri}...");
+                progress?.UpdateStatus($"Connecting to download server...", -1);
+
                 using var response = await _httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
@@ -140,33 +122,63 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
                     continue;
                 }
 
+                long? totalBytes = response.Content.Headers.ContentLength;
+                long bytesDownloaded = 0;
+                long lastReportedBytes = -1;
+                const long reportThreshold = 128 * 1024; // report every 128 KB
+
                 await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
                 await using var fileStream = File.Create(destinationFile);
-                await contentStream.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
 
-                _logger.Ok($"Downloaded {requirement.Name}.");
+                var buffer = new byte[81920];
+                int bytesRead;
+                while ((bytesRead = await contentStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+                {
+                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken).ConfigureAwait(false);
+                    bytesDownloaded += bytesRead;
+
+                    if (bytesDownloaded - lastReportedBytes >= reportThreshold)
+                    {
+                        lastReportedBytes = bytesDownloaded;
+                        string statusMsg;
+                        int percent;
+                        if (totalBytes > 0)
+                        {
+                            percent = (int)(bytesDownloaded * 100L / totalBytes.Value);
+                            statusMsg = $"Downloading {requirement.Name}... {FormatBytes(bytesDownloaded)} / {FormatBytes(totalBytes.Value)}";
+                        }
+                        else
+                        {
+                            percent = -1;
+                            statusMsg = $"Downloading {requirement.Name}... {FormatBytes(bytesDownloaded)}";
+                        }
+                        progress?.UpdateStatus(statusMsg, percent);
+                    }
+                }
+
+                _logger.Ok($"Downloaded {requirement.Name} ({FormatBytes(bytesDownloaded)}).");
                 return;
             }
-            catch (HttpRequestException ex)
+            catch (Exception ex) when (ex is HttpRequestException or IOException or TaskCanceledException { CancellationToken.IsCancellationRequested: false })
             {
                 lastException = ex;
                 _logger.Warn($"Error downloading {requirement.Name} from {uri}: {ex.Message}");
             }
         }
 
-        throw new InvalidOperationException($"Unable to download {requirement.Name} from the configured sources.", lastException);
+        throw new InvalidOperationException($"Unable to download {requirement.Name} from the configured sources. Last error: {lastException?.Message}", lastException);
     }
 
-    private async Task ExtractAndMoveAsync(RequirementData requirement, string zipFile, string extractRoot, CancellationToken cancellationToken)
+    private async Task ExtractAndMoveAsync(RequirementData requirement, string zipFile, string extractRoot, IProgressReporter? progress, CancellationToken cancellationToken)
     {
+        progress?.UpdateStatus($"Installing {requirement.Name}...", -1);
+
         await Task.Run(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             if (Directory.Exists(extractRoot))
-            {
                 Directory.Delete(extractRoot, true);
-            }
 
             Directory.CreateDirectory(extractRoot);
             ZipFile.ExtractToDirectory(zipFile, extractRoot, true);
@@ -177,14 +189,10 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
             string targetDirectory = requirement.TargetDirectory;
             string? targetParent = Path.GetDirectoryName(targetDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             if (!string.IsNullOrWhiteSpace(targetParent))
-            {
                 Directory.CreateDirectory(targetParent);
-            }
 
             if (Directory.Exists(targetDirectory))
-            {
                 Directory.Delete(targetDirectory, true);
-            }
 
             Directory.Move(sourceDirectory, targetDirectory);
         }, cancellationToken).ConfigureAwait(false);
@@ -192,13 +200,14 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
         _logger.Ok($"Installed {requirement.Name} to {requirement.TargetDirectory}.");
     }
 
-    private static int CalculatePercent(int completedStages, int totalStages)
+    private static string FormatBytes(long bytes)
     {
-        if (totalStages <= 0)
-            return 100;
-
-        double percent = (double)completedStages / totalStages * 100d;
-        return (int)Math.Clamp(Math.Round(percent, MidpointRounding.AwayFromZero), 0, 100);
+        return bytes switch
+        {
+            >= 1024 * 1024 => $"{bytes / (1024.0 * 1024.0):F1} MB",
+            >= 1024        => $"{bytes / 1024.0:F1} KB",
+            _              => $"{bytes} B"
+        };
     }
 
     private void EnsureBin2ShellAlgorithmDescriptions()

@@ -66,6 +66,14 @@ public sealed class RequirementsProgressWindow
     private void DoUpdate(string message, int progressPercent)
     {
         _statusText.Text = message;
-        _progressBar.Value = Math.Clamp(progressPercent, (int)_progressBar.Minimum, (int)_progressBar.Maximum);
+        if (progressPercent < 0)
+        {
+            _progressBar.IsIndeterminate = true;
+        }
+        else
+        {
+            _progressBar.IsIndeterminate = false;
+            _progressBar.Value = Math.Clamp(progressPercent, (int)_progressBar.Minimum, (int)_progressBar.Maximum);
+        }
     }
 }

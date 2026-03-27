@@ -2,7 +2,7 @@ namespace Washmachine.Services;
 
 /// <summary>
 /// Reports progress for long-running operations (downloads, installations).
-/// Implemented by the GUI layer (window-based) or CLI layer (console-based).
+/// Pass percentComplete = -1 to switch the reporter into indeterminate (spinner) mode.
 /// </summary>
 public interface IProgressReporter
 {
@@ -15,15 +15,16 @@ public interface IProgressReporter
 /// </summary>
 public sealed class ConsoleProgressReporter : IProgressReporter
 {
-    private int _lastPercent = -1;
+    private string _lastMessage = string.Empty;
 
     public void UpdateStatus(string message, int percentComplete)
     {
-        if (percentComplete != _lastPercent)
-        {
-            Console.WriteLine($"[{percentComplete,3}%] {message}");
-            _lastPercent = percentComplete;
-        }
+        if (message == _lastMessage)
+            return;
+
+        _lastMessage = message;
+        string prefix = percentComplete < 0 ? "[   ] " : $"[{percentComplete,3}%] ";
+        Console.WriteLine($"{prefix}{message}");
     }
 
     public void Close() { }
