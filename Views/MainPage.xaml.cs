@@ -85,7 +85,7 @@ public sealed partial class MainPage : Page, IMainFormView
     {
         try
         {
-            await _requirements.EnsureRequirementsAsync(this);
+            await _requirements.EnsureRequirementsAsync(new WindowProgressReporter());
             PopulatePlaybookCombo();
             await _coordinator.InitializeAsync(this);
             _logger.Ok("Ready.");

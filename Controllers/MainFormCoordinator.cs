@@ -203,7 +203,7 @@ public sealed class MainFormCoordinator
         try
         {
             _logger.Debug("Validation passed. Collecting UI data...");
-            var data = new UiData(view.ContentRoot);
+            var data = UiDataFactory.FromVisualTree(view.ContentRoot);
             MergeTemplateOptions(data);
             MergeWebPayload(data);
             LogCollectedData(data);

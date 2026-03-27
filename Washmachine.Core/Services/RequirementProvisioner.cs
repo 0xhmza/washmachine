@@ -3,13 +3,12 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
 using Washmachine.Logging;
-using Washmachine.Views;
 
 namespace Washmachine.Services;
 
 public interface IRequirementProvisioner
 {
-    Task EnsureRequirementsAsync(IMainFormView view, CancellationToken cancellationToken = default);
+    Task EnsureRequirementsAsync(IProgressReporter? progress = null, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -35,10 +34,8 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
         _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Requirements", "1.0"));
     }
 
-    public async Task EnsureRequirementsAsync(IMainFormView view, CancellationToken cancellationToken = default)
+    public async Task EnsureRequirementsAsync(IProgressReporter? progress = null, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(view);
-
         var missing = GetMissingRequirements().ToList();
         if (missing.Count == 0)
         {
@@ -49,9 +46,7 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
 
         _logger.Warn($"Missing external requirements detected: {string.Join(", ", missing.Select(m => m.Name))}.");
 
-        var progressForm = new RequirementsProgressWindow();
-        progressForm.Show();
-        progressForm.UpdateStatus("Preparing downloads...", 0);
+        progress?.UpdateStatus("Preparing downloads...", 0);
 
         int totalStages = missing.Count * 2;
         int completedStages = 0;
@@ -60,18 +55,18 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
         {
             foreach (var requirement in missing)
             {
-                completedStages = await InstallRequirementAsync(requirement, progressForm, totalStages, completedStages, cancellationToken);
+                completedStages = await InstallRequirementAsync(requirement, progress, totalStages, completedStages, cancellationToken);
             }
 
             EnsureBin2ShellAlgorithmDescriptions();
 
-            progressForm.UpdateStatus("Requirements ready.", 100);
+            progress?.UpdateStatus("Requirements ready.", 100);
             await Task.Delay(400, cancellationToken);
             _logger.Ok("All external requirements downloaded successfully.");
         }
         finally
         {
-            progressForm.Close();
+            progress?.Close();
         }
     }
 
@@ -98,7 +93,7 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
 
     private async Task<int> InstallRequirementAsync(
         RequirementData requirement,
-        RequirementsProgressWindow progressForm,
+        IProgressReporter? progress,
         int totalStages,
         int completedStages,
         CancellationToken cancellationToken)
@@ -108,15 +103,15 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
 
         try
         {
-            progressForm.UpdateStatus($"Downloading {requirement.Name}...", CalculatePercent(completedStages, totalStages));
+            progress?.UpdateStatus($"Downloading {requirement.Name}...", CalculatePercent(completedStages, totalStages));
             await DownloadToFileAsync(requirement, tempZip, cancellationToken);
             completedStages++;
 
-            progressForm.UpdateStatus($"Installing {requirement.Name}...", CalculatePercent(completedStages, totalStages));
+            progress?.UpdateStatus($"Installing {requirement.Name}...", CalculatePercent(completedStages, totalStages));
             await ExtractAndMoveAsync(requirement, tempZip, tempExtractRoot, cancellationToken);
             completedStages++;
 
-            progressForm.UpdateStatus($"{requirement.Name} ready.", CalculatePercent(completedStages, totalStages));
+            progress?.UpdateStatus($"{requirement.Name} ready.", CalculatePercent(completedStages, totalStages));
             return completedStages;
         }
         finally

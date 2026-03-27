@@ -1,35 +1,23 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Washmachine.Models;
 
-namespace Washmachine.Models;
+namespace Washmachine.Services;
 
 /// <summary>
-/// Snapshot of a WinUI 3 visual tree, keyed by control name with fallback to type name.
+/// Creates <see cref="UiData"/> snapshots from WinUI visual trees.
+/// This factory lives in the GUI layer because it depends on WinUI types.
 /// </summary>
-public sealed class UiData
+public static class UiDataFactory
 {
-    public Dictionary<string, string> TextBoxes { get; } = new();
-    public Dictionary<string, string> ComboBoxes { get; } = new();
-    public Dictionary<string, List<string>> ListBoxes { get; } = new();
-
-    /// <summary>
-    /// Headless constructor for testing — pre-populates from dictionaries.
-    /// </summary>
-    public UiData(
-        Dictionary<string, string> textBoxes,
-        Dictionary<string, string> comboBoxes,
-        Dictionary<string, List<string>>? listBoxes = null)
-    {
-        foreach (var kv in textBoxes) TextBoxes[kv.Key] = kv.Value;
-        foreach (var kv in comboBoxes) ComboBoxes[kv.Key] = kv.Value;
-        if (listBoxes != null)
-            foreach (var kv in listBoxes) ListBoxes[kv.Key] = kv.Value;
-    }
-
-    public UiData(DependencyObject root)
+    public static UiData FromVisualTree(DependencyObject root)
     {
         ArgumentNullException.ThrowIfNull(root);
+
+        var textBoxes = new Dictionary<string, string>();
+        var comboBoxes = new Dictionary<string, string>();
+        var listBoxes = new Dictionary<string, List<string>>();
 
         foreach (var control in EnumerateAllControls(root))
         {
@@ -40,10 +28,10 @@ public sealed class UiData
             switch (control)
             {
                 case TextBox textBox:
-                    TextBoxes[key] = textBox.Text ?? string.Empty;
+                    textBoxes[key] = textBox.Text ?? string.Empty;
                     break;
                 case ComboBox comboBox:
-                    ComboBoxes[key] = comboBox.SelectedValue?.ToString()
+                    comboBoxes[key] = comboBox.SelectedValue?.ToString()
                                       ?? comboBox.SelectedItem?.ToString()
                                       ?? string.Empty;
                     break;
@@ -51,10 +39,12 @@ public sealed class UiData
                     var items = listBox.SelectedItems.Cast<object>()
                         .Select(item => item?.ToString() ?? string.Empty)
                         .ToList();
-                    ListBoxes[key] = items;
+                    listBoxes[key] = items;
                     break;
             }
         }
+
+        return new UiData(textBoxes, comboBoxes, listBoxes);
     }
 
     private static IEnumerable<DependencyObject> EnumerateAllControls(DependencyObject root)
@@ -65,7 +55,6 @@ public sealed class UiData
         while (stack.Count > 0)
         {
             var current = stack.Pop();
-            // Depth-first walk keeps memory small; order is irrelevant for snapshots.
             yield return current;
 
             int count = VisualTreeHelper.GetChildrenCount(current);

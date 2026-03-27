@@ -1,7 +1,7 @@
 namespace Washmachine.Models;
 
 // Shared helpers for loose snippet-key matching across templates and headers.
-internal static class SnippetKeyNormalizer
+public static class SnippetKeyNormalizer
 {
     public static string Normalize(string? value)
         => new string((value ?? string.Empty)

@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Washmachine.Cli</RootNamespace>
+
+    <!-- Product metadata -->
+    <AssemblyName>washmachine-cli</AssemblyName>
+    <Product>Washmachine CLI</Product>
+    <Description>Washmachine command-line interface for shellcode loader building</Description>
+    <Version>1.0.0</Version>
+
+    <!-- Deterministic builds -->
+    <Deterministic>true</Deterministic>
+    <PathMap>$(MSBuildProjectDirectory)=.</PathMap>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <Optimize>true</Optimize>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Washmachine.Core\Washmachine.Core.csproj" />
+  </ItemGroup>
+
+</Project>

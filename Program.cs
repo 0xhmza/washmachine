@@ -9,22 +9,9 @@ public static class Program
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int MessageBoxW(nint hWnd, string text, string caption, uint type);
 
-    [DllImport("kernel32.dll")]
-    private static extern bool AttachConsole(int dwProcessId);
-
     [STAThread]
     static void Main(string[] args)
     {
-        // Headless test mode: --test <args>
-        if (args.Length > 0 && args[0] == "--test")
-        {
-            AttachConsole(-1); // attach to parent console
-            var testArgs = args.Skip(1).ToArray();
-            var exitCode = Testing.TestHarness.RunAsync(testArgs).GetAwaiter().GetResult();
-            Environment.Exit(exitCode);
-            return;
-        }
-
         try
         {
             Bootstrap.Initialize(0x00010008); // WindowsAppSDK 1.8

@@ -8,6 +8,10 @@
   </PropertyGroup>
 
   <PropertyGroup>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Washmachine.Core\**;Washmachine.Cli\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
@@ -66,7 +70,10 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />
-    <PackageReference Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="Washmachine.Core\Washmachine.Core.csproj" />
   </ItemGroup>
 
 </Project>
