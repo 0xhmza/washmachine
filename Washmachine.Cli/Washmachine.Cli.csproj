@@ -17,8 +17,8 @@
     <Deterministic>true</Deterministic>
     <PathMap>$(MSBuildProjectDirectory)=.</PathMap>
 
-    <!-- Output next to GUI artifacts so both land under repo-root Output/ -->
-    <BaseOutputPath>..\Output</BaseOutputPath>
+    <!-- Output under repo-root Output/cli/ so CLI artifacts stay separate from GUI -->
+    <BaseOutputPath>$(MSBuildProjectDirectory)\..\Output\cli</BaseOutputPath>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)'=='Debug'">
@@ -38,7 +38,7 @@
     <PublishSingleFile>true</PublishSingleFile>
     <PublishReadyToRun>true</PublishReadyToRun>
     <StripSymbols>true</StripSymbols>
-    <PublishDir>$(BaseOutputPath)\Release\cli\publish\</PublishDir>
+    <PublishDir>$(BaseOutputPath)\publish\</PublishDir>
   </PropertyGroup>
 
   <ItemGroup>

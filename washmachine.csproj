@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <DefaultItemExcludes>$(DefaultItemExcludes);Washmachine.Core\**;Washmachine.Cli\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Washmachine.Core\**;Washmachine.Cli\**;Output\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <PropertyGroup>

@@ -15,6 +15,7 @@
     <!-- Deterministic builds -->
     <Deterministic>true</Deterministic>
     <PathMap>$(MSBuildProjectDirectory)=.</PathMap>
+    <BaseOutputPath>$(MSBuildProjectDirectory)\..\Output</BaseOutputPath>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)'=='Debug'">

@@ -154,7 +154,7 @@ Debug outputs:
 | Project | Output path |
 |---|---|
 | Washmachine.Core | `Washmachine.Core\bin\Debug\net8.0\` |
-| Washmachine.Cli | `Output\Debug\net8.0\washmachine-cli.exe` |
+| Washmachine.Cli | `Output\cli\Debug\net8.0\washmachine-cli.exe` |
 | washmachine (GUI) | `Output\Debug\net8.0-windows10.0.19041.0\washmachine.exe` |
 
 ### Build individual projects
@@ -175,7 +175,7 @@ dotnet build washmachine.csproj
 dotnet publish Washmachine.Cli\Washmachine.Cli.csproj -c Release
 ```
 
-Output: `Output\Release\cli\publish\washmachine-cli.exe`
+Output: `Output\cli\Release\publish\washmachine-cli.exe`
 
 The CLI publishes as a **single executable** (framework-dependent). End-users need **.NET 8 Runtime** (`dotnet-runtime-8.0`, not the full Desktop Runtime).
 
@@ -201,7 +201,7 @@ Two separately distributable products come out of the same repo:
 
 #### 1. CLI tool (`washmachine-cli`)
 
-Minimum required files from `Output\Release\cli\publish\`:
+Minimum required files from `Output\cli\Release\publish\`:
 
 ```
 washmachine-cli.exe         ← single-file executable
