@@ -35,6 +35,17 @@ public sealed partial class PackingPage : Page
     public string? UpxPath => _upxPath;
 
     /// <summary>
+    /// Gets the selected compression level display name.
+    /// </summary>
+    public string SelectedCompressionLevel => CompressionLevelCombo.SelectedIndex switch
+    {
+        0 => "Fast",
+        1 => "Normal",
+        2 => "Best",
+        _ => "Normal"
+    };
+
+    /// <summary>
     /// Gets the UPX compression arguments based on settings.
     /// </summary>
     public string GetUpxArguments()

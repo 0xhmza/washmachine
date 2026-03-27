@@ -25,6 +25,8 @@ public sealed partial class CompilePage : Page
     private string? _lastOutputPath;
     private List<CompilerToolCandidate>? _compilerCandidates;
 
+    private bool _compilersDetected;
+
     private static readonly string MinGwDownloadUrl = 
         "https://github.com/niXman/mingw-builds-binaries/releases/download/14.2.0-rt_v12-rev0/x86_64-14.2.0-release-win32-seh-ucrt-rt_v12-rev0.7z";
 
@@ -54,7 +56,11 @@ public sealed partial class CompilePage : Page
 
     private async void CompilePage_Loaded(object sender, RoutedEventArgs e)
     {
-        await RefreshCompilers();
+        if (!_compilersDetected)
+        {
+            await RefreshCompilers();
+            _compilersDetected = true;
+        }
         UpdateConfigurationSummary();
     }
 
@@ -107,14 +113,45 @@ public sealed partial class CompilePage : Page
         var backdoorPage = BackdooringPage.Instance;
         var packingPage = PackingPage.Instance;
 
-        // Update Payload summary (from MainPage)
+        // ── Payload summary ────────────────────────────────────────────
         if (mainPage != null)
         {
-            // Get shellcode info from coordinator if available
-            SummaryShellcode.Text = "Configured";
-            SummaryTemplate.Text = "Default";
-            SummaryEncoder.Text = "XOR";
-            SummaryEnvelope.Text = "None";
+            // Shellcode source
+            var src = mainPage.CurrentShellcodeSource;
+            SummaryShellcode.Text = src switch
+            {
+                ShellcodeSource.File    => !string.IsNullOrEmpty(mainPage.ShellcodeFileTextBox.Text)
+                                            ? Path.GetFileName(mainPage.ShellcodeFileTextBox.Text)
+                                            : "File (not set)",
+                ShellcodeSource.Raw     => !string.IsNullOrEmpty(mainPage.ShellcodeRawTextBox.Text)
+                                            ? $"Raw ({mainPage.ShellcodeRawTextBox.Text.Length} chars)"
+                                            : "Raw (empty)",
+                ShellcodeSource.Url     => !string.IsNullOrEmpty(mainPage.ShellcodeUrlTextBox.Text)
+                                            ? "Web payload"
+                                            : "URL (not set)",
+                ShellcodeSource.Generic => mainPage.GenericShellcodeCombo.SelectedItem is not null
+                                            ? mainPage.GenericShellcodeCombo.SelectedItem.ToString() ?? "Generic"
+                                            : "Generic (not set)",
+                _                       => "Not configured"
+            };
+
+            // Template
+            if (mainPage.TemplateCombo.SelectedItem is not null)
+                SummaryTemplate.Text = mainPage.TemplateCombo.SelectedItem.ToString() ?? "Default";
+            else
+                SummaryTemplate.Text = "Not selected";
+
+            // Encoder
+            if (mainPage.EncoderCombo.SelectedItem is not null)
+                SummaryEncoder.Text = mainPage.EncoderCombo.SelectedItem.ToString() ?? "None";
+            else
+                SummaryEncoder.Text = "None";
+
+            // Envelope
+            if (mainPage.EnvelopeCombo.SelectedItem is not null)
+                SummaryEnvelope.Text = mainPage.EnvelopeCombo.SelectedItem.ToString() ?? "None";
+            else
+                SummaryEnvelope.Text = "None";
         }
         else
         {
@@ -124,7 +161,7 @@ public sealed partial class CompilePage : Page
             SummaryEnvelope.Text = "None";
         }
 
-        // Update Backdooring summary
+        // ── Backdooring summary ────────────────────────────────────────
         if (backdoorPage != null && backdoorPage.IsBackdooringEnabled)
         {
             BackdoorStatusBadge.Background = new SolidColorBrush(Microsoft.UI.Colors.Green);
@@ -146,7 +183,7 @@ public sealed partial class CompilePage : Page
             BackdoorDisabledText.Visibility = Visibility.Visible;
         }
 
-        // Update Packing summary
+        // ── Packing summary ───────────────────────────────────────────
         if (packingPage != null && packingPage.IsPackingEnabled)
         {
             PackingStatusBadge.Background = new SolidColorBrush(Microsoft.UI.Colors.Green);
@@ -154,8 +191,8 @@ public sealed partial class CompilePage : Page
             PackingDetails.Visibility = Visibility.Visible;
             PackingDisabledText.Visibility = Visibility.Collapsed;
 
-            SummaryPacker.Text = "UPX";
-            SummaryPackLevel.Text = "Best";
+            SummaryPacker.Text = !string.IsNullOrEmpty(packingPage.UpxPath) ? "UPX" : "UPX (not found)";
+            SummaryPackLevel.Text = packingPage.SelectedCompressionLevel;
         }
         else
         {
@@ -165,7 +202,7 @@ public sealed partial class CompilePage : Page
             PackingDisabledText.Visibility = Visibility.Visible;
         }
 
-        // Update build description
+        // ── Build pipeline description ─────────────────────────────────
         var steps = new List<string> { "Compile payload" };
         if (backdoorPage?.IsBackdooringEnabled == true)
             steps.Add("Backdoor PE");

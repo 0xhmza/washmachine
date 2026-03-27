@@ -51,33 +51,10 @@ public sealed partial class SettingsPage : Page
 
     private static (IMainFormView? view, Controllers.MainFormCoordinator? coordinator) ResolveMainPage()
     {
-        if (App.ActiveWindow?.Content is not NavigationView navView ||
-            navView.Content is not Frame frame)
-            return (null, null);
-
-        // MainPage is cached via NavigationCacheMode.Required — walk the back-stack
-        // to find the cached instance and retrieve its coordinator.
-        foreach (var entry in frame.BackStack)
-        {
-            if (entry.SourcePageType != typeof(MainPage))
-                continue;
-
-            // WinUI keeps the page alive. To reach it, temporarily navigate and
-            // back — or scan the visual tree. However, the simplest reliable way
-            // is to check if the frame's cached page matches.
-            // Frame does not expose its page cache directly, so we have to do a
-            // navigate-and-back dance:
-            frame.Navigate(typeof(MainPage));
-            if (frame.Content is MainPage mp)
-            {
-                frame.GoBack();
-                return (mp, mp.Coordinator);
-            }
-        }
-
-        // Already on MainPage
-        if (frame.Content is MainPage current)
-            return (current, current.Coordinator);
+        // MainPage is cached via NavigationCacheMode.Required — use the static instance.
+        var mp = MainPage.Instance;
+        if (mp != null)
+            return (mp, mp.Coordinator);
 
         return (null, null);
     }

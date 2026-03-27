@@ -20,6 +20,7 @@ public sealed partial class MainPage : Page, IMainFormView
     private readonly AppPaths _paths;
     private ShellcodeSource _currentSource = ShellcodeSource.None;
     private bool _suppressPlaybookSelection;
+    private bool _initialized;
 
     public MainPage()
     {
@@ -60,6 +61,9 @@ public sealed partial class MainPage : Page, IMainFormView
     public nint WindowHandle => WindowNative.GetWindowHandle(App.ActiveWindow!);
     public DependencyObject ContentRoot => this;
 
+    /// <summary>Currently selected shellcode source type.</summary>
+    public ShellcodeSource CurrentShellcodeSource => _currentSource;
+
     public ComboBox EncoderCombo => bin2hexEncoder;
     public ComboBox EnvelopeCombo => bin2hexEnvelope;
     public ComboBox TemplateCombo => templateComboBox;
@@ -83,11 +87,14 @@ public sealed partial class MainPage : Page, IMainFormView
 
     private async void MainPage_Loaded(object sender, RoutedEventArgs e)
     {
+        if (_initialized) return;
+
         try
         {
             await _requirements.EnsureRequirementsAsync(new WindowProgressReporter());
             PopulatePlaybookCombo();
             await _coordinator.InitializeAsync(this);
+            _initialized = true;
             _logger.Ok("Ready.");
         }
         catch (Exception ex)
@@ -318,5 +325,6 @@ public sealed partial class MainPage : Page, IMainFormView
         public string Path { get; }
     }
 
-    private enum ShellcodeSource { None, File, Raw, Url, Generic }
 }
+
+public enum ShellcodeSource { None, File, Raw, Url, Generic }
