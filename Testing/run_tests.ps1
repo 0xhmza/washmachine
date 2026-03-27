@@ -41,13 +41,13 @@ $ErrorActionPreference = "Stop"
 # ── Resolve paths ─────────────────────────────────────────────────────────────
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $repoRoot  = Split-Path -Parent $scriptDir
-$outDir    = Join-Path $repoRoot "Output\Debug\net8.0-windows10.0.19041.0"
-$exePath   = Join-Path $outDir "washmachine.exe"
+$cliOutDir = Join-Path $repoRoot "Output\Debug\net8.0"
+$exePath   = Join-Path $cliOutDir "washmachine-cli.exe"
 
 if (-not (Test-Path $exePath)) {
-    Write-Host "Building project..." -ForegroundColor Yellow
+    Write-Host "Building CLI project..." -ForegroundColor Yellow
     Push-Location $repoRoot
-    dotnet build -c Debug 2>&1 | Out-Null
+    dotnet build Washmachine.Cli\Washmachine.Cli.csproj -c Debug 2>&1 | Out-Null
     Pop-Location
     if (-not (Test-Path $exePath)) {
         Write-Error "Build failed or exe not found at $exePath"
@@ -61,7 +61,7 @@ $shellcodeRequired = $Phase -ne "3"
 
 if (-not $ShellcodeFile) {
     $candidates = @(
-        (Join-Path $outDir "messagebox.bin"),
+        (Join-Path $cliOutDir "messagebox.bin"),
         (Join-Path $repoRoot "messagebox.bin"),
         (Join-Path $repoRoot "testing assets" "binary" "shellcodes" "messagebox.bin")
     )
@@ -93,7 +93,7 @@ if ($Phase -eq "all" -or $Phase -eq "3") {
 # ── Copy shellcode to output dir if needed ────────────────────────────────────
 $localBin = ""
 if ($ShellcodeFile) {
-    $localBin = Join-Path $outDir "messagebox.bin"
+    $localBin = Join-Path $cliOutDir "messagebox.bin"
     if (-not (Test-Path $localBin)) {
         Copy-Item $ShellcodeFile $localBin
     }
@@ -113,7 +113,7 @@ if (($Phase -eq "all" -or $Phase -eq "1") -and $localBin) {
 
 # ── Run the test harness ──────────────────────────────────────────────────────
 try {
-    $testArgs = @("--test", "--phase", $Phase)
+    $testArgs = @("test", "--phase", $Phase)
     
     if ($localBin) {
         $testArgs += @("--shellcode", $localBin)
@@ -125,7 +125,7 @@ try {
         $testArgs += @("--test-assets", $TestAssetsDir)
     }
 
-    Write-Host "`nRunning: washmachine.exe $($testArgs -join ' ')" -ForegroundColor Green
+    Write-Host "`nRunning: washmachine-cli.exe $($testArgs -join ' ')" -ForegroundColor Green
     Write-Host "═══════════════════════════════════════════════════════════════`n"
 
     & $exePath @testArgs
@@ -140,7 +140,7 @@ finally {
 }
 
 # ── Report ────────────────────────────────────────────────────────────────────
-$resultsFile = Join-Path $outDir "test_results.json"
+$resultsFile = Join-Path $cliOutDir "test_results.json"
 if (Test-Path $resultsFile) {
     $results = Get-Content $resultsFile | ConvertFrom-Json
     $total  = $results.Count

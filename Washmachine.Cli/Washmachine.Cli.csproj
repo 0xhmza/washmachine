@@ -16,15 +16,29 @@
     <!-- Deterministic builds -->
     <Deterministic>true</Deterministic>
     <PathMap>$(MSBuildProjectDirectory)=.</PathMap>
+
+    <!-- Output next to GUI artifacts so both land under repo-root Output/ -->
+    <BaseOutputPath>..\Output</BaseOutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <DebugType>portable</DebugType>
+    <WarningLevel>6</WarningLevel>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)'=='Release'">
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
+    <WarningLevel>6</WarningLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Optimize>true</Optimize>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <StripSymbols>true</StripSymbols>
+    <PublishDir>$(BaseOutputPath)\Release\cli\publish\</PublishDir>
   </PropertyGroup>
 
   <ItemGroup>

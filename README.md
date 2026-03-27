@@ -1,8 +1,8 @@
 # Washmachine
 
-> A WinUI 3 desktop application for building, encoding, and compiling C++ shellcode loaders — driven entirely by a single YAML catalog.
+> A CLI-first shellcode loader builder with a WinUI 3 desktop app — driven entirely by a single YAML catalog.
 
-Washmachine wraps the full shellcode-loader workflow into one UI: pick a shellcode source, choose a C++ template, stack pluggable feature snippets (anti-debugging, evasion, guardrails, process injection, shellcode execution, UAC bypass), and hit **Go** — the tool renders the C++ source and compiles it with whatever toolchain it finds on the machine.
+Washmachine wraps the full shellcode-loader workflow into one tool: pick a shellcode source, choose a C++ template, stack pluggable feature snippets (anti-debugging, evasion, guardrails, process injection, shellcode execution, UAC bypass), and compile with whatever toolchain is on the machine. Available as both a **standalone CLI** (`washmachine-cli`) and a **WinUI 3 desktop app**.
 
 ---
 
@@ -10,6 +10,7 @@ Washmachine wraps the full shellcode-loader workflow into one UI: pick a shellco
 
 - [Features](#features)
 - [Requirements](#requirements)
+- [CLI Reference](#cli-reference)
 - [Building](#building)
 - [Usage Guide](#usage-guide)
   - [Shellcode Sources](#shellcode-sources)
@@ -54,31 +55,93 @@ Washmachine wraps the full shellcode-loader workflow into one UI: pick a shellco
 
 ## Requirements
 
+### CLI (`washmachine-cli`)
+
 | Component | Version |
 |---|---|
 | OS | Windows 10 1809 (build 17763)+ / Windows 11 |
-| .NET | 8.0 Desktop Runtime x64 |
+| .NET | 8.0 Runtime x64 |
+| C++ Compiler | Any of: MSVC (VS Build Tools), MinGW-w64 `g++`, or `clang++` on PATH |
+| Python | 3.10+ on PATH — required for Bin2Shell encoding features |
+
+### Desktop App (`washmachine`)
+
+| Component | Version |
+|---|---|
+| OS | Windows 10 1809 (build 17763)+ / Windows 11 |
+| .NET | 8.0 **Desktop** Runtime x64 |
 | Windows App SDK | 1.8 Runtime |
 | C++ Compiler | Any of: MSVC (VS Build Tools), MinGW-w64 `g++`, or `clang++` on PATH |
 | Python | 3.10+ on PATH — required for Bin2Shell encoding features |
 
 ---
 
+## CLI Reference
+
+```
+washmachine-cli <command> [options]
+```
+
+| Command | Description |
+|---|---|
+| `compile` | Build a shellcode loader executable |
+| `analyze` | Analyze a PE file (headers, sections, imports, code caves) |
+| `backdoor` | Inject shellcode into an existing PE via code-cave |
+| `list` | List available templates, encoders, snippets, or compilers |
+| `provision` | Download and install required external tools (Bin2Shell) |
+| `test` | Run the automated test harness |
+
+### Examples
+
+```powershell
+# Compile from a .bin shellcode file using the minimal template
+washmachine-cli compile -s payload.bin -t shellcode-minimal
+
+# Compile with XOR encoding, output as JSON
+washmachine-cli compile -s payload.bin -e 1 --json
+
+# Analyze a PE file
+washmachine-cli analyze target.exe --json
+
+# Inject shellcode into an existing PE
+washmachine-cli backdoor --pe target.exe -s payload.bin -o patched.exe
+
+# List discovered compilers and available templates
+washmachine-cli list --compilers
+washmachine-cli list --templates
+
+# Download Bin2Shell (run once before using encoding features)
+washmachine-cli provision
+
+# Run the automated test harness
+washmachine-cli test --shellcode messagebox.bin --phase all
+```
+
+---
+
 ## Building
 
 ```powershell
-dotnet build
+# Build all three projects
+dotnet build washmachine.sln
 ```
 
-Debug output lands in `Output\Debug\net8.0-windows10.0.19041.0\`.
+| Project | Debug output |
+|---|---|
+| Washmachine.Cli | `Output\Debug\net8.0\washmachine-cli.exe` |
+| washmachine (GUI) | `Output\Debug\net8.0-windows10.0.19041.0\washmachine.exe` |
 
-### Publish (framework-dependent, no bundled runtime)
+### Publish for release
 
 ```powershell
-dotnet publish -c Release
+# CLI — single-file executable → Output\Release\cli\publish\
+dotnet publish Washmachine.Cli\Washmachine.Cli.csproj -c Release
+
+# GUI — framework-dependent → Output\Release\publish\
+dotnet publish washmachine.csproj -c Release
 ```
 
-Output goes to `Output\Release\publish\`. End-users need .NET 8 Desktop Runtime and Windows App SDK 1.8 Runtime installed separately.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for full delivery instructions, runtime prerequisites, and what to include in each release package.
 
 ---
 
@@ -584,101 +647,50 @@ sections:
 
 ```
 washmachine/
+├── Washmachine.Core/                   ← headless class library (net8.0)
+│   ├── Logging/                        ← IAppLogger, ConsoleLogger
+│   ├── Models/                         ← UIData, PE models, snippet/template models
+│   ├── Services/                       ← all business logic (compiler, analyzer, provisioner…)
+│   ├── Testing/
+│   │   └── TestHarness.cs              ← headless combinatorial test runner
+│   └── Washmachine.Core.csproj
+│
+├── Washmachine.Cli/                    ← console app (net8.0)
+│   ├── Program.cs                      ← compile / analyze / backdoor / list / provision / test
+│   └── Washmachine.Cli.csproj
+│
 ├── Assets/
-│   └── vx_api_snippets.yaml     ← single source of truth for all templates & snippets
+│   └── vx_api_snippets.yaml            ← single source of truth for all templates & snippets
 ├── Controllers/
-│   └── MainFormCoordinator.cs   ← wires UI events to services (MVVM coordinator)
+│   └── MainFormCoordinator.cs          ← wires GUI events to Core services
 ├── Logging/
-│   ├── IAppLogger.cs
-│   └── RichTextBoxLogger.cs     ← thread-safe, colour-coded log output
-├── Models/
-│   ├── Bin2ShellWebOutput.cs    ← parsed Bin2Shell -w YAML output
-│   ├── CodeSnippetModels.cs     ← section / item / input data classes
-│   ├── CodeTemplateModels.cs    ← template / placeholder data classes
-│   ├── CppCompilationPlan.cs    ← transient render state for one compilation
-│   └── UIData.cs                ← snapshot of WinUI control values
-├── Services/
-│   ├── AppPaths.cs              ← all filesystem path resolution
-│   ├── Bin2ShellRunner.cs       ← spawns python main.py, returns stdout
-│   ├── Bin2ShellWebOutputParser.cs ← parses Bin2Shell -w YAML (new + legacy formats)
-│   ├── CompilerService.cs       ← core pipeline: plan → render → compile
-│   ├── CompilerToolLocator.cs   ← discovers cl.exe / g++ / clang++ on the machine
-│   ├── CppFileConverter.cs      ← invokes the C++ compiler subprocess
-│   ├── HeaderListPopulator.cs   ← populates ComboBox / ListBox from catalog sections
-│   ├── RequirementProvisioner.cs ← downloads Bin2Shell if missing
-│   ├── ShellcodeEncodingCatalogService.cs ← parses Bin2Shell -h into UI option lists
-│   ├── UserInteractionService.cs ← dialog helpers (file picker, message box, prompt)
-│   └── YamlCodeSnippetCatalogService.cs ← loads and resolves the YAML catalog
-├── Views/
-│   ├── BackdooringPage.xaml[.cs]
-│   ├── IMainFormView.cs         ← view interface for the coordinator
-│   ├── MainPage.xaml[.cs]       ← primary loader-builder page
-│   ├── PackingPage.xaml[.cs]
-│   ├── RequirementsProgressWindow.cs
-│   ├── SettingsPage.xaml[.cs]
-│   ├── TemplateOptionsWindow.cs
-│   └── WebPayloadWizardWindow.cs
+│   └── RichTextBoxLogger.cs            ← WinUI-specific logger
+├── Services/                           ← GUI-only services (clipboard, file pickers, visual tree)
+├── Views/                              ← WinUI 3 pages and windows
 ├── Testing/
-│   ├── TestHarness.cs           ← headless combinatorial test runner
-│   └── run_tests.ps1            ← PowerShell driver for the harness
-├── Program.cs                   ← entry point, headless/GUI mode switch
+│   └── run_tests.ps1                   ← PowerShell driver for TestHarness
 ├── App.xaml[.cs]
-└── washmachine.csproj
+├── MainWindow.xaml[.cs]
+├── Program.cs                          ← GUI entry point
+├── washmachine.csproj                  ← GUI project (references Core)
+├── washmachine.sln
+└── ARCHITECTURE.md                     ← architecture & delivery guide
 ```
 
 ---
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────┐
-│                    WinUI 3 Views                    │
-│  MainPage / WebPayloadWizard / Settings / Backdoor  │
-└───────────────────────┬─────────────────────────────┘
-                        │ events
-                        ▼
-┌─────────────────────────────────────────────────────┐
-│             MainFormCoordinator                     │
-│  Orchestrates UI state ↔ service calls              │
-└──┬────────────┬────────────┬────────────────────────┘
-   │            │            │
-   ▼            ▼            ▼
-CompilerService  Bin2ShellRunner  YamlCodeSnippetCatalogService
-   │                              │
-   │  1. ResolveTemplate()        │ Loads Assets/vx_api_snippets.yaml
-   │  2. ApplyShellcodeAsync()    │ Exposes templates + sections + items
-   │  3. ApplyFeatureSelections() │
-   │  4. RenderTemplate()         │
-   │  5. CppFileConverter.ConvertAsync()
-   │
-   └─► logging/session_*/source.cpp
-       logging/session_*/build_log.txt
-       temp/cpp/Compiled BInaries/<timestamp>-<hash>.exe
-```
-
-**Compilation pipeline detail:**
+The project follows a **CLI-first, shared-core** architecture:
 
 ```
-UiData (control snapshot)
-    │
-    ▼
-CppCompilationPlan           ← transient render-state object
-    │
-    ├── EncodedShellcodeSnippet  ← from Bin2Shell stdout
-    ├── SnippetIncludes[]        ← deduplicated from all selected items
-    ├── SnippetImplementations[] ← implementation blocks from all selected items
-    ├── CustomSnippetBlocks{}    ← keyed by placeholder name
-    └── WebPayloadCodeBlock      ← from Bin2Shell -w (URL mode)
-    │
-    ▼
-RenderTemplate(plan, template)   ← substitutes all {{TOKEN}} values
-    │
-    ▼
-CppFileConverter.ConvertAsync()  ← cl.exe / g++ / clang++
-    │
-    ▼
-<timestamp>-<sha256prefix>.exe
+washmachine (GUI) ──references──► Washmachine.Core
+Washmachine.Cli  ──references──► Washmachine.Core
 ```
+
+All business logic (compilation, PE analysis, Bin2Shell integration, YAML catalog, test harness) lives in `Washmachine.Core`. Neither the CLI nor the GUI contains domain logic — they are thin consumers of Core services.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full architecture diagram, compilation pipeline walkthrough, and end-product delivery guide.
 
 ---
 
@@ -687,26 +699,25 @@ CppFileConverter.ConvertAsync()  ← cl.exe / g++ / clang++
 A headless combinatorial test harness exercises Phase 1 (all encoder × envelope combinations) and Phase 2 (all template × snippet permutations) without any UI.
 
 ```powershell
-# Build first
-dotnet build
-
-# Run all phases with a messagebox.bin shellcode
+# Build CLI and run all phases
 .\Testing\run_tests.ps1 -ShellcodeFile path\to\messagebox.bin
 
 # Run only Phase 1 (encoding combos)
-.\Testing\run_tests.ps1 -Phase 1
+.\Testing\run_tests.ps1 -Phase 1 -ShellcodeFile path\to\messagebox.bin
 
-# Stop on first failure
-.\Testing\run_tests.ps1 -Phase all
+# Run only Phase 3 (multiple shellcode inputs from test assets)
+.\Testing\run_tests.ps1 -Phase 3
 ```
 
-Results are written to `test_results.json` in the output directory. Failed tests print a summary with phase, description, and error.
+Or invoke directly via the CLI:
 
-You can also invoke the harness directly from the compiled binary:
+```powershell
+washmachine-cli test --shellcode path\to\messagebox.bin --phase all
+washmachine-cli test --shellcode path\to\messagebox.bin --phase 1 --url http://host/payload.bin
+washmachine-cli test --phase 3 --test-assets "testing assets\binary\shellcodes"
+```
 
-```
-washmachine.exe --test --shellcode path\to\shellcode.bin [--url http://...] [--phase 1|2|all] [--stop-on-fail]
-```
+Results are written to `test_results.json` next to the CLI executable.
 
 ---
 
