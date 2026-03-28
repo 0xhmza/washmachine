@@ -4,6 +4,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 18.3.11415.281 d18.3
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "washmachine", "washmachine.csproj", "{976B1789-8D67-4AC2-A389-BD142E7E1D83}"
+	ProjectSection(ProjectDependencies) = postProject
+		{B2C3D4E5-F6A7-8901-BCDE-F12345678901} = {B2C3D4E5-F6A7-8901-BCDE-F12345678901}
+	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Washmachine.Core", "Washmachine.Core\Washmachine.Core.csproj", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
 EndProject

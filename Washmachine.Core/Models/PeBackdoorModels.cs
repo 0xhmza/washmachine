@@ -26,8 +26,14 @@ public sealed class PeBackdoorOptions
     /// <summary>Encryption for the payload.</summary>
     public PayloadEncryption Encryption { get; set; } = PayloadEncryption.Xor;
 
-    /// <summary>XOR key for encryption (if using XOR).</summary>
+    /// <summary>XOR key for encryption (if using XOR). 0 = random.</summary>
     public byte XorKey { get; set; } = 0x42;
+
+    /// <summary>Minimum code cave size to consider (0 = auto-calculate from payload).</summary>
+    public int MinCaveSize { get; set; } = 0;
+
+    /// <summary>If true, only analyze and report — don't actually inject.</summary>
+    public bool DryRun { get; set; } = false;
 
     /// <summary>Whether to preserve the original entry point functionality.</summary>
     public bool PreserveOriginalEntry { get; set; } = true;

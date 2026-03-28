@@ -317,8 +317,10 @@ public static class CppFileConverter
         }
 
         // GCC/Clang size-focused build: append -l flags for required libraries.
+        // Avoid -static-libstdc++ — most loader templates are pure Win32 API and
+        // the static C++ stdlib adds ~80-100 KB of unnecessary bloat.
         var libs = extraLibs.Count > 0 ? " " + string.Join(" ", extraLibs) : string.Empty;
-        return $"-Os -s -std=c++17 -ffunction-sections -fdata-sections -Wl,--gc-sections -DNDEBUG{(isDll ? " -shared" : " -static -static-libgcc -static-libstdc++")} -o {Q(outputExe)} {src}{libs}{libArgs}";
+        return $"-Os -s -std=c++17 -ffunction-sections -fdata-sections -Wl,--gc-sections -Wl,--subsystem,windows -DNDEBUG{(isDll ? " -shared" : " -static-libgcc")} -o {Q(outputExe)} {src}{libs}{libArgs}";
     }
 
     private static IReadOnlyList<string> BuildGccCompilerArgList(
@@ -345,10 +347,10 @@ public static class CppFileConverter
         }
         else
         {
-            args.Add("-static");
             args.Add("-static-libgcc");
-            args.Add("-static-libstdc++");
         }
+
+        args.Add("-Wl,--subsystem,windows");
 
         args.Add("-o");
         args.Add(outputExe);

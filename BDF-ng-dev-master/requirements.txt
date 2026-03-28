@@ -1,0 +1,5 @@
+pefile
+mitmproxy
+configobj
+psutil
+capstone

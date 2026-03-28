@@ -47,9 +47,21 @@
 
   <!-- Copy shared assets (YAML catalogs) to CLI output so AppPaths can locate them -->
   <ItemGroup>
-    <Content Include="..\Assets\**\*"
-             Link="Assets\%(RecursiveDir)%(Filename)%(Extension)"
-             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Assets\**\*" Link="Assets\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Spectre.Console" Version="*" />
+  </ItemGroup>
+  <!-- After building CLI, copy all output files next to washmachine.exe (GUI output dir) -->
+  <Target Name="CopyCliToGuiOutput" AfterTargets="Build">
+    <PropertyGroup>
+      <GuiOutputDir>$(MSBuildProjectDirectory)\..\Output\$(Configuration)\net8.0-windows10.0.19041.0\</GuiOutputDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(GuiOutputDir)" Condition="!Exists('$(GuiOutputDir)')" />
+    <ItemGroup>
+      <_CliFiles Include="$(OutputPath)\washmachine-cli.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_CliFiles)" DestinationFolder="$(GuiOutputDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
+  </Target>
 
 </Project>

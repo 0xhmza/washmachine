@@ -425,6 +425,13 @@
                         <Border Style="{StaticResource CardBorder}" Padding="12" Margin="0,0,0,8">
                             <StackPanel>
                                 <TextBlock Text="Options" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <TextBlock Text="Payload Encryption:" Margin="0,0,0,6" />
+                                <ComboBox x:Name="EncryptionCombo" HorizontalAlignment="Stretch" SelectedIndex="0" Margin="0,0,0,8">
+                                    <ComboBoxItem Content="None (raw shellcode)" />
+                                    <ComboBoxItem Content="XOR (single-byte key)" />
+                                    <ComboBoxItem Content="XOR2 (two-byte key)" />
+                                    <ComboBoxItem Content="RC4" />
+                                </ComboBox>
                                 <CheckBox x:Name="PreserveEntryCheck" Content="Preserve original entry point (return after payload)" IsChecked="True" />
                                 <CheckBox x:Name="PatchIatCheck" Content="Auto-patch IAT if required imports missing" IsChecked="True" Margin="0,4,0,0" />
                                 <CheckBox x:Name="RemoveSignatureCheck" Content="Remove PE signature (Authenticode)" IsChecked="True" Margin="0,4,0,0" />

@@ -65,6 +65,14 @@ public sealed partial class BackdooringPage : Page
     public bool RemoveSignature => RemoveSignatureCheck.IsChecked == true;
     public bool PatchSubsystemToGui => PatchSubsystemCheck.IsChecked == true;
 
+    public PayloadEncryption SelectedEncryption => EncryptionCombo.SelectedIndex switch
+    {
+        1 => PayloadEncryption.Xor,
+        2 => PayloadEncryption.Xor2,
+        3 => PayloadEncryption.Rc4,
+        _ => PayloadEncryption.None
+    };
+
     public bool IsInjectionValid { get; private set; } = false;
 
     public void SetEstimatedPayloadSize(int size)
