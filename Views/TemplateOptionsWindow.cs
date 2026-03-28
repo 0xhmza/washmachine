@@ -474,13 +474,16 @@ public sealed class TemplateOptionsWindow
             }
         }
 
+        // Prefer first real snippet over "None"
+        int firstReal = -1;
         int noneIndex = -1;
         for (int i = 0; i < options.Count; i++)
         {
-            if (string.IsNullOrWhiteSpace(options[i].Id)) { noneIndex = i; break; }
+            if (string.IsNullOrWhiteSpace(options[i].Id)) { noneIndex = i; }
+            else if (firstReal < 0) { firstReal = i; }
         }
 
-        combo.SelectedIndex = noneIndex >= 0 ? noneIndex : (options.Count > 0 ? 0 : -1);
+        combo.SelectedIndex = firstReal >= 0 ? firstReal : (noneIndex >= 0 ? noneIndex : -1);
     }
 
     private static List<OptionItem> BuildOptionItems(

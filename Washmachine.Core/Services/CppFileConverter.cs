@@ -71,14 +71,16 @@ public static class CppFileConverter
         logger.Debug($"Detected compiler: '{compilerPath}' ({family})");
 
         // Build to a temporary exe name first, then hash and rename after compilation succeeds.
-        var tempExe = Path.Combine(outputDir, $"build-{Guid.NewGuid():N}.exe");
+        bool isDll = SourceContainsDllMain(sources);
+        string outputExt = isDll ? ".dll" : ".exe";
+        var tempExe = Path.Combine(outputDir, $"build-{Guid.NewGuid():N}{outputExt}");
         var extraLibs = DetectRequiredLibraries(sources);
         var staticLibs = Directory.GetFiles(directory, "*.lib", SearchOption.TopDirectoryOnly);
         var args = family == CompilerFamily.GCC_LIKE
             ? string.Empty
-            : BuildCompilerArgs(family, sources, tempExe, extraLibs, staticLibs);
+            : BuildCompilerArgs(family, sources, tempExe, extraLibs, staticLibs, isDll);
         var gccArgs = family == CompilerFamily.GCC_LIKE
-            ? BuildGccCompilerArgList(sources, tempExe, extraLibs, staticLibs)
+            ? BuildGccCompilerArgList(sources, tempExe, extraLibs, staticLibs, isDll)
             : null;
         var vcVarsScript = family == CompilerFamily.MSVC
             ? FindVcVarsScript(compilerDirectory)
@@ -218,19 +220,20 @@ public static class CppFileConverter
         }
         catch (Exception ex)
         {
-            SafeDelete(tempExe);
-            return Fail($"Failed to hash output exe: {ex.Message}");
+            // Security software may block file reads — use a random suffix instead
+            hashFirst5 = Guid.NewGuid().ToString("N")[..5];
+            logger.Warn($"Hash skipped (security block?): {ex.Message}");
         }
 
         var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-        var finalExe = Path.Combine(outputDir, $"{timestamp}-{hashFirst5}.exe");
+        var finalExe = Path.Combine(outputDir, $"{timestamp}-{hashFirst5}{outputExt}");
 
         try
         {
             if (File.Exists(finalExe))
             {
                 logger.Warn($"Output file already existed, replacing: {finalExe}");
-                File.Delete(finalExe); // unlikely collision; just replace
+                File.Delete(finalExe);
             }
 
             File.Move(tempExe, finalExe);
@@ -238,11 +241,20 @@ public static class CppFileConverter
         }
         catch (Exception ex)
         {
-            SafeDelete(tempExe);
-            return Fail($"Failed to finalize output exe: {ex.Message}");
+            // Move failed (security block?) — try to use temp exe directly
+            if (File.Exists(tempExe))
+            {
+                logger.Warn($"Could not rename output ({ex.Message}), using temp path.");
+                finalExe = tempExe;
+                logger.Ok($"Build succeeded: {Path.GetFileName(finalExe)}");
+            }
+            else
+            {
+                return Fail($"Failed to finalize output exe: {ex.Message}");
+            }
         }
 
-        return new CppFileConversionResult(true, null);
+        return new CppFileConversionResult(true, null, finalExe);
     }
 
     // ----- helpers -----
@@ -265,7 +277,7 @@ public static class CppFileConverter
         return (null, default);
     }
 
-    private static string BuildCompilerArgs(CompilerFamily family, string[] sources, string outputExe, IReadOnlyList<string> extraLibs, string[] staticLibs)
+    private static string BuildCompilerArgs(CompilerFamily family, string[] sources, string outputExe, IReadOnlyList<string> extraLibs, string[] staticLibs, bool isDll)
     {
         static string Q(string s) => $"\"{s}\"";
 
@@ -299,21 +311,22 @@ public static class CppFileConverter
             // Standard Win32 libraries are listed explicitly to support linking against
             // pre-built static libs (.lib) where pragma-driven auto-linking doesn't propagate.
             return $"/nologo /O1 /Gy /DNDEBUG /EHsc /std:c++17 /Fe:{Q(outputExe)} {src}" +
-                   $" /link /OPT:REF /OPT:ICF /INCREMENTAL:NO{libArgs}" +
+                   $" /link /OPT:REF /OPT:ICF /INCREMENTAL:NO{(isDll ? " /DLL" : "")}{libArgs}" +
                    " kernel32.lib user32.lib gdi32.lib advapi32.lib shell32.lib ole32.lib" +
                    " comdlg32.lib ntdll.lib";
         }
 
         // GCC/Clang size-focused build: append -l flags for required libraries.
         var libs = extraLibs.Count > 0 ? " " + string.Join(" ", extraLibs) : string.Empty;
-        return $"-Os -s -std=c++17 -ffunction-sections -fdata-sections -Wl,--gc-sections -DNDEBUG -static -static-libgcc -static-libstdc++ -o {Q(outputExe)} {src}{libs}{libArgs}";
+        return $"-Os -s -std=c++17 -ffunction-sections -fdata-sections -Wl,--gc-sections -DNDEBUG{(isDll ? " -shared" : " -static -static-libgcc -static-libstdc++")} -o {Q(outputExe)} {src}{libs}{libArgs}";
     }
 
     private static IReadOnlyList<string> BuildGccCompilerArgList(
         string[] sources,
         string outputExe,
         IReadOnlyList<string> extraLibs,
-        string[] staticLibs)
+        string[] staticLibs,
+        bool isDll)
     {
         var args = new List<string>
         {
@@ -324,17 +337,44 @@ public static class CppFileConverter
             "-fdata-sections",
             "-Wl,--gc-sections",
             "-DNDEBUG",
-            "-static",
-            "-static-libgcc",
-            "-static-libstdc++",
-            "-o",
-            outputExe
         };
+
+        if (isDll)
+        {
+            args.Add("-shared");
+        }
+        else
+        {
+            args.Add("-static");
+            args.Add("-static-libgcc");
+            args.Add("-static-libstdc++");
+        }
+
+        args.Add("-o");
+        args.Add(outputExe);
 
         args.AddRange(sources);
         args.AddRange(extraLibs);
         args.AddRange(staticLibs);
         return args;
+    }
+
+    /// <summary>
+    /// Checks if any source file contains a DllMain entry point, indicating a DLL build.
+    /// </summary>
+    private static bool SourceContainsDllMain(string[] sourceFiles)
+    {
+        foreach (var file in sourceFiles)
+        {
+            try
+            {
+                var content = File.ReadAllText(file);
+                if (content.Contains("DllMain", StringComparison.Ordinal))
+                    return true;
+            }
+            catch { /* ignore read errors */ }
+        }
+        return false;
     }
 
     /// <summary>

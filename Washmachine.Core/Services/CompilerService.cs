@@ -634,6 +634,17 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         string directory = _paths.EnsureTempSourceDirectory();
         Directory.CreateDirectory(directory);
 
+        // Clean up leftover .cpp files from previous compilations to prevent
+        // CppFileConverter from compiling stale sources alongside the new one.
+        try
+        {
+            foreach (var staleFile in Directory.GetFiles(directory, "*.cpp", SearchOption.TopDirectoryOnly))
+            {
+                try { File.Delete(staleFile); } catch { /* ignore */ }
+            }
+        }
+        catch { /* ignore enumeration errors */ }
+
         string fileName = $"wash_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}.cpp";
         string path = Path.Combine(directory, fileName);
 

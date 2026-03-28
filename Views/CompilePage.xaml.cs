@@ -567,19 +567,51 @@ public sealed partial class CompilePage : Page
 
             _logger.Ok($"Compiled: {Path.GetFileName(compiledExePath)}");
             var currentOutput = compiledExePath;
+            var tempDir = Path.GetDirectoryName(compiledExePath);
 
-            // Resolve final output directory
-            var outputDir = string.IsNullOrWhiteSpace(OutputPath.Text)
-                ? Path.GetDirectoryName(compiledExePath) ?? Path.GetTempPath()
-                : OutputPath.Text;
+            // Resolve final output directory — prompt with Save As if none set
+            string outputDir;
+            if (!string.IsNullOrWhiteSpace(OutputPath.Text))
+            {
+                outputDir = OutputPath.Text;
+            }
+            else
+            {
+                var picker = new FileSavePicker();
+                picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+                picker.SuggestedFileName = Path.GetFileName(compiledExePath);
+                picker.FileTypeChoices.Add("Executable", new List<string> { ".exe" });
+
+                var hwnd = WindowNative.GetWindowHandle(App.ActiveWindow!);
+                InitializeWithWindow.Initialize(picker, hwnd);
+
+                var file = await picker.PickSaveFileAsync();
+                if (file != null)
+                {
+                    outputDir = Path.GetDirectoryName(file.Path) ?? Path.GetTempPath();
+                    // Use the filename chosen by the user
+                    var dest = file.Path;
+                    File.Copy(compiledExePath, dest, overwrite: true);
+                    currentOutput = dest;
+                }
+                else
+                {
+                    // User cancelled — keep in temp location
+                    outputDir = tempDir ?? Path.GetTempPath();
+                }
+            }
+
             Directory.CreateDirectory(outputDir);
 
             // Copy compiled exe to output dir if not already there
-            var finalInOutDir = Path.Combine(outputDir, Path.GetFileName(compiledExePath));
-            if (!string.Equals(compiledExePath, finalInOutDir, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(currentOutput, compiledExePath, StringComparison.OrdinalIgnoreCase))
             {
-                File.Copy(compiledExePath, finalInOutDir, overwrite: true);
-                currentOutput = finalInOutDir;
+                var finalInOutDir = Path.Combine(outputDir, Path.GetFileName(compiledExePath));
+                if (!string.Equals(compiledExePath, finalInOutDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    File.Copy(compiledExePath, finalInOutDir, overwrite: true);
+                    currentOutput = finalInOutDir;
+                }
             }
 
             // ── Step 2: Backdoor (optional) ──────────────────────────────
@@ -609,6 +641,23 @@ public sealed partial class CompilePage : Page
             }
 
             _lastOutputPath = outputDir;
+
+            // Clean up temp build directory if output was saved elsewhere
+            if (tempDir != null && !string.Equals(tempDir, outputDir, StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    // Walk up from "Compiled BInaries" to the cpp temp root
+                    var cppTempRoot = Path.GetDirectoryName(tempDir);
+                    var dirToClean = cppTempRoot != null && Directory.Exists(cppTempRoot) ? cppTempRoot : tempDir;
+                    Directory.Delete(dirToClean, recursive: true);
+                    _logger.Debug($"Cleaned temp directory: {dirToClean}");
+                }
+                catch (Exception cleanEx)
+                {
+                    _logger.Debug($"Temp cleanup skipped: {cleanEx.Message}");
+                }
+            }
 
             _logger.Info("\n═══════════════════════════════════════════════");
             _logger.Ok($"Build complete! Output: {Path.GetFileName(currentOutput)}");
@@ -726,9 +775,10 @@ public sealed partial class CompilePage : Page
                 _logger.Info(line);
         });
 
-        if (jsonLine == null && result.OutputLines.Count > 0)
+        // If single-line capture is missing or incomplete, extract from full output
+        bool incomplete = jsonLine == null || !jsonLine.TrimEnd().EndsWith('}');
+        if (incomplete && result.OutputLines.Count > 0)
         {
-            // JSON might span multiple lines — try to find it
             var fullOutput = result.Output;
             var start = fullOutput.IndexOf('{');
             var end   = fullOutput.LastIndexOf('}');
@@ -748,33 +798,17 @@ public sealed partial class CompilePage : Page
             var root = doc.RootElement;
 
             var success      = root.TryGetProperty("Success", out var sv) && sv.GetBoolean();
-            var sourcePath   = root.TryGetProperty("GeneratedSourcePath", out var sp) ? sp.GetString() : null;
+            var exePath      = root.TryGetProperty("OutputExePath", out var ep) ? ep.GetString() : null;
             var convSuccess  = root.TryGetProperty("ConversionSuccess", out var cv) && cv.GetBoolean();
             var convError    = root.TryGetProperty("ConversionError", out var ce) ? ce.GetString() : null;
-
-            if (root.TryGetProperty("Notes", out var notes))
-                foreach (var note in notes.EnumerateArray())
-                    _logger.Info(note.GetString() ?? "");
 
             if (!convSuccess && !string.IsNullOrEmpty(convError))
                 _logger.Error($"Compiler: {convError}");
 
-            if (!success || sourcePath == null)
+            if (!success || string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
                 return (null, false);
 
-            var exePath = Path.ChangeExtension(sourcePath, ".exe");
-            if (!File.Exists(exePath))
-            {
-                // Try finding latest exe in the same directory
-                var dir = Path.GetDirectoryName(sourcePath);
-                if (dir != null)
-                    exePath = Directory.GetFiles(dir, "*.exe")
-                                  .OrderByDescending(File.GetLastWriteTime)
-                                  .FirstOrDefault()
-                              ?? exePath;
-            }
-
-            return File.Exists(exePath) ? (exePath, true) : (null, false);
+            return (exePath, true);
         }
         catch (Exception ex)
         {

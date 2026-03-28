@@ -8,4 +8,8 @@ public sealed record CompilerResult(
     string? GeneratedSourceCode,
     IReadOnlyList<string> Notes,
     CompilerToolDiscoveryResult? Discovery,
-    CppFileConversionResult ConversionResult);
+    CppFileConversionResult ConversionResult)
+{
+    /// <summary>Path to the compiled executable, if compilation succeeded.</summary>
+    public string? OutputExePath => ConversionResult?.OutputExePath;
+}

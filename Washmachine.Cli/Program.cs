@@ -9,7 +9,7 @@ namespace Washmachine.Cli;
 
 public static class Program
 {
-    private static readonly JsonSerializerOptions JsonPrint = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions JsonPrint = new() { WriteIndented = false };
 
     public static async Task<int> Main(string[] args)
     {
@@ -148,7 +148,7 @@ public static class Program
 
         // Apply snippet selections and defaults
         foreach (var kv in snippets)
-            comboBoxes[kv.Key] = kv.Value;
+            comboBoxes[$"snippetCombo_{kv.Key}_0"] = kv.Value;
 
         // Apply default snippets for the selected template
         if (snippetService.TryGetTemplate(comboBoxes["templateComboBox"], out var tmpl))
@@ -189,6 +189,7 @@ public static class Program
                 var output = new
                 {
                     result.Success,
+                    result.OutputExePath,
                     result.GeneratedSourcePath,
                     Notes = result.Notes,
                     CompilerPath = result.Discovery?.Best?.Path,

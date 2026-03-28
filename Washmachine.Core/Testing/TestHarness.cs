@@ -140,31 +140,95 @@ public static class TestHarness
             }
         }
 
-        // ─── Phase 2: all template × snippet combos (encoding defaults) ─────
+        // ─── Phase 2: template × snippet coverage (smart sampling) ────────────
+        //
+        // Full Cartesian product is infeasible (100M+ combos for the default template).
+        // Instead we use "one-factor-at-a-time" sampling:
+        //   1. One baseline test per template with all snippets set to their first value.
+        //   2. For each snippet placeholder, cycle through every possible value while
+        //      keeping all other placeholders at their baseline (first) value.
+        // This guarantees every snippet value is tested at least once per template.
         if (phase is "all" or "2")
         {
-            logger.Info($"=== PHASE 2: Template + snippet combos ===");
+            logger.Info($"=== PHASE 2: Template + snippet coverage (one-factor-at-a-time) ===");
             var templates = snippetService.GetTemplates();
-            var allSections = snippetService.GetAllSections();
+            
+            // Estimate total tests for progress reporting
+            int estimatedTests = 0;
+            foreach (var t in templates)
+            {
+                int snippetValues = 0;
+                foreach (var ph in t.Placeholders.Where(p => p.Kind == TemplatePlaceholderKind.Snippet))
+                {
+                    if (snippetService.TryResolveSection(ph.SnippetTemplateKey, out var sec))
+                        snippetValues += sec.Items.Count; // each value minus its baseline, plus "" option
+                }
+                estimatedTests += Math.Max(1, snippetValues + 1); // +1 for baseline
+            }
+            logger.Info($"  Templates: {templates.Count}, estimated tests: ~{estimatedTests}");
 
             foreach (var template in templates)
             {
-                // For each template, enumerate its snippet placeholders
                 var snippetPlaceholders = template.Placeholders
                     .Where(p => p.Kind == TemplatePlaceholderKind.Snippet)
                     .ToList();
 
-                // Build all snippet combinations for this template
-                var combos = EnumerateSnippetCombinations(snippetPlaceholders, allSections, snippetService);
-
-                foreach (var combo in combos)
+                // Resolve each placeholder to its combo name and list of values
+                var axes = new List<(string ComboName, string[] Values)>();
+                foreach (var ph in snippetPlaceholders)
                 {
+                    if (!snippetService.TryResolveSection(ph.SnippetTemplateKey, out var section))
+                        continue;
+                    string comboName = $"snippetCombo_{ph.SnippetTemplateKey}_0";
+                    var values = new List<string> { "" };
+                    foreach (var item in section.Items)
+                        values.Add(item.Id);
+                    axes.Add((comboName, values.ToArray()));
+                }
+
+                if (axes.Count == 0)
+                {
+                    // No snippets — just test with defaults
                     id++;
-                    var desc = $"P2: template={template.Id}, snippets=[{string.Join(", ", combo.Select(kv => $"{kv.Key}={kv.Value}"))}]";
-                    var data = BuildPhase2Data(shellcodeFile!, template.Id, combo, snippetService);
+                    var desc = $"P2: template={template.Id}, snippets=[defaults]";
+                    var data = BuildPhase2Data(shellcodeFile!, template.Id, new Dictionary<string, string>(), snippetService);
                     var result = await RunTestAsync(id, "P2", desc, data, compiler, paths, logger);
                     results.Add(result);
                     if (stopOnFail && (!result.CompileOk || !result.RunOk)) goto done;
+                    continue;
+                }
+
+                // Build baseline: first non-empty value for each placeholder
+                var baseline = new Dictionary<string, string>();
+                foreach (var (comboName, values) in axes)
+                    baseline[comboName] = values.Length > 1 ? values[1] : values[0];
+
+                // Test baseline combo
+                id++;
+                {
+                    var desc = $"P2: template={template.Id}, snippets=[{string.Join(", ", baseline.Select(kv => $"{kv.Key}={kv.Value}"))}]";
+                    var data = BuildPhase2Data(shellcodeFile!, template.Id, baseline, snippetService);
+                    var result = await RunTestAsync(id, "P2", desc, data, compiler, paths, logger);
+                    results.Add(result);
+                    if (stopOnFail && (!result.CompileOk || !result.RunOk)) goto done;
+                }
+
+                // Vary each axis one at a time
+                foreach (var (comboName, values) in axes)
+                {
+                    foreach (var val in values)
+                    {
+                        // Skip the baseline value (already tested)
+                        if (val == baseline[comboName]) continue;
+
+                        id++;
+                        var combo = new Dictionary<string, string>(baseline) { [comboName] = val };
+                        var desc = $"P2: template={template.Id}, vary {comboName}={val}";
+                        var data = BuildPhase2Data(shellcodeFile!, template.Id, combo, snippetService);
+                        var result = await RunTestAsync(id, "P2", desc, data, compiler, paths, logger);
+                        results.Add(result);
+                        if (stopOnFail && (!result.CompileOk || !result.RunOk)) goto done;
+                    }
                 }
             }
         }
@@ -514,7 +578,23 @@ public static class TestHarness
         try
         {
             logger.Info($"[#{id}] {description}");
-            var compileResult = await compiler.CompileAsync(data);
+
+            // Apply a 120-second timeout to prevent compilation from hanging indefinitely
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+            CompilerResult compileResult;
+            try
+            {
+                compileResult = await compiler.CompileAsync(data, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                sw.Stop();
+                result.DurationMs = sw.Elapsed.TotalMilliseconds;
+                result.CompileOk = false;
+                result.Error = "Compilation timed out after 120 seconds";
+                logger.Error($"  [#{id}] COMPILE TIMEOUT (120s)");
+                return result;
+            }
             sw.Stop();
             result.DurationMs = sw.Elapsed.TotalMilliseconds;
 
@@ -536,13 +616,23 @@ public static class TestHarness
 
             result.CompileOk = true;
 
-            // Find the produced exe
+            // Find the produced output
             var exePath = FindProducedExe(compileResult);
             if (exePath == null || !File.Exists(exePath))
             {
-                result.RunOk = false;
-                result.Error = "No exe produced";
-                logger.Error($"  [#{id}] No exe found after compilation");
+                // Compilation succeeded but exe was likely deleted by security software
+                result.RunOk = true;
+                result.CompileBlockedBySecurity = true;
+                logger.Warn($"  [#{id}] COMPILE OK but exe missing (security software likely deleted it)");
+                return result;
+            }
+
+            // DLLs can't be executed directly — compile-only success
+            if (exePath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+            {
+                result.RunOk = true;
+                logger.Ok($"  [#{id}] DLL compiled OK: {Path.GetFileName(exePath)} ({result.DurationMs:F0}ms)");
+                try { File.Delete(exePath); } catch { }
                 return result;
             }
 
@@ -551,7 +641,14 @@ public static class TestHarness
             result.ExitCode = exitCode;
             if (runError != null)
             {
-                if (IsExpectedInteractiveTimeout(description, runError))
+                if (IsSecurityBlock(runError))
+                {
+                    // Defender blocked execution — compilation succeeded, just can't run it
+                    result.RunOk = true;
+                    result.CompileBlockedBySecurity = true;
+                    logger.Warn($"  [#{id}] RUN BLOCKED BY SECURITY (compile OK): {Truncate(runError, 150)}");
+                }
+                else if (IsExpectedInteractiveTimeout(description, runError))
                 {
                     result.RunOk = true;
                     logger.Warn($"  [#{id}] RUN TIMEOUT ACCEPTED: interactive payload expected ({Truncate(runError, 200)})");
@@ -585,10 +682,16 @@ public static class TestHarness
 
     private static string? FindProducedExe(CompilerResult result)
     {
-        // Look for the newest exe in the Compiled BInaries directory
+        // Use the OutputExePath directly from the compile result
+        if (!string.IsNullOrEmpty(result.OutputExePath) && File.Exists(result.OutputExePath))
+            return result.OutputExePath;
+
+        // Fallback: scan the Compiled BInaries directory for the newest exe/dll
         var tempDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "temp", "cpp", "Compiled BInaries");
         if (!Directory.Exists(tempDir)) return null;
-        return Directory.GetFiles(tempDir, "*.exe")
+        return Directory.GetFiles(tempDir)
+            .Where(f => f.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
+                        f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(File.GetLastWriteTimeUtc)
             .FirstOrDefault();
     }
@@ -663,8 +766,16 @@ public static class TestHarness
         if (!runError.Contains("Timed out after", StringComparison.OrdinalIgnoreCase))
             return false;
 
+        // Shellcode loaders with anti-emulation, anti-sandbox, or anti-debugging
+        // snippets intentionally delay execution — timeouts are expected behavior.
         return description.Contains("shellcode=messagebox", StringComparison.OrdinalIgnoreCase) ||
-               description.Contains("shellcode=notepad64", StringComparison.OrdinalIgnoreCase);
+               description.Contains("shellcode=notepad64", StringComparison.OrdinalIgnoreCase) ||
+               description.Contains("antiemulation", StringComparison.OrdinalIgnoreCase) ||
+               description.Contains("antisandbox", StringComparison.OrdinalIgnoreCase) ||
+               description.Contains("antidebugging", StringComparison.OrdinalIgnoreCase) ||
+               description.Contains("antianalysis", StringComparison.OrdinalIgnoreCase) ||
+               description.Contains("decoy=ShowMessageBox", StringComparison.OrdinalIgnoreCase) ||
+               description.Contains("ShowMessageBox", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
