@@ -1476,7 +1476,7 @@ public sealed class MainFormCoordinator
         public string Id { get; }
         public string Display { get; }
 
-        public override string ToString() => Id;
+        public override string ToString() => Display;
     }
 
     private sealed class SnippetComboItem
@@ -1509,6 +1509,8 @@ public sealed class MainFormCoordinator
         public int Index { get; }
         public string Name { get; }
         public string Description { get; }
+
+        public override string ToString() => Name;
 
         public static EncodingComboItem From(ShellcodeEncodingItem item)
             => new(item.Index, item.Name, item.Description);

