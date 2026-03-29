@@ -4,10 +4,13 @@
 
 Washmachine wraps the full shellcode-loader workflow into one tool: pick a shellcode source, choose a C++ template, stack pluggable feature snippets (anti-debugging, evasion, guardrails, process injection, shellcode execution, UAC bypass), and compile with whatever toolchain is on the machine. Available as both a **standalone CLI** (`washmachine-cli`) and a **WinUI 3 desktop app**.
 
+📖 **[View Full Documentation](https://0xhmza.github.io/washmachine/)** — Complete documentation website with getting started guide, CLI reference, and architecture details.
+
 ---
 
 ## Table of Contents
 
+- [Documentation](#documentation)
 - [Features](#features)
 - [Requirements](#requirements)
 - [CLI Reference](#cli-reference)
@@ -35,6 +38,19 @@ Washmachine wraps the full shellcode-loader workflow into one tool: pick a shell
 - [Architecture](#architecture)
 - [Testing](#testing)
 - [License](#license)
+
+---
+
+## Documentation
+
+📚 **Full documentation is available at [https://0xhmza.github.io/washmachine/](https://0xhmza.github.io/washmachine/)**
+
+The documentation website includes:
+- **[Getting Started](https://0xhmza.github.io/washmachine/getting-started.html)** — Installation, building, and initial setup
+- **[CLI Reference](https://0xhmza.github.io/washmachine/cli-reference.html)** — Complete command documentation with examples
+- **[Architecture](https://0xhmza.github.io/washmachine/architecture.html)** — Project structure, design patterns, and key flows
+
+The documentation source files are located in the `docs/` directory and are automatically published to GitHub Pages.
 
 ---
 
