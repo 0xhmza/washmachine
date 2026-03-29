@@ -53,6 +53,7 @@ public sealed partial class MainPage : Page, IMainFormView
         templateCatalogPath.Text = $"Catalog: {_paths.ActivePlaybookPath}";
         PopulatePlaybookCombo();
         SetShellcodeSource(ShellcodeSource.None, clearInputs: false);
+        shellcodeFileInput.TextChanged += (s, e) => UpdateShellcodeFileBadge(shellcodeFileInput.Text);
         Loaded += MainPage_Loaded;
     }
 
@@ -369,6 +370,28 @@ public sealed partial class MainPage : Page, IMainFormView
 
         public string Name { get; }
         public string Path { get; }
+    }
+
+    private void UpdateShellcodeFileBadge(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            FileByteCountBadge.Visibility = Visibility.Collapsed;
+            FileMissingBadge.Visibility   = Visibility.Collapsed;
+            return;
+        }
+        if (System.IO.File.Exists(path))
+        {
+            var bytes = new System.IO.FileInfo(path).Length;
+            FileByteCountText.Text        = $"{bytes:N0} bytes";
+            FileByteCountBadge.Visibility = Visibility.Visible;
+            FileMissingBadge.Visibility   = Visibility.Collapsed;
+        }
+        else
+        {
+            FileByteCountBadge.Visibility = Visibility.Collapsed;
+            FileMissingBadge.Visibility   = Visibility.Visible;
+        }
     }
 
 }

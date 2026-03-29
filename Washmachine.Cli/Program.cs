@@ -747,28 +747,28 @@ public static class Program
             if (encoderIndex != null && int.TryParse(encoderIndex, out int encIdx))
             {
                 var enc = catalog.Encoders.FirstOrDefault(e => e.Index == encIdx);
-                comboBoxes["bin2hexEncoder"] = enc?.DisplayText ?? $"{encIdx} - custom";
+                comboBoxes[UiDataKeys.Encoder] = enc?.DisplayText ?? $"{encIdx} - custom";
             }
             else
             {
-                comboBoxes["bin2hexEncoder"] = "0 - none";
+                comboBoxes[UiDataKeys.Encoder] = "0 - none";
             }
 
             if (envelopeIndex != null && int.TryParse(envelopeIndex, out int envIdx))
             {
                 var env = catalog.Envelopes.FirstOrDefault(e => e.Index == envIdx);
-                comboBoxes["bin2hexEnvelope"] = env?.DisplayText ?? $"{envIdx} - custom";
+                comboBoxes[UiDataKeys.Envelope] = env?.DisplayText ?? $"{envIdx} - custom";
             }
             else
             {
-                comboBoxes["bin2hexEnvelope"] = "0 - none";
+                comboBoxes[UiDataKeys.Envelope] = "0 - none";
             }
         }
         catch (Exception ex)
         {
             logger.Warn($"Could not load encoding catalog: {ex.Message}");
-            comboBoxes["bin2hexEncoder"] = encoderIndex != null ? $"{encoderIndex} - custom" : "0 - none";
-            comboBoxes["bin2hexEnvelope"] = envelopeIndex != null ? $"{envelopeIndex} - custom" : "0 - none";
+            comboBoxes[UiDataKeys.Encoder] = encoderIndex != null ? $"{encoderIndex} - custom" : "0 - none";
+            comboBoxes[UiDataKeys.Envelope] = envelopeIndex != null ? $"{envelopeIndex} - custom" : "0 - none";
         }
 
         // Apply snippet selections — keys already contain the full combo name (e.g. "snippetCombo_ANTISANDBOX_0")

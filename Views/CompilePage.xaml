@@ -254,6 +254,9 @@
 
                         <CheckBox x:Name="OpenFolderAfterCompile" Content="Open output folder after compilation" IsChecked="True" />
                         <CheckBox x:Name="GenerateDebugInfo" Content="Generate debug information (PDB)" IsChecked="False" Margin="0,4,0,0" />
+                        <CheckBox x:Name="StripToBinCheck" Content="Also strip compiled loader to flat .bin (shellcode-ready for injection)" IsChecked="False" Margin="0,4,0,0"
+                                  ToolTipService.ToolTip="Runs the strip pipeline step after compilation to produce a position-independent .bin alongside the .exe" />
+                        <CheckBox x:Name="VerboseBuildCheck" Content="Verbose build output" IsChecked="False" Margin="0,4,0,0" />
                     </StackPanel>
                 </Expander>
 

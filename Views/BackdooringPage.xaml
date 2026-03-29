@@ -429,16 +429,60 @@
                             <StackPanel>
                                 <TextBlock Text="Options" FontWeight="SemiBold" Margin="0,0,0,8" />
                                 <TextBlock Text="Payload Encryption:" Margin="0,0,0,6" />
-                                <ComboBox x:Name="EncryptionCombo" HorizontalAlignment="Stretch" SelectedIndex="0" Margin="0,0,0,8">
+                                <ComboBox x:Name="EncryptionCombo" HorizontalAlignment="Stretch" SelectedIndex="0" Margin="0,0,0,8"
+                                          SelectionChanged="EncryptionCombo_SelectionChanged">
                                     <ComboBoxItem Content="None (raw shellcode)" />
                                     <ComboBoxItem Content="XOR (single-byte key)" />
-                                    <ComboBoxItem Content="XOR2 (two-byte key)" />
+                                    <ComboBoxItem Content="XOR2 (two-byte rolling key)" />
                                     <ComboBoxItem Content="RC4" />
                                 </ComboBox>
+
+                                <!-- XOR Key (shown when XOR or XOR2 selected) -->
+                                <Border x:Name="XorKeyPanel" Visibility="Collapsed" Margin="0,0,0,8"
+                                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                        CornerRadius="4" Padding="10,8">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xE8D7;" FontSize="14" VerticalAlignment="Center"
+                                                  Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                        <TextBlock Text="XOR Key (hex, e.g. 0xAB):" VerticalAlignment="Center" FontSize="12" />
+                                        <TextBox x:Name="XorKeyInput" PlaceholderText="0xDE" MaxLength="6"
+                                                 Width="100" FontFamily="Consolas" FontSize="12" />
+                                    </StackPanel>
+                                </Border>
+
                                 <CheckBox x:Name="PreserveEntryCheck" Content="Preserve original entry point (return after payload)" IsChecked="True" />
                                 <CheckBox x:Name="PatchIatCheck" Content="Auto-patch IAT if required imports missing" IsChecked="True" Margin="0,4,0,0" />
                                 <CheckBox x:Name="RemoveSignatureCheck" Content="Remove PE signature (Authenticode)" IsChecked="True" Margin="0,4,0,0" />
                                 <CheckBox x:Name="PatchSubsystemCheck" Content="Patch subsystem to GUI (hide console window)" IsChecked="True" Margin="0,4,0,0" />
+                                <CheckBox x:Name="PatchExitCheck" Content="Patch exit call (redirect ExitProcess → original entry)" IsChecked="True" Margin="0,4,0,0" />
+
+                                <!-- Advanced section -->
+                                <Expander Header="Advanced options" IsExpanded="False"
+                                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                          Margin="0,10,0,0">
+                                    <StackPanel Margin="0,8,0,0" Spacing="8">
+                                        <CheckBox x:Name="DryRunCheck" Content="Dry run — validate only, do not write output file" IsChecked="False" />
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="New section name:" FontSize="12" Margin="0,0,0,4" />
+                                                <TextBox x:Name="SectionNameInput" PlaceholderText=".extra" MaxLength="8"
+                                                         FontFamily="Consolas"
+                                                         ToolTipService.ToolTip="Name for the injected PE section (max 8 chars). Default: .extra" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                                                <TextBlock Text="Min cave size (bytes):" FontSize="12" Margin="0,0,0,4" />
+                                                <NumberBox x:Name="CaveMinSizeBox" Value="64" Minimum="32" Maximum="65536"
+                                                           SmallChange="32" LargeChange="256"
+                                                           SpinButtonPlacementMode="Inline"
+                                                           ToolTipService.ToolTip="Minimum code cave size to consider for injection" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Expander>
                             </StackPanel>
                         </Border>
                     </StackPanel>

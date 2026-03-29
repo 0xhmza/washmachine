@@ -33,6 +33,7 @@ public sealed partial class BackdooringPage : Page
 
         CarrierInvokeCombo.SelectionChanged += BackdoorOptions_Changed;
         EncryptionCombo.SelectionChanged += BackdoorOptions_Changed;
+        EncryptionCombo.SelectionChanged += EncryptionCombo_SelectionChanged;
         PreserveEntryCheck.Checked += BackdoorOptionToggle_Changed;
         PreserveEntryCheck.Unchecked += BackdoorOptionToggle_Changed;
     }
@@ -70,7 +71,13 @@ public sealed partial class BackdooringPage : Page
     public bool RemoveSignature => RemoveSignatureCheck.IsChecked == true;
     public bool PatchSubsystemToGui => PatchSubsystemCheck.IsChecked == true;
 
-    public PayloadEncryption SelectedEncryption => EncryptionCombo.SelectedIndex switch
+    public bool PatchExit => PatchExitCheck.IsChecked == true;
+    public bool DryRun => DryRunCheck.IsChecked == true;
+    public string? XorKey => XorKeyInput?.Text.Trim() is { Length: > 0 } s ? s : null;
+    public string? CustomSectionName => SectionNameInput?.Text.Trim() is { Length: > 0 } s ? s : null;
+    public int CaveMinSize => (int)(CaveMinSizeBox?.Value is double v && !double.IsNaN(v) ? v : 64);
+
+    public PayloadEncryption SelectedEncryption=> EncryptionCombo.SelectedIndex switch
     {
         1 => PayloadEncryption.Xor,
         2 => PayloadEncryption.Xor2,
@@ -539,6 +546,13 @@ public sealed partial class BackdooringPage : Page
     private void BackdoorOptionToggle_Changed(object sender, RoutedEventArgs e)
     {
         UpdateInjectionFeasibility();
+    }
+
+    private void EncryptionCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (XorKeyPanel == null) return;
+        var idx = EncryptionCombo.SelectedIndex;
+        XorKeyPanel.Visibility = (idx == 1 || idx == 2) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void ShowInjectionBlocked(string message)

@@ -174,8 +174,22 @@ public sealed partial class CompilePage : Page
             SummaryTargetPe.Text = backdoorPage.TargetPeFilePath != null 
                 ? Path.GetFileName(backdoorPage.TargetPeFilePath) 
                 : "Not selected";
-            SummaryInjectionMethod.Text = backdoorPage.SelectedInjectionMethod.ToString();
-            SummaryCarrier.Text = backdoorPage.SelectedCarrierInvoke.ToString();
+
+            SummaryInjectionMethod.Text = backdoorPage.SelectedInjectionMethod switch
+            {
+                InjectionMethod.CodeCave        => "Code Cave",
+                InjectionMethod.NewSection      => "New Section",
+                InjectionMethod.SectionExtension => "Section Extension",
+                _                               => backdoorPage.SelectedInjectionMethod.ToString()
+            };
+
+            SummaryCarrier.Text = backdoorPage.SelectedCarrierInvoke switch
+            {
+                CarrierInvoke.EntryPointHijack     => "Entry Point Hijack",
+                CarrierInvoke.EntryFunctionBackdoor => "Function Backdoor",
+                CarrierInvoke.TlsCallback           => "TLS Callback",
+                _                                  => backdoorPage.SelectedCarrierInvoke.ToString()
+            };
         }
         else
         {
@@ -209,6 +223,8 @@ public sealed partial class CompilePage : Page
 
         // ── Build pipeline description ─────────────────────────────────
         var steps = new List<string> { "Compile payload" };
+        if (StripToBinCheck?.IsChecked == true)
+            steps.Add("Strip to .bin");
         if (backdoorPage?.IsBackdooringEnabled == true)
             steps.Add("Backdoor PE");
         if (packingPage?.IsPackingEnabled == true)
@@ -573,6 +589,18 @@ public sealed partial class CompilePage : Page
             var currentOutput = compiledExePath;
             var tempDir = Path.GetDirectoryName(compiledExePath);
 
+            // ── Optional: Strip compiled exe to flat .bin ─────────────────
+            if (StripToBinCheck.IsChecked == true)
+            {
+                CompileProgressText.Text = "Step 1b: Stripping to flat .bin...";
+                _logger.Info("\n[Step 1b] Stripping loader to position-independent .bin...");
+                var strippedBin = await RunStripStepAsync(compiledExePath, tempDir ?? Path.GetTempPath());
+                if (strippedBin != null)
+                    _logger.Ok($"Stripped: {Path.GetFileName(strippedBin)}");
+                else
+                    _logger.Warn("Strip step failed or produced no output.");
+            }
+
             // Resolve final output directory — prompt with Save As if none set
             string outputDir;
             if (!string.IsNullOrWhiteSpace(OutputPath.Text))
@@ -780,6 +808,10 @@ public sealed partial class CompilePage : Page
             }
         }
 
+        // Verbose output
+        if (VerboseBuildCheck.IsChecked == true)
+            args.Add("--verbose");
+
         // JSON output for machine-readable result
         args.Add("--json");
 
@@ -925,24 +957,6 @@ public sealed partial class CompilePage : Page
             return null;
         }
 
-        if (backdoorPage.SelectedCarrierInvoke != CarrierInvoke.EntryPointHijack)
-        {
-            _logger.Error("Only Entry Point Hijack is currently implemented for PE backdooring.");
-            return null;
-        }
-
-        if (backdoorPage.SelectedEncryption != PayloadEncryption.None)
-        {
-            _logger.Error("Backdoor-stage encryption is not supported. Inject a ready-to-run flat .bin payload instead.");
-            return null;
-        }
-
-        if (!backdoorPage.PreserveOriginalEntry)
-        {
-            _logger.Error("Disabling original entry-point preservation is not implemented.");
-            return null;
-        }
-
         if (!File.Exists(shellcodeBinPath))
         {
             _logger.Warn($"Shellcode binary not found: {shellcodeBinPath} — skipping.");
@@ -993,6 +1007,37 @@ public sealed partial class CompilePage : Page
             _ => "entry-point"
         };
         args.AddRange(new[] { "--carrier", carrierStr });
+
+        // Encryption
+        if (backdoorPage.SelectedEncryption != PayloadEncryption.None)
+        {
+            var encStr = backdoorPage.SelectedEncryption switch
+            {
+                PayloadEncryption.Xor  => "xor",
+                PayloadEncryption.Xor2 => "xor2",
+                PayloadEncryption.Rc4  => "rc4",
+                _                      => "none"
+            };
+            args.AddRange(["--encryption", encStr]);
+            if (backdoorPage.XorKey is { } xorKey)
+                args.AddRange(["--xor-key", xorKey]);
+        }
+
+        // Patch-exit
+        if (!backdoorPage.PatchExit)
+            args.Add("--no-patch-exit");
+
+        // Section name
+        if (backdoorPage.CustomSectionName is { } sectionName)
+            args.AddRange(["--section-name", sectionName]);
+
+        // Cave min size
+        if (backdoorPage.CaveMinSize != 64)
+            args.AddRange(["--cave-min-size", backdoorPage.CaveMinSize.ToString()]);
+
+        // Dry run
+        if (backdoorPage.DryRun)
+            args.Add("--dry-run");
 
         var result = await _cli.RunAsync(args, line => _logger.Info(line));
 

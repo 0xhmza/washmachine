@@ -158,7 +158,19 @@
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
-                                        <TextBlock Text="Shellcode file (.bin):" Margin="0,0,0,6" />
+                                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
+                                            <TextBlock Text="Shellcode file (.bin):" VerticalAlignment="Center" />
+                                            <Border x:Name="FileByteCountBadge" Visibility="Collapsed"
+                                                    Background="{ThemeResource SystemFillColorSuccessBackgroundBrush}"
+                                                    CornerRadius="10" Padding="6,2">
+                                                <TextBlock x:Name="FileByteCountText" FontSize="11" FontFamily="Consolas" />
+                                            </Border>
+                                            <Border x:Name="FileMissingBadge" Visibility="Collapsed"
+                                                    Background="{ThemeResource SystemFillColorCriticalBackgroundBrush}"
+                                                    CornerRadius="10" Padding="6,2">
+                                                <TextBlock Text="file not found" FontSize="11" />
+                                            </Border>
+                                        </StackPanel>
                                         <Grid Grid.Row="1">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
