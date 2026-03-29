@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Getting Started with Washmachine - Installation and setup guide">
+    <title>Getting Started - Washmachine</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="container">
+                <div class="logo">
+                    <h1>Washmachine</h1>
+                </div>
+                <ul class="nav-links">
+                    <li><a href="index.html">Home</a></li>
+                    <li><a href="getting-started.html" class="active">Getting Started</a></li>
+                    <li><a href="cli-reference.html">CLI Reference</a></li>
+                    <li><a href="architecture.html">Architecture</a></li>
+                    <li><a href="https://github.com/0xhmza/washmachine" target="_blank">GitHub</a></li>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <section class="content">
+            <div class="container">
+                <h1>Getting Started</h1>
+
+                <h2>Requirements</h2>
+
+                <h3>CLI (washmachine-cli)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Component</th>
+                            <th>Version</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>OS</td>
+                            <td>Windows 10 1809 (build 17763)+ / Windows 11</td>
+                        </tr>
+                        <tr>
+                            <td>.NET</td>
+                            <td>8.0 Runtime x64</td>
+                        </tr>
+                        <tr>
+                            <td>C++ Compiler</td>
+                            <td>Any of: MSVC (VS Build Tools), MinGW-w64 g++, or clang++ on PATH</td>
+                        </tr>
+                        <tr>
+                            <td>Python</td>
+                            <td>3.10+ on PATH — required for Bin2Shell encoding features</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Desktop App (washmachine)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Component</th>
+                            <th>Version</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>OS</td>
+                            <td>Windows 10 1809 (build 17763)+ / Windows 11</td>
+                        </tr>
+                        <tr>
+                            <td>.NET</td>
+                            <td>8.0 Desktop Runtime x64</td>
+                        </tr>
+                        <tr>
+                            <td>Windows App SDK</td>
+                            <td>1.8 Runtime</td>
+                        </tr>
+                        <tr>
+                            <td>C++ Compiler</td>
+                            <td>Any of: MSVC (VS Build Tools), MinGW-w64 g++, or clang++ on PATH</td>
+                        </tr>
+                        <tr>
+                            <td>Python</td>
+                            <td>3.10+ on PATH — required for Bin2Shell encoding features</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h2>Building from Source</h2>
+
+                <h3>Clone the Repository</h3>
+                <pre><code>git clone https://github.com/0xhmza/washmachine.git
+cd washmachine</code></pre>
+
+                <h3>Build All Projects</h3>
+                <pre><code>dotnet build washmachine.sln</code></pre>
+
+                <p>Debug outputs:</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Project</th>
+                            <th>Debug Output</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Washmachine.Cli</td>
+                            <td><code>Output\Debug\net8.0\washmachine-cli.exe</code></td>
+                        </tr>
+                        <tr>
+                            <td>washmachine (GUI)</td>
+                            <td><code>Output\Debug\net8.0-windows10.0.19041.0\washmachine.exe</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Publish for Release</h3>
+
+                <h4>CLI — Single-file Executable</h4>
+                <pre><code># CLI — single-file executable → Output\Release\cli\publish\
+dotnet publish Washmachine.Cli\Washmachine.Cli.csproj -c Release</code></pre>
+
+                <h4>GUI — Framework-dependent</h4>
+                <pre><code># GUI — framework-dependent → Output\Release\publish\
+dotnet publish washmachine.csproj -c Release</code></pre>
+
+                <h2>Usage Guide</h2>
+
+                <h3>Shellcode Sources</h3>
+                <p>Choose one source mode from the Source section:</p>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Mode</th>
+                            <th>How to Use</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>File</strong></td>
+                            <td>Browse to a <code>.bin</code> shellcode file</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Raw</strong></td>
+                            <td>Paste raw hex bytes (e.g. <code>\xfc\x48\x83...</code>) directly into the text box</td>
+                        </tr>
+                        <tr>
+                            <td><strong>URL</strong></td>
+                            <td>Enter the remote URL where the payload is hosted — triggers web delivery mode</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Test payload</strong></td>
+                            <td>Selects the built-in calc.exe shellcode for smoke-testing the pipeline</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Web Payload Wizard</h3>
+                <p>When URL mode is selected, click Web Payload Wizard to:</p>
+                <ol>
+                    <li>Choose an encoder and envelope from Bin2Shell's catalog</li>
+                    <li>Optionally pick a web-fetch helper (download method)</li>
+                    <li>Enter the hosting URL — the tool calls Bin2Shell in <code>-w</code> mode and verifies the endpoint responds</li>
+                    <li>On success, the generated C++ fetch + decode code is stitched into the template automatically</li>
+                </ol>
+
+                <h3>Templates</h3>
+                <p>The Template combo lists every <code>id</code> defined under <code>templates:</code> in <code>Assets/vx_api_snippets.yaml</code>. Two ship by default:</p>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Template ID</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>default</code></td>
+                            <td>Full loader with all feature placeholders (GUARDRAILS, ANTI_DEBUGGING, UAC_BYPASS, PROCESS_INJECTION, SHELLCODE_EXECUTION)</td>
+                        </tr>
+                        <tr>
+                            <td><code>shellcode-minimal</code></td>
+                            <td>Bare minimum — shellcode source + one execution snippet, nothing else</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Snippet Sections</h3>
+                <p>Each template placeholder of <code>kind: snippet</code> maps to one section in the catalog. The UI renders a dropdown per section populated with that section's items.</p>
+                <p>Sections that declare <code>allowMultiple: true</code> (e.g. Anti Debugging) let you stack several snippets; others allow only one choice.</p>
+                <p>Sections that declare <code>inputs</code> render extra text boxes in the UI for parameters (e.g. target process name for process injection, guardrail condition string).</p>
+
+                <h3>Encoding Options</h3>
+                <p>The Encoding panel (enabled only when Bin2Shell is present) exposes:</p>
+                <ul>
+                    <li><strong>Encoder</strong> — transforms the raw shellcode bytes (XOR, RC4, AES, etc.)</li>
+                    <li><strong>Envelope</strong> — wraps the encoded payload (Base64, Base32, Base91, etc.)</li>
+                    <li><strong>Anti-emulation</strong> — adds sandbox-detection arguments to the Bin2Shell invocation</li>
+                </ul>
+
+                <h3>Compilation</h3>
+                <p>After clicking Go, the pipeline runs in order:</p>
+                <ol>
+                    <li>Shellcode is encoded via Bin2Shell (if encoding is configured)</li>
+                    <li>Snippets are collected; their <code>includes</code> and <code>implementation</code> blocks are deduplicated and merged</li>
+                    <li>The selected template's <code>content</code> is rendered — all <code>{{PLACEHOLDER}}</code> tokens are substituted</li>
+                    <li>The final <code>.cpp</code> source is written to <code>temp/cpp/</code></li>
+                    <li>The compiler is invoked; output exe lands in <code>temp/cpp/Compiled BInaries/</code></li>
+                    <li>Session artifacts (<code>source.cpp</code>, <code>build_log.txt</code>) are saved under <code>logging/session_&lt;timestamp&gt;_&lt;uuid&gt;/</code></li>
+                </ol>
+
+                <h2>Initial Setup</h2>
+
+                <h3>Download Bin2Shell</h3>
+                <p>Bin2Shell is required for encoding features and is downloaded automatically on first run:</p>
+
+                <h4>CLI</h4>
+                <pre><code>washmachine-cli provision</code></pre>
+
+                <h4>GUI</h4>
+                <p>The GUI will prompt automatically on first launch if Bin2Shell is not present.</p>
+
+                <h2>Next Steps</h2>
+                <ul>
+                    <li>Check out the <a href="cli-reference.html">CLI Reference</a> for detailed command documentation</li>
+                    <li>Learn about the <a href="architecture.html">Architecture</a> to understand the project structure</li>
+                    <li>Explore the <a href="https://github.com/0xhmza/washmachine">GitHub repository</a> for the latest updates</li>
+                </ul>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 Washmachine. For educational and authorized security testing purposes only.</p>
+            <p><a href="https://github.com/0xhmza/washmachine">GitHub Repository</a></p>
+        </div>
+    </footer>
+</body>
+</html>

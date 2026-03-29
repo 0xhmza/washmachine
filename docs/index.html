@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Washmachine - A CLI-first shellcode loader builder with WinUI 3 desktop app">
+    <title>Washmachine - Shellcode Loader Builder</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="container">
+                <div class="logo">
+                    <h1>Washmachine</h1>
+                </div>
+                <ul class="nav-links">
+                    <li><a href="index.html" class="active">Home</a></li>
+                    <li><a href="getting-started.html">Getting Started</a></li>
+                    <li><a href="cli-reference.html">CLI Reference</a></li>
+                    <li><a href="architecture.html">Architecture</a></li>
+                    <li><a href="https://github.com/0xhmza/washmachine" target="_blank">GitHub</a></li>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <section class="hero">
+            <div class="container">
+                <h2>Washmachine</h2>
+                <p class="tagline">A CLI-first shellcode loader builder with a WinUI 3 desktop app — driven entirely by a single YAML catalog.</p>
+                <div class="cta-buttons">
+                    <a href="getting-started.html" class="btn btn-primary">Get Started</a>
+                    <a href="https://github.com/0xhmza/washmachine" class="btn btn-secondary" target="_blank">View on GitHub</a>
+                </div>
+            </div>
+        </section>
+
+        <section class="features">
+            <div class="container">
+                <h2>Features</h2>
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <h3>🔄 Multiple Shellcode Sources</h3>
+                        <p>Support for file (.bin), raw hex paste, URL (web delivery), or built-in test payload</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🌐 Web Payload Wizard</h3>
+                        <p>Step-by-step UI to configure encoding, envelope, and web-fetch helper via Bin2Shell</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>📝 YAML Template Engine</h3>
+                        <p>One file defines every C++ template and snippet — no recompile needed to add new techniques</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🔌 Pluggable Snippets</h3>
+                        <p>Anti-debugging, evasion, guardrails, process injection, shellcode execution, UAC bypass</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🔍 Auto-discovered Compiler</h3>
+                        <p>Detects MSVC (cl.exe), GCC (g++.exe), or Clang (clang++.exe) from PATH and VS install paths</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🔐 Payload Encoding</h3>
+                        <p>Bin2Shell integration for encoder, envelope, anti-emulation, and web-helper selection</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="overview">
+            <div class="container">
+                <h2>Overview</h2>
+                <p>Washmachine wraps the full shellcode-loader workflow into one tool: pick a shellcode source, choose a C++ template, stack pluggable feature snippets (anti-debugging, evasion, guardrails, process injection, shellcode execution, UAC bypass), and compile with whatever toolchain is on the machine.</p>
+
+                <p>Available as both a <strong>standalone CLI</strong> (<code>washmachine-cli</code>) and a <strong>WinUI 3 desktop app</strong>.</p>
+
+                <h3>Requirements</h3>
+                <div class="requirements-grid">
+                    <div class="requirement-card">
+                        <h4>CLI (washmachine-cli)</h4>
+                        <ul>
+                            <li><strong>OS:</strong> Windows 10 1809+ / Windows 11</li>
+                            <li><strong>.NET:</strong> 8.0 Runtime x64</li>
+                            <li><strong>C++ Compiler:</strong> MSVC, MinGW-w64, or Clang</li>
+                            <li><strong>Python:</strong> 3.10+ (for Bin2Shell)</li>
+                        </ul>
+                    </div>
+                    <div class="requirement-card">
+                        <h4>Desktop App (washmachine)</h4>
+                        <ul>
+                            <li><strong>OS:</strong> Windows 10 1809+ / Windows 11</li>
+                            <li><strong>.NET:</strong> 8.0 Desktop Runtime x64</li>
+                            <li><strong>Windows App SDK:</strong> 1.8 Runtime</li>
+                            <li><strong>C++ Compiler:</strong> MSVC, MinGW-w64, or Clang</li>
+                            <li><strong>Python:</strong> 3.10+ (for Bin2Shell)</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="quick-start">
+            <div class="container">
+                <h2>Quick Start</h2>
+                <div class="code-example">
+                    <h3>Building</h3>
+                    <pre><code># Build all three projects
+dotnet build washmachine.sln</code></pre>
+                </div>
+
+                <div class="code-example">
+                    <h3>CLI Examples</h3>
+                    <pre><code># Compile from a .bin shellcode file
+washmachine-cli compile -s payload.bin -t shellcode-minimal
+
+# Compile with XOR encoding
+washmachine-cli compile -s payload.bin -e 1 --json
+
+# Analyze a PE file
+washmachine-cli analyze target.exe --json
+
+# Inject shellcode into an existing PE
+washmachine-cli backdoor --pe target.exe -s payload.bin -o patched.exe
+
+# List available templates and compilers
+washmachine-cli list --templates
+washmachine-cli list --compilers</code></pre>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 Washmachine. For educational and authorized security testing purposes only.</p>
+            <p><a href="https://github.com/0xhmza/washmachine">GitHub Repository</a></p>
+        </div>
+    </footer>
+</body>
+</html>

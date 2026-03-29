@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Architecture documentation for Washmachine - Project structure and design">
+    <title>Architecture - Washmachine</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="container">
+                <div class="logo">
+                    <h1>Washmachine</h1>
+                </div>
+                <ul class="nav-links">
+                    <li><a href="index.html">Home</a></li>
+                    <li><a href="getting-started.html">Getting Started</a></li>
+                    <li><a href="cli-reference.html">CLI Reference</a></li>
+                    <li><a href="architecture.html" class="active">Architecture</a></li>
+                    <li><a href="https://github.com/0xhmza/washmachine" target="_blank">GitHub</a></li>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <section class="content">
+            <div class="container">
+                <h1>Architecture</h1>
+
+                <h2>Overview</h2>
+                <p>Washmachine is structured as a <strong>three-project solution</strong>. All business logic lives in a platform-neutral core library shared by both a standalone CLI and a WinUI 3 desktop app.</p>
+
+                <pre><code>washmachine.sln
+├── Washmachine.Core     (class library, net8.0)         ← headless business logic
+├── Washmachine.Cli      (console app, net8.0)           ← terminal interface
+└── washmachine          (WinExe, net8.0-windows10.0.…) ← WinUI 3 desktop app</code></pre>
+
+                <h2>Dependency Graph</h2>
+                <pre><code>washmachine (GUI) ──references──► Washmachine.Core
+Washmachine.Cli  ──references──► Washmachine.Core
+Washmachine.Core ──no internal project dependencies──</code></pre>
+
+                <p>The GUI and CLI <strong>never reference each other</strong>. Core has no WinUI or Windows-specific dependencies.</p>
+
+                <h2>Project Structure</h2>
+
+                <h3>Washmachine.Core (Shared Library)</h3>
+                <p>Platform-neutral business logic used by both CLI and GUI:</p>
+
+                <pre><code>Washmachine.Core/
+├── Logging/
+│   ├── IAppLogger.cs               ← logger interface
+│   └── ConsoleLogger.cs            ← stdout/stderr implementation
+├── Models/
+│   ├── UIData.cs                   ← headless control-value snapshot
+│   ├── CodeSnippetModels.cs
+│   ├── CodeTemplateModels.cs
+│   ├── PeAnalysisModels.cs
+│   └── PeBackdoorModels.cs
+├── Services/
+│   ├── AppPaths.cs                 ← filesystem path resolution
+│   ├── CompilerService.cs          ← plan → render → compile pipeline
+│   ├── CompilerToolLocator.cs      ← discovers cl.exe / g++ / clang++
+│   ├── CppFileConverter.cs         ← spawns compiler subprocess
+│   ├── Bin2ShellRunner.cs          ← spawns python main.py
+│   ├── Bin2ShellWebOutputParser.cs ← parses Bin2Shell -w YAML output
+│   ├── PeAnalyzerService.cs        ← PE header / section analysis
+│   ├── PeBackdoorService.cs        ← PE code-cave injection
+│   ├── RequirementProvisioner.cs   ← downloads Bin2Shell
+│   ├── ProgressReporter.cs         ← IProgressReporter + ConsoleProgressReporter
+│   ├── ShellcodeEncodingCatalogService.cs
+│   └── YamlCodeSnippetCatalogService.cs
+├── Testing/
+│   └── TestHarness.cs              ← headless combinatorial test runner
+└── Washmachine.Core.csproj</code></pre>
+
+                <h3>Washmachine.Cli (Console Application)</h3>
+                <p>Terminal interface that delegates to Core services:</p>
+
+                <pre><code>Washmachine.Cli/
+├── Program.cs                      ← subcommands: compile / analyze / backdoor /
+│                                      list / provision / test
+└── Washmachine.Cli.csproj</code></pre>
+
+                <h3>washmachine (GUI Application)</h3>
+                <p>WinUI 3 desktop application with GUI-specific services:</p>
+
+                <pre><code>washmachine/
+├── Controllers/
+│   └── MainFormCoordinator.cs      ← GUI event ↔ service coordinator
+├── Logging/
+│   └── RichTextBoxLogger.cs        ← WinUI RichEditBox logger
+├── Services/                       ← GUI-only services
+│   ├── ClipboardService.cs
+│   ├── HeaderListPopulator.cs
+│   ├── UiDataFactory.cs            ← walks WinUI visual tree → UIData
+│   ├── UserInteractionService.cs
+│   └── WindowProgressReporter.cs   ← IProgressReporter wrapping RequirementsProgressWindow
+├── Views/                          ← WinUI pages & windows
+│   ├── MainPage.xaml[.cs]
+│   ├── BackdooringPage.xaml[.cs]
+│   ├── SettingsPage.xaml[.cs]
+│   ├── WebPayloadWizardWindow.cs
+│   └── RequirementsProgressWindow.cs
+├── App.xaml[.cs]
+├── MainWindow.xaml[.cs]
+├── Program.cs                      ← GUI entry point (WinUI bootstrap)
+└── washmachine.csproj</code></pre>
+
+                <h3>Shared Assets</h3>
+                <pre><code>Assets/
+└── vx_api_snippets.yaml            ← YAML catalog: all templates & snippets</code></pre>
+
+                <h2>Key Flows</h2>
+
+                <h3>Compilation Pipeline (Shared)</h3>
+                <pre><code>UIData (control-value snapshot)
+    │
+    ▼
+CompilerService.CompileAsync(data)
+    │
+    ├─ YamlCodeSnippetCatalogService  ← resolves template + snippets from YAML
+    ├─ Bin2ShellRunner                ← optional encoding (spawns python main.py)
+    │
+    ▼
+CppCompilationPlan                    ← assembled render state
+    │  SnippetIncludes[], SnippetImplementations[], CustomSnippetBlocks{}, …
+    │
+    ▼
+RenderTemplate(plan, template)        ← substitutes all {{TOKEN}} placeholders
+    │
+    ▼
+CppFileConverter.ConvertAsync()       ← cl.exe / g++ / clang++ subprocess
+    │
+    ▼
+&lt;timestamp&gt;-&lt;sha256&gt;.exe              ← output binary
+logging/session_*/source.cpp          ← saved source
+logging/session_*/build_log.txt       ← compiler stdout/stderr</code></pre>
+
+                <h3>GUI-Specific Path</h3>
+                <pre><code>WinUI Views ──events──► MainFormCoordinator
+                │  UiDataFactory.FromVisualTree()  ← walks WinUI visual tree → UIData
+                └──► CompilerService (Core)</code></pre>
+
+                <h3>IProgressReporter Pattern</h3>
+                <p><code>RequirementProvisioner</code> reports download progress through <code>IProgressReporter</code> (Core interface):</p>
+                <ul>
+                    <li><strong>CLI</strong> → <code>ConsoleProgressReporter</code> (Core) — prints to stdout</li>
+                    <li><strong>GUI</strong> → <code>WindowProgressReporter</code> (GUI) — updates <code>RequirementsProgressWindow</code></li>
+                </ul>
+
+                <h2>YAML Catalog System</h2>
+
+                <p>All templates and snippets are defined in <code>Assets/vx_api_snippets.yaml</code>. This is the single source of truth for:</p>
+                <ul>
+                    <li>C++ template definitions</li>
+                    <li>Code snippet implementations</li>
+                    <li>UI control configurations</li>
+                    <li>Placeholder mappings</li>
+                </ul>
+
+                <p>The catalog is parsed by <code>YamlCodeSnippetCatalogService</code> using YamlDotNet with camelCase naming.</p>
+
+                <h3>Adding New Techniques</h3>
+                <p>To add a new technique, simply edit <code>Assets/vx_api_snippets.yaml</code>. No code recompilation is required. The YAML file supports:</p>
+                <ul>
+                    <li>Custom templates with placeholders</li>
+                    <li>Snippet sections with multiple items</li>
+                    <li>Dynamic UI input controls</li>
+                    <li>Include and implementation blocks</li>
+                </ul>
+
+                <h2>Build Process</h2>
+
+                <h3>Development Build</h3>
+                <pre><code>dotnet build washmachine.sln</code></pre>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Project</th>
+                            <th>Output Path</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Washmachine.Core</td>
+                            <td><code>Washmachine.Core\bin\Debug\net8.0\</code></td>
+                        </tr>
+                        <tr>
+                            <td>Washmachine.Cli</td>
+                            <td><code>Output\cli\Debug\net8.0\washmachine-cli.exe</code></td>
+                        </tr>
+                        <tr>
+                            <td>washmachine (GUI)</td>
+                            <td><code>Output\Debug\net8.0-windows10.0.19041.0\washmachine.exe</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Release Build</h3>
+
+                <h4>CLI — Single-file Executable</h4>
+                <pre><code>dotnet publish Washmachine.Cli\Washmachine.Cli.csproj -c Release</code></pre>
+                <p>Output: <code>Output\cli\Release\publish\washmachine-cli.exe</code></p>
+
+                <h4>GUI — Framework-dependent WinExe</h4>
+                <pre><code>dotnet publish washmachine.csproj -c Release</code></pre>
+                <p>Output: <code>Output\Release\publish\washmachine.exe</code> + supporting files</p>
+
+                <h2>Delivery</h2>
+
+                <h3>CLI Tool (washmachine-cli)</h3>
+                <p>Minimum required files:</p>
+                <pre><code>washmachine-cli.exe         ← single-file executable
+Assets\
+└── vx_api_snippets.yaml    ← YAML catalog (required at runtime)</code></pre>
+
+                <p><strong>Runtime prerequisite:</strong> .NET 8 Runtime x64</p>
+
+                <h3>GUI Desktop App (washmachine)</h3>
+                <p>Required files:</p>
+                <pre><code>washmachine.exe
+washmachine.dll
+Assets\
+└── vx_api_snippets.yaml
+(supporting .dll files from dotnet publish)</code></pre>
+
+                <p><strong>Runtime prerequisites:</strong></p>
+                <ul>
+                    <li>.NET 8 Desktop Runtime x64</li>
+                    <li>Windows App SDK 1.8 Runtime</li>
+                </ul>
+
+                <h3>Bin2Shell (Auto-provisioned)</h3>
+                <p>Bin2Shell is expected at <code>Tools\Bin2Shell\main.py</code> relative to the executable. It is downloaded automatically when:</p>
+                <ul>
+                    <li>Running <code>washmachine-cli provision</code></li>
+                    <li>Launching the GUI for the first time (via <code>RequirementProvisioner</code>)</li>
+                </ul>
+
+                <h2>Testing Architecture</h2>
+
+                <p>The test harness lives in <code>Washmachine.Core/Testing/TestHarness.cs</code> and is exposed through the CLI's <code>test</code> subcommand.</p>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Phase</th>
+                            <th>What it tests</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>1</td>
+                            <td>All encoder × envelope × web-helper combinations</td>
+                        </tr>
+                        <tr>
+                            <td>2</td>
+                            <td>All template × snippet permutations with default encoding</td>
+                        </tr>
+                        <tr>
+                            <td>3</td>
+                            <td>Multiple shellcode inputs from test assets directory</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <p>Results are written to <code>test_results.json</code> in the CLI executable's directory.</p>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 Washmachine. For educational and authorized security testing purposes only.</p>
+            <p><a href="https://github.com/0xhmza/washmachine">GitHub Repository</a></p>
+        </div>
+    </footer>
+</body>
+</html>
