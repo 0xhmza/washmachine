@@ -76,4 +76,19 @@
     <ProjectReference Include="Washmachine.Core\Washmachine.Core.csproj" />
   </ItemGroup>
 
+  <!-- Copy Assets (YAML catalogs) to publish output so AppPaths can locate them -->
+  <ItemGroup>
+    <Content Include="Assets\*.yaml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\*.yml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Ensure the PRI resource index is copied to publish output (required for XAML at runtime) -->
+  <Target Name="CopyPriToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_PriFile Include="$(BaseIntermediateOutputPath)\**\*.pri" />
+      <_PriFile Include="$(OutputPath)*.pri" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_PriFile)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
+  </Target>
+
 </Project>
