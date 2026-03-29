@@ -49,6 +49,44 @@
                 </StackPanel>
             </StackPanel>
 
+            <StackPanel Spacing="12">
+                <TextBlock Text="Session Logging" FontSize="18" FontWeight="SemiBold" />
+                <TextBlock Text="Control what gets saved when a backdoor operation runs."
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+                <ToggleSwitch x:Name="toggleSessionLogging"
+                              Header="Enable Session Logging"
+                              OnContent="On" OffContent="Off"
+                              Toggled="toggleSessionLogging_Toggled" />
+                <TextBlock Text="Automatically create a session log folder for each backdoor operation"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Margin="0,-8,0,0" />
+
+                <ToggleSwitch x:Name="toggleSaveBinary"
+                              Header="Save Binary Artifact"
+                              OnContent="On" OffContent="Off"
+                              Toggled="toggleSaveBinary_Toggled" />
+                <TextBlock Text="Copy the backdoored output binary into the session folder"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Margin="0,-8,0,0" />
+
+                <ToggleSwitch x:Name="toggleSaveShellcode"
+                              Header="Save Shellcode Copy"
+                              OnContent="On" OffContent="Off"
+                              Toggled="toggleSaveShellcode_Toggled" />
+                <TextBlock Text="Copy the original shellcode .bin into the session folder"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Margin="0,-8,0,0" />
+
+                <ToggleSwitch x:Name="toggleVerboseLogging"
+                              Header="Verbose File Logging"
+                              OnContent="On" OffContent="Off"
+                              Toggled="toggleVerboseLogging_Toggled" />
+                <TextBlock Text="Include debug-level messages in the session log file"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Margin="0,-8,0,0" />
+            </StackPanel>
+
         </StackPanel>
     </ScrollViewer>
 </Page>

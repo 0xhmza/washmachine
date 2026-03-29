@@ -1502,6 +1502,7 @@ public static class Program
         bool verbose = false;
         bool jsonOutput = false;
         int minCaveSize = 0;
+        bool? sessionLogOverride = null; // null = use AppSettings, true/false = CLI override
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -1545,6 +1546,10 @@ public static class Program
                     verbose = true; break;
                 case "--json":
                     jsonOutput = true; break;
+                case "--no-session-log":
+                    sessionLogOverride = false; break;
+                case "--session-log":
+                    sessionLogOverride = true; break;
                 default:
                     if (args[i].StartsWith("-"))
                     {
@@ -1623,44 +1628,55 @@ public static class Program
         if (jsonOutput) consoleLogger.SuppressOutput = true;
         var paths = new AppPaths();
 
-        // ── Session directory & file logger ──────────────────────
-        string sessionDir = paths.CreateBackdoorSessionDirectory();
-        string sessionLogPath = Path.Combine(sessionDir, "backdoor_log.txt");
-        using var teeLogger = new TeeLogger(consoleLogger, sessionLogPath);
-        IAppLogger logger = teeLogger;
+        // ── Load settings & decide session logging ───────────────
+        var appSettings = AppSettingsService.Load();
+        bool sessionLoggingEnabled = sessionLogOverride ?? appSettings.SessionLoggingEnabled;
 
-        var service = new PeBackdoorService(paths, logger);
-        var analyzerService = new PeAnalyzerService(logger);
+        string? sessionDir = null;
+        TeeLogger? teeLogger = null;
+        IAppLogger logger = consoleLogger;
 
-        // Log session header
-        teeLogger.FileOnly("════════════════════════════════════════════════════════════");
-        teeLogger.FileOnly("  Washmachine PE Backdoor – Session Log");
-        teeLogger.FileOnly($"  Session dir : {sessionDir}");
-        teeLogger.FileOnly($"  Started     : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-        teeLogger.FileOnly("════════════════════════════════════════════════════════════");
-        teeLogger.FileOnly("");
-        teeLogger.FileOnly("── Command-line arguments ─────────────────────────────────");
-        teeLogger.FileOnly($"  --pe            : {peFile}");
-        teeLogger.FileOnly($"  --shellcode     : {shellcodeFile}");
-        teeLogger.FileOnly($"  --output        : {outputFile ?? "(default)"}");
-        teeLogger.FileOnly($"  --method        : {method}");
-        teeLogger.FileOnly($"  --encryption    : {encryption}");
-        teeLogger.FileOnly($"  --carrier       : {carrier}");
-        teeLogger.FileOnly($"  --xor-key       : 0x{xorKey:X2}");
-        teeLogger.FileOnly($"  --section-name  : {sectionName}");
-        teeLogger.FileOnly($"  --remove-sig    : {removeSig}");
-        teeLogger.FileOnly($"  --patch-sub     : {patchSubsystem}");
-        teeLogger.FileOnly($"  --preserve-entry: {preserveEntry}");
-        teeLogger.FileOnly($"  --patch-iat     : {patchIat}");
-        teeLogger.FileOnly($"  --patch-exit    : {patchExitCalls}");
-        teeLogger.FileOnly($"  --cave-min-size : {minCaveSize}");
-        teeLogger.FileOnly($"  --dry-run       : {dryRun}");
-        teeLogger.FileOnly($"  --verbose       : {verbose}");
-        teeLogger.FileOnly($"  --json          : {jsonOutput}");
-        teeLogger.FileOnly("");
+        if (sessionLoggingEnabled)
+        {
+            sessionDir = paths.CreateBackdoorSessionDirectory();
+            string sessionLogPath = Path.Combine(sessionDir, "backdoor_log.txt");
+            teeLogger = new TeeLogger(consoleLogger, sessionLogPath);
+            logger = teeLogger;
+
+            // Log session header
+            teeLogger?.FileOnly("════════════════════════════════════════════════════════════");
+            teeLogger?.FileOnly("  Washmachine PE Backdoor – Session Log");
+            teeLogger?.FileOnly($"  Session dir : {sessionDir}");
+            teeLogger?.FileOnly($"  Started     : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            teeLogger?.FileOnly("════════════════════════════════════════════════════════════");
+            teeLogger?.FileOnly("");
+            teeLogger?.FileOnly("── Command-line arguments ─────────────────────────────────");
+            teeLogger?.FileOnly($"  --pe            : {peFile}");
+            teeLogger?.FileOnly($"  --shellcode     : {shellcodeFile}");
+            teeLogger?.FileOnly($"  --output        : {outputFile ?? "(default)"}");
+            teeLogger?.FileOnly($"  --method        : {method}");
+            teeLogger?.FileOnly($"  --encryption    : {encryption}");
+            teeLogger?.FileOnly($"  --carrier       : {carrier}");
+            teeLogger?.FileOnly($"  --xor-key       : 0x{xorKey:X2}");
+            teeLogger?.FileOnly($"  --section-name  : {sectionName}");
+            teeLogger?.FileOnly($"  --remove-sig    : {removeSig}");
+            teeLogger?.FileOnly($"  --patch-sub     : {patchSubsystem}");
+            teeLogger?.FileOnly($"  --preserve-entry: {preserveEntry}");
+            teeLogger?.FileOnly($"  --patch-iat     : {patchIat}");
+            teeLogger?.FileOnly($"  --patch-exit    : {patchExitCalls}");
+            teeLogger?.FileOnly($"  --cave-min-size : {minCaveSize}");
+            teeLogger?.FileOnly($"  --dry-run       : {dryRun}");
+            teeLogger?.FileOnly($"  --verbose       : {verbose}");
+            teeLogger?.FileOnly($"  --json          : {jsonOutput}");
+            teeLogger?.FileOnly("");
+        }
 
         try
         {
+            // ── Instantiate services ─────────────────────────────────
+            var service = new PeBackdoorService(paths, logger);
+            var analyzerService = new PeAnalyzerService(logger);
+
             // ── Banner ───────────────────────────────────────────────
             if (!jsonOutput)
             {
@@ -1677,60 +1693,63 @@ public static class Program
             var shellcodeBytes = await File.ReadAllBytesAsync(shellcodeFile);
 
             // ── Log PE analysis to session file ──────────────────────
-            teeLogger.FileOnly("── Target PE Analysis ─────────────────────────────────────");
-            teeLogger.FileOnly($"  File        : {Path.GetFileName(peFile)}");
-            teeLogger.FileOnly($"  Full path   : {Path.GetFullPath(peFile)}");
-            teeLogger.FileOnly($"  Size        : {new FileInfo(peFile).Length:N0} bytes ({new FileInfo(peFile).Length / 1024.0 / 1024.0:F1} MB)");
-            teeLogger.FileOnly($"  Arch        : {(peInfo.Is64Bit ? "x64 (PE32+)" : "x86 (PE32)")}");
-            teeLogger.FileOnly($"  Type        : {(peInfo.IsDll ? "DLL" : "GUI Executable")}");
-            teeLogger.FileOnly($"  Entry point : 0x{peInfo.EntryPoint:X}");
-            teeLogger.FileOnly($"  ImageBase   : 0x{peInfo.ImageBase:X}");
-            teeLogger.FileOnly($"  Signature   : {(peInfo.HasSignature ? "Present (will be removed)" : "None")}");
-            teeLogger.FileOnly($"  .NET        : {(analysisResult.IsDotNet ? "Yes" : "No")}");
-            teeLogger.FileOnly($"  ASLR        : {(peInfo.HasAslr ? "Yes" : "No")}");
-            teeLogger.FileOnly($"  Sections    : {peInfo.Sections.Count}");
-            teeLogger.FileOnly("");
-            teeLogger.FileOnly("  Section table:");
-            teeLogger.FileOnly($"  {"Name",-10} {"VirtAddr",10} {"VirtSize",10} {"RawSize",10} {"Perms",6} {"Entropy",8}");
-            teeLogger.FileOnly($"  {new string('-', 10)} {new string('-', 10)} {new string('-', 10)} {new string('-', 10)} {new string('-', 6)} {new string('-', 8)}");
+            teeLogger?.FileOnly("── Target PE Analysis ─────────────────────────────────────");
+            teeLogger?.FileOnly($"  File        : {Path.GetFileName(peFile)}");
+            teeLogger?.FileOnly($"  Full path   : {Path.GetFullPath(peFile)}");
+            teeLogger?.FileOnly($"  Size        : {new FileInfo(peFile).Length:N0} bytes ({new FileInfo(peFile).Length / 1024.0 / 1024.0:F1} MB)");
+            teeLogger?.FileOnly($"  Arch        : {(peInfo.Is64Bit ? "x64 (PE32+)" : "x86 (PE32)")}");
+            teeLogger?.FileOnly($"  Type        : {(peInfo.IsDll ? "DLL" : "GUI Executable")}");
+            teeLogger?.FileOnly($"  Entry point : 0x{peInfo.EntryPoint:X}");
+            teeLogger?.FileOnly($"  ImageBase   : 0x{peInfo.ImageBase:X}");
+            teeLogger?.FileOnly($"  Signature   : {(peInfo.HasSignature ? "Present (will be removed)" : "None")}");
+            teeLogger?.FileOnly($"  .NET        : {(analysisResult.IsDotNet ? "Yes" : "No")}");
+            teeLogger?.FileOnly($"  ASLR        : {(peInfo.HasAslr ? "Yes" : "No")}");
+            teeLogger?.FileOnly($"  Sections    : {peInfo.Sections.Count}");
+            teeLogger?.FileOnly("");
+            teeLogger?.FileOnly("  Section table:");
+            teeLogger?.FileOnly($"  {"Name",-10} {"VirtAddr",10} {"VirtSize",10} {"RawSize",10} {"Perms",6} {"Entropy",8}");
+            teeLogger?.FileOnly($"  {new string('-', 10)} {new string('-', 10)} {new string('-', 10)} {new string('-', 10)} {new string('-', 6)} {new string('-', 8)}");
             foreach (var sec in analysisResult.Sections)
             {
-                teeLogger.FileOnly($"  {sec.Name,-10} {"0x" + sec.VirtualAddress.ToString("X6"),10} {"0x" + sec.VirtualSize.ToString("X6"),10} {"0x" + sec.RawSize.ToString("X6"),10} {sec.PermissionsString,6} {sec.Entropy,8:F2}");
+                teeLogger?.FileOnly($"  {sec.Name,-10} {"0x" + sec.VirtualAddress.ToString("X6"),10} {"0x" + sec.VirtualSize.ToString("X6"),10} {"0x" + sec.RawSize.ToString("X6"),10} {sec.PermissionsString,6} {sec.Entropy,8:F2}");
             }
-            teeLogger.FileOnly("");
-            teeLogger.FileOnly("── Shellcode ──────────────────────────────────────────────");
-            teeLogger.FileOnly($"  File        : {Path.GetFileName(shellcodeFile)}");
-            teeLogger.FileOnly($"  Full path   : {Path.GetFullPath(shellcodeFile)}");
-            teeLogger.FileOnly($"  Size        : {shellcodeBytes.Length} bytes");
-            teeLogger.FileOnly($"  First bytes : {BitConverter.ToString(shellcodeBytes.Take(Math.Min(32, shellcodeBytes.Length)).ToArray()).Replace("-", " ")}");
-            teeLogger.FileOnly($"  SHA-256     : {Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(shellcodeBytes))}");
-            teeLogger.FileOnly("");
-            teeLogger.FileOnly("── Pre-flight Checks ──────────────────────────────────────");
-            teeLogger.FileOnly($"  .NET assembly     : {(analysisResult.IsDotNet ? "FAIL (is .NET)" : "PASS (not .NET)")}");
-            teeLogger.FileOnly($"  Packed check      : {(analysisResult.IsPossiblyPacked ? $"WARN (entropy: {analysisResult.OverallEntropy:F2})" : $"PASS (entropy: {analysisResult.OverallEntropy:F2})")}");
-            teeLogger.FileOnly($"  Entry point valid : {(peInfo.EntryPoint != 0 ? $"PASS (0x{peInfo.EntryPoint:X})" : "FAIL (null)")}");
-            teeLogger.FileOnly($"  Digital signature : {(peInfo.HasSignature ? "Present → will strip" : "None")}");
-            teeLogger.FileOnly("");
-            teeLogger.FileOnly("── Injection Plan ─────────────────────────────────────────");
-            teeLogger.FileOnly($"  Method      : {injectionMethod}");
-            teeLogger.FileOnly($"  Encryption  : {encryptionMethod}");
-            teeLogger.FileOnly($"  Carrier     : {carrierInvoke}");
-            teeLogger.FileOnly($"  Remove sig  : {removeSig}");
-            teeLogger.FileOnly($"  Patch GUI   : {patchSubsystem}");
-            teeLogger.FileOnly($"  Patch exit  : {patchExitCalls}");
-            teeLogger.FileOnly("");
+            teeLogger?.FileOnly("");
+            teeLogger?.FileOnly("── Shellcode ──────────────────────────────────────────────");
+            teeLogger?.FileOnly($"  File        : {Path.GetFileName(shellcodeFile)}");
+            teeLogger?.FileOnly($"  Full path   : {Path.GetFullPath(shellcodeFile)}");
+            teeLogger?.FileOnly($"  Size        : {shellcodeBytes.Length} bytes");
+            teeLogger?.FileOnly($"  First bytes : {BitConverter.ToString(shellcodeBytes.Take(Math.Min(32, shellcodeBytes.Length)).ToArray()).Replace("-", " ")}");
+            teeLogger?.FileOnly($"  SHA-256     : {Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(shellcodeBytes))}");
+            teeLogger?.FileOnly("");
+            teeLogger?.FileOnly("── Pre-flight Checks ──────────────────────────────────────");
+            teeLogger?.FileOnly($"  .NET assembly     : {(analysisResult.IsDotNet ? "FAIL (is .NET)" : "PASS (not .NET)")}");
+            teeLogger?.FileOnly($"  Packed check      : {(analysisResult.IsPossiblyPacked ? $"WARN (entropy: {analysisResult.OverallEntropy:F2})" : $"PASS (entropy: {analysisResult.OverallEntropy:F2})")}");
+            teeLogger?.FileOnly($"  Entry point valid : {(peInfo.EntryPoint != 0 ? $"PASS (0x{peInfo.EntryPoint:X})" : "FAIL (null)")}");
+            teeLogger?.FileOnly($"  Digital signature : {(peInfo.HasSignature ? "Present → will strip" : "None")}");
+            teeLogger?.FileOnly("");
+            teeLogger?.FileOnly("── Injection Plan ─────────────────────────────────────────");
+            teeLogger?.FileOnly($"  Method      : {injectionMethod}");
+            teeLogger?.FileOnly($"  Encryption  : {encryptionMethod}");
+            teeLogger?.FileOnly($"  Carrier     : {carrierInvoke}");
+            teeLogger?.FileOnly($"  Remove sig  : {removeSig}");
+            teeLogger?.FileOnly($"  Patch GUI   : {patchSubsystem}");
+            teeLogger?.FileOnly($"  Patch exit  : {patchExitCalls}");
+            teeLogger?.FileOnly("");
 
             // Copy original shellcode to session directory
-            try
+            if (sessionDir != null && appSettings.SaveShellcodeCopy)
             {
-                File.Copy(shellcodeFile, Path.Combine(sessionDir, Path.GetFileName(shellcodeFile)), overwrite: true);
-                teeLogger.FileOnly($"  Copied shellcode to session: {Path.GetFileName(shellcodeFile)}");
+                try
+                {
+                    File.Copy(shellcodeFile, Path.Combine(sessionDir, Path.GetFileName(shellcodeFile)), overwrite: true);
+                    teeLogger?.FileOnly($"  Copied shellcode to session: {Path.GetFileName(shellcodeFile)}");
+                }
+                catch (Exception ex)
+                {
+                    teeLogger?.FileOnly($"  Warning: Could not copy shellcode to session: {ex.Message}");
+                }
             }
-            catch (Exception ex)
-            {
-                teeLogger.FileOnly($"  Warning: Could not copy shellcode to session: {ex.Message}");
-            }
-            teeLogger.FileOnly("");
+            teeLogger?.FileOnly("");
 
             if (!jsonOutput)
             {
@@ -1788,17 +1807,17 @@ public static class Program
                 var caves = await service.FindCodeCavesAsync(peFile, Math.Max(minCaveSize, 50));
 
                 // Log all caves to session file
-                teeLogger.FileOnly("── Code Caves ─────────────────────────────────────────────");
-                teeLogger.FileOnly($"  Total found: {caves.Count}");
+                teeLogger?.FileOnly("── Code Caves ─────────────────────────────────────────────");
+                teeLogger?.FileOnly($"  Total found: {caves.Count}");
                 if (caves.Count > 0)
                 {
-                    teeLogger.FileOnly($"  {"Section",-10} {"Offset",10} {"RVA",10} {"Size",12}");
-                    teeLogger.FileOnly($"  {new string('-', 10)} {new string('-', 10)} {new string('-', 10)} {new string('-', 12)}");
+                    teeLogger?.FileOnly($"  {"Section",-10} {"Offset",10} {"RVA",10} {"Size",12}");
+                    teeLogger?.FileOnly($"  {new string('-', 10)} {new string('-', 10)} {new string('-', 10)} {new string('-', 12)}");
                     foreach (var c in caves)
-                        teeLogger.FileOnly($"  {c.SectionName,-10} {"0x" + c.FileOffset.ToString("X6"),10} {"0x" + c.VirtualAddress.ToString("X6"),10} {c.Size,8} bytes");
-                    teeLogger.FileOnly($"  Largest: {caves[0].SectionName} ({caves[0].Size:N0} bytes)");
+                        teeLogger?.FileOnly($"  {c.SectionName,-10} {"0x" + c.FileOffset.ToString("X6"),10} {"0x" + c.VirtualAddress.ToString("X6"),10} {c.Size,8} bytes");
+                    teeLogger?.FileOnly($"  Largest: {caves[0].SectionName} ({caves[0].Size:N0} bytes)");
                 }
-                teeLogger.FileOnly("");
+                teeLogger?.FileOnly("");
 
                 AnsiConsole.Write(new Rule("[bold cyan1]Code Caves[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
                 AnsiConsole.MarkupLine($"  [cyan1]Found:[/] [white]{caves.Count}[/]");
@@ -1889,14 +1908,15 @@ public static class Program
 
             if (dryRun)
             {
-                teeLogger.FileOnly("── Dry Run ────────────────────────────────────────────────");
-                teeLogger.FileOnly("  No injection performed (--dry-run flag).");
-                teeLogger.FileOnly($"  Session dir: {sessionDir}");
+                teeLogger?.FileOnly("── Dry Run ────────────────────────────────────────────────");
+                teeLogger?.FileOnly("  No injection performed (--dry-run flag).");
+                teeLogger?.FileOnly($"  Session dir: {sessionDir}");
                 if (!jsonOutput)
                 {
-                    AnsiConsole.Write(new Panel(
-                        $"[green3_1]Dry run \u2014 no injection performed.[/]\n" +
-                        $"[grey]Session log: {Markup.Escape(sessionDir)}[/]")
+                    var dryRunText = $"[green3_1]Dry run \u2014 no injection performed.[/]";
+                    if (sessionDir != null)
+                        dryRunText += $"\n[grey]Session log: {Markup.Escape(sessionDir)}[/]";
+                    AnsiConsole.Write(new Panel(dryRunText)
                         .BorderColor(Color.Green)
                         .Border(BoxBorder.Rounded));
                 }
@@ -1932,29 +1952,30 @@ public static class Program
                     .StartAsync("Injecting payload...", async _ => await service.BackdoorAsync(options));
 
             // ── Log injection result to session ──────────────────────
-            teeLogger.FileOnly("── Injection Result ───────────────────────────────────────");
-            teeLogger.FileOnly($"  Success        : {result.Success}");
+            teeLogger?.FileOnly("── Injection Result ───────────────────────────────────────");
+            teeLogger?.FileOnly($"  Success        : {result.Success}");
             if (!string.IsNullOrEmpty(result.ErrorMessage))
-                teeLogger.FileOnly($"  Error          : {result.ErrorMessage}");
-            teeLogger.FileOnly($"  Output path    : {result.OutputPath ?? "(none)"}");
-            teeLogger.FileOnly($"  Shellcode addr : 0x{result.ShellcodeAddress:X}");
-            teeLogger.FileOnly($"  Carrier addr   : 0x{result.CarrierAddress:X}");
-            teeLogger.FileOnly($"  Shellcode size : {result.ShellcodeSize} bytes");
-            teeLogger.FileOnly($"  Carrier size   : {result.CarrierSize} bytes");
-            teeLogger.FileOnly("");
-            teeLogger.FileOnly("  Steps:");
+                teeLogger?.FileOnly($"  Error          : {result.ErrorMessage}");
+            teeLogger?.FileOnly($"  Output path    : {result.OutputPath ?? "(none)"}");
+            teeLogger?.FileOnly($"  Shellcode addr : 0x{result.ShellcodeAddress:X}");
+            teeLogger?.FileOnly($"  Carrier addr   : 0x{result.CarrierAddress:X}");
+            teeLogger?.FileOnly($"  Shellcode size : {result.ShellcodeSize} bytes");
+            teeLogger?.FileOnly($"  Carrier size   : {result.CarrierSize} bytes");
+            teeLogger?.FileOnly("");
+            teeLogger?.FileOnly("  Steps:");
             foreach (var step in result.Steps)
-                teeLogger.FileOnly($"    ✓ {step}");
+                teeLogger?.FileOnly($"    ✓ {step}");
             if (result.Warnings.Count > 0)
             {
-                teeLogger.FileOnly("  Warnings:");
+                teeLogger?.FileOnly("  Warnings:");
                 foreach (var warn in result.Warnings)
-                    teeLogger.FileOnly($"    ⚠ {warn}");
+                    teeLogger?.FileOnly($"    ⚠ {warn}");
             }
-            teeLogger.FileOnly("");
+            teeLogger?.FileOnly("");
 
             // Copy the backdoored binary to session directory
-            if (result.Success && !string.IsNullOrEmpty(result.OutputPath) && File.Exists(result.OutputPath))
+            if (sessionDir != null && appSettings.SaveBinaryArtifact
+                && result.Success && !string.IsNullOrEmpty(result.OutputPath) && File.Exists(result.OutputPath))
             {
                 try
                 {
@@ -1962,22 +1983,22 @@ public static class Program
                     string destBinaryPath = Path.Combine(sessionDir, destBinaryName);
                     File.Copy(result.OutputPath, destBinaryPath, overwrite: true);
                     var outputInfo = new FileInfo(result.OutputPath);
-                    teeLogger.FileOnly($"── Binary Artifact ────────────────────────────────────────");
-                    teeLogger.FileOnly($"  Copied to session: {destBinaryName}");
-                    teeLogger.FileOnly($"  Size             : {outputInfo.Length:N0} bytes");
-                    teeLogger.FileOnly($"  SHA-256          : {Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(result.OutputPath)))}");
-                    teeLogger.FileOnly("");
+                    teeLogger?.FileOnly($"── Binary Artifact ────────────────────────────────────────");
+                    teeLogger?.FileOnly($"  Copied to session: {destBinaryName}");
+                    teeLogger?.FileOnly($"  Size             : {outputInfo.Length:N0} bytes");
+                    teeLogger?.FileOnly($"  SHA-256          : {Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(result.OutputPath)))}");
+                    teeLogger?.FileOnly("");
                 }
                 catch (Exception ex)
                 {
-                    teeLogger.FileOnly($"  Warning: Could not copy binary to session: {ex.Message}");
+                    teeLogger?.FileOnly($"  Warning: Could not copy binary to session: {ex.Message}");
                 }
             }
 
-            teeLogger.FileOnly("── Session Complete ───────────────────────────────────────");
-            teeLogger.FileOnly($"  Finished at : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-            teeLogger.FileOnly($"  Session dir : {sessionDir}");
-            teeLogger.FileOnly("════════════════════════════════════════════════════════════");
+            teeLogger?.FileOnly("── Session Complete ───────────────────────────────────────");
+            teeLogger?.FileOnly($"  Finished at : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            teeLogger?.FileOnly($"  Session dir : {sessionDir}");
+            teeLogger?.FileOnly("════════════════════════════════════════════════════════════");
 
             if (jsonOutput)
             {
@@ -2007,18 +2028,20 @@ public static class Program
                 AnsiConsole.WriteLine();
                 if (result.Success)
                 {
-                    AnsiConsole.Write(new Panel(
-                        $"[green3_1]SUCCESS: Backdoored PE written to {Markup.Escape(result.OutputPath ?? "unknown")}[/]\n" +
-                        $"[grey]Output size: {new FileInfo(result.OutputPath!).Length:N0} bytes[/]\n" +
-                        $"[grey]Session log: {Markup.Escape(sessionDir)}[/]")
+                    var successText = $"[green3_1]SUCCESS: Backdoored PE written to {Markup.Escape(result.OutputPath ?? "unknown")}[/]\n" +
+                        $"[grey]Output size: {new FileInfo(result.OutputPath!).Length:N0} bytes[/]";
+                    if (sessionDir != null)
+                        successText += $"\n[grey]Session log: {Markup.Escape(sessionDir)}[/]";
+                    AnsiConsole.Write(new Panel(successText)
                         .BorderColor(Color.Green)
                         .Border(BoxBorder.Rounded));
                 }
                 else
                 {
-                    AnsiConsole.Write(new Panel(
-                        $"[red]FAILED: {Markup.Escape(result.ErrorMessage ?? "unknown")}[/]\n" +
-                        $"[grey]Session log: {Markup.Escape(sessionDir)}[/]")
+                    var failText = $"[red]FAILED: {Markup.Escape(result.ErrorMessage ?? "unknown")}[/]";
+                    if (sessionDir != null)
+                        failText += $"\n[grey]Session log: {Markup.Escape(sessionDir)}[/]";
+                    AnsiConsole.Write(new Panel(failText)
                         .BorderColor(Color.Red)
                         .Border(BoxBorder.Rounded));
                     return 1;
@@ -2029,10 +2052,10 @@ public static class Program
         }
         catch (Exception ex)
         {
-            teeLogger.FileOnly("── EXCEPTION ──────────────────────────────────────────────");
-            teeLogger.FileOnly($"  {ex.GetType().Name}: {ex.Message}");
-            teeLogger.FileOnly($"  Stack trace:\n{ex.StackTrace}");
-            teeLogger.FileOnly($"  Session dir: {sessionDir}");
+            teeLogger?.FileOnly("── EXCEPTION ──────────────────────────────────────────────");
+            teeLogger?.FileOnly($"  {ex.GetType().Name}: {ex.Message}");
+            teeLogger?.FileOnly($"  Stack trace:\n{ex.StackTrace}");
+            teeLogger?.FileOnly($"  Session dir: {sessionDir}");
 
             if (jsonOutput)
             {
@@ -2040,11 +2063,16 @@ public static class Program
             }
             else
             {
-                teeLogger.Error($"Backdoor failed: {ex.Message}");
-                if (verbose) teeLogger.Error(ex.StackTrace ?? "");
-                AnsiConsole.MarkupLine($"  [grey]Session log: {Markup.Escape(sessionDir)}[/]");
+                logger.Error($"Backdoor failed: {ex.Message}");
+                if (verbose) logger.Error(ex.StackTrace ?? "");
+                if (sessionDir != null)
+                    AnsiConsole.MarkupLine($"  [grey]Session log: {Markup.Escape(sessionDir)}[/]");
             }
             return 1;
+        }
+        finally
+        {
+            teeLogger?.Dispose();
         }
     }
 
