@@ -7,9 +7,9 @@ namespace Washmachine.Models;
 /// </summary>
 public sealed class UiData
 {
-    public Dictionary<string, string> TextBoxes { get; } = new();
-    public Dictionary<string, string> ComboBoxes { get; } = new();
-    public Dictionary<string, List<string>> ListBoxes { get; } = new();
+    public Dictionary<string, string> TextBoxes { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string> ComboBoxes { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, List<string>> ListBoxes { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     public UiData(
         Dictionary<string, string> textBoxes,

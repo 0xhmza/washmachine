@@ -782,7 +782,8 @@ public static class Program
             {
                 if (!snippetService.TryResolveSection(ph.SnippetTemplateKey, out var section))
                     continue;
-                string comboName = $"snippetCombo_{ph.SnippetTemplateKey}_0";
+                // Use GetComboName so the key is normalized (uppercase) and matches what the GUI sends.
+                string comboName = SnippetControlNaming.GetComboName(section, 0);
                 if (!comboBoxes.ContainsKey(comboName))
                 {
                     var defaultItem = section.Items.FirstOrDefault(si => si.IsDefault)
