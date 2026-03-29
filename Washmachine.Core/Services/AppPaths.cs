@@ -149,6 +149,18 @@ public sealed class AppPaths : IAppPaths
         return sessionDir;
     }
 
+    /// <summary>
+    /// Creates a timestamped session directory for backdoor operations.
+    /// Pattern: <c>logging/backdoor_YYYYMMDD_HHMMSS_&lt;guid&gt;/</c>
+    /// </summary>
+    public string CreateBackdoorSessionDirectory()
+    {
+        string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture);
+        string sessionDir = Path.Combine(ExecutableDirectory, "logging", $"backdoor_{timestamp}_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(sessionDir);
+        return sessionDir;
+    }
+
     public IReadOnlyList<string> Validate()
     {
         var errors = new List<string>();
