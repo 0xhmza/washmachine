@@ -45,7 +45,7 @@
                         <ComboBox x:Name="playbookComboBox"
                                   Grid.Column="1"
                                   HorizontalAlignment="Stretch"
-                                  SelectionChanged="playbookComboBox_SelectionChanged" />
+                                  SelectionChanged="Playbook_SelectionChanged" />
                         <TextBlock x:Name="playbookPathText"
                                    Grid.Column="2"
                                    VerticalAlignment="Center"
@@ -164,8 +164,8 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBox x:Name="shellcodeFile" Margin="0,0,8,0" />
-                                            <Button x:Name="button1" Grid.Column="1" Content="Browse" MinWidth="72" Click="button1_Click" />
+                                            <TextBox x:Name="shellcodeFileInput" Margin="0,0,8,0" />
+                                            <Button x:Name="browseShellcodeFileButton" Grid.Column="1" Content="Browse" MinWidth="72" Click="BrowseShellcodeFile_Click" />
                                         </Grid>
                                     </Grid>
 
@@ -187,7 +187,7 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBox x:Name="shellcodeRAW"
+                                            <TextBox x:Name="shellcodeRawInput"
                                                      FontFamily="Consolas"
                                                      AcceptsReturn="True"
                                                      TextWrapping="NoWrap"
@@ -195,7 +195,7 @@
                                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                                      MinHeight="140"
                                                      Margin="0,0,8,0" />
-                                            <Button x:Name="button2" Grid.Column="1" Content="Paste" MinWidth="72" VerticalAlignment="Bottom" Click="button2_Click" />
+                                            <Button x:Name="pasteShellcodeButton" Grid.Column="1" Content="Paste" MinWidth="72" VerticalAlignment="Bottom" Click="PasteShellcode_Click" />
                                         </Grid>
                                     </Grid>
 
@@ -212,7 +212,7 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBox x:Name="shellcodeURLFile" PlaceholderText="Path to .bin shellcode file" Margin="0,0,8,0" />
+                                            <TextBox x:Name="shellcodeUrlFileInput" PlaceholderText="Path to .bin shellcode file" Margin="0,0,8,0" />
                                             <Button x:Name="urlBrowseButton" Grid.Column="1" Content="Browse" MinWidth="72" Click="urlBrowseButton_Click" />
                                         </Grid>
                                         <Grid Grid.Row="2">
@@ -227,7 +227,7 @@
                                                        VerticalAlignment="Center" Margin="12,0,0,0"
                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                                        TextWrapping="Wrap" FontSize="12" />
-                                            <TextBox x:Name="shellcodeURL" Visibility="Collapsed" />
+                                            <TextBox x:Name="shellcodeUrlValue" Visibility="Collapsed" />
                                         </Grid>
                                     </Grid>
 
@@ -238,7 +238,7 @@
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
                                         <TextBlock Text="Choose a generic shellcode (for testing purposes):" Margin="0,0,0,6" />
-                                        <ComboBox x:Name="genericShellcodeComboBox" Grid.Row="1" Width="360" />
+                                        <ComboBox x:Name="genericShellcodeCombo" Grid.Row="1" Width="360" />
                                     </Grid>
                                 </Grid>
                             </Border>
@@ -265,14 +265,14 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Encoder:" VerticalAlignment="Center" Margin="0,0,6,0" />
-                            <ComboBox x:Name="bin2hexEncoder"
+                            <ComboBox x:Name="encoderCombo"
                                       Grid.Column="1"
                                       Margin="0,0,16,0"
-                                      SelectionChanged="bin2hexEncoder_SelectionChanged" />
+                                      SelectionChanged="Encoder_SelectionChanged" />
                             <TextBlock Grid.Column="2" Text="Envelope:" VerticalAlignment="Center" Margin="0,0,6,0" />
-                            <ComboBox x:Name="bin2hexEnvelope"
+                            <ComboBox x:Name="envelopeCombo"
                                       Grid.Column="3"
-                                      SelectionChanged="bin2hexEnvelope_SelectionChanged" />
+                                      SelectionChanged="Envelope_SelectionChanged" />
                         </Grid>
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -320,8 +320,8 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <ComboBox x:Name="templateComboBox" Margin="0,0,8,0" SelectionChanged="templateComboBox_SelectedIndexChanged" />
-                            <Button x:Name="button4" Grid.Column="1" Content="Configure" MinWidth="110" Margin="0,0,8,0" Click="button4_Click" />
+                            <ComboBox x:Name="templateCombo" Margin="0,0,8,0" SelectionChanged="Template_SelectionChanged" />
+                            <Button x:Name="configureTemplateButton" Grid.Column="1" Content="Configure" MinWidth="110" Margin="0,0,8,0" Click="ConfigureTemplate_Click" />
                             <Button x:Name="refreshTemplateButton" Grid.Column="2" Content="Refresh" MinWidth="90" Click="refreshTemplateButton_Click" />
                         </Grid>
 
@@ -371,7 +371,7 @@
                             <TextBlock Text="Status Log" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Expander.Header>
-                    <RichEditBox x:Name="debugBox"
+                    <RichEditBox x:Name="statusLogBox"
                                  Height="120"
                                  IsReadOnly="True"
                                  FontFamily="Consolas"

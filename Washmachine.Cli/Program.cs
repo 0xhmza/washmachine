@@ -666,7 +666,7 @@ public static class Program
         if (args.Length == 0)
             return await RunSubMode("compile", RunCompileAsync, PrintCompileUsage);
 
-        string? shellcodeFile = null;
+        string? shellcodeFilePath = null;
         string? shellcodeHex = null;
         string? shellcodeUrl = null;
         string? templateId = null;
@@ -681,7 +681,7 @@ public static class Program
             switch (args[i])
             {
                 case "--shellcode" or "-s" when i + 1 < args.Length:
-                    shellcodeFile = args[++i]; break;
+                    shellcodeFilePath = args[++i]; break;
                 case "--shellcode-hex" when i + 1 < args.Length:
                     shellcodeHex = args[++i]; break;
                 case "--shellcode-url" or "-u" when i + 1 < args.Length:
@@ -704,7 +704,7 @@ public static class Program
             }
         }
 
-        if (shellcodeFile == null && shellcodeHex == null && shellcodeUrl == null)
+        if (shellcodeFilePath == null && shellcodeHex == null && shellcodeUrl == null)
         {
             AnsiConsole.MarkupLine("[red]Error:[/] provide --shellcode <file>, --shellcode-hex <hex>, or --shellcode-url <url>");
             return 1;
@@ -727,15 +727,15 @@ public static class Program
         // Build UiData from CLI arguments
         var textBoxes = new Dictionary<string, string>
         {
-            ["shellcodeFile"] = shellcodeFile ?? "",
-            ["shellcodeRAW"] = shellcodeHex ?? "",
-            ["shellcodeURL"] = shellcodeUrl ?? "",
-            ["shellcodeURLFile"] = "",
+            [UiDataKeys.ShellcodeFile] = shellcodeFilePath ?? "",
+            [UiDataKeys.ShellcodeRaw] = shellcodeHex ?? "",
+            [UiDataKeys.ShellcodeUrl] = shellcodeUrl ?? "",
+            [UiDataKeys.ShellcodeUrlFile] = "",
         };
 
         var comboBoxes = new Dictionary<string, string>
         {
-            ["templateComboBox"] = templateId ?? "shellcode-minimal",
+            [UiDataKeys.Template] = templateId ?? "shellcode-minimal",
         };
 
         // Resolve encoder/envelope display text from catalog
@@ -776,7 +776,7 @@ public static class Program
             comboBoxes[kv.Key] = kv.Value;
 
         // Apply default snippets for the selected template
-        if (snippetService.TryGetTemplate(comboBoxes["templateComboBox"], out var tmpl))
+        if (snippetService.TryGetTemplate(comboBoxes[UiDataKeys.Template], out var tmpl))
         {
             foreach (var ph in tmpl.Placeholders.Where(p => p.Kind == TemplatePlaceholderKind.Snippet))
             {

@@ -94,7 +94,6 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     private const string TemplateUacBypass = "UACB";
     private const string TemplateGenericShellcode = "GENERICSHELLCODE";
     private const string TemplateGuardrail = "GUARDRAIL";
-    private const string TemplateSelectionControlName = "templateComboBox";
 
     private const string PlaceholderProcessLookupHelper = "PROCESS_LOOKUP_HELPER";
     private const string PlaceholderShellcodeSource = "SHELLCODE_SOURCE";
@@ -111,6 +110,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     private static readonly string[] CompilerExecutables = { "cl.exe", "g++.exe", "clang++.exe" };
     private static readonly string[] EncoderKeys =
     {
+        UiDataKeys.Encoder,
         "bin2hexEncoder",
         "bin2shellEncoder",
         "bin2ShellEncoder",
@@ -119,6 +119,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     };
     private static readonly string[] EnvelopeKeys =
     {
+        UiDataKeys.Envelope,
         "bin2hexEnvelope",
         "bin2shellEnvelope",
         "bin2ShellEnvelope",
@@ -310,7 +311,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     private CodeTemplateDefinition ResolveTemplate(UiData data)
     {
         string selectedId = string.Empty;
-        if (data.ComboBoxes.TryGetValue(TemplateSelectionControlName, out var rawSelection))
+        if (data.ComboBoxes.TryGetValue(UiDataKeys.Template, out var rawSelection))
             selectedId = rawSelection?.Trim() ?? string.Empty;
 
         if (!string.IsNullOrWhiteSpace(selectedId) && _snippets.TryGetTemplate(selectedId, out var template))
@@ -1908,10 +1909,10 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             return new ShellcodeSource(ShellcodeSourceKind.WebPayload, webBlock);
         }
 
-        data.TextBoxes.TryGetValue("shellcodeFile", out var filePathRaw);
-        data.TextBoxes.TryGetValue("shellcodeRAW", out var rawInput);
-        data.TextBoxes.TryGetValue("shellcodeURL", out var urlInput);
-        data.ComboBoxes.TryGetValue("genericShellcodeComboBox", out var genericSelection);
+        data.TextBoxes.TryGetValue(UiDataKeys.ShellcodeFile, out var filePathRaw);
+        data.TextBoxes.TryGetValue(UiDataKeys.ShellcodeRaw, out var rawInput);
+        data.TextBoxes.TryGetValue(UiDataKeys.ShellcodeUrl, out var urlInput);
+        data.ComboBoxes.TryGetValue(UiDataKeys.GenericShellcode, out var genericSelection);
 
         bool hasFile = !string.IsNullOrWhiteSpace(filePathRaw);
         bool hasRaw = !string.IsNullOrWhiteSpace(rawInput);

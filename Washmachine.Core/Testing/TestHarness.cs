@@ -335,15 +335,15 @@ public static class TestHarness
     {
         var textBoxes = new Dictionary<string, string>
         {
-            ["shellcodeFile"] = shellcodeFile,
-            ["shellcodeRAW"] = "",
-            ["shellcodeURL"] = payloadUrl ?? "",
-            ["shellcodeURLFile"] = "",
+            [UiDataKeys.ShellcodeFile] = shellcodeFile,
+            [UiDataKeys.ShellcodeRaw] = "",
+            [UiDataKeys.ShellcodeUrl] = payloadUrl ?? "",
+            [UiDataKeys.ShellcodeUrlFile] = "",
         };
 
         var comboBoxes = new Dictionary<string, string>
         {
-            ["templateComboBox"] = "shellcode-minimal",
+            [UiDataKeys.Template] = "shellcode-minimal",
             ["bin2hexEncoder"] = encoder.DisplayText,
             ["bin2hexEnvelope"] = envelope.DisplayText,
         };
@@ -393,17 +393,17 @@ public static class TestHarness
 
             var textBoxes = new Dictionary<string, string>
             {
-                ["shellcodeFile"] = "",
-                ["shellcodeRAW"] = "",
-                ["shellcodeURL"] = payloadUrl,
-                ["shellcodeURLFile"] = shellcodeFile,
+                [UiDataKeys.ShellcodeFile] = "",
+                [UiDataKeys.ShellcodeRaw] = "",
+                [UiDataKeys.ShellcodeUrl] = payloadUrl,
+                [UiDataKeys.ShellcodeUrlFile] = shellcodeFile,
                 ["__webPayloadCodeBlock__"] = webOutput.BuildBody(),
                 ["__webPayloadPreamble__"] = webOutput.BuildPreamble(),
             };
 
             var comboBoxes = new Dictionary<string, string>
             {
-                ["templateComboBox"] = "shellcode-minimal",
+                [UiDataKeys.Template] = "shellcode-minimal",
                 ["bin2hexEncoder"] = encoder.DisplayText,
                 ["bin2hexEnvelope"] = envelope.DisplayText,
             };
@@ -426,15 +426,15 @@ public static class TestHarness
     {
         var textBoxes = new Dictionary<string, string>
         {
-            ["shellcodeFile"] = shellcodeFile,
-            ["shellcodeRAW"] = "",
-            ["shellcodeURL"] = "",
-            ["shellcodeURLFile"] = "",
+            [UiDataKeys.ShellcodeFile] = shellcodeFile,
+            [UiDataKeys.ShellcodeRaw] = "",
+            [UiDataKeys.ShellcodeUrl] = "",
+            [UiDataKeys.ShellcodeUrlFile] = "",
         };
 
         var comboBoxes = new Dictionary<string, string>
         {
-            ["templateComboBox"] = templateId,
+            [UiDataKeys.Template] = templateId,
             ["bin2hexEncoder"] = "0 - none",
             ["bin2hexEnvelope"] = "0 - none",
         };
@@ -807,15 +807,15 @@ public static class TestHarness
     {
         var textBoxes = new Dictionary<string, string>
         {
-            ["shellcodeFile"] = shellcodeFile,
-            ["shellcodeRAW"] = "",
-            ["shellcodeURL"] = "",
-            ["shellcodeURLFile"] = "",
+            [UiDataKeys.ShellcodeFile] = shellcodeFile,
+            [UiDataKeys.ShellcodeRaw] = "",
+            [UiDataKeys.ShellcodeUrl] = "",
+            [UiDataKeys.ShellcodeUrlFile] = "",
         };
 
         var comboBoxes = new Dictionary<string, string>
         {
-            ["templateComboBox"] = "shellcode-minimal",
+            [UiDataKeys.Template] = "shellcode-minimal",
             ["bin2hexEncoder"] = "0 - none",
             ["bin2hexEnvelope"] = "0 - none",
         };
@@ -831,15 +831,15 @@ public static class TestHarness
     {
         var textBoxes = new Dictionary<string, string>
         {
-            ["shellcodeFile"] = shellcodeFile,
-            ["shellcodeRAW"] = "",
-            ["shellcodeURL"] = "",
-            ["shellcodeURLFile"] = "",
+            [UiDataKeys.ShellcodeFile] = shellcodeFile,
+            [UiDataKeys.ShellcodeRaw] = "",
+            [UiDataKeys.ShellcodeUrl] = "",
+            [UiDataKeys.ShellcodeUrlFile] = "",
         };
 
         var comboBoxes = new Dictionary<string, string>
         {
-            ["templateComboBox"] = "shellcode-minimal",
+            [UiDataKeys.Template] = "shellcode-minimal",
             ["bin2hexEncoder"] = encoder.DisplayText,
             ["bin2hexEnvelope"] = "0 - none",
         };

@@ -18,7 +18,7 @@ public sealed partial class MainPage : Page, IMainFormView
     private readonly MainFormCoordinator _coordinator;
     private readonly AppPaths _paths;
     private ShellcodeSource _currentSource = ShellcodeSource.None;
-    private bool _suppressPlaybookSelection;
+    private bool _suppressPlaybookEvents;
     private bool _initialized;
     private readonly CliExecutor _cli = new();
 
@@ -28,7 +28,7 @@ public sealed partial class MainPage : Page, IMainFormView
         InitializeComponent();
         Instance = this;
 
-        _logger = new RichEditBoxLogger(debugBox);
+        _logger = new RichEditBoxLogger(statusLogBox);
 
         _paths = new AppPaths();
         var clipboard = new ClipboardService();
@@ -63,18 +63,18 @@ public sealed partial class MainPage : Page, IMainFormView
     /// <summary>Currently selected shellcode source type.</summary>
     public ShellcodeSource CurrentShellcodeSource => _currentSource;
 
-    public ComboBox EncoderCombo => bin2hexEncoder;
-    public ComboBox EnvelopeCombo => bin2hexEnvelope;
-    public ComboBox TemplateCombo => templateComboBox;
+    public ComboBox EncoderCombo => encoderCombo;
+    public ComboBox EnvelopeCombo => envelopeCombo;
+    public ComboBox TemplateCombo => templateCombo;
     public ComboBox PlaybookCombo => playbookComboBox;
-    public ComboBox GenericShellcodeCombo => genericShellcodeComboBox;
+    public ComboBox GenericShellcodeCombo => genericShellcodeCombo;
     public TextBlock EncoderDescriptionTextBlock => encoderDescriptionText;
     public TextBlock EnvelopeDescriptionTextBlock => envelopeDescriptionText;
     public TextBlock PlaybookPathTextBlock => playbookPathText;
-    public TextBox ShellcodeFileTextBox => shellcodeFile;
-    public TextBox ShellcodeRawTextBox => shellcodeRAW;
-    public TextBox ShellcodeUrlTextBox => shellcodeURL;
-    public TextBox ShellcodeUrlFileTextBox => shellcodeURLFile;
+    public TextBox ShellcodeFileTextBox => shellcodeFileInput;
+    public TextBox ShellcodeRawTextBox => shellcodeRawInput;
+    public TextBox ShellcodeUrlTextBox => shellcodeUrlValue;
+    public TextBox ShellcodeUrlFileTextBox => shellcodeUrlFileInput;
     public Button SubmitButton => goToBackdooringButton;
     public MainFormCoordinator Coordinator => _coordinator;
 
@@ -144,16 +144,16 @@ public sealed partial class MainPage : Page, IMainFormView
             throw new InvalidOperationException($"Provision failed (exit {result.ExitCode}).\n{result.Output}");
     }
 
-    private async void button1_Click(object sender, RoutedEventArgs e)
+    private async void BrowseShellcodeFile_Click(object sender, RoutedEventArgs e)
     {
         _coordinator.LogUiAction("Browse shellcode file");
         await _coordinator.SelectShellcodeFile(this);
     }
 
-    private async void button2_Click(object sender, RoutedEventArgs e)
+    private async void PasteShellcode_Click(object sender, RoutedEventArgs e)
     {
         _coordinator.LogUiAction("Paste shellcode from clipboard");
-        await _coordinator.PasteShellcodeFromClipboard(this, shellcodeRAW);
+        await _coordinator.PasteShellcodeFromClipboard(this, shellcodeRawInput);
     }
 
     private async void urlBrowseButton_Click(object sender, RoutedEventArgs e)
@@ -172,7 +172,7 @@ public sealed partial class MainPage : Page, IMainFormView
         await _coordinator.GenerateWebPayloadAsync(this);
 
         // After wizard completes, grey out the button and show guidance
-        if (!string.IsNullOrEmpty(shellcodeURL.Text))
+        if (!string.IsNullOrEmpty(shellcodeUrlValue.Text))
         {
             startWizardButton.IsEnabled = false;
             wizardStatusText.Text = "Now adjust the template and compile, or choose another source/file.";
@@ -185,19 +185,19 @@ public sealed partial class MainPage : Page, IMainFormView
         e.Handled = true;
     }
 
-    private async void templateComboBox_SelectedIndexChanged(object sender, SelectionChangedEventArgs e)
+    private async void Template_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!IsLoaded) return;
         await _coordinator.HandleTemplateChanged(this);
     }
 
-    private void bin2hexEncoder_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
+    private void Encoder_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
         _coordinator.UpdateEncodingDescriptions(this);
 
-    private void bin2hexEnvelope_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
+    private void Envelope_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
         _coordinator.UpdateEncodingDescriptions(this);
 
-    private async void button4_Click(object sender, RoutedEventArgs e)
+    private async void ConfigureTemplate_Click(object sender, RoutedEventArgs e)
     {
         _coordinator.LogUiAction("Open template config dialog");
         await _coordinator.OpenTemplateConfig(this);
@@ -209,9 +209,9 @@ public sealed partial class MainPage : Page, IMainFormView
         _coordinator.RefreshTemplateCatalog(this);
     }
 
-    private async void playbookComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void Playbook_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_suppressPlaybookSelection || !IsLoaded)
+        if (_suppressPlaybookEvents || !IsLoaded)
             return;
 
         if (playbookComboBox.SelectedItem is not PlaybookComboItem selected)
@@ -313,10 +313,10 @@ public sealed partial class MainPage : Page, IMainFormView
 
     private void ClearOtherSources(ShellcodeSource s)
     {
-        if (s != ShellcodeSource.File)    shellcodeFile.Text = string.Empty;
-        if (s != ShellcodeSource.Raw)     shellcodeRAW.Text  = string.Empty;
-        if (s != ShellcodeSource.Url)   { shellcodeURL.Text  = string.Empty; shellcodeURLFile.Text = string.Empty; }
-        if (s != ShellcodeSource.Generic) genericShellcodeComboBox.SelectedIndex = -1;
+        if (s != ShellcodeSource.File)    shellcodeFileInput.Text = string.Empty;
+        if (s != ShellcodeSource.Raw)     shellcodeRawInput.Text  = string.Empty;
+        if (s != ShellcodeSource.Url)   { shellcodeUrlValue.Text  = string.Empty; shellcodeUrlFileInput.Text = string.Empty; }
+        if (s != ShellcodeSource.Generic) genericShellcodeCombo.SelectedIndex = -1;
     }
 
     private void PopulatePlaybookCombo()
@@ -324,7 +324,7 @@ public sealed partial class MainPage : Page, IMainFormView
         var playbooks = _paths.GetAvailablePlaybookFiles();
         playbookComboBox.Items.Clear();
 
-        _suppressPlaybookSelection = true;
+        _suppressPlaybookEvents = true;
         try
         {
             foreach (var path in playbooks)
@@ -355,7 +355,7 @@ public sealed partial class MainPage : Page, IMainFormView
         }
         finally
         {
-            _suppressPlaybookSelection = false;
+            _suppressPlaybookEvents = false;
         }
     }
 
