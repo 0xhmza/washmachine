@@ -18,7 +18,7 @@ namespace Washmachine.Controllers;
 /// </summary>
 public sealed class MainFormCoordinator
 {
-    private const string TemplateGenericShellcode = "GENERICSHELLCODE";
+    private const string GenericShellcodeTemplatePlaceholder = "GENERICSHELLCODE";
     // Bin2Shell output patterns for array and envelope payloads.
     private static readonly Regex CodeBlobArrayRegex = new(@"unsigned\s+char\s+code_blob\[\]\s*=\s*\{(?<body>.*?)\};", RegexOptions.Compiled | RegexOptions.Singleline);
     private static readonly Regex CodeBlobTextBlockRegex = new(@"code_blob_text\[\]\s*=\s*(?<body>.*?)\s*;", RegexOptions.Compiled | RegexOptions.Singleline);
@@ -37,7 +37,7 @@ public sealed class MainFormCoordinator
 
     /// <summary>Exposes the current template options state for CLI bridge use.</summary>
     public TemplateOptionsState TemplateOptions => _templateOptions;
-    private bool _suppressTemplateOptionsDialog;
+    private bool _isTemplateOptionsDialogSuppressed;
     private Bin2ShellWebOutput? _activeWebPayload;
     private IReadOnlyList<ShellcodeEncodingItem> _encoderItems = Array.Empty<ShellcodeEncodingItem>();
     private IReadOnlyList<ShellcodeEncodingItem> _envelopeItems = Array.Empty<ShellcodeEncodingItem>();
@@ -382,8 +382,8 @@ public sealed class MainFormCoordinator
             return;
         }
 
-        bool previousSuppress = _suppressTemplateOptionsDialog;
-        _suppressTemplateOptionsDialog = true;
+        bool previousSuppress = _isTemplateOptionsDialogSuppressed;
+        _isTemplateOptionsDialogSuppressed = true;
         try
         {
             var allTemplates = _snippetCatalog.GetTemplates()
@@ -435,7 +435,7 @@ public sealed class MainFormCoordinator
         }
         finally
         {
-            _suppressTemplateOptionsDialog = previousSuppress;
+            _isTemplateOptionsDialogSuppressed = previousSuppress;
         }
     }
 
@@ -448,7 +448,7 @@ public sealed class MainFormCoordinator
         ResetTemplateOptions(selectedTemplate);
         UpdateTemplateContext(view, selectedTemplate);
 
-        if (selectedTemplate != null && !_suppressTemplateOptionsDialog)
+        if (selectedTemplate != null && !_isTemplateOptionsDialogSuppressed)
         {
             try
             {
@@ -1474,7 +1474,7 @@ public sealed class MainFormCoordinator
         if (section == null)
             return false;
 
-        string key = TemplateGenericShellcode;
+        string key = GenericShellcodeTemplatePlaceholder;
         return SectionMatchesKey(section, key) ||
                section.Display.Contains("generic", StringComparison.OrdinalIgnoreCase) ||
                section.Header.Contains("generic", StringComparison.OrdinalIgnoreCase);

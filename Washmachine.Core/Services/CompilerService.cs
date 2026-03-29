@@ -92,7 +92,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     private const string TemplateProcessInjection = "PSINJECTION";
     private const string TemplateShellcodeExecution = "SHELLCODEEXECUTION";
     private const string TemplateUacBypass = "UACB";
-    private const string TemplateGenericShellcode = "GENERICSHELLCODE";
+    private const string GenericShellcodeTemplatePlaceholder = "GENERICSHELLCODE";
     private const string TemplateGuardrail = "GUARDRAIL";
 
     private const string PlaceholderProcessLookupHelper = "PROCESS_LOOKUP_HELPER";
