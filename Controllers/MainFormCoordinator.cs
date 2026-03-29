@@ -34,6 +34,9 @@ public sealed class MainFormCoordinator
     private IReadOnlyList<CodeTemplateDefinition> _templates = Array.Empty<CodeTemplateDefinition>();
     private TemplateOptionsState _templateOptions = new();
     private string _templateOptionsTemplateId = string.Empty;
+
+    /// <summary>Exposes the current template options state for CLI bridge use.</summary>
+    public TemplateOptionsState TemplateOptions => _templateOptions;
     private bool _suppressTemplateOptionsDialog;
     private Bin2ShellWebOutput? _activeWebPayload;
     private IReadOnlyList<ShellcodeEncodingItem> _encoderItems = Array.Empty<ShellcodeEncodingItem>();
@@ -252,6 +255,10 @@ public sealed class MainFormCoordinator
         _interaction.ShowShellcodeTip(view.WindowHandle);
     }
 
+    /// <summary>Logs a user interface action at debug level for session traceability.</summary>
+    public void LogUiAction(string action) =>
+        _logger.Debug($"[ui] {action}");
+
     public void ShowGuardRailInfo(IMainFormView view)
     {
         ArgumentNullException.ThrowIfNull(view);
@@ -437,6 +444,7 @@ public sealed class MainFormCoordinator
         ArgumentNullException.ThrowIfNull(view);
 
         var selectedTemplate = GetSelectedTemplate(view);
+        _logger.Debug($"[ui] Template selected: {selectedTemplate?.Display ?? "(none)"} (id={selectedTemplate?.Id ?? "null"})");
         ResetTemplateOptions(selectedTemplate);
         UpdateTemplateContext(view, selectedTemplate);
 
@@ -772,7 +780,19 @@ public sealed class MainFormCoordinator
         {
             _templateOptions = result;
             _logger.Ok($"Template options saved for '{template.Display}'.");
+            LogTemplateOptions(result);
         }
+    }
+
+    private void LogTemplateOptions(TemplateOptionsState state)
+    {
+        if (state == null) return;
+        foreach (var kv in state.ComboValues)
+            _logger.Debug($"  [snippet] {kv.Key} = {kv.Value}");
+        foreach (var kv in state.TextValues)
+            _logger.Debug($"  [input] {kv.Key} = {kv.Value}");
+        foreach (var kv in state.ListValues)
+            _logger.Debug($"  [multi] {kv.Key} = [{string.Join(", ", kv.Value)}]");
     }
 
     private void HandleTemplateInfoAction(IMainFormView view, string action)
@@ -1207,6 +1227,11 @@ public sealed class MainFormCoordinator
         view.EnvelopeDescriptionTextBlock.Text = string.IsNullOrWhiteSpace(envelopeDescription)
             ? "No description available."
             : envelopeDescription;
+
+        // Log selection changes for session traceability
+        var encoderLabel = view.EncoderCombo?.SelectedItem?.ToString() ?? "(none)";
+        var envelopeLabel = view.EnvelopeCombo?.SelectedItem?.ToString() ?? "(none)";
+        _logger.Debug($"[ui] Encoder: {encoderLabel}  |  Envelope: {envelopeLabel}");
     }
 
     private static string ResolveSelectedDescription(ComboBox combo, IReadOnlyList<ShellcodeEncodingItem> items)

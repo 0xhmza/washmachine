@@ -219,6 +219,15 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
             SaveSessionLog(sessionDir, notes, conversionResult);
 
+            // Copy the compiled binary into the session folder for later analysis
+            if (conversionResult.Success && !string.IsNullOrWhiteSpace(conversionResult.OutputExePath)
+                && File.Exists(conversionResult.OutputExePath))
+            {
+                var artifactName = Path.GetFileName(conversionResult.OutputExePath);
+                CopyToSessionDir(sessionDir, conversionResult.OutputExePath, artifactName);
+                _logger.Debug($"Binary artifact saved: {artifactName}");
+            }
+
             return new CompilerResult(conversionResult.Success, null, sourceCode, notes, discovery, conversionResult);
         }
         catch (OperationCanceledException)

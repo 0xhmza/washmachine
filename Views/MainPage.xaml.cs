@@ -144,14 +144,21 @@ public sealed partial class MainPage : Page, IMainFormView
             throw new InvalidOperationException($"Provision failed (exit {result.ExitCode}).\n{result.Output}");
     }
 
-    private async void button1_Click(object sender, RoutedEventArgs e) =>
+    private async void button1_Click(object sender, RoutedEventArgs e)
+    {
+        _coordinator.LogUiAction("Browse shellcode file");
         await _coordinator.SelectShellcodeFile(this);
+    }
 
-    private async void button2_Click(object sender, RoutedEventArgs e) =>
+    private async void button2_Click(object sender, RoutedEventArgs e)
+    {
+        _coordinator.LogUiAction("Paste shellcode from clipboard");
         await _coordinator.PasteShellcodeFromClipboard(this, shellcodeRAW);
+    }
 
     private async void urlBrowseButton_Click(object sender, RoutedEventArgs e)
     {
+        _coordinator.LogUiAction("Browse shellcode URL file");
         await _coordinator.SelectShellcodeFileForUrl(this);
 
         // Re-enable wizard if user picked a new file
@@ -161,6 +168,7 @@ public sealed partial class MainPage : Page, IMainFormView
 
     private async void StartWizard_Click(object sender, RoutedEventArgs e)
     {
+        _coordinator.LogUiAction("Start web payload wizard");
         await _coordinator.GenerateWebPayloadAsync(this);
 
         // After wizard completes, grey out the button and show guidance
@@ -189,11 +197,17 @@ public sealed partial class MainPage : Page, IMainFormView
     private void bin2hexEnvelope_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
         _coordinator.UpdateEncodingDescriptions(this);
 
-    private async void button4_Click(object sender, RoutedEventArgs e) =>
+    private async void button4_Click(object sender, RoutedEventArgs e)
+    {
+        _coordinator.LogUiAction("Open template config dialog");
         await _coordinator.OpenTemplateConfig(this);
+    }
 
-    private void refreshTemplateButton_Click(object sender, RoutedEventArgs e) =>
+    private void refreshTemplateButton_Click(object sender, RoutedEventArgs e)
+    {
+        _coordinator.LogUiAction("Refresh template catalog");
         _coordinator.RefreshTemplateCatalog(this);
+    }
 
     private async void playbookComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {

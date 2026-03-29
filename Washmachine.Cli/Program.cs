@@ -771,9 +771,9 @@ public static class Program
             comboBoxes["bin2hexEnvelope"] = envelopeIndex != null ? $"{envelopeIndex} - custom" : "0 - none";
         }
 
-        // Apply snippet selections and defaults
+        // Apply snippet selections — keys already contain the full combo name (e.g. "snippetCombo_ANTISANDBOX_0")
         foreach (var kv in snippets)
-            comboBoxes[$"snippetCombo_{kv.Key}_0"] = kv.Value;
+            comboBoxes[kv.Key] = kv.Value;
 
         // Apply default snippets for the selected template
         if (snippetService.TryGetTemplate(comboBoxes["templateComboBox"], out var tmpl))

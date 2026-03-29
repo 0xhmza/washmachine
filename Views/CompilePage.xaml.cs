@@ -769,12 +769,15 @@ public sealed partial class CompilePage : Page
         if (envelopeIndex.HasValue)
             args.AddRange(["-v", envelopeIndex.Value.ToString()]);
 
-        // Snippets — extract from visual tree
-        var uiData = Services.UiDataFactory.FromVisualTree(mainPage.ContentRoot);
-        foreach (var (key, value) in uiData.ComboBoxes)
+        // Snippets — read from coordinator's template options (combos live in the dialog, not the visual tree)
+        var templateOptions = mainPage.Coordinator.TemplateOptions;
+        foreach (var (key, value) in templateOptions.ComboValues)
         {
-            if (key.StartsWith("snippetCombo_", StringComparison.Ordinal) && !string.IsNullOrEmpty(value))
+            if (!string.IsNullOrEmpty(value))
+            {
                 args.AddRange(["--snippet", $"{key}={value}"]);
+                _logger.Debug($"[ui] snippet arg: {key}={value}");
+            }
         }
 
         // JSON output for machine-readable result
