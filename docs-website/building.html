@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building // Washmachine</title>
+    <link rel="stylesheet" href="css/cyberpunk.css">
+</head>
+<body>
+    <div class="scanlines"></div>
+    <div class="glitch-overlay"></div>
+
+    <nav class="cyber-nav">
+        <div class="nav-container">
+            <div class="logo">
+                <span class="glitch" data-text="WASHMACHINE">WASHMACHINE</span>
+            </div>
+            <ul class="nav-links">
+                <li><a href="index.html">HOME</a></li>
+                <li><a href="features.html">FEATURES</a></li>
+                <li><a href="cli.html">CLI REFERENCE</a></li>
+                <li><a href="yaml.html">YAML CATALOG</a></li>
+                <li><a href="architecture.html">ARCHITECTURE</a></li>
+                <li><a href="building.html" class="active">BUILDING</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="page-header">
+        <div class="container">
+            <h1 class="page-title">// BUILDING & DEPLOYMENT</h1>
+            <p class="page-subtitle">Complete build and publishing guide</p>
+        </div>
+    </div>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// REQUIREMENTS</h2>
+
+            <div class="grid-2">
+                <div class="card">
+                    <h3>CLI (washmachine-cli)</h3>
+                    <table class="requirements-table">
+                        <tr>
+                            <td>OS</td>
+                            <td>Windows 10 1809 (build 17763)+ / Windows 11</td>
+                        </tr>
+                        <tr>
+                            <td>.NET</td>
+                            <td>8.0 Runtime x64</td>
+                        </tr>
+                        <tr>
+                            <td>C++ Compiler</td>
+                            <td>MSVC / MinGW-w64 g++ / clang++ on PATH</td>
+                        </tr>
+                        <tr>
+                            <td>Python</td>
+                            <td>3.10+ on PATH (for Bin2Shell encoding)</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div class="card">
+                    <h3>Desktop App (washmachine)</h3>
+                    <table class="requirements-table">
+                        <tr>
+                            <td>OS</td>
+                            <td>Windows 10 1809 (build 17763)+ / Windows 11</td>
+                        </tr>
+                        <tr>
+                            <td>.NET</td>
+                            <td>8.0 <strong>Desktop</strong> Runtime x64</td>
+                        </tr>
+                        <tr>
+                            <td>Windows App SDK</td>
+                            <td>1.8 Runtime</td>
+                        </tr>
+                        <tr>
+                            <td>C++ Compiler</td>
+                            <td>MSVC / MinGW-w64 g++ / clang++ on PATH</td>
+                        </tr>
+                        <tr>
+                            <td>Python</td>
+                            <td>3.10+ on PATH (for Bin2Shell encoding)</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// DEVELOPMENT BUILD</h2>
+
+            <h3 class="subsection-title">Build All Projects</h3>
+
+            <div class="terminal-window">
+                <div class="terminal-body">
+<pre><span class="comment"># Build entire solution</span>
+<span class="prompt">PS></span> <span class="command">dotnet build washmachine.sln</span>
+
+<span class="output">Microsoft (R) Build Engine version 17.9.0
+Build started...
+
+Washmachine.Core -> Washmachine.Core\bin\Debug\net8.0\Washmachine.Core.dll
+Washmachine.Cli -> Output\cli\Debug\net8.0\washmachine-cli.exe
+washmachine -> Output\Debug\net8.0-windows10.0.19041.0\washmachine.exe
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)</span></pre>
+                </div>
+            </div>
+
+            <h3 class="subsection-title">Debug Outputs</h3>
+
+            <table class="build-table">
+                <thead>
+                    <tr>
+                        <th>PROJECT</th>
+                        <th>OUTPUT PATH</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Washmachine.Core</td>
+                        <td><code>Washmachine.Core\bin\Debug\net8.0\</code></td>
+                    </tr>
+                    <tr>
+                        <td>Washmachine.Cli</td>
+                        <td><code>Output\cli\Debug\net8.0\washmachine-cli.exe</code></td>
+                    </tr>
+                    <tr>
+                        <td>washmachine (GUI)</td>
+                        <td><code>Output\Debug\net8.0-windows10.0.19041.0\washmachine.exe</code></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3 class="subsection-title">Build Individual Projects</h3>
+
+            <div class="terminal-window">
+                <div class="terminal-body">
+<pre><span class="comment"># Build Core library only</span>
+<span class="prompt">PS></span> <span class="command">dotnet build Washmachine.Core\Washmachine.Core.csproj</span>
+
+<span class="comment"># Build CLI only</span>
+<span class="prompt">PS></span> <span class="command">dotnet build Washmachine.Cli\Washmachine.Cli.csproj</span>
+
+<span class="comment"># Build GUI only</span>
+<span class="prompt">PS></span> <span class="command">dotnet build washmachine.csproj</span></pre>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// PUBLISHING (RELEASE)</h2>
+
+            <div class="grid-2">
+                <div class="card">
+                    <h3>CLI — Single-File Executable</h3>
+
+                    <div class="terminal-window small">
+                        <div class="terminal-body">
+<pre><span class="comment"># Publish CLI as single-file exe</span>
+<span class="prompt">PS></span> <span class="command">dotnet publish Washmachine.Cli\Washmachine.Cli.csproj -c Release</span>
+
+<span class="output">Output: Output\cli\Release\publish\washmachine-cli.exe</span></pre>
+                        </div>
+                    </div>
+
+                    <div class="info-box small">
+                        <p><strong>Framework-dependent</strong> single executable</p>
+                        <p>End-users need: <strong>.NET 8 Runtime x64</strong></p>
+                        <p class="note">NOT the full Desktop Runtime</p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>GUI — Framework-Dependent WinExe</h3>
+
+                    <div class="terminal-window small">
+                        <div class="terminal-body">
+<pre><span class="comment"># Publish GUI app</span>
+<span class="prompt">PS></span> <span class="command">dotnet publish washmachine.csproj -c Release</span>
+
+<span class="output">Output: Output\Release\publish\washmachine.exe
+        + supporting DLLs</span></pre>
+                        </div>
+                    </div>
+
+                    <div class="info-box small">
+                        <p><strong>Framework-dependent</strong> application</p>
+                        <p>End-users need:</p>
+                        <ul>
+                            <li><strong>.NET 8 Desktop Runtime x64</strong></li>
+                            <li><strong>Windows App SDK 1.8 Runtime</strong></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// END-PRODUCT DELIVERY</h2>
+
+            <p class="lead">Two separately distributable products come out of the same repo:</p>
+
+            <h3 class="subsection-title">1. CLI Tool (washmachine-cli)</h3>
+
+            <p>Minimum required files from <code>Output\cli\Release\publish\</code>:</p>
+
+            <div class="file-tree">
+<pre>washmachine-cli/
+├── washmachine-cli.exe         <span class="comment">← Single-file executable</span>
+└── Assets/
+    └── vx_api_snippets.yaml    <span class="comment">← YAML catalog (required at runtime)</span></pre>
+            </div>
+
+            <div class="info-box">
+                <div class="info-icon">📦</div>
+                <div class="info-content">
+                    <p>Bin2Shell is downloaded automatically on first use of encoding features (<code>washmachine-cli provision</code>).</p>
+                </div>
+            </div>
+
+            <p class="requirement"><strong>Runtime prerequisite:</strong> <a href="https://dotnet.microsoft.com/download/dotnet/8.0" target="_blank">.NET 8 Runtime x64</a></p>
+
+            <h3 class="subsection-title">2. GUI Desktop App (washmachine)</h3>
+
+            <p>Files from <code>Output\Release\publish\</code>:</p>
+
+            <div class="file-tree">
+<pre>washmachine/
+├── washmachine.exe
+├── washmachine.dll
+├── Assets/
+│   └── vx_api_snippets.yaml
+└── (supporting .dll files from dotnet publish)</pre>
+            </div>
+
+            <p class="requirement"><strong>Runtime prerequisites:</strong></p>
+            <ul>
+                <li><a href="https://dotnet.microsoft.com/download/dotnet/8.0" target="_blank">.NET 8 Desktop Runtime x64</a></li>
+                <li><a href="https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads" target="_blank">Windows App SDK 1.8 Runtime</a></li>
+            </ul>
+
+            <div class="info-box warning">
+                <div class="info-icon">⚠️</div>
+                <div class="info-content">
+                    <h4>Shared Runtime Assets</h4>
+                    <p>Both products rely on <code>Assets/vx_api_snippets.yaml</code> being present <strong>next to the executable</strong> (resolved via <code>AppPaths.AssetsDirectory</code>). Always include the <code>Assets/</code> folder alongside the binary.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// BIN2SHELL AUTO-PROVISIONING</h2>
+
+            <p class="lead">Bin2Shell is expected at <code>Tools\Bin2Shell\main.py</code> relative to the executable.</p>
+
+            <div class="grid-2">
+                <div class="card">
+                    <h3>Automatic Download</h3>
+                    <p>Downloaded automatically when:</p>
+                    <ul>
+                        <li>Running <code>washmachine-cli provision</code></li>
+                        <li>Launching the GUI for the first time</li>
+                    </ul>
+
+                    <div class="terminal-window small">
+                        <div class="terminal-body">
+<pre><span class="prompt">PS></span> <span class="command">washmachine-cli provision</span>
+
+<span class="output">[+] Downloading Bin2Shell...
+[████████████████] 100%
+[+] Extracting to Tools/Bin2Shell/
+[✓] Bin2Shell ready</span></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Manual Installation</h3>
+                    <p>Alternatively, place Bin2Shell manually:</p>
+
+                    <div class="file-tree small">
+<pre>washmachine-cli.exe
+Tools/
+└── Bin2Shell/
+    ├── main.py
+    ├── algos.yaml
+    └── ...</pre>
+                    </div>
+
+                    <p class="note">Must be in <code>Tools/Bin2Shell/</code> subdirectory</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// TESTING</h2>
+
+            <h3 class="subsection-title">Run via PowerShell Driver</h3>
+
+            <div class="terminal-window">
+                <div class="terminal-body">
+<pre><span class="comment"># Builds CLI if needed, then runs all phases</span>
+<span class="prompt">PS></span> <span class="command">.\Testing\run_tests.ps1 -ShellcodeFile path\to\messagebox.bin</span>
+
+<span class="comment"># Run only Phase 1 (encoder × envelope combinations)</span>
+<span class="prompt">PS></span> <span class="command">.\Testing\run_tests.ps1 -Phase 1 -ShellcodeFile path\to\messagebox.bin</span>
+
+<span class="comment"># Run only Phase 3 (multiple shellcode inputs from test assets)</span>
+<span class="prompt">PS></span> <span class="command">.\Testing\run_tests.ps1 -Phase 3</span></pre>
+                </div>
+            </div>
+
+            <h3 class="subsection-title">Run Directly via CLI</h3>
+
+            <div class="terminal-window">
+                <div class="terminal-body">
+<pre><span class="prompt">PS></span> <span class="command">washmachine-cli test --shellcode path\to\messagebox.bin --phase all</span>
+<span class="prompt">PS></span> <span class="command">washmachine-cli test --shellcode path\to\messagebox.bin --phase 1 --url http://host/payload.bin</span>
+<span class="prompt">PS></span> <span class="command">washmachine-cli test --phase 3 --test-assets "testing assets\binary\shellcodes"</span></pre>
+                </div>
+            </div>
+
+            <p>Results are written to <code>test_results.json</code> in the CLI executable's directory.</p>
+
+            <h3 class="subsection-title">Test Phases</h3>
+
+            <table class="build-table">
+                <thead>
+                    <tr>
+                        <th>PHASE</th>
+                        <th>WHAT IT TESTS</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>1</td>
+                        <td>All encoder × envelope × web-helper combinations (requires shellcode + optional URL)</td>
+                    </tr>
+                    <tr>
+                        <td>2</td>
+                        <td>All template × snippet permutations with default (0) encoding</td>
+                    </tr>
+                    <tr>
+                        <td>3</td>
+                        <td>Multiple shellcode inputs from the test assets directory</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// TROUBLESHOOTING</h2>
+
+            <div class="troubleshooting-grid">
+                <div class="trouble-card">
+                    <h3>Compiler Not Found</h3>
+                    <div class="terminal-window small">
+                        <div class="terminal-body">
+<pre><span class="error">[!] No compiler detected</span></pre>
+                        </div>
+                    </div>
+                    <p><strong>Solution:</strong></p>
+                    <ul>
+                        <li>Install Visual Studio Build Tools (MSVC)</li>
+                        <li>Or install MinGW-w64 (GCC)</li>
+                        <li>Or install LLVM (Clang)</li>
+                        <li>Ensure compiler is on PATH</li>
+                    </ul>
+                </div>
+
+                <div class="trouble-card">
+                    <h3>Bin2Shell Missing</h3>
+                    <div class="terminal-window small">
+                        <div class="terminal-body">
+<pre><span class="error">[!] Bin2Shell not found</span></pre>
+                        </div>
+                    </div>
+                    <p><strong>Solution:</strong></p>
+                    <ul>
+                        <li>Run <code>washmachine-cli provision</code></li>
+                        <li>Or launch GUI (auto-provisions)</li>
+                        <li>Ensure Python 3.10+ is on PATH</li>
+                    </ul>
+                </div>
+
+                <div class="trouble-card">
+                    <h3>YAML Catalog Not Found</h3>
+                    <div class="terminal-window small">
+                        <div class="terminal-body">
+<pre><span class="error">[!] vx_api_snippets.yaml not found</span></pre>
+                        </div>
+                    </div>
+                    <p><strong>Solution:</strong></p>
+                    <ul>
+                        <li>Ensure <code>Assets/</code> folder is next to exe</li>
+                        <li>Check <code>vx_api_snippets.yaml</code> exists</li>
+                        <li>Verify file permissions</li>
+                    </ul>
+                </div>
+
+                <div class="trouble-card">
+                    <h3>WinUI App Won't Launch</h3>
+                    <div class="terminal-window small">
+                        <div class="terminal-body">
+<pre><span class="error">Application failed to start</span></pre>
+                        </div>
+                    </div>
+                    <p><strong>Solution:</strong></p>
+                    <ul>
+                        <li>Install .NET 8 Desktop Runtime x64</li>
+                        <li>Install Windows App SDK 1.8 Runtime</li>
+                        <li>Windows 10 1809+ or Windows 11 required</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-section">
+                    <h4>WASHMACHINE</h4>
+                    <p>Shellcode loader builder framework</p>
+                    <p class="copyright">© 2026 // Open Source</p>
+                </div>
+                <div class="footer-section">
+                    <h4>DOCUMENTATION</h4>
+                    <ul>
+                        <li><a href="features.html">Features</a></li>
+                        <li><a href="cli.html">CLI Reference</a></li>
+                        <li><a href="yaml.html">YAML Catalog</a></li>
+                        <li><a href="architecture.html">Architecture</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>RESOURCES</h4>
+                    <ul>
+                        <li><a href="building.html">Building</a></li>
+                        <li><a href="#">GitHub Repository</a></li>
+                        <li><a href="#">Report Issues</a></li>
+                        <li><a href="#">License</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/cyberpunk.js"></script>
+</body>
+</html>

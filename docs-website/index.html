@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Washmachine // Shellcode Loader Framework</title>
+    <link rel="stylesheet" href="css/cyberpunk.css">
+</head>
+<body>
+    <div class="scanlines"></div>
+    <div class="glitch-overlay"></div>
+
+    <nav class="cyber-nav">
+        <div class="nav-container">
+            <div class="logo">
+                <span class="glitch" data-text="WASHMACHINE">WASHMACHINE</span>
+            </div>
+            <ul class="nav-links">
+                <li><a href="index.html" class="active">HOME</a></li>
+                <li><a href="features.html">FEATURES</a></li>
+                <li><a href="cli.html">CLI REFERENCE</a></li>
+                <li><a href="yaml.html">YAML CATALOG</a></li>
+                <li><a href="architecture.html">ARCHITECTURE</a></li>
+                <li><a href="building.html">BUILDING</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <header class="hero">
+        <div class="container">
+            <div class="hero-content">
+                <h1 class="neon-text" data-text="WASHMACHINE">WASHMACHINE</h1>
+                <p class="tagline">CLI-first shellcode loader builder with WinUI 3 desktop app</p>
+                <p class="description">Driven entirely by a single YAML catalog. Pick a shellcode source, choose a C++ template, stack pluggable features, and compile.</p>
+                <div class="cta-buttons">
+                    <a href="#quick-start" class="btn btn-primary">GET STARTED</a>
+                    <a href="features.html" class="btn btn-secondary">EXPLORE FEATURES</a>
+                </div>
+            </div>
+            <div class="ascii-art">
+<pre class="terminal-box">
+╔═══════════════════════════════════╗
+║  SYSTEM STATUS: OPERATIONAL       ║
+║  FRAMEWORK: WASHMACHINE v1.0      ║
+║  MODE: CLI + GUI                  ║
+║  SHELLCODE SOURCES: 4             ║
+║  TEMPLATES: YAML-DRIVEN           ║
+║  COMPILERS: AUTO-DETECT           ║
+╚═══════════════════════════════════╝
+</pre>
+            </div>
+        </div>
+    </header>
+
+    <section id="quick-start" class="section">
+        <div class="container">
+            <h2 class="section-title">// QUICK START</h2>
+
+            <div class="terminal-window">
+                <div class="terminal-header">
+                    <span class="terminal-title">washmachine-cli</span>
+                    <div class="terminal-buttons">
+                        <span class="btn-close"></span>
+                        <span class="btn-minimize"></span>
+                        <span class="btn-maximize"></span>
+                    </div>
+                </div>
+                <div class="terminal-body">
+<pre><span class="prompt">C:\></span> <span class="command">washmachine-cli compile -s payload.bin -t shellcode-minimal</span>
+
+<span class="output">[+] Discovered compiler: MSVC (cl.exe)
+[+] Loading template: shellcode-minimal
+[+] Shellcode source: payload.bin (342 bytes)
+[+] Rendering C++ source...
+[+] Compiling...
+[✓] Build successful: output.exe
+
+Session artifacts saved to: logging/session_20260329_abc123/</span></pre>
+                </div>
+            </div>
+
+            <div class="grid-3">
+                <div class="card">
+                    <div class="card-icon">📦</div>
+                    <h3>Install</h3>
+                    <p>Download .NET 8 Runtime and a C++ compiler (MSVC, GCC, or Clang)</p>
+                </div>
+                <div class="card">
+                    <div class="card-icon">🚀</div>
+                    <h3>Run</h3>
+                    <p>Execute washmachine-cli or launch the WinUI 3 desktop app</p>
+                </div>
+                <div class="card">
+                    <div class="card-icon">⚡</div>
+                    <h3>Build</h3>
+                    <p>Compile shellcode loaders with auto-provisioned tools</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// CORE CAPABILITIES</h2>
+
+            <div class="capabilities-grid">
+                <div class="capability-card">
+                    <div class="capability-number">01</div>
+                    <h3>Multiple Shellcode Sources</h3>
+                    <ul>
+                        <li>File (.bin)</li>
+                        <li>Raw hex paste</li>
+                        <li>URL (web delivery)</li>
+                        <li>Built-in test payload</li>
+                    </ul>
+                </div>
+
+                <div class="capability-card">
+                    <div class="capability-number">02</div>
+                    <h3>YAML Template Engine</h3>
+                    <ul>
+                        <li>Single file defines all templates</li>
+                        <li>No recompile needed</li>
+                        <li>Pluggable snippet sections</li>
+                        <li>Custom placeholders</li>
+                    </ul>
+                </div>
+
+                <div class="capability-card">
+                    <div class="capability-number">03</div>
+                    <h3>Auto-Discovered Compiler</h3>
+                    <ul>
+                        <li>MSVC (cl.exe)</li>
+                        <li>GCC (g++.exe)</li>
+                        <li>Clang (clang++.exe)</li>
+                        <li>PATH + VS install detection</li>
+                    </ul>
+                </div>
+
+                <div class="capability-card">
+                    <div class="capability-number">04</div>
+                    <h3>Payload Encoding</h3>
+                    <ul>
+                        <li>Bin2Shell integration</li>
+                        <li>Encoder selection (XOR, RC4, AES)</li>
+                        <li>Envelope wrapping (Base64, Base32)</li>
+                        <li>Anti-emulation options</li>
+                    </ul>
+                </div>
+
+                <div class="capability-card">
+                    <div class="capability-number">05</div>
+                    <h3>Feature Snippets</h3>
+                    <ul>
+                        <li>Anti-debugging checks</li>
+                        <li>Environment guardrails</li>
+                        <li>Process injection</li>
+                        <li>UAC bypass techniques</li>
+                    </ul>
+                </div>
+
+                <div class="capability-card">
+                    <div class="capability-number">06</div>
+                    <h3>Session Logging</h3>
+                    <ul>
+                        <li>Source code preservation</li>
+                        <li>Build log capture</li>
+                        <li>Timestamped sessions</li>
+                        <li>UUID-based tracking</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// AVAILABLE COMMANDS</h2>
+
+            <div class="command-list">
+                <div class="command-item">
+                    <div class="command-name">compile</div>
+                    <div class="command-desc">Build a shellcode loader executable</div>
+                </div>
+                <div class="command-item">
+                    <div class="command-name">analyze</div>
+                    <div class="command-desc">Analyze a PE file (headers, sections, imports, code caves)</div>
+                </div>
+                <div class="command-item">
+                    <div class="command-name">backdoor</div>
+                    <div class="command-desc">Inject shellcode into an existing PE via code-cave</div>
+                </div>
+                <div class="command-item">
+                    <div class="command-name">list</div>
+                    <div class="command-desc">List available templates, encoders, snippets, or compilers</div>
+                </div>
+                <div class="command-item">
+                    <div class="command-name">provision</div>
+                    <div class="command-desc">Download and install required external tools (Bin2Shell)</div>
+                </div>
+                <div class="command-item">
+                    <div class="command-name">test</div>
+                    <div class="command-desc">Run the automated test harness</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// ARCHITECTURE</h2>
+
+            <div class="architecture-diagram">
+<pre class="ascii-diagram">
+┌─────────────────────────────────────────────────────────────┐
+│                    WASHMACHINE.SLN                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌──────────────────┐          ┌──────────────────┐        │
+│  │  washmachine     │          │ Washmachine.Cli  │        │
+│  │   (GUI app)      │          │   (CLI app)      │        │
+│  │   WinUI 3        │          │   Console        │        │
+│  └────────┬─────────┘          └─────────┬────────┘        │
+│           │                              │                 │
+│           │     references               │                 │
+│           └──────────┬───────────────────┘                 │
+│                      │                                     │
+│                      ▼                                     │
+│           ┌────────────────────┐                          │
+│           │  Washmachine.Core  │                          │
+│           │  (Class library)   │                          │
+│           │                    │                          │
+│           │  • Services        │                          │
+│           │  • Models          │                          │
+│           │  • Testing         │                          │
+│           └────────────────────┘                          │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+</pre>
+            </div>
+
+            <div class="grid-2">
+                <div class="card">
+                    <h3>Shared Core Logic</h3>
+                    <p>All business logic lives in <code>Washmachine.Core</code> - a platform-neutral library with no UI dependencies. Both CLI and GUI are thin consumers.</p>
+                </div>
+                <div class="card">
+                    <h3>Dual Interface</h3>
+                    <p>Access the same features through either a powerful CLI for automation and scripting, or a rich WinUI 3 desktop app for visual workflow.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-section">
+                    <h4>WASHMACHINE</h4>
+                    <p>Shellcode loader builder framework</p>
+                    <p class="copyright">© 2026 // Open Source</p>
+                </div>
+                <div class="footer-section">
+                    <h4>DOCUMENTATION</h4>
+                    <ul>
+                        <li><a href="features.html">Features</a></li>
+                        <li><a href="cli.html">CLI Reference</a></li>
+                        <li><a href="yaml.html">YAML Catalog</a></li>
+                        <li><a href="architecture.html">Architecture</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>RESOURCES</h4>
+                    <ul>
+                        <li><a href="building.html">Building</a></li>
+                        <li><a href="#">GitHub Repository</a></li>
+                        <li><a href="#">Report Issues</a></li>
+                        <li><a href="#">License</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>⚡ Powered by .NET 8 // WinUI 3 // YAML</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/cyberpunk.js"></script>
+</body>
+</html>

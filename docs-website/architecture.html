@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architecture // Washmachine</title>
+    <link rel="stylesheet" href="css/cyberpunk.css">
+</head>
+<body>
+    <div class="scanlines"></div>
+    <div class="glitch-overlay"></div>
+
+    <nav class="cyber-nav">
+        <div class="nav-container">
+            <div class="logo">
+                <span class="glitch" data-text="WASHMACHINE">WASHMACHINE</span>
+            </div>
+            <ul class="nav-links">
+                <li><a href="index.html">HOME</a></li>
+                <li><a href="features.html">FEATURES</a></li>
+                <li><a href="cli.html">CLI REFERENCE</a></li>
+                <li><a href="yaml.html">YAML CATALOG</a></li>
+                <li><a href="architecture.html" class="active">ARCHITECTURE</a></li>
+                <li><a href="building.html">BUILDING</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="page-header">
+        <div class="container">
+            <h1 class="page-title">// ARCHITECTURE</h1>
+            <p class="page-subtitle">System design and implementation details</p>
+        </div>
+    </div>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// OVERVIEW</h2>
+
+            <p class="lead">Washmachine is structured as a <strong>three-project solution</strong>. All business logic lives in a platform-neutral core library shared by both a standalone CLI and a WinUI 3 desktop app.</p>
+
+            <div class="architecture-diagram large">
+<pre class="ascii-diagram">
+┌───────────────────────────────────────────────────────────────────┐
+│                        WASHMACHINE.SLN                            │
+├───────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│   ┌────────────────────┐              ┌────────────────────┐     │
+│   │   washmachine      │              │ Washmachine.Cli    │     │
+│   │   ─────────────    │              │ ───────────────    │     │
+│   │   WinUI 3 App      │              │ Console App        │     │
+│   │   (net8.0-windows) │              │ (net8.0)           │     │
+│   │                    │              │                    │     │
+│   │   • Views/         │              │   • Program.cs     │     │
+│   │   • Controllers/   │              │   • Commands       │     │
+│   │   • Services/      │              │   • JSON output    │     │
+│   │   • MainWindow     │              │                    │     │
+│   └──────────┬─────────┘              └──────────┬─────────┘     │
+│              │                                   │               │
+│              │      references (both)            │               │
+│              └─────────────┬─────────────────────┘               │
+│                            │                                     │
+│                            ▼                                     │
+│                 ┌──────────────────────┐                        │
+│                 │  Washmachine.Core    │                        │
+│                 │  ────────────────    │                        │
+│                 │  Class Library       │                        │
+│                 │  (net8.0)            │                        │
+│                 │                      │                        │
+│                 │  ┌────────────────┐ │                        │
+│                 │  │ Services/      │ │                        │
+│                 │  │  • Compiler    │ │                        │
+│                 │  │  • Analyzer    │ │                        │
+│                 │  │  • Bin2Shell   │ │                        │
+│                 │  │  • Provisioner │ │                        │
+│                 │  └────────────────┘ │                        │
+│                 │  ┌────────────────┐ │                        │
+│                 │  │ Models/        │ │                        │
+│                 │  │  • UIData      │ │                        │
+│                 │  │  • PE models   │ │                        │
+│                 │  │  • Snippets    │ │                        │
+│                 │  └────────────────┘ │                        │
+│                 │  ┌────────────────┐ │                        │
+│                 │  │ Testing/       │ │                        │
+│                 │  │  • TestHarness │ │                        │
+│                 │  └────────────────┘ │                        │
+│                 └──────────────────────┘                        │
+│                                                                   │
+└───────────────────────────────────────────────────────────────────┘
+</pre>
+            </div>
+
+            <div class="grid-2">
+                <div class="card">
+                    <h3>CLI-First Design</h3>
+                    <p>The architecture follows a <strong>CLI-first, shared-core</strong> pattern. All domain logic is implemented in the Core library first, ensuring both interfaces have equal capabilities.</p>
+                </div>
+                <div class="card">
+                    <h3>Zero Coupling</h3>
+                    <p>GUI and CLI <strong>never reference each other</strong>. Core has no WinUI or Windows-specific dependencies. This enables testing, portability, and maintainability.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// PROJECT MAP</h2>
+
+            <div class="project-tree">
+<pre>washmachine/
+│
+├── <span class="dir">Washmachine.Core/</span>                   <span class="comment">← Shared logic, no WinUI dependency</span>
+│   ├── <span class="dir">Logging/</span>
+│   │   ├── IAppLogger.cs               <span class="comment">← Logger interface</span>
+│   │   └── ConsoleLogger.cs            <span class="comment">← Stdout/stderr implementation</span>
+│   ├── <span class="dir">Models/</span>
+│   │   ├── UIData.cs                   <span class="comment">← Headless control-value snapshot</span>
+│   │   ├── CodeSnippetModels.cs
+│   │   ├── CodeTemplateModels.cs
+│   │   ├── PeAnalysisModels.cs
+│   │   ├── PeBackdoorModels.cs
+│   │   └── ...
+│   ├── <span class="dir">Services/</span>
+│   │   ├── AppPaths.cs                 <span class="comment">← Filesystem path resolution</span>
+│   │   ├── CompilerService.cs          <span class="comment">← Plan → render → compile</span>
+│   │   ├── CompilerToolLocator.cs      <span class="comment">← Discovers cl.exe / g++ / clang++</span>
+│   │   ├── CppFileConverter.cs         <span class="comment">← Compiler subprocess spawner</span>
+│   │   ├── Bin2ShellRunner.cs          <span class="comment">← Python main.py spawner</span>
+│   │   ├── PeAnalyzerService.cs        <span class="comment">← PE header / section analysis</span>
+│   │   ├── PeBackdoorService.cs        <span class="comment">← PE code-cave injection</span>
+│   │   ├── RequirementProvisioner.cs   <span class="comment">← Downloads Bin2Shell</span>
+│   │   └── YamlCodeSnippetCatalogService.cs
+│   ├── <span class="dir">Testing/</span>
+│   │   └── TestHarness.cs              <span class="comment">← Headless test runner</span>
+│   └── Washmachine.Core.csproj
+│
+├── <span class="dir">Washmachine.Cli/</span>                    <span class="comment">← CLI entry point</span>
+│   ├── Program.cs                      <span class="comment">← Commands: compile / analyze / backdoor</span>
+│   └── Washmachine.Cli.csproj          <span class="comment">                list / provision / test</span>
+│
+├── <span class="dir">Assets/</span>                             <span class="comment">← Runtime assets (shipped with both)</span>
+│   └── vx_api_snippets.yaml            <span class="comment">← YAML catalog</span>
+│
+├── <span class="dir">Controllers/</span>
+│   └── MainFormCoordinator.cs          <span class="comment">← GUI event coordinator</span>
+├── <span class="dir">Logging/</span>
+│   └── RichTextBoxLogger.cs            <span class="comment">← WinUI RichEditBox logger</span>
+├── <span class="dir">Services/</span>                           <span class="comment">← GUI-only services</span>
+│   ├── ClipboardService.cs
+│   ├── UiDataFactory.cs                <span class="comment">← Visual tree → UIData</span>
+│   └── UserInteractionService.cs
+├── <span class="dir">Views/</span>                              <span class="comment">← WinUI pages & windows</span>
+│   ├── MainPage.xaml[.cs]
+│   ├── BackdooringPage.xaml[.cs]
+│   ├── SettingsPage.xaml[.cs]
+│   └── ...
+│
+├── App.xaml[.cs]
+├── MainWindow.xaml[.cs]
+├── Program.cs                          <span class="comment">← GUI entry point (WinUI bootstrap)</span>
+├── washmachine.csproj                  <span class="comment">← GUI project (references Core)</span>
+└── washmachine.sln</pre>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// COMPILATION PIPELINE</h2>
+
+            <p class="lead">Shared flow used by both CLI and GUI:</p>
+
+            <div class="flow-diagram">
+<pre class="ascii-diagram">
+┌─────────────────────┐
+│     UIData          │  <span class="comment">Control-value snapshot</span>
+│  (user selections)  │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────────────────────┐
+│  CompilerService.CompileAsync()     │
+│  ─────────────────────────────────  │
+│                                     │
+│  1. Load YAML catalog               │◄─── YamlCodeSnippetCatalogService
+│  2. Resolve template + snippets     │
+│  3. Optional: Encode shellcode      │◄─── Bin2ShellRunner (spawns Python)
+│                                     │
+└──────────┬──────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────┐
+│    CppCompilationPlan               │  <span class="comment">Assembled render state</span>
+│  ───────────────────────────────    │
+│  • SnippetIncludes[]                │
+│  • SnippetImplementations[]         │
+│  • CustomSnippetBlocks{}            │
+│  • EncodedShellcode                 │
+│  • SelectedTemplate                 │
+└──────────┬──────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────┐
+│  RenderTemplate(plan, template)     │  <span class="comment">Substitute {{TOKENS}}</span>
+│  ─────────────────────────────────  │
+│                                     │
+│  Replaces all placeholders:         │
+│  • {{SHELLCODE_SOURCE}}             │
+│  • {{SNIPPET_INCLUDES}}             │
+│  • {{SNIPPET_IMPLEMENTATIONS}}      │
+│  • {{ANTI_DEBUGGING}}               │
+│  • {{SHELLCODE_EXECUTION}}          │
+│  • etc.                             │
+└──────────┬──────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────┐
+│  CppFileConverter.ConvertAsync()    │  <span class="comment">Spawn compiler subprocess</span>
+│  ─────────────────────────────────  │
+│                                     │
+│  cl.exe / g++ / clang++             │
+└──────────┬──────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────┐
+│      OUTPUT FILES                   │
+│  ─────────────────────────────────  │
+│                                     │
+│  • <timestamp>-<sha256>.exe         │  <span class="comment">Compiled binary</span>
+│  • logging/session_*/source.cpp     │  <span class="comment">Generated source</span>
+│  • logging/session_*/build_log.txt  │  <span class="comment">Compiler output</span>
+└─────────────────────────────────────┘
+</pre>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// GUI-SPECIFIC PATH</h2>
+
+            <div class="flow-diagram">
+<pre class="ascii-diagram">
+┌─────────────────────────────┐
+│   WinUI Views               │  <span class="comment">User interacts with UI</span>
+│   (MainPage, etc.)          │
+└──────────┬──────────────────┘
+           │ User clicks "Go"
+           ▼
+┌─────────────────────────────┐
+│  MainFormCoordinator        │  <span class="comment">Event handler</span>
+└──────────┬──────────────────┘
+           │
+           ├──► UiDataFactory.FromVisualTree()  <span class="comment">← Walks visual tree</span>
+           │    Returns UIData snapshot
+           │
+           └──► CompilerService.CompileAsync(data)
+                     │
+                     └──► (Shared compilation pipeline)
+</pre>
+            </div>
+
+            <div class="info-box">
+                <div class="info-icon">🎨</div>
+                <div class="info-content">
+                    <h4>Separation of Concerns</h4>
+                    <p><code>UiDataFactory</code> extracts a headless snapshot from the visual tree. This <code>UIData</code> object is then passed to Core services, which have zero knowledge of WinUI controls.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// IPROGRESS REPORTER PATTERN</h2>
+
+            <p class="lead"><code>RequirementProvisioner</code> reports download progress through <code>IProgressReporter</code> interface:</p>
+
+            <div class="grid-2">
+                <div class="card">
+                    <h3>CLI Implementation</h3>
+                    <p><code>ConsoleProgressReporter</code> (Core)</p>
+                    <ul>
+                        <li>Prints to stdout</li>
+                        <li>Text-based progress bar</li>
+                        <li>Percentage display</li>
+                    </ul>
+                    <div class="terminal-window small">
+                        <div class="terminal-body">
+<pre><span class="output">[████████░░░░░░░░] 50%
+Downloading Bin2Shell...</span></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>GUI Implementation</h3>
+                    <p><code>WindowProgressReporter</code> (GUI)</p>
+                    <ul>
+                        <li>Updates <code>RequirementsProgressWindow</code></li>
+                        <li>Visual progress bar</li>
+                        <li>Status messages</li>
+                    </ul>
+                    <p class="note">Wraps WinUI controls while implementing Core interface</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// DEPENDENCY INJECTION</h2>
+
+            <p class="lead">Core services use constructor injection for testability:</p>
+
+            <div class="terminal-window">
+                <div class="terminal-body">
+<pre><span class="keyword">public class</span> CompilerService
+{
+    <span class="keyword">private readonly</span> IAppLogger _logger;
+    <span class="keyword">private readonly</span> YamlCodeSnippetCatalogService _catalog;
+    <span class="keyword">private readonly</span> Bin2ShellRunner _bin2shell;
+
+    <span class="keyword">public</span> CompilerService(
+        IAppLogger logger,
+        YamlCodeSnippetCatalogService catalog,
+        Bin2ShellRunner bin2shell)
+    {
+        _logger = logger;
+        _catalog = catalog;
+        _bin2shell = bin2shell;
+    }
+
+    <span class="comment">// ...</span>
+}</pre>
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div class="card">
+                    <h4>CLI: Manual Wiring</h4>
+                    <div class="terminal-window small">
+                        <div class="terminal-body">
+<pre><span class="keyword">var</span> logger = <span class="keyword">new</span> ConsoleLogger();
+<span class="keyword">var</span> catalog = <span class="keyword">new</span> YamlCodeSnippetCatalogService();
+<span class="keyword">var</span> bin2shell = <span class="keyword">new</span> Bin2ShellRunner(logger);
+<span class="keyword">var</span> compiler = <span class="keyword">new</span> CompilerService(logger, catalog, bin2shell);</pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h4>GUI: Injected in Controller</h4>
+                    <div class="terminal-window small">
+                        <div class="terminal-body">
+<pre><span class="comment">// Services initialized in MainWindow constructor</span>
+<span class="keyword">var</span> logger = <span class="keyword">new</span> RichTextBoxLogger(LogRichEditBox);
+<span class="keyword">var</span> catalog = <span class="keyword">new</span> YamlCodeSnippetCatalogService();
+<span class="comment">// ...</span>
+coordinator = <span class="keyword">new</span> MainFormCoordinator(..., compiler);</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// KEY DESIGN DECISIONS</h2>
+
+            <div class="design-grid">
+                <div class="design-card">
+                    <h3>Single YAML Catalog</h3>
+                    <p>All templates and snippets in one file (<code>vx_api_snippets.yaml</code>). No recompile needed to add techniques.</p>
+                    <p class="benefit">✓ Instant extensibility</p>
+                </div>
+
+                <div class="design-card">
+                    <h3>Headless Core</h3>
+                    <p>Business logic has zero UI dependencies. Services operate on <code>UIData</code> snapshots, not controls.</p>
+                    <p class="benefit">✓ Testable & portable</p>
+                </div>
+
+                <div class="design-card">
+                    <h3>Auto-Discovery</h3>
+                    <p>Compiler detection scans PATH, VS install paths, and <code>VCToolsInstallDir</code>. Bin2Shell options read from live help output.</p>
+                    <p class="benefit">✓ Zero manual configuration</p>
+                </div>
+
+                <div class="design-card">
+                    <h3>Session Logging</h3>
+                    <p>Every compilation saves source + build log to timestamped directory with UUID.</p>
+                    <p class="benefit">✓ Full audit trail</p>
+                </div>
+
+                <div class="design-card">
+                    <h3>Subprocess Isolation</h3>
+                    <p>Compilers and Bin2Shell run as separate processes. Failures are captured, not fatal.</p>
+                    <p class="benefit">✓ Robust error handling</p>
+                </div>
+
+                <div class="design-card">
+                    <h3>Deduplication</h3>
+                    <p>Snippet includes and implementations are deduplicated during assembly.</p>
+                    <p class="benefit">✓ Clean generated code</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-section">
+                    <h4>WASHMACHINE</h4>
+                    <p>Shellcode loader builder framework</p>
+                    <p class="copyright">© 2026 // Open Source</p>
+                </div>
+                <div class="footer-section">
+                    <h4>DOCUMENTATION</h4>
+                    <ul>
+                        <li><a href="features.html">Features</a></li>
+                        <li><a href="cli.html">CLI Reference</a></li>
+                        <li><a href="yaml.html">YAML Catalog</a></li>
+                        <li><a href="architecture.html">Architecture</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>RESOURCES</h4>
+                    <ul>
+                        <li><a href="building.html">Building</a></li>
+                        <li><a href="#">GitHub Repository</a></li>
+                        <li><a href="#">Report Issues</a></li>
+                        <li><a href="#">License</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/cyberpunk.js"></script>
+</body>
+</html>

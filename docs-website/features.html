@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Features // Washmachine</title>
+    <link rel="stylesheet" href="css/cyberpunk.css">
+</head>
+<body>
+    <div class="scanlines"></div>
+    <div class="glitch-overlay"></div>
+
+    <nav class="cyber-nav">
+        <div class="nav-container">
+            <div class="logo">
+                <span class="glitch" data-text="WASHMACHINE">WASHMACHINE</span>
+            </div>
+            <ul class="nav-links">
+                <li><a href="index.html">HOME</a></li>
+                <li><a href="features.html" class="active">FEATURES</a></li>
+                <li><a href="cli.html">CLI REFERENCE</a></li>
+                <li><a href="yaml.html">YAML CATALOG</a></li>
+                <li><a href="architecture.html">ARCHITECTURE</a></li>
+                <li><a href="building.html">BUILDING</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="page-header">
+        <div class="container">
+            <h1 class="page-title">// FEATURES</h1>
+            <p class="page-subtitle">Complete feature breakdown of the Washmachine framework</p>
+        </div>
+    </div>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// SHELLCODE SOURCES</h2>
+
+            <div class="feature-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>MODE</th>
+                            <th>DESCRIPTION</th>
+                            <th>USE CASE</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="badge">FILE</span></td>
+                            <td>Browse to a <code>.bin</code> shellcode file</td>
+                            <td>Pre-generated shellcode from msfvenom, Donut, etc.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge">RAW</span></td>
+                            <td>Paste raw hex bytes directly (e.g., <code>\xfc\x48\x83...</code>)</td>
+                            <td>Quick testing with small payloads</td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge">URL</span></td>
+                            <td>Enter remote URL where payload is hosted</td>
+                            <td>Web delivery / remote payload fetch</td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge">TEST</span></td>
+                            <td>Built-in <code>calc.exe</code> shellcode</td>
+                            <td>Smoke-testing the compilation pipeline</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// WEB PAYLOAD WIZARD</h2>
+
+            <div class="grid-2">
+                <div class="card">
+                    <h3>Step-by-Step Configuration</h3>
+                    <p>When URL mode is selected, the Web Payload Wizard guides you through:</p>
+                    <ul>
+                        <li>Choose encoder (XOR, RC4, AES, etc.)</li>
+                        <li>Select envelope (Base64, Base32, Base91)</li>
+                        <li>Pick web-fetch helper method</li>
+                        <li>Enter hosting URL</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3>Automatic Integration</h3>
+                    <p>The wizard:</p>
+                    <ul>
+                        <li>Calls Bin2Shell in <code>-w</code> mode</li>
+                        <li>Verifies the endpoint responds</li>
+                        <li>Generates C++ fetch + decode code</li>
+                        <li>Stitches it into the template automatically</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// TEMPLATES</h2>
+
+            <p class="lead">The Template combo lists every <code>id</code> defined under <code>templates:</code> in <code>Assets/vx_api_snippets.yaml</code>.</p>
+
+            <div class="template-cards">
+                <div class="template-card">
+                    <div class="template-header">
+                        <span class="template-id">default</span>
+                        <span class="template-type">FULL</span>
+                    </div>
+                    <h3>Full Loader Template</h3>
+                    <p>Complete loader with all feature placeholders enabled:</p>
+                    <ul>
+                        <li><code>{{GUARDRAILS}}</code></li>
+                        <li><code>{{ANTI_DEBUGGING}}</code></li>
+                        <li><code>{{UAC_BYPASS}}</code></li>
+                        <li><code>{{PROCESS_INJECTION}}</code></li>
+                        <li><code>{{SHELLCODE_EXECUTION}}</code></li>
+                    </ul>
+                </div>
+
+                <div class="template-card">
+                    <div class="template-header">
+                        <span class="template-id">shellcode-minimal</span>
+                        <span class="template-type">MINIMAL</span>
+                    </div>
+                    <h3>Minimal Template</h3>
+                    <p>Bare minimum loader with:</p>
+                    <ul>
+                        <li>Shellcode source</li>
+                        <li>One execution snippet</li>
+                        <li>No additional features</li>
+                        <li>Smallest compiled output</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="info-box">
+                <div class="info-icon">💡</div>
+                <div class="info-content">
+                    <h4>Template Selection</h4>
+                    <p>Selecting a template resets the available snippet combos to only those referenced by that template's placeholders.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// SNIPPET SECTIONS</h2>
+
+            <p class="lead">Each template placeholder of <code>kind: snippet</code> maps to one section in the catalog.</p>
+
+            <div class="snippet-grid">
+                <div class="snippet-section">
+                    <h3><span class="section-icon">🛡️</span> Anti-Debugging</h3>
+                    <p class="section-meta">Section: <code>antidebugging</code> | Multiple: Yes</p>
+                    <p>Stack multiple anti-debugging checks:</p>
+                    <ul>
+                        <li>IsDebuggerPresent</li>
+                        <li>CloseHandle invalid address</li>
+                        <li>CheckRemoteDebuggerPresent</li>
+                        <li>NtQueryInformationProcess</li>
+                    </ul>
+                </div>
+
+                <div class="snippet-section">
+                    <h3><span class="section-icon">🎯</span> Process Injection</h3>
+                    <p class="section-meta">Section: <code>psinjection</code> | Multiple: No</p>
+                    <p>Choose one injection technique:</p>
+                    <ul>
+                        <li>WriteProcessMemory + CreateRemoteThread</li>
+                        <li>QueueUserAPC injection</li>
+                        <li>Process hollowing</li>
+                        <li>Thread hijacking</li>
+                    </ul>
+                </div>
+
+                <div class="snippet-section">
+                    <h3><span class="section-icon">⚡</span> Shellcode Execution</h3>
+                    <p class="section-meta">Section: <code>shellcodeexecution</code> | Multiple: No</p>
+                    <p>Execution method:</p>
+                    <ul>
+                        <li>VirtualAlloc + function pointer</li>
+                        <li>CreateThread</li>
+                        <li>NtMapViewOfSection</li>
+                        <li>Fibers</li>
+                    </ul>
+                </div>
+
+                <div class="snippet-section">
+                    <h3><span class="section-icon">🔒</span> Guardrails</h3>
+                    <p class="section-meta">Section: <code>guardrail</code> | Multiple: No</p>
+                    <p>Environment restrictions:</p>
+                    <ul>
+                        <li>Domain check</li>
+                        <li>Username validation</li>
+                        <li>Environment variable</li>
+                        <li>Hostname verification</li>
+                    </ul>
+                </div>
+
+                <div class="snippet-section">
+                    <h3><span class="section-icon">🚀</span> UAC Bypass</h3>
+                    <p class="section-meta">Section: <code>uacb</code> | Multiple: No</p>
+                    <p>Privilege escalation techniques:</p>
+                    <ul>
+                        <li>Fodhelper method</li>
+                        <li>ComputerDefaults bypass</li>
+                        <li>Sdclt method</li>
+                        <li>Token manipulation</li>
+                    </ul>
+                </div>
+
+                <div class="snippet-section">
+                    <h3><span class="section-icon">🎭</span> Evasion Techniques</h3>
+                    <p class="section-meta">Section: <code>evasion</code> | Multiple: Yes</p>
+                    <p>Sandbox & analysis evasion:</p>
+                    <ul>
+                        <li>Sleep obfuscation</li>
+                        <li>VM detection</li>
+                        <li>Sandbox checks</li>
+                        <li>API unhooking</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="info-box warning">
+                <div class="info-icon">⚠️</div>
+                <div class="info-content">
+                    <h4>Multiple Selection</h4>
+                    <p>Sections with <code>allowMultiple: true</code> let you stack several snippets. Others allow only one choice.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// ENCODING OPTIONS</h2>
+
+            <div class="grid-3">
+                <div class="card">
+                    <h3>Encoder</h3>
+                    <p>Transform raw shellcode bytes:</p>
+                    <ul>
+                        <li>XOR (single/multi-byte)</li>
+                        <li>RC4</li>
+                        <li>AES-128/256</li>
+                        <li>ChaCha20</li>
+                        <li>Custom algorithms</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h3>Envelope</h3>
+                    <p>Wrap encoded payload:</p>
+                    <ul>
+                        <li>Base64</li>
+                        <li>Base32</li>
+                        <li>Base91</li>
+                        <li>Hex encoding</li>
+                        <li>Custom wrappers</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h3>Anti-Emulation</h3>
+                    <p>Sandbox detection:</p>
+                    <ul>
+                        <li>API call patterns</li>
+                        <li>Timing checks</li>
+                        <li>Resource exhaustion</li>
+                        <li>Environment fingerprinting</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="info-box">
+                <div class="info-icon">🔄</div>
+                <div class="info-content">
+                    <h4>Live Algorithm Discovery</h4>
+                    <p>Encoding options are read live from Bin2Shell's help output. New algorithms added to <code>algos.yaml</code> appear automatically.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-dark">
+        <div class="container">
+            <h2 class="section-title">// COMPILATION PIPELINE</h2>
+
+            <div class="pipeline">
+                <div class="pipeline-step">
+                    <div class="step-number">1</div>
+                    <h3>Encode Shellcode</h3>
+                    <p>Bin2Shell encodes payload if configured</p>
+                </div>
+                <div class="pipeline-arrow">→</div>
+                <div class="pipeline-step">
+                    <div class="step-number">2</div>
+                    <h3>Collect Snippets</h3>
+                    <p>Deduplicate includes & implementations</p>
+                </div>
+                <div class="pipeline-arrow">→</div>
+                <div class="pipeline-step">
+                    <div class="step-number">3</div>
+                    <h3>Render Template</h3>
+                    <p>Substitute all {{PLACEHOLDER}} tokens</p>
+                </div>
+                <div class="pipeline-arrow">→</div>
+                <div class="pipeline-step">
+                    <div class="step-number">4</div>
+                    <h3>Write Source</h3>
+                    <p>Final .cpp to temp/cpp/</p>
+                </div>
+                <div class="pipeline-arrow">→</div>
+                <div class="pipeline-step">
+                    <div class="step-number">5</div>
+                    <h3>Compile</h3>
+                    <p>Invoke compiler, output .exe</p>
+                </div>
+                <div class="pipeline-arrow">→</div>
+                <div class="pipeline-step">
+                    <div class="step-number">6</div>
+                    <h3>Log Session</h3>
+                    <p>Save artifacts to logging/session_*/</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">// AUTO-PROVISIONING</h2>
+
+            <div class="grid-2">
+                <div class="card">
+                    <h3>Automatic Tool Download</h3>
+                    <p>Washmachine downloads Bin2Shell automatically on first run if not present.</p>
+                    <div class="terminal-window small">
+                        <div class="terminal-body">
+<pre><span class="prompt">></span> <span class="command">washmachine-cli provision</span>
+<span class="output">[+] Downloading Bin2Shell...
+[+] Extracting to Tools/Bin2Shell/
+[✓] Bin2Shell ready</span></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Session Logging</h3>
+                    <p>Each compilation saves complete session artifacts:</p>
+                    <ul>
+                        <li><code>source.cpp</code> - Generated C++ code</li>
+                        <li><code>build_log.txt</code> - Compiler output</li>
+                        <li>Timestamped directory structure</li>
+                        <li>UUID-based unique identifiers</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-section">
+                    <h4>WASHMACHINE</h4>
+                    <p>Shellcode loader builder framework</p>
+                    <p class="copyright">© 2026 // Open Source</p>
+                </div>
+                <div class="footer-section">
+                    <h4>DOCUMENTATION</h4>
+                    <ul>
+                        <li><a href="features.html">Features</a></li>
+                        <li><a href="cli.html">CLI Reference</a></li>
+                        <li><a href="yaml.html">YAML Catalog</a></li>
+                        <li><a href="architecture.html">Architecture</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>RESOURCES</h4>
+                    <ul>
+                        <li><a href="building.html">Building</a></li>
+                        <li><a href="#">GitHub Repository</a></li>
+                        <li><a href="#">Report Issues</a></li>
+                        <li><a href="#">License</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/cyberpunk.js"></script>
+</body>
+</html>
