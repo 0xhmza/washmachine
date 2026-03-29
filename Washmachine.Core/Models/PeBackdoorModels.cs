@@ -50,6 +50,9 @@ public sealed class PeBackdoorOptions
     /// <summary>Section name for new section injection.</summary>
     public string NewSectionName { get; set; } = ".extra";
 
+    /// <summary>Whether to patch destructive exit calls (ExitProcess, SEH crash) to ExitThread.</summary>
+    public bool PatchExitCalls { get; set; } = true;
+
     /// <summary>For DLL injection: which export to backdoor.</summary>
     public string? DllExportName { get; set; }
 }
