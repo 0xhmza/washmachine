@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+{% include 'header.html' %}
+</head>
+<body>
+{% include 'navigation.html' %}
+
+<div class="indent">
+<div class="row">
+
+<h1>Injectable: {{superpe.filepath}}</h1>
+
+
+<div class="col-6">
+    <h2> IAT Imports DLLs</h2>
+    <table>
+    <tr>
+        <th>Import</th>
+        <th>available</th>
+        <th>location</th>
+    </tr>
+    {% for dll_resolve in resolved_dlls %}
+    <tr>
+        <td>{{dll_resolve.dllname}}</td>
+        <td>{{dll_resolve.cdll_res}}</td>
+        <td>{{dll_resolve.path_res}}</td>
+    </tr>
+    {% endfor %}
+    </table>
+
+    <h2> IAT Imports functions</h2>
+    {% for dll in iat %}
+    <ul>
+        {% for entry in iat[dll] %}
+        <li> {{ entry.dll_name }}: {{ entry.func_name }} </li>
+        {% endfor%}
+    </ul>
+    {% endfor %}
+</div>
+
+
+<div class="col-6">
+
+{% if exports|length > 0 %}
+<h2> DLL Exports </h2>
+<table class="table">
+    <tr>
+        <th>Name</th>
+        <th>Address</th>
+        <th>Size (Approx)</th>
+    </tr>
+    {% for export in exports %}
+    <tr>
+        <td>{{export["name"]}}</td>
+        <td>{{export["addr"] | hexint}}</td>
+        <td>{{export["size"]}}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endif %}
+
+</div>
+
+
+</div>
+</div>
+</body>
+</html>

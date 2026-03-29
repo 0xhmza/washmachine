@@ -22,8 +22,8 @@ public static class Program
     private static readonly string[] ListTargets = { "--templates", "--encoders", "--snippets", "--compilers" };
     private static readonly string[] ListTargetsBare = { "templates", "encoders", "snippets", "compilers" };
     private static readonly string[] BackdoorMethodValues = { "code-cave", "new-section", "section-ext" };
-    private static readonly string[] BackdoorEncryptionValues = { "none", "xor", "xor2", "rc4" };
-    private static readonly string[] BackdoorCarrierValues = { "entry-point", "function-backdoor", "tls" };
+    private static readonly string[] BackdoorEncryptionValues = { "none" };
+    private static readonly string[] BackdoorCarrierValues = { "entry-point" };
     private static readonly string[] StripModeValues = { "ep", "entry-point", "section", "all-exec", "range" };
     private static readonly Dictionary<string, string[]> CommandOptionCompletions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -1597,6 +1597,27 @@ public static class Program
             _ => CarrierInvoke.EntryPointHijack
         };
 
+        if (encryptionMethod != PayloadEncryption.None)
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] The backdoor command does not perform in-place encryption or encoding.");
+            AnsiConsole.MarkupLine("[grey]Prepare a compatible flat .bin first, then inject it with [white]--encryption none[/].[/]");
+            return 1;
+        }
+
+        if (carrierInvoke != CarrierInvoke.EntryPointHijack)
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] Carrier [white]{Markup.Escape(carrier)}[/] is not implemented for the backdoor command.");
+            AnsiConsole.MarkupLine("[grey]Supported carrier: [white]entry-point[/].[/]");
+            return 1;
+        }
+
+        if (!preserveEntry)
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] [white]--no-preserve-entry[/] is not implemented.");
+            AnsiConsole.MarkupLine("[grey]The current carrier always resumes the original entry point after launching the payload.[/]");
+            return 1;
+        }
+
         var logger = new ConsoleLogger();
         if (verbose) logger.VerboseEnabled = true;
         if (jsonOutput) logger.SuppressOutput = true;
@@ -1896,14 +1917,14 @@ public static class Program
 
         optTable.AddRow("[darkorange]--output, -o <file>[/]", "Output file (default: <input>.backdoored.exe)");
         optTable.AddRow("[darkorange]--method, -m <method>[/]", "code-cave | new-section | section-ext");
-        optTable.AddRow("[darkorange]--encryption <enc>[/]", "none | xor | xor2 | rc4");
+        optTable.AddRow("[darkorange]--encryption <enc>[/]", "Reserved. Backdoor expects a ready-to-inject flat .bin payload");
         optTable.AddRow("[darkorange]--xor-key <byte>[/]", "XOR key as hex (e.g., 0x42) or decimal");
-        optTable.AddRow("[darkorange]--carrier <invoke>[/]", "entry-point | function-backdoor | tls");
+        optTable.AddRow("[darkorange]--carrier <invoke>[/]", "entry-point only (other carrier modes are not implemented)");
         optTable.AddRow("[darkorange]--section-name <name>[/]", "Name for new section (default: .extra)");
         optTable.AddRow("[darkorange]--no-remove-sig[/]", "Don't remove PE digital signature");
         optTable.AddRow("[darkorange]--no-patch-subsystem[/]", "Don't patch subsystem to GUI");
-        optTable.AddRow("[darkorange]--no-preserve-entry[/]", "Don't preserve original entry point");
-        optTable.AddRow("[darkorange]--no-patch-iat[/]", "Don't patch IAT for missing imports");
+        optTable.AddRow("[darkorange]--no-preserve-entry[/]", "Reserved. Disabling OEP resume is not implemented");
+        optTable.AddRow("[darkorange]--no-patch-iat[/]", "Reserved. IAT auto-patching is not currently implemented");
         optTable.AddRow("[darkorange]--no-patch-exit[/]", "Don't patch exit calls (ExitProcess→ExitThread)");
         optTable.AddRow("[darkorange]--cave-min-size <n>[/]", "Minimum code cave size in bytes");
         optTable.AddRow("[darkorange]--dry-run[/]", "Analyze and report without injecting");
@@ -1913,10 +1934,14 @@ public static class Program
         AnsiConsole.Write(optTable);
         AnsiConsole.WriteLine();
 
+        AnsiConsole.Write(new Rule("[cyan1]Notes[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
+        AnsiConsole.MarkupLine("  [grey]Backdoor injects a ready-to-run flat .bin payload.[/]");
+        AnsiConsole.MarkupLine("  [grey]In-place backdoor encryption and non-entry-point carriers are not supported.[/]");
+        AnsiConsole.WriteLine();
+
         AnsiConsole.Write(new Rule("[cyan1]Examples[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
         AnsiConsole.MarkupLine("  [grey]washmachine-cli backdoor --pe app.exe -s calc.bin[/]");
         AnsiConsole.MarkupLine("  [grey]washmachine-cli backdoor --pe app.exe -s payload.bin -m new-section[/]");
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli backdoor --pe app.exe -s shell.bin --enc xor --xor-key 0x42[/]");
         AnsiConsole.MarkupLine("  [grey]washmachine-cli backdoor --pe app.exe -s shell.bin --dry-run --verbose[/]");
         return 0;
     }
@@ -2109,9 +2134,9 @@ public static class Program
         AnsiConsole.WriteLine();
 
         AnsiConsole.Write(new Rule("[cyan1]Pipeline[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-        AnsiConsole.MarkupLine("  [dim]1.[/] [cyan1]compile[/]  shellcode.bin  [dim]-->[/]  loader.exe");
-        AnsiConsole.MarkupLine("  [dim]2.[/] [cyan1]strip[/]    loader.exe     [dim]-->[/]  loader.bin");
-        AnsiConsole.MarkupLine("  [dim]3.[/] [cyan1]backdoor[/] loader.bin + target.exe  [dim]-->[/]  backdoored.exe");
+        AnsiConsole.MarkupLine("  [dim]1.[/] [cyan1]strip[/] extracts a flat binary from an existing PE.");
+        AnsiConsole.MarkupLine("  [dim]2.[/] Validate that the extracted [white].bin[/] is actually compatible with PE backdooring.");
+        AnsiConsole.MarkupLine("  [dim]3.[/] Use [cyan1]backdoor[/] only with a ready-to-run flat payload.");
         return 0;
     }
 

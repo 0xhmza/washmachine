@@ -1,0 +1,15 @@
+# filename now. no need to change.
+path_cl: 'cl.exe'
+path_ml64:  'ml64.exe'
+
+# optional. for payload verification. leave empty if none.
+avred_server: ""
+
+# optional. leave empty for random key on each build
+xor_key: ""
+xor_key2: ""
+#xor_key: "\x42"
+#xor_key2: "\x13\x37"
+
+# optional, to test shellcode
+path_runshc: 'C:\tools\runshc.exe'

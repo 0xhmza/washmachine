@@ -48,6 +48,7 @@
   <!-- Copy shared assets (YAML catalogs) to CLI output so AppPaths can locate them -->
   <ItemGroup>
     <Content Include="..\Assets\**\*" Link="Assets\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\testing assets\binary\shellcodes\messagebox.bin" Link="messagebox.bin" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Spectre.Console" Version="*" />

@@ -1,0 +1,16 @@
+__pycache__
+
+bak/
+tools/
+doc/
+
+projects/*
+
+log-*
+*.verify.exe
+*.verify.dll
+*.infected.exe
+*.test.exe
+
+main.obj
+mlink$.lnk

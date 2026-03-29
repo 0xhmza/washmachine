@@ -53,6 +53,9 @@
                     </Grid>
                 </Border>
 
+                <!-- All configuration sections - greyed out when backdooring is disabled -->
+                <StackPanel x:Name="BackdoorConfigPanel" Opacity="0.4" IsHitTestVisible="False">
+
                 <!-- Target PE Section -->
                 <Expander x:Name="TargetPeExpander" IsExpanded="True"
                           HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
@@ -470,6 +473,8 @@
                         </Grid>
                     </StackPanel>
                 </Border>
+
+                </StackPanel> <!-- End BackdoorConfigPanel -->
 
             </StackPanel>
         </ScrollViewer>

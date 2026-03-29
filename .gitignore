@@ -55,6 +55,7 @@ mono_crash.*
 # Test artifacts
 test_results.json
 messagebox.bin
+!testing assets/binary/shellcodes/messagebox.bin
 
 # AI assistant sessions
 .claude/

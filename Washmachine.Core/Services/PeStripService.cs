@@ -3,12 +3,10 @@ using Washmachine.Logging;
 namespace Washmachine.Services;
 
 /// <summary>
-/// Strips a PE (.exe / .dll) into a flat binary (.bin) suitable for shellcode injection.
-/// Extracts the raw executable code from the .text section (or a user-specified section),
-/// starting at the entry point offset within that section.
-///
-/// The result is a position-independent blob that can be fed directly into the
-/// washmachine-cli backdoor command.
+/// Strips a PE (.exe / .dll) into a flat binary (.bin) by extracting raw executable bytes.
+/// This is useful for analysis and for workflows where the source PE was specifically built
+/// to be flattened, but the output is not automatically guaranteed to be a generic
+/// position-independent backdoor payload.
 /// </summary>
 public sealed class PeStripService
 {

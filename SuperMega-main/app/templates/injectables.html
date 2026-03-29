@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    {% include 'header.html' %}
+  </head>
+  <body>
+    {% include 'navigation.html' %}
+
+    <div class="indent">
+
+    Injectables in <code>data/binary/injectables</code>
+
+    {% for injectable in injectables %}
+        <h3>{{injectable['name']}}</h3>
+        <a href="/injectables/{{injectable['name']}}">More details</a>
+
+        <ul>
+          <li>Image base: {{ injectable['superpe'].get_image_base()|hexint }}</li>
+          <li>Entry point: {{ injectable['superpe'].get_entrypoint()|hexint }}</li>
+          <li>Code section: {{ injectable['superpe'].get_code_section().Name }}</li>
+        </ul>
+
+        <table class="table">
+            <tr>
+                <th>name</th>
+                <th>raw offset</th>
+                <th>raw size</th>
+                <th>RVA</th>
+                <th>VA</th>
+            </tr>
+            {% for section in injectable['superpe'].pe_sections %}
+            <tr>
+                <td>{{section.name}}</td>
+                <td>{{section.raw_addr}}</td>
+                <td>{{section.raw_size}}</td>
+                <td>{{section.virt_addr|hexint}}</td>
+                <td>{{(section.virt_addr + injectable['superpe'].get_image_base())|hexint}}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    {% endfor %}
+    </table>
+

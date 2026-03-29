@@ -83,7 +83,7 @@
                         </Border>
 
                         <!-- Backdooring Summary -->
-                        <Border Style="{StaticResource CardBorder}">
+                        <Border x:Name="BackdoorSummaryCard" Style="{StaticResource CardBorder}" Opacity="0.5">
                             <Grid Margin="16">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -129,7 +129,7 @@
                         </Border>
 
                         <!-- Packing Summary -->
-                        <Border Style="{StaticResource CardBorder}">
+                        <Border x:Name="PackingSummaryCard" Style="{StaticResource CardBorder}" Opacity="0.5">
                             <Grid Margin="16">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />

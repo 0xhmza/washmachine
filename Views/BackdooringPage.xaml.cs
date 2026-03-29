@@ -30,6 +30,11 @@ public sealed partial class BackdooringPage : Page
         var logger = new Logging.ConsoleLogger();
         _backdoorService = new PeBackdoorService(_paths, logger);
         _analyzerService = new PeAnalyzerService(logger);
+
+        CarrierInvokeCombo.SelectionChanged += BackdoorOptions_Changed;
+        EncryptionCombo.SelectionChanged += BackdoorOptions_Changed;
+        PreserveEntryCheck.Checked += BackdoorOptionToggle_Changed;
+        PreserveEntryCheck.Unchecked += BackdoorOptionToggle_Changed;
     }
 
     #region Public Properties for Pipeline
@@ -85,6 +90,9 @@ public sealed partial class BackdooringPage : Page
 
     private void EnableBackdooringToggle_Toggled(object sender, RoutedEventArgs e)
     {
+        var enabled = EnableBackdooringToggle.IsOn;
+        BackdoorConfigPanel.Opacity = enabled ? 1.0 : 0.4;
+        BackdoorConfigPanel.IsHitTestVisible = enabled;
         UpdateInjectionFeasibility();
     }
 
@@ -415,6 +423,28 @@ public sealed partial class BackdooringPage : Page
         RecommendedMethodPanel.Visibility = Visibility.Collapsed;
 
         var warnings = new List<string>();
+        var hardBlocks = new List<string>();
+
+        if (SelectedCarrierInvoke != CarrierInvoke.EntryPointHijack)
+        {
+            hardBlocks.Add("Only Entry Point Hijack is currently implemented. Function Backdoor and TLS carriers are not available yet.");
+        }
+
+        if (SelectedEncryption != PayloadEncryption.None)
+        {
+            hardBlocks.Add("Backdoor-stage encryption is not supported. Inject a ready-to-run flat .bin payload here.");
+        }
+
+        if (!PreserveOriginalEntry)
+        {
+            hardBlocks.Add("Disabling original entry-point preservation is not implemented. The current carrier always resumes the target's original entry point.");
+        }
+
+        if (hardBlocks.Count > 0)
+        {
+            ShowInjectionBlocked(string.Join("\n", hardBlocks));
+            return;
+        }
 
         // Check for .NET assembly
         if (_analysisResult.IsDotNet)
@@ -497,6 +527,16 @@ public sealed partial class BackdooringPage : Page
     }
 
     private void InjectionMethodCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        UpdateInjectionFeasibility();
+    }
+
+    private void BackdoorOptions_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        UpdateInjectionFeasibility();
+    }
+
+    private void BackdoorOptionToggle_Changed(object sender, RoutedEventArgs e)
     {
         UpdateInjectionFeasibility();
     }

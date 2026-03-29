@@ -446,7 +446,7 @@ public sealed class PeAnalyzerService
 
             // Generate ASCII usage bar
             var barLength = 20;
-            var usedBlocks = (int)(section.UsagePercentage / 100 * barLength);
+            var usedBlocks = Math.Clamp((int)(section.UsagePercentage / 100 * barLength), 0, barLength);
             section.AsciiBar = $"[{new string('█', usedBlocks)}{new string('░', barLength - usedBlocks)}]";
 
             // Find code caves in this section
@@ -919,21 +919,14 @@ public sealed class PeAnalyzerService
             feasibility.SectionExtension.Reason = "No executable section found";
         }
 
-        // TLS Callback feasibility
-        if (result.HasTls)
-        {
-            feasibility.TlsCallback.IsFeasible = true;
-            feasibility.TlsCallback.Status = "Available";
-            feasibility.TlsCallback.Reason = $"TLS exists with {result.Tls?.NumberOfCallbacks ?? 0} callbacks";
-            feasibility.TlsCallback.Notes.Add("Executes before main()");
-        }
-        else
-        {
-            feasibility.TlsCallback.IsFeasible = true;
-            feasibility.TlsCallback.Status = "Available";
-            feasibility.TlsCallback.Reason = "Can add TLS directory";
-            feasibility.TlsCallback.Notes.Add("Will create new TLS structure");
-        }
+        // TLS callback is theoretically feasible for many PEs, but the current
+        // backdoor injector does not implement a TLS carrier path yet.
+        feasibility.TlsCallback.IsFeasible = false;
+        feasibility.TlsCallback.Status = "Not implemented";
+        feasibility.TlsCallback.Reason = result.HasTls
+            ? $"Target has TLS ({result.Tls?.NumberOfCallbacks ?? 0} callbacks), but the injector cannot use it yet"
+            : "Injector only supports entry-point hijack today";
+        feasibility.TlsCallback.Notes.Add("The current backdoor path supports entry-point hijack only.");
 
         // Entry Point Hijack
         feasibility.EntryPointHijack.IsFeasible = true;

@@ -1363,6 +1363,15 @@ public sealed class PeBackdoorService
     {
         var issues = new List<string>();
 
+        if (options.Encryption != PayloadEncryption.None)
+            issues.Add("BLOCK: Backdoor-stage encryption/encoding is not supported. Prepare a compatible flat .bin externally, then inject it with encryption set to None.");
+
+        if (options.CarrierInvoke != CarrierInvoke.EntryPointHijack)
+            issues.Add($"BLOCK: Carrier '{options.CarrierInvoke}' is not implemented. Only entry-point hijack is currently supported.");
+
+        if (!options.PreserveOriginalEntry)
+            issues.Add("BLOCK: Disabling original entry-point preservation is not implemented. The current carrier always resumes the original entry point.");
+
         if (pe.IsDotNet)
             issues.Add("BLOCK: Target is a .NET assembly — binary injection will corrupt managed metadata");
 

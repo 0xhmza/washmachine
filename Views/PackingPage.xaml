@@ -51,11 +51,13 @@
                         </Grid>
                     </Border>
 
+                    <!-- All config sections - greyed out when packing is disabled -->
+                    <StackPanel x:Name="PackingConfigPanel" Opacity="0.4" IsHitTestVisible="False">
+
                     <!-- UPX Configuration -->
                     <Expander x:Name="UpxConfigExpander" 
                               HorizontalAlignment="Stretch" 
-                              HorizontalContentAlignment="Stretch"
-                              IsEnabled="False">
+                              HorizontalContentAlignment="Stretch">
                         <Expander.Header>
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -167,6 +169,8 @@
                             </Grid>
                         </Button>
                     </Border>
+
+                    </StackPanel> <!-- End PackingConfigPanel -->
 
                 </StackPanel>
             </ScrollViewer>

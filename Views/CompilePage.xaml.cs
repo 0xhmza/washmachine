@@ -165,6 +165,7 @@ public sealed partial class CompilePage : Page
         // ── Backdooring summary ────────────────────────────────────────
         if (backdoorPage != null && backdoorPage.IsBackdooringEnabled)
         {
+            BackdoorSummaryCard.Opacity = 1.0;
             BackdoorStatusBadge.Background = new SolidColorBrush(Microsoft.UI.Colors.Green);
             BackdoorStatusText.Text = "Enabled";
             BackdoorDetails.Visibility = Visibility.Visible;
@@ -178,6 +179,7 @@ public sealed partial class CompilePage : Page
         }
         else
         {
+            BackdoorSummaryCard.Opacity = 0.5;
             BackdoorStatusBadge.Background = new SolidColorBrush(Microsoft.UI.Colors.Gray);
             BackdoorStatusText.Text = "Disabled";
             BackdoorDetails.Visibility = Visibility.Collapsed;
@@ -187,6 +189,7 @@ public sealed partial class CompilePage : Page
         // ── Packing summary ───────────────────────────────────────────
         if (packingPage != null && packingPage.IsPackingEnabled)
         {
+            PackingSummaryCard.Opacity = 1.0;
             PackingStatusBadge.Background = new SolidColorBrush(Microsoft.UI.Colors.Green);
             PackingStatusText.Text = "Enabled";
             PackingDetails.Visibility = Visibility.Visible;
@@ -197,6 +200,7 @@ public sealed partial class CompilePage : Page
         }
         else
         {
+            PackingSummaryCard.Opacity = 0.5;
             PackingStatusBadge.Background = new SolidColorBrush(Microsoft.UI.Colors.Gray);
             PackingStatusText.Text = "Disabled";
             PackingDetails.Visibility = Visibility.Collapsed;
@@ -912,6 +916,30 @@ public sealed partial class CompilePage : Page
         var targetPe = backdoorPage.TargetPeFilePath;
         if (targetPe == null) return null;
 
+        if (!backdoorPage.IsInjectionValid)
+        {
+            _logger.Warn("Backdoor configuration is currently invalid — skipping backdoor step.");
+            return null;
+        }
+
+        if (backdoorPage.SelectedCarrierInvoke != CarrierInvoke.EntryPointHijack)
+        {
+            _logger.Error("Only Entry Point Hijack is currently implemented for PE backdooring.");
+            return null;
+        }
+
+        if (backdoorPage.SelectedEncryption != PayloadEncryption.None)
+        {
+            _logger.Error("Backdoor-stage encryption is not supported. Inject a ready-to-run flat .bin payload instead.");
+            return null;
+        }
+
+        if (!backdoorPage.PreserveOriginalEntry)
+        {
+            _logger.Error("Disabling original entry-point preservation is not implemented.");
+            return null;
+        }
+
         if (!File.Exists(shellcodeBinPath))
         {
             _logger.Warn($"Shellcode binary not found: {shellcodeBinPath} — skipping.");
@@ -948,19 +976,20 @@ public sealed partial class CompilePage : Page
             args.Add("--no-remove-sig");
         if (!backdoorPage.PatchSubsystemToGui)
             args.Add("--no-patch-subsystem");
+        if (!backdoorPage.PreserveOriginalEntry)
+            args.Add("--no-preserve-entry");
+        if (!backdoorPage.PatchIat)
+            args.Add("--no-patch-iat");
 
-        var encryption = backdoorPage.SelectedEncryption;
-        if (encryption != PayloadEncryption.None)
+        // Carrier invoke method
+        var carrierStr = backdoorPage.SelectedCarrierInvoke switch
         {
-            var encStr = encryption switch
-            {
-                PayloadEncryption.Xor => "xor",
-                PayloadEncryption.Xor2 => "xor2",
-                PayloadEncryption.Rc4 => "rc4",
-                _ => "none"
-            };
-            args.AddRange(new[] { "--enc", encStr });
-        }
+            CarrierInvoke.EntryPointHijack => "entry-point",
+            CarrierInvoke.EntryFunctionBackdoor => "function-backdoor",
+            CarrierInvoke.TlsCallback => "tls",
+            _ => "entry-point"
+        };
+        args.AddRange(new[] { "--carrier", carrierStr });
 
         var result = await _cli.RunAsync(args, line => _logger.Info(line));
 

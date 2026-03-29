@@ -156,8 +156,8 @@ public sealed partial class PackingPage : Page
     private void EnablePackingToggle_Toggled(object sender, RoutedEventArgs e)
     {
         var enabled = EnablePackingToggle.IsOn;
-        UpxConfigExpander.IsEnabled = enabled;
-        UpxConfigExpander.Opacity = enabled ? 1.0 : 0.5;
+        PackingConfigPanel.Opacity = enabled ? 1.0 : 0.4;
+        PackingConfigPanel.IsHitTestVisible = enabled;
     }
 
     private async void BrowseUpx_Click(object sender, RoutedEventArgs e)
