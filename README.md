@@ -6,10 +6,10 @@ Washmachine is a modular, template-driven shellcode evasion framework built for 
 Shellcode is processed through a customizable pipeline with three core phases: Encoding → Backdooring → Packing — each configurable to fit your operational needs.
 The standout feature is the YAML-based playbook system. When a technique gets flagged by a new static or behavioral signature, simply update the relevant playbook (or give it to a LLM to rewrite it 🙄).
 
-⚠️ Active development — more techniques and pipeline stages coming soon.
+⚠️ Active development.
 
 
-📖 **[View Full Documentation](https://0xhmza.github.io/washmachine/)** — Complete documentation website with getting started guide, CLI reference, and architecture details.
+📖 **[View Full Documentation](https://0xhmza.github.io/washmachine-docs/)**
 
 ---
 
@@ -46,24 +46,22 @@ The standout feature is the YAML-based playbook system. When a technique gets fl
 
 ---
 
-## Features
+## ✨ Features
 
 | Feature | Details |
 |---|---|
-| **Multiple shellcode sources** | File (`.bin`), raw hex paste, URL (web delivery), or built-in test payload |
-| **Web payload wizard** | Step-by-step UI to configure encoding, envelope, and web-fetch helper via Bin2Shell, then verify the hosted URL |
-| **YAML template engine** | One file defines every C++ template and every available snippet — no recompile needed to add new techniques |
-| **Pluggable snippet sections** | Anti-debugging, evasion, guardrails, process injection, shellcode execution, UAC bypass — each independently selectable |
-| **Auto-discovered compiler** | Detects MSVC (`cl.exe`), GCC (`g++.exe`), or Clang (`clang++.exe`) from PATH, common VS install paths, and `VCToolsInstallDir` |
-| **Payload encoding** | Bin2Shell integration for encoder, envelope, anti-emulation, and web-helper selection |
-| **Auto-provisioning** | Downloads Bin2Shell automatically on first run if not present |
-| **Session logging** | Each compilation saves `source.cpp` and `build_log.txt` under `logging/session_*/` |
-
+| 🗂️ **Multiple Shellcode Sources** | Load shellcode from a `.bin` file, raw hex input, a remote URL (web delivery), or use the built-in test payload to get started quickly |
+| 🧙 **Web Payload Wizard** | Guided step-by-step interface to configure encoding, envelope wrapping, and a web-fetch stager — includes live URL verification to confirm your payload is hosted and reachable |
+| 📄 **YAML Template Engine** | A single `.yaml` playbook defines all C++ templates and available snippets. Swap, add, or retire techniques without touching the codebase or recompiling |
+| 🔌 **Pluggable Snippet Sections** | Mix and match independently selectable modules: anti-debugging, evasion, guardrails, process injection, shellcode execution, and UAC bypass. Extend with your own custom snippets directly in the playbook |
+| 🔍 **Auto-Discovered Compiler** | Automatically detects MSVC (`cl.exe`), GCC (`g++.exe`), or Clang (`clang++.exe`) from PATH, common Visual Studio install paths, and `VCToolsInstallDir`. No compiler found? MinGW is fetched and configured automatically |
+| 🔄 **EXE → Flat Binary Conversion** | Seamlessly converts the compiled encoded `.exe` to a raw `.bin` for downstream pipeline stages such as backdooring |
+| 💉 **PE Backdooring** | Inject your payload into any target PE binary — works with or without prior encoding through the CLI |
 ---
 
 ## Requirements
 
-### CLI (`washmachine-cli`)
+### For the CLI (`washmachine-cli`)
 
 | Component | Version |
 |---|---|
@@ -72,7 +70,7 @@ The standout feature is the YAML-based playbook system. When a technique gets fl
 | C++ Compiler | Any of: MSVC (VS Build Tools), MinGW-w64 `g++`, or `clang++` on PATH |
 | Python | 3.10+ on PATH — required for Bin2Shell encoding features |
 
-### Desktop App (`washmachine`)
+### For the GUI / Desktop App (`washmachine`)
 
 | Component | Version |
 |---|---|
