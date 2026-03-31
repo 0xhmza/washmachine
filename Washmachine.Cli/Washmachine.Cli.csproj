@@ -12,6 +12,7 @@
     <Product>Washmachine CLI</Product>
     <Description>Washmachine command-line interface for shellcode loader building</Description>
     <Version>1.0.0</Version>
+    <ApplicationIcon>..\Icon\washmachine.ico</ApplicationIcon>
 
     <!-- Deterministic builds -->
     <Deterministic>true</Deterministic>

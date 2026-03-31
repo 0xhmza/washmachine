@@ -36,6 +36,7 @@
     <FileVersion>1.0.0.0</FileVersion>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <NeutralLanguage>en</NeutralLanguage>
+    <ApplicationIcon>Icon\washmachine.ico</ApplicationIcon>
 
     <!-- Strip dev-machine paths from the binary (deterministic builds) -->
     <Deterministic>true</Deterministic>

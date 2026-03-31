@@ -1,4 +1,4 @@
-# Washmachine
+# <img src="Icon/icon-128.png" width="40" height="40" align="absmiddle" /> Washmachine
 
 > A CLI-first shellcode loader builder with a WinUI 3 desktop app — driven entirely by a single YAML catalog.
 
