@@ -771,9 +771,26 @@ public static class Program
             comboBoxes[UiDataKeys.Envelope] = envelopeIndex != null ? $"{envelopeIndex} - custom" : "0 - none";
         }
 
-        // Apply snippet selections — keys already contain the full combo name (e.g. "snippetCombo_ANTISANDBOX_0")
+        // Apply snippet selections.
+        // Accept both internal format (snippetCombo_ANTISANDBOX_0=Default) and
+        // friendly format (antisandbox=Default) which resolves via the catalog.
         foreach (var kv in snippets)
-            comboBoxes[kv.Key] = kv.Value;
+        {
+            if (kv.Key.StartsWith("snippetCombo_", StringComparison.OrdinalIgnoreCase) ||
+                kv.Key.StartsWith("snippetList_", StringComparison.OrdinalIgnoreCase))
+            {
+                comboBoxes[kv.Key] = kv.Value;
+            }
+            else if (snippetService.TryResolveSection(kv.Key, out var resolvedSection))
+            {
+                string comboName = SnippetControlNaming.GetComboName(resolvedSection, 0);
+                comboBoxes[comboName] = kv.Value;
+            }
+            else
+            {
+                AnsiConsole.MarkupLine($"[yellow]Warning:[/] Unknown snippet section '{Markup.Escape(kv.Key)}'. Use 'list --snippets' to see available sections.");
+            }
+        }
 
         // Apply default snippets for the selected template
         if (snippetService.TryGetTemplate(comboBoxes[UiDataKeys.Template], out var tmpl))
@@ -2426,7 +2443,10 @@ public static class Program
 
                 foreach (var s in sections)
                 {
-                    var node = tree.AddNode($"[bold darkorange]{Markup.Escape(s.Header)}[/] [grey]({s.Items.Count} items)[/]");
+                    var sectionKey = !string.IsNullOrWhiteSpace(s.Template) ? s.Template : s.Header;
+                    var node = tree.AddNode(
+                        $"[bold darkorange]{Markup.Escape(s.Header)}[/] [grey]({s.Items.Count} items)[/]  " +
+                        $"[dim]--snippet {Markup.Escape(sectionKey)}=<id>[/]");
                     foreach (var item in s.Items)
                     {
                         var label = item.IsDefault
@@ -2554,11 +2574,21 @@ public static class Program
         optTable.AddRow("[darkorange]--template, -t <id>[/]", "Template ID (default: shellcode-minimal)");
         optTable.AddRow("[darkorange]--encoder, -e <index>[/]", "Bin2Shell encoder index (default: 0 = none)");
         optTable.AddRow("[darkorange]--envelope, -v <index>[/]", "Bin2Shell envelope index (default: 0 = none)");
-        optTable.AddRow("[darkorange]--snippet <key=value>[/]", "Snippet selection (repeatable)");
+        optTable.AddRow("[darkorange]--snippet <section=id>[/]", "Snippet selection per section (repeatable). Use 'list --snippets' to see available sections and IDs.");
         optTable.AddRow("[darkorange]--verbose[/]", "Enable verbose logging");
         optTable.AddRow("[darkorange]--json[/]", "Output results as JSON");
 
         AnsiConsole.Write(optTable);
+        AnsiConsole.WriteLine();
+
+        AnsiConsole.Write(new Rule("[cyan1]Snippet Selection[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("  Each template has placeholders for snippet sections (anti-debugging, evasion, injection, etc.).");
+        AnsiConsole.MarkupLine("  Use [darkorange]--snippet <section>=<id>[/] to override the default selection for a section.");
+        AnsiConsole.MarkupLine("  Run [darkorange]list --snippets[/] to see all available sections and their item IDs.");
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("  [grey]--snippet antiemulation=SirAllocALot[/]");
+        AnsiConsole.MarkupLine("  [grey]--snippet antisandbox=Default --snippet antidebugging=IsDebuggerPresent[/]");
         AnsiConsole.WriteLine();
 
         AnsiConsole.Write(new Rule("[cyan1]Examples[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
@@ -2567,6 +2597,7 @@ public static class Program
         AnsiConsole.MarkupLine("  [grey]washmachine-cli compile -s payload.bin -t shellcode-minimal[/]");
         AnsiConsole.MarkupLine("  [grey]washmachine-cli compile --shellcode-hex FC4883E4F0... -e 1[/]");
         AnsiConsole.MarkupLine("  [grey]washmachine-cli compile -u http://host/shell.bin --verbose[/]");
+        AnsiConsole.MarkupLine("  [grey]washmachine-cli compile -s payload.bin --snippet antiemulation=SirAllocALot --snippet antisandbox=Default[/]");
 
         return 0;
     }
