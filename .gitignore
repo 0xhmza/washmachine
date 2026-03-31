@@ -56,6 +56,13 @@ mono_crash.*
 test_results.json
 messagebox.bin
 !testing assets/binary/shellcodes/messagebox.bin
+testing assets/
+Backdooring/
+SuperMega-main/
+
+# Build output
+Output/
+last status.txt
 
 # AI assistant sessions
 .claude/

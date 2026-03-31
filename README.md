@@ -102,6 +102,7 @@ washmachine-cli <command> [options]
 |---|---|
 | `compile` | Build a shellcode loader executable |
 | `analyze` | Analyze a PE file (headers, sections, imports, code caves) |
+| `strip` | Extract, remove, or dump PE sections and overlays |
 | `backdoor` | Inject shellcode into an existing PE via code-cave |
 | `list` | List available templates, encoders, snippets, or compilers |
 | `provision` | Download and install required external tools (Bin2Shell) |
@@ -136,6 +137,19 @@ washmachine-cli test --shellcode messagebox.bin --phase all
 ---
 
 ## Building
+
+```powershell
+# Debug build
+.\build.ps1
+
+# Release build
+.\build.ps1 -Release
+
+# Publish self-contained CLI
+.\publish.ps1
+```
+
+You can also build directly with `dotnet`:
 
 ```powershell
 # Build all three projects
@@ -734,6 +748,19 @@ washmachine-cli test --phase 3 --test-assets "testing assets\binary\shellcodes"
 ```
 
 Results are written to `test_results.json` next to the CLI executable.
+
+---
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| **Compiler not found** | Ensure `cl.exe`, `g++.exe`, or `clang++.exe` is on your `PATH`. For MSVC, run from a *Developer Command Prompt* or set `VCToolsInstallDir`. |
+| **Python not found** | Bin2Shell encoding features require Python 3.10+. Install it and ensure `python` or `python3` is on `PATH`. |
+| **YAML catalog missing** | The file `Assets/vx_api_snippets.yaml` must be present next to the executable. Run `dotnet build` to copy assets, or check that the `Assets/` folder exists in the output directory. |
+| **Bin2Shell not provisioned** | Run `washmachine-cli provision` once before using encoding, envelope, or web-delivery features. |
+
+For full documentation see **[https://0xhmza.github.io/washmachine/](https://0xhmza.github.io/washmachine/)**.
 
 ---
 
