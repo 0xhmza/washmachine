@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Spectre.Console;
+using Spectre.Console.Rendering;
 using Washmachine.Logging;
 using Washmachine.Models;
 using Washmachine.Services;
@@ -994,75 +995,87 @@ public static class Program
             // ══════════════════════════════════════════════════════════
             //  PE HEADERS
             // ══════════════════════════════════════════════════════════
-            AnsiConsole.Write(new Rule("[bold dodgerblue2]PE Headers[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-            AnsiConsole.WriteLine();
-
-            if (result.OptionalHeader != null)
             {
-                var oh = result.OptionalHeader;
-                AnsiConsole.MarkupLine(
-                    $"  [cyan1]Entry Point:[/] [mediumpurple1]0x{oh.AddressOfEntryPoint:X8}[/]    " +
-                    $"[cyan1]Image Base:[/] [mediumpurple1]0x{oh.ImageBase:X}[/]    " +
-                    $"[cyan1]Checksum:[/] [mediumpurple1]0x{oh.Checksum:X8}[/]");
-                AnsiConsole.MarkupLine(
-                    $"  [cyan1]Section Align:[/] [mediumpurple1]0x{oh.SectionAlignment:X}[/]    " +
-                    $"[cyan1]File Align:[/] [mediumpurple1]0x{oh.FileAlignment:X}[/]    " +
-                    $"[cyan1]Size of Image:[/] [mediumpurple1]0x{oh.SizeOfImage:X}[/]");
+                var headerLines = new List<string>();
 
-                if (oh.DllCharacteristicsList.Count > 0)
-                    AnsiConsole.MarkupLine($"  [cyan1]DLL Chars:[/] [grey63]{Markup.Escape(string.Join(", ", oh.DllCharacteristicsList))}[/]");
+                if (result.OptionalHeader != null)
+                {
+                    var oh = result.OptionalHeader;
+                    headerLines.Add(
+                        $"[cyan1]Entry Point:[/] [mediumpurple1]0x{oh.AddressOfEntryPoint:X8}[/]    " +
+                        $"[cyan1]Image Base:[/] [mediumpurple1]0x{oh.ImageBase:X}[/]    " +
+                        $"[cyan1]Checksum:[/] [mediumpurple1]0x{oh.Checksum:X8}[/]");
+                    headerLines.Add(
+                        $"[cyan1]Section Align:[/] [mediumpurple1]0x{oh.SectionAlignment:X}[/]    " +
+                        $"[cyan1]File Align:[/] [mediumpurple1]0x{oh.FileAlignment:X}[/]    " +
+                        $"[cyan1]Size of Image:[/] [mediumpurple1]0x{oh.SizeOfImage:X}[/]");
+
+                    if (oh.DllCharacteristicsList.Count > 0)
+                        headerLines.Add($"[cyan1]DLL Chars:[/] [grey63]{Markup.Escape(string.Join(", ", oh.DllCharacteristicsList))}[/]");
+                }
+
+                if (result.FileHeader != null)
+                {
+                    headerLines.Add(
+                        $"[cyan1]Machine:[/] [white]{Markup.Escape(result.FileHeader.MachineString)}[/]    " +
+                        $"[cyan1]Timestamp:[/] [white]{result.FileHeader.TimeDateStampUtc:yyyy-MM-dd HH:mm:ss} UTC[/]");
+
+                    if (result.FileHeader.CharacteristicsList.Count > 0)
+                        headerLines.Add($"[cyan1]Characteristics:[/] [grey63]{Markup.Escape(string.Join(", ", result.FileHeader.CharacteristicsList))}[/]");
+                }
+
+                if (headerLines.Count > 0)
+                {
+                    AnsiConsole.Write(new Panel(new Markup(string.Join("\n", headerLines)))
+                        .Header("[bold dodgerblue2]PE Headers[/]")
+                        .Border(BoxBorder.Rounded)
+                        .BorderColor(Color.Grey42)
+                        .Expand());
+                    AnsiConsole.WriteLine();
+                }
             }
-
-            if (result.FileHeader != null)
-            {
-                AnsiConsole.MarkupLine(
-                    $"  [cyan1]Machine:[/] [white]{Markup.Escape(result.FileHeader.MachineString)}[/]    " +
-                    $"[cyan1]Timestamp:[/] [white]{result.FileHeader.TimeDateStampUtc:yyyy-MM-dd HH:mm:ss} UTC[/]");
-
-                if (result.FileHeader.CharacteristicsList.Count > 0)
-                    AnsiConsole.MarkupLine($"  [cyan1]Characteristics:[/] [grey63]{Markup.Escape(string.Join(", ", result.FileHeader.CharacteristicsList))}[/]");
-            }
-
-            AnsiConsole.WriteLine();
 
             // ══════════════════════════════════════════════════════════
             //  SECTIONS TABLE
             // ══════════════════════════════════════════════════════════
-            AnsiConsole.Write(new Rule("[bold dodgerblue2]Sections[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-            AnsiConsole.WriteLine();
-
-            var sectionTable = new Table()
-                .Border(TableBorder.Simple)
-                .BorderColor(Color.Grey42)
-                .AddColumn(new TableColumn("[cyan1]Section[/]").LeftAligned())
-                .AddColumn(new TableColumn("[cyan1]VirtAddr[/]").RightAligned())
-                .AddColumn(new TableColumn("[cyan1]VirtSize[/]").RightAligned())
-                .AddColumn(new TableColumn("[cyan1]RawAddr[/]").RightAligned())
-                .AddColumn(new TableColumn("[cyan1]RawSize[/]").RightAligned())
-                .AddColumn(new TableColumn("[cyan1]Perms[/]").Centered())
-                .AddColumn(new TableColumn("[cyan1]Entropy[/]").RightAligned())
-                .AddColumn(new TableColumn("[cyan1]Bar[/]").LeftAligned());
-
-            foreach (var sec in result.Sections)
             {
-                string entropyColor = sec.Entropy < 6.0 ? "green3_1" : sec.Entropy < 7.0 ? "gold1" : "red1";
-                string nameColor = sec.IsExecutable ? "red1" : "white";
-                string entropyBar = BuildEntropyBar(sec.Entropy);
+                var sectionTable = new Table()
+                    .Border(TableBorder.Simple)
+                    .BorderColor(Color.Grey42)
+                    .AddColumn(new TableColumn("[cyan1]Section[/]").LeftAligned())
+                    .AddColumn(new TableColumn("[cyan1]VirtAddr[/]").RightAligned())
+                    .AddColumn(new TableColumn("[cyan1]VirtSize[/]").RightAligned())
+                    .AddColumn(new TableColumn("[cyan1]RawAddr[/]").RightAligned())
+                    .AddColumn(new TableColumn("[cyan1]RawSize[/]").RightAligned())
+                    .AddColumn(new TableColumn("[cyan1]Perms[/]").Centered())
+                    .AddColumn(new TableColumn("[cyan1]Entropy[/]").RightAligned())
+                    .AddColumn(new TableColumn("[cyan1]Bar[/]").LeftAligned());
 
-                sectionTable.AddRow(
-                    $"[{nameColor}]{Markup.Escape(sec.Name)}[/]",
-                    $"[mediumpurple1]0x{sec.VirtualAddress:X8}[/]",
-                    $"[mediumpurple1]0x{sec.VirtualSize:X8}[/]",
-                    $"[mediumpurple1]0x{sec.RawAddress:X8}[/]",
-                    $"[mediumpurple1]0x{sec.RawSize:X8}[/]",
-                    Markup.Escape(sec.PermissionsString),
-                    $"[{entropyColor}]{sec.Entropy:F2}[/]",
-                    entropyBar
-                );
+                foreach (var sec in result.Sections)
+                {
+                    string entropyColor = sec.Entropy < 6.0 ? "green3_1" : sec.Entropy < 7.0 ? "gold1" : "red1";
+                    string nameColor = sec.IsExecutable ? "red1" : "white";
+                    string entropyBar = BuildEntropyBar(sec.Entropy);
+
+                    sectionTable.AddRow(
+                        $"[{nameColor}]{Markup.Escape(sec.Name)}[/]",
+                        $"[mediumpurple1]0x{sec.VirtualAddress:X8}[/]",
+                        $"[mediumpurple1]0x{sec.VirtualSize:X8}[/]",
+                        $"[mediumpurple1]0x{sec.RawAddress:X8}[/]",
+                        $"[mediumpurple1]0x{sec.RawSize:X8}[/]",
+                        Markup.Escape(sec.PermissionsString),
+                        $"[{entropyColor}]{sec.Entropy:F2}[/]",
+                        entropyBar
+                    );
+                }
+
+                AnsiConsole.Write(new Panel(sectionTable)
+                    .Header("[bold dodgerblue2]Sections[/]")
+                    .Border(BoxBorder.Rounded)
+                    .BorderColor(Color.Grey42)
+                    .Expand());
+                AnsiConsole.WriteLine();
             }
-
-            AnsiConsole.Write(sectionTable);
-            AnsiConsole.WriteLine();
 
             // ══════════════════════════════════════════════════════════
             //  SECURITY ASSESSMENT (detailed)
@@ -1070,8 +1083,6 @@ public static class Program
             if (result.Security != null)
             {
                 var secDetail = result.Security;
-                AnsiConsole.Write(new Rule("[bold dodgerblue2]Security Assessment[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-                AnsiConsole.WriteLine();
 
                 var protTable = new Table()
                     .Border(TableBorder.Simple)
@@ -1118,7 +1129,11 @@ public static class Program
                     }
                 }
 
-                AnsiConsole.Write(protTable);
+                AnsiConsole.Write(new Panel(protTable)
+                    .Header("[bold dodgerblue2]Security Assessment[/]")
+                    .Border(BoxBorder.Rounded)
+                    .BorderColor(Color.Grey42)
+                    .Expand());
                 AnsiConsole.WriteLine();
             }
 
@@ -1128,9 +1143,6 @@ public static class Program
             if (result.Imports.Count > 0)
             {
                 int totalFuncs = result.TotalImports;
-                AnsiConsole.Write(new Rule($"[bold dodgerblue2]Imports ({result.Imports.Count} DLLs, {totalFuncs} functions)[/]")
-                    .RuleStyle(Style.Parse("grey42")).LeftJustified());
-                AnsiConsole.WriteLine();
 
                 var importTable = new Table()
                     .Border(TableBorder.Simple)
@@ -1164,10 +1176,10 @@ public static class Program
                     }
                 }
 
-                AnsiConsole.Write(importTable);
+                var importContent = new List<IRenderable> { importTable };
 
                 if (result.Imports.Count > 20)
-                    AnsiConsole.MarkupLine($"  [grey63]... and {result.Imports.Count - 20} more DLLs[/]");
+                    importContent.Add(new Markup($"[grey63]... and {result.Imports.Count - 20} more DLLs[/]"));
 
                 // Suspicious imports
                 var suspicious = result.Imports
@@ -1177,8 +1189,8 @@ public static class Program
 
                 if (suspicious.Count > 0)
                 {
-                    AnsiConsole.WriteLine();
-                    AnsiConsole.MarkupLine($"  [red1]\u26a0 Suspicious Imports ({suspicious.Count}):[/]");
+                    importContent.Add(new Text(""));
+                    importContent.Add(new Markup($"[red1]\u26a0 Suspicious Imports ({suspicious.Count}):[/]"));
 
                     var suspTable = new Table()
                         .Border(TableBorder.Simple)
@@ -1196,9 +1208,15 @@ public static class Program
                         );
                     }
 
-                    AnsiConsole.Write(suspTable);
+                    importContent.Add(suspTable);
                 }
 
+                var importRows = new Rows(importContent);
+                AnsiConsole.Write(new Panel(importRows)
+                    .Header($"[bold dodgerblue2]Imports ({result.Imports.Count} DLLs, {totalFuncs} functions)[/]")
+                    .Border(BoxBorder.Rounded)
+                    .BorderColor(Color.Grey42)
+                    .Expand());
                 AnsiConsole.WriteLine();
             }
 
@@ -1207,10 +1225,6 @@ public static class Program
             // ══════════════════════════════════════════════════════════
             if (result.TotalExports > 0)
             {
-                AnsiConsole.Write(new Rule($"[bold dodgerblue2]Exports ({result.TotalExports})[/]")
-                    .RuleStyle(Style.Parse("grey42")).LeftJustified());
-                AnsiConsole.WriteLine();
-
                 var exportTable = new Table()
                     .Border(TableBorder.Simple)
                     .BorderColor(Color.Grey42)
@@ -1231,7 +1245,11 @@ public static class Program
                     );
                 }
 
-                AnsiConsole.Write(exportTable);
+                AnsiConsole.Write(new Panel(exportTable)
+                    .Header($"[bold dodgerblue2]Exports ({result.TotalExports})[/]")
+                    .Border(BoxBorder.Rounded)
+                    .BorderColor(Color.Grey42)
+                    .Expand());
                 AnsiConsole.WriteLine();
             }
 
@@ -1240,16 +1258,14 @@ public static class Program
             // ══════════════════════════════════════════════════════════
             if (result.Resources?.Count > 0)
             {
-                AnsiConsole.Write(new Rule($"[bold dodgerblue2]Resources ({result.Resources.Count})[/]")
-                    .RuleStyle(Style.Parse("grey42")).LeftJustified());
+                var resContent = new List<IRenderable>();
 
                 var resFlags = new List<string>();
                 if (result.HasManifest) resFlags.Add("[green3_1]\u2713 Manifest[/]");
                 if (result.HasIcon) resFlags.Add("[green3_1]\u2713 Icon[/]");
                 if (result.HasVersionInfo) resFlags.Add("[green3_1]\u2713 VersionInfo[/]");
                 if (resFlags.Count > 0)
-                    AnsiConsole.MarkupLine($"  {string.Join("  ", resFlags)}");
-                AnsiConsole.WriteLine();
+                    resContent.Add(new Markup(string.Join("  ", resFlags)));
 
                 var resTable = new Table()
                     .Border(TableBorder.Simple)
@@ -1267,7 +1283,13 @@ public static class Program
                     );
                 }
 
-                AnsiConsole.Write(resTable);
+                resContent.Add(resTable);
+
+                AnsiConsole.Write(new Panel(new Rows(resContent))
+                    .Header($"[bold dodgerblue2]Resources ({result.Resources.Count})[/]")
+                    .Border(BoxBorder.Rounded)
+                    .BorderColor(Color.Grey42)
+                    .Expand());
                 AnsiConsole.WriteLine();
             }
 
@@ -1276,80 +1298,91 @@ public static class Program
             // ══════════════════════════════════════════════════════════
             if (result.Tls != null)
             {
-                AnsiConsole.Write(new Rule("[bold dodgerblue2]TLS (Thread Local Storage)[/]")
-                    .RuleStyle(Style.Parse("grey42")).LeftJustified());
-                AnsiConsole.WriteLine();
-
-                AnsiConsole.MarkupLine($"  [cyan1]Callbacks:[/] [white]{result.Tls.NumberOfCallbacks}[/]");
+                var tlsLines = new List<string>();
+                tlsLines.Add($"[cyan1]Callbacks:[/] [white]{result.Tls.NumberOfCallbacks}[/]");
 
                 if (result.Tls.CallbackAddresses.Count > 0)
                 {
                     foreach (var addr in result.Tls.CallbackAddresses)
-                        AnsiConsole.MarkupLine($"    [mediumpurple1]0x{addr:X}[/]");
+                        tlsLines.Add($"  [mediumpurple1]0x{addr:X}[/]");
                 }
 
+                AnsiConsole.Write(new Panel(new Markup(string.Join("\n", tlsLines)))
+                    .Header("[bold dodgerblue2]TLS (Thread Local Storage)[/]")
+                    .Border(BoxBorder.Rounded)
+                    .BorderColor(Color.Grey42)
+                    .Expand());
                 AnsiConsole.WriteLine();
             }
 
             // ══════════════════════════════════════════════════════════
             //  CODE CAVES
             // ══════════════════════════════════════════════════════════
-            AnsiConsole.Write(new Rule($"[bold dodgerblue2]Code Caves ({result.TotalCodeCaves} found, {result.TotalCodeCaveSpace:N0} bytes total)[/]")
-                .RuleStyle(Style.Parse("grey42")).LeftJustified());
-            AnsiConsole.WriteLine();
-
-            if (result.TotalCodeCaves > 0)
             {
-                AnsiConsole.MarkupLine($"  [cyan1]Largest:[/] [white]{result.LargestCodeCave:N0} bytes[/]");
-                AnsiConsole.WriteLine();
+                var caveContent = new List<IRenderable>();
 
-                var caveTable = new Table()
-                    .Border(TableBorder.Simple)
-                    .BorderColor(Color.Grey42)
-                    .AddColumn("[cyan1]Section[/]")
-                    .AddColumn("[cyan1]Offset[/]")
-                    .AddColumn("[cyan1]RVA[/]")
-                    .AddColumn("[cyan1]Size[/]")
-                    .AddColumn("[cyan1]Injectable[/]");
-
-                foreach (var cave in result.CodeCaves.Take(10))
+                if (result.TotalCodeCaves > 0)
                 {
-                    var injectIcon = cave.SuitableForInjection ? "[green3_1]\u2713[/]" : "[red1]\u2717[/]";
-                    caveTable.AddRow(
-                        Markup.Escape(cave.SectionName),
-                        $"[mediumpurple1]0x{cave.FileOffset:X8}[/]",
-                        $"[mediumpurple1]0x{cave.VirtualAddress:X8}[/]",
-                        $"[white]{cave.Size:N0} B[/]",
-                        injectIcon
-                    );
+                    caveContent.Add(new Markup($"[cyan1]Largest:[/] [white]{result.LargestCodeCave:N0} bytes[/]"));
+
+                    var caveTable = new Table()
+                        .Border(TableBorder.Simple)
+                        .BorderColor(Color.Grey42)
+                        .AddColumn("[cyan1]Section[/]")
+                        .AddColumn("[cyan1]Offset[/]")
+                        .AddColumn("[cyan1]RVA[/]")
+                        .AddColumn("[cyan1]Size[/]")
+                        .AddColumn("[cyan1]Injectable[/]");
+
+                    foreach (var cave in result.CodeCaves.Take(10))
+                    {
+                        var injectIcon = cave.SuitableForInjection ? "[green3_1]\u2713[/]" : "[red1]\u2717[/]";
+                        caveTable.AddRow(
+                            Markup.Escape(cave.SectionName),
+                            $"[mediumpurple1]0x{cave.FileOffset:X8}[/]",
+                            $"[mediumpurple1]0x{cave.VirtualAddress:X8}[/]",
+                            $"[white]{cave.Size:N0} B[/]",
+                            injectIcon
+                        );
+                    }
+
+                    caveContent.Add(caveTable);
+
+                    if (result.TotalCodeCaves > 10)
+                        caveContent.Add(new Markup($"[grey63]... and {result.TotalCodeCaves - 10} more caves[/]"));
+                }
+                else
+                {
+                    caveContent.Add(new Markup("[grey63]No code caves found[/]"));
                 }
 
-                AnsiConsole.Write(caveTable);
-
-                if (result.TotalCodeCaves > 10)
-                    AnsiConsole.MarkupLine($"  [grey63]... and {result.TotalCodeCaves - 10} more caves[/]");
+                AnsiConsole.Write(new Panel(new Rows(caveContent))
+                    .Header($"[bold dodgerblue2]Code Caves ({result.TotalCodeCaves} found, {result.TotalCodeCaveSpace:N0} bytes total)[/]")
+                    .Border(BoxBorder.Rounded)
+                    .BorderColor(Color.Grey42)
+                    .Expand());
+                AnsiConsole.WriteLine();
             }
-            else
-            {
-                AnsiConsole.MarkupLine("  [grey63]No code caves found[/]");
-            }
-
-            AnsiConsole.WriteLine();
 
             // ══════════════════════════════════════════════════════════
             //  PACKING / ENTROPY
             // ══════════════════════════════════════════════════════════
-            AnsiConsole.Write(new Rule("[bold dodgerblue2]Packing / Entropy[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-            AnsiConsole.WriteLine();
+            {
+                string overallEntropyColor = result.OverallEntropy < 6.0 ? "green3_1" : result.OverallEntropy < 7.0 ? "gold1" : "red1";
+                var entropyLines = new List<string>();
+                entropyLines.Add($"[cyan1]Overall Entropy:[/]  [{overallEntropyColor}]{result.OverallEntropy:F4}[/]  {BuildEntropyBar(result.OverallEntropy, 15)}");
+                entropyLines.Add($"[cyan1]Possibly Packed:[/]  {(result.IsPossiblyPacked ? "[red1]Yes[/]" : "[green3_1]No[/]")}");
 
-            string overallEntropyColor = result.OverallEntropy < 6.0 ? "green3_1" : result.OverallEntropy < 7.0 ? "gold1" : "red1";
-            AnsiConsole.MarkupLine($"  [cyan1]Overall Entropy:[/]  [{overallEntropyColor}]{result.OverallEntropy:F4}[/]  {BuildEntropyBar(result.OverallEntropy, 15)}");
-            AnsiConsole.MarkupLine($"  [cyan1]Possibly Packed:[/]  {(result.IsPossiblyPacked ? "[red1]Yes[/]" : "[green3_1]No[/]")}");
+                if (!string.IsNullOrEmpty(result.PackerDetection))
+                    entropyLines.Add($"[cyan1]Packer Detected:[/]  [gold1]{Markup.Escape(result.PackerDetection)}[/]");
 
-            if (!string.IsNullOrEmpty(result.PackerDetection))
-                AnsiConsole.MarkupLine($"  [cyan1]Packer Detected:[/]  [gold1]{Markup.Escape(result.PackerDetection)}[/]");
-
-            AnsiConsole.WriteLine();
+                AnsiConsole.Write(new Panel(new Markup(string.Join("\n", entropyLines)))
+                    .Header("[bold dodgerblue2]Packing / Entropy[/]")
+                    .Border(BoxBorder.Rounded)
+                    .BorderColor(Color.Grey42)
+                    .Expand());
+                AnsiConsole.WriteLine();
+            }
 
             // ══════════════════════════════════════════════════════════
             //  INJECTION FEASIBILITY
@@ -1357,8 +1390,6 @@ public static class Program
             if (result.Feasibility != null)
             {
                 var feas = result.Feasibility;
-                AnsiConsole.Write(new Rule("[bold dodgerblue2]Injection Feasibility[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-                AnsiConsole.WriteLine();
 
                 var feasLines = new List<string>();
 
@@ -1387,8 +1418,10 @@ public static class Program
                 }
 
                 AnsiConsole.Write(new Panel(new Markup(string.Join("\n", feasLines)))
+                    .Header("[bold dodgerblue2]Injection Feasibility[/]")
                     .Border(BoxBorder.Rounded)
-                    .BorderColor(Color.Cyan1));
+                    .BorderColor(Color.Cyan1)
+                    .Expand());
                 AnsiConsole.WriteLine();
             }
 
@@ -1397,9 +1430,7 @@ public static class Program
             // ══════════════════════════════════════════════════════════
             if (result.Sections.Count > 0)
             {
-                AnsiConsole.Write(new Rule("[bold dodgerblue2]Section Memory Map[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-                AnsiConsole.WriteLine();
-
+                var mapLines = new List<string>();
                 long totalVirt = result.Sections.Sum(s => (long)s.VirtualSize);
                 int mapBarWidth = 40;
 
@@ -1417,10 +1448,15 @@ public static class Program
                         ? $"{s.VirtualSize / 1024.0:F0} KB"
                         : $"{s.VirtualSize} B";
 
-                    AnsiConsole.MarkupLine(
-                        $"  [white]{Markup.Escape(s.Name).PadRight(8)}[/]  {bar}  [white]{sizeStr,8}[/]  [grey63]{Markup.Escape(s.PermissionsString)}[/]  [grey63]{pct:F1}%[/]");
+                    mapLines.Add(
+                        $"[white]{Markup.Escape(s.Name).PadRight(8)}[/]  {bar}  [white]{sizeStr,8}[/]  [grey63]{Markup.Escape(s.PermissionsString)}[/]  [grey63]{pct:F1}%[/]");
                 }
 
+                AnsiConsole.Write(new Panel(new Markup(string.Join("\n", mapLines)))
+                    .Header("[bold dodgerblue2]Section Memory Map[/]")
+                    .Border(BoxBorder.Rounded)
+                    .BorderColor(Color.Grey42)
+                    .Expand());
                 AnsiConsole.WriteLine();
             }
 
@@ -1429,9 +1465,7 @@ public static class Program
             // ══════════════════════════════════════════════════════════
             if (result.Sections.Count > 0 && result.OptionalHeader != null)
             {
-                AnsiConsole.Write(new Rule("[bold dodgerblue2]Virtual Address Space[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-                AnsiConsole.WriteLine();
-
+                var vaLines = new List<string>();
                 long totalImage = result.OptionalHeader.SizeOfImage;
                 int vaBarWidth = 30;
 
@@ -1439,7 +1473,7 @@ public static class Program
                 if (result.Sections.Count > 0)
                 {
                     uint headerEnd = result.Sections[0].VirtualAddress;
-                    AnsiConsole.MarkupLine($"  [mediumpurple1]0x{0:X8}[/] [grey63]\u252c\u2500\u2500[/] [dodgerblue2]PE Headers[/] [grey63]({headerEnd:N0} B)[/]");
+                    vaLines.Add($"[mediumpurple1]0x{0:X8}[/] [grey63]\u252c\u2500\u2500[/] [dodgerblue2]PE Headers[/] [grey63]({headerEnd:N0} B)[/]");
                 }
 
                 for (int si = 0; si < result.Sections.Count; si++)
@@ -1458,10 +1492,15 @@ public static class Program
                         ? $"{s.VirtualSize / 1024.0:F0} KB"
                         : $"{s.VirtualSize} B";
 
-                    AnsiConsole.MarkupLine(
-                        $"  [mediumpurple1]0x{s.VirtualAddress:X8}[/] [grey63]{connector}[/] {bar} [white]{Markup.Escape(s.Name)}[/] [grey63]{Markup.Escape(s.PermissionsString)}  {sizeStr}[/]");
+                    vaLines.Add(
+                        $"[mediumpurple1]0x{s.VirtualAddress:X8}[/] [grey63]{connector}[/] {bar} [white]{Markup.Escape(s.Name)}[/] [grey63]{Markup.Escape(s.PermissionsString)}  {sizeStr}[/]");
                 }
 
+                AnsiConsole.Write(new Panel(new Markup(string.Join("\n", vaLines)))
+                    .Header("[bold dodgerblue2]Virtual Address Space[/]")
+                    .Border(BoxBorder.Rounded)
+                    .BorderColor(Color.Grey42)
+                    .Expand());
                 AnsiConsole.WriteLine();
             }
 
