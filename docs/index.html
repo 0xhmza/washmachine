@@ -65,6 +65,14 @@
                         <h3>🔐 Payload Encoding</h3>
                         <p>Bin2Shell integration for encoder, envelope, anti-emulation, and web-helper selection</p>
                     </div>
+                    <div class="feature-card">
+                        <h3>🔧 PE Backdooring</h3>
+                        <p>5 injection methods: code cave, new section, section extension, text section padding, and TLS callback</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>📦 Binary Stripping</h3>
+                        <p>Extract flat shellcode from PE files with 4 extraction modes</p>
+                    </div>
                 </div>
             </div>
         </section>
@@ -112,17 +120,23 @@ dotnet build washmachine.sln</code></pre>
 
                 <div class="code-example">
                     <h3>CLI Examples</h3>
-                    <pre><code># Compile from a .bin shellcode file
-washmachine-cli compile -s payload.bin -t shellcode-minimal
+                    <pre><code># Encode from a .bin shellcode file
+washmachine-cli encode -s payload.bin -t shellcode-minimal
 
-# Compile with XOR encoding
-washmachine-cli compile -s payload.bin -e 1 --json
+# Encode with XOR encoding
+washmachine-cli encode -s payload.bin -e 1 --json
 
 # Analyze a PE file
 washmachine-cli analyze target.exe --json
 
-# Inject shellcode into an existing PE
-washmachine-cli backdoor --pe target.exe -s payload.bin -o patched.exe
+# Inject shellcode into an existing PE (new section method)
+washmachine-cli backdoor --pe target.exe -s payload.bin -m new-section
+
+# Inject via TLS callback (x64 only — runs before main)
+washmachine-cli backdoor --pe target.exe -s payload.bin -m tls-callback -o backdoored.exe
+
+# Extract flat shellcode from a PE
+washmachine-cli strip loader.exe -o shellcode.bin
 
 # List available templates and compilers
 washmachine-cli list --templates

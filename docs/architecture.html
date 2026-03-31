@@ -68,7 +68,7 @@ Washmachine.Core ──no internal project dependencies──</code></pre>
 │   ├── Bin2ShellRunner.cs          ← spawns python main.py
 │   ├── Bin2ShellWebOutputParser.cs ← parses Bin2Shell -w YAML output
 │   ├── PeAnalyzerService.cs        ← PE header / section analysis
-│   ├── PeBackdoorService.cs        ← PE code-cave injection
+│   ├── PeBackdoorService.cs        ← PE backdoor injection (5 methods)
 │   ├── RequirementProvisioner.cs   ← downloads Bin2Shell
 │   ├── ProgressReporter.cs         ← IProgressReporter + ConsoleProgressReporter
 │   ├── ShellcodeEncodingCatalogService.cs
@@ -81,8 +81,13 @@ Washmachine.Core ──no internal project dependencies──</code></pre>
                 <p>Terminal interface that delegates to Core services:</p>
 
                 <pre><code>Washmachine.Cli/
-├── Program.cs                      ← subcommands: compile / analyze / backdoor /
-│                                      list / provision / test
+├── Program.cs                      ← subcommands: encode / analyze / backdoor /
+│                                      strip / list / provision / test
+├── Constants.cs                    ← shared constants
+├── Ui/
+│   ├── UiColors.cs                 ← luxury color palette
+│   ├── UsageFormatter.cs           ← MSF-style help renderer
+│   └── TableFactory.cs             ← styled table factory
 └── Washmachine.Cli.csproj</code></pre>
 
                 <h3>washmachine (GUI Application)</h3>

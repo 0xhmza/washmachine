@@ -16,76 +16,104 @@
                            Margin="0,4,0,0" />
             </StackPanel>
 
-            <StackPanel Spacing="12">
-                <TextBlock Text="Template Import" FontSize="18" FontWeight="SemiBold" />
-                <TextBlock Text="Import a template catalog from a URL or local file."
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <!-- ── Template Import ─────────────────────────────── -->
+            <Expander x:Name="templateExpander"
+                      HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Stretch"
+                      IsExpanded="True">
+                <Expander.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon Glyph="&#xE8B5;" FontSize="16" />
+                        <TextBlock Text="Template Import" FontSize="16" FontWeight="SemiBold"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Expander.Header>
+                <Expander.Content>
+                    <StackPanel Spacing="12" Padding="4,8,4,4">
+                        <TextBlock Text="Import a template catalog from a URL or local file."
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
 
-                <TextBlock Text="Import from URL:" Margin="0,4,0,0" />
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBox x:Name="templateCatalogUrl"
-                             PlaceholderText="https://example.com/vx_api_snippets.yaml"
-                             Margin="0,0,8,0" />
-                    <Button x:Name="importTemplateUrlButton"
-                            Grid.Column="1"
-                            Content="Import URL"
-                            MinWidth="110"
-                            Click="importTemplateUrlButton_Click" />
-                </Grid>
+                        <TextBlock Text="Import from URL:" Margin="0,4,0,0" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="templateCatalogUrl"
+                                     PlaceholderText="https://example.com/vx_api_snippets.yaml"
+                                     Margin="0,0,8,0" />
+                            <Button x:Name="importTemplateUrlButton"
+                                    Grid.Column="1"
+                                    Content="Import URL"
+                                    MinWidth="110"
+                                    Click="importTemplateUrlButton_Click" />
+                        </Grid>
 
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Button x:Name="importTemplateFileButton"
-                            Content="Import file"
-                            MinWidth="110"
-                            Click="importTemplateFileButton_Click" />
-                    <Button x:Name="openTemplateFolderButton"
-                            Content="Open templates folder"
-                            MinWidth="160"
-                            Click="openTemplateFolderButton_Click" />
-                </StackPanel>
-            </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="importTemplateFileButton"
+                                    Content="Import file"
+                                    MinWidth="110"
+                                    Click="importTemplateFileButton_Click" />
+                            <Button x:Name="openTemplateFolderButton"
+                                    Content="Open templates folder"
+                                    MinWidth="160"
+                                    Click="openTemplateFolderButton_Click" />
+                        </StackPanel>
+                    </StackPanel>
+                </Expander.Content>
+            </Expander>
 
-            <StackPanel Spacing="12">
-                <TextBlock Text="Session Logging" FontSize="18" FontWeight="SemiBold" />
-                <TextBlock Text="Control what gets saved when a backdoor operation runs."
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <!-- ── Session Logging ─────────────────────────────── -->
+            <Expander x:Name="loggingExpander"
+                      HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Stretch"
+                      IsExpanded="True">
+                <Expander.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon Glyph="&#xE9D9;" FontSize="16" />
+                        <TextBlock Text="Session Logging" FontSize="16" FontWeight="SemiBold"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Expander.Header>
+                <Expander.Content>
+                    <StackPanel Spacing="12" Padding="4,8,4,4">
+                        <TextBlock Text="Control what gets saved when a backdoor operation runs."
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
 
-                <ToggleSwitch x:Name="toggleSessionLogging"
-                              Header="Enable Session Logging"
-                              OnContent="On" OffContent="Off"
-                              Toggled="toggleSessionLogging_Toggled" />
-                <TextBlock Text="Automatically create a session log folder for each backdoor operation"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           Margin="0,-8,0,0" />
+                        <ToggleSwitch x:Name="toggleSessionLogging"
+                                      Header="Enable Session Logging"
+                                      OnContent="On" OffContent="Off"
+                                      Toggled="toggleSessionLogging_Toggled" />
+                        <TextBlock Text="Automatically create a session log folder for each backdoor operation"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   Margin="0,-8,0,0" />
 
-                <ToggleSwitch x:Name="toggleSaveBinary"
-                              Header="Save Binary Artifact"
-                              OnContent="On" OffContent="Off"
-                              Toggled="toggleSaveBinary_Toggled" />
-                <TextBlock Text="Copy the backdoored output binary into the session folder"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           Margin="0,-8,0,0" />
+                        <ToggleSwitch x:Name="toggleSaveBinary"
+                                      Header="Save Binary Artifact"
+                                      OnContent="On" OffContent="Off"
+                                      Toggled="toggleSaveBinary_Toggled" />
+                        <TextBlock Text="Copy the backdoored output binary into the session folder"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   Margin="0,-8,0,0" />
 
-                <ToggleSwitch x:Name="toggleSaveShellcode"
-                              Header="Save Shellcode Copy"
-                              OnContent="On" OffContent="Off"
-                              Toggled="toggleSaveShellcode_Toggled" />
-                <TextBlock Text="Copy the original shellcode .bin into the session folder"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           Margin="0,-8,0,0" />
+                        <ToggleSwitch x:Name="toggleSaveShellcode"
+                                      Header="Save Shellcode Copy"
+                                      OnContent="On" OffContent="Off"
+                                      Toggled="toggleSaveShellcode_Toggled" />
+                        <TextBlock Text="Copy the original shellcode .bin into the session folder"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   Margin="0,-8,0,0" />
 
-                <ToggleSwitch x:Name="toggleVerboseLogging"
-                              Header="Verbose File Logging"
-                              OnContent="On" OffContent="Off"
-                              Toggled="toggleVerboseLogging_Toggled" />
-                <TextBlock Text="Include debug-level messages in the session log file"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           Margin="0,-8,0,0" />
-            </StackPanel>
+                        <ToggleSwitch x:Name="toggleVerboseLogging"
+                                      Header="Verbose File Logging"
+                                      OnContent="On" OffContent="Off"
+                                      Toggled="toggleVerboseLogging_Toggled" />
+                        <TextBlock Text="Include debug-level messages in the session log file"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   Margin="0,-8,0,0" />
+                    </StackPanel>
+                </Expander.Content>
+            </Expander>
 
         </StackPanel>
     </ScrollViewer>

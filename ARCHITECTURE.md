@@ -48,7 +48,7 @@ washmachine/
 │   └── Washmachine.Core.csproj
 │
 ├── Washmachine.Cli/                    ← CLI entry point, delegates to Core
-│   ├── Program.cs                      ← subcommands: compile / analyze / backdoor /
+│   ├── Program.cs                      ← subcommands: encode / analyze / backdoor /
 │   │                                      list / provision / test
 │   └── Washmachine.Cli.csproj
 │

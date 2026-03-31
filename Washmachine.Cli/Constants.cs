@@ -10,7 +10,7 @@ public static class CliConstants
     public const double HighEntropyThreshold = 7.0;
 
     // Backdoor injection methods
-    public static readonly string[] BackdoorMethods = { "code-cave", "new-section", "section-ext" };
+    public static readonly string[] BackdoorMethods = { "code-cave", "new-section", "section-ext", "text-pad", "tls-callback" };
 
     // Strip extraction modes
     public static readonly string[] StripModes = { "all", "section", "range", "overlay" };

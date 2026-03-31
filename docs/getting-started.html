@@ -218,6 +218,74 @@ dotnet publish washmachine.csproj -c Release</code></pre>
                     <li>Session artifacts (<code>source.cpp</code>, <code>build_log.txt</code>) are saved under <code>logging/session_&lt;timestamp&gt;_&lt;uuid&gt;/</code></li>
                 </ol>
 
+                <h3>PE Backdooring</h3>
+                <p>Washmachine can inject shellcode directly into an existing PE file. The recommended workflow:</p>
+
+                <ol>
+                    <li><strong>Analyze the target PE</strong> to discover its structure, sections, and available code caves:
+                        <pre><code>washmachine-cli analyze target.exe</code></pre>
+                    </li>
+                    <li><strong>Choose an injection method</strong> based on the analysis output — see the comparison table below.</li>
+                    <li><strong>Inject the payload:</strong>
+                        <pre><code>washmachine-cli backdoor --pe target.exe -s payload.bin -m &lt;method&gt;</code></pre>
+                    </li>
+                    <li><strong>Verify the output</strong> by analyzing the patched file:
+                        <pre><code>washmachine-cli analyze target.backdoored.exe</code></pre>
+                    </li>
+                </ol>
+
+                <h4>Injection Method Comparison</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Method</th>
+                            <th>How It Works</th>
+                            <th>Stealth</th>
+                            <th>Size Limit</th>
+                            <th>Arch</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>code-cave</code></td>
+                            <td>Finds null-byte gaps in existing sections</td>
+                            <td>High — no structural changes</td>
+                            <td>Limited by cave size</td>
+                            <td>x86 / x64</td>
+                        </tr>
+                        <tr>
+                            <td><code>new-section</code></td>
+                            <td>Adds a new PE section for the payload</td>
+                            <td>Low — new entry in section table</td>
+                            <td>Unlimited</td>
+                            <td>x86 / x64</td>
+                        </tr>
+                        <tr>
+                            <td><code>section-ext</code></td>
+                            <td>Extends the last PE section</td>
+                            <td>Medium — no new header, but last section grows</td>
+                            <td>Unlimited</td>
+                            <td>x86 / x64</td>
+                        </tr>
+                        <tr>
+                            <td><code>text-pad</code></td>
+                            <td>Writes into .text VirtualSize↔RawSize padding gap</td>
+                            <td>High — no structural changes, no file size change</td>
+                            <td>Limited by padding gap</td>
+                            <td>x86 / x64</td>
+                        </tr>
+                        <tr>
+                            <td><code>tls-callback</code></td>
+                            <td>Creates a TLS callback that runs before main</td>
+                            <td>Medium — adds TLS directory entry</td>
+                            <td>Unlimited</td>
+                            <td>x64 only</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <p>For full option details, see the <a href="cli-reference.html">CLI Reference</a>.</p>
+
                 <h2>Initial Setup</h2>
 
                 <h3>Download Bin2Shell</h3>

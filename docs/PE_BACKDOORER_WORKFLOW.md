@@ -1162,9 +1162,9 @@ Washmachine was inspired in part by PE-patching ideas seen in projects like BDF-
 
 That does not make every shellcode universally injectable, but it removes one very common failure mode.
 
-### Note on the compile -> strip route
+### Note on the encode -> strip route
 
-The repo contains a `compile` command, a `strip` command, and even helper code in the GUI for a `compile -> strip -> backdoor` style workflow.
+The repo contains an `encode` command, a `strip` command, and even helper code in the GUI for an `encode -> strip -> backdoor` style workflow.
 
 However, runtime smoke testing showed an important limitation:
 
@@ -1269,7 +1269,7 @@ That work belongs primarily in `PeBackdoorService`.
 Needed work:
 
 - build or generate a truly position-independent encoded payload
-- validate that any compile/strip-derived payload is safe for generic PE backdooring
+- validate that any encode/strip-derived payload is safe for generic PE backdooring
 - add a supported preparation workflow before reintroducing any backdoor-stage encoding surface
 
 ### 18.3 Honor `PreserveOriginalEntry`
