@@ -46,19 +46,6 @@ The standout feature is the YAML-based playbook system. When a technique gets fl
 
 ---
 
-## Documentation
-
-📚 **Full documentation is available at [https://0xhmza.github.io/washmachine/](https://0xhmza.github.io/washmachine/)**
-
-The documentation website includes:
-- **[Getting Started](https://0xhmza.github.io/washmachine/getting-started.html)** — Installation, building, and initial setup
-- **[CLI Reference](https://0xhmza.github.io/washmachine/cli-reference.html)** — Complete command documentation with examples
-- **[Architecture](https://0xhmza.github.io/washmachine/architecture.html)** — Project structure, design patterns, and key flows
-
-The documentation source files are located in the `docs/` directory and are automatically published to GitHub Pages.
-
----
-
 ## Features
 
 | Feature | Details |
