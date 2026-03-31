@@ -1,8 +1,13 @@
 # Washmachine
 
-> A CLI-first shellcode loader builder with a WinUI 3 desktop app — driven entirely by a single YAML catalog.
+> Template based Evasion Framework.
 
-Washmachine wraps the full shellcode-loader workflow into one tool: pick a shellcode source, choose a C++ template, stack pluggable feature snippets (anti-debugging, evasion, guardrails, process injection, shellcode execution, UAC bypass), and compile with whatever toolchain is on the machine. Available as both a **standalone CLI** (`washmachine-cli`) and a **WinUI 3 desktop app**.
+Washmachine is a modular, template-driven shellcode evasion framework built for red teamers and security researchers.
+Shellcode is processed through a customizable pipeline with three core phases: Encoding → Backdooring → Packing — each configurable to fit your operational needs.
+The standout feature is the YAML-based playbook system. When a technique gets flagged by a new static or behavioral signature, simply update the relevant playbook (or give it to a LLM to rewrite it 🙄).
+
+⚠️ Active development — more techniques and pipeline stages coming soon.
+
 
 📖 **[View Full Documentation](https://0xhmza.github.io/washmachine/)** — Complete documentation website with getting started guide, CLI reference, and architecture details.
 
