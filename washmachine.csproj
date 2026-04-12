@@ -89,4 +89,14 @@
     <Copy SourceFiles="@(_PriFile)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
   </Target>
 
+  <!-- Remove AI projection DLLs that ship with WindowsAppSDK 1.8+ but are unused by this app -->
+  <Target Name="RemoveUnusedAIProjectionDlls" AfterTargets="Build;Publish">
+    <ItemGroup>
+      <_AIProjectionDlls Include="$(OutputPath)Microsoft.Windows.AI*.Projection.dll" />
+      <_AIProjectionPublishDlls Include="$(PublishDir)Microsoft.Windows.AI*.Projection.dll" />
+    </ItemGroup>
+    <Delete Files="@(_AIProjectionDlls)" ContinueOnError="true" />
+    <Delete Files="@(_AIProjectionPublishDlls)" ContinueOnError="true" />
+  </Target>
+
 </Project>
