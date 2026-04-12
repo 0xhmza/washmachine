@@ -27,7 +27,7 @@ $outputDir = Join-Path $repoRoot "testing assets\binary\output"
 
 # Auto-detect CLI
 if (-not $CliPath) {
-    $CliPath = Join-Path $repoRoot "Output\cli\Debug\net8.0\washmachine-cli.exe"
+    $CliPath = Join-Path $repoRoot "Output\Debug\washmachine-cli.exe"
 }
 if (-not (Test-Path $CliPath)) {
     Write-Host "ERROR: CLI not found at $CliPath — build first with 'dotnet build'" -ForegroundColor Red

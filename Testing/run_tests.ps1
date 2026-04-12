@@ -41,7 +41,7 @@ $ErrorActionPreference = "Stop"
 # ── Resolve paths ─────────────────────────────────────────────────────────────
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $repoRoot  = Split-Path -Parent $scriptDir
-$cliOutDir = Join-Path $repoRoot "Output\cli\Debug\net8.0"
+$cliOutDir = Join-Path $repoRoot "Output\Debug"
 $exePath   = Join-Path $cliOutDir "washmachine-cli.exe"
 
 if (-not (Test-Path $exePath)) {

@@ -2,5 +2,11 @@
   <PropertyGroup>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- All projects in the solution share one flat output directory.
+         Output\Debug\ or Output\Release\ — no per-framework or per-RID subdirectories. -->
+    <BaseOutputPath>$(MSBuildThisFileDirectory)Output\</BaseOutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
   </PropertyGroup>
 </Project>

@@ -15,9 +15,6 @@
     <!-- Deterministic builds -->
     <Deterministic>true</Deterministic>
     <PathMap>$(MSBuildProjectDirectory)=.</PathMap>
-
-    <!-- Output under repo-root Output/cli/ so CLI artifacts stay separate from GUI -->
-    <BaseOutputPath>$(MSBuildProjectDirectory)\..\Output\cli</BaseOutputPath>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)'=='Debug'">
@@ -37,7 +34,7 @@
     <PublishSingleFile>true</PublishSingleFile>
     <PublishReadyToRun>true</PublishReadyToRun>
     <StripSymbols>true</StripSymbols>
-    <PublishDir>$(BaseOutputPath)\publish\</PublishDir>
+    <PublishDir>$(BaseOutputPath)Release\publish\</PublishDir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -50,19 +47,9 @@
     <Content Include="..\testing assets\binary\shellcodes\messagebox.bin" Link="messagebox.bin" CopyToOutputDirectory="PreserveNewest"
               Condition="Exists('..\testing assets\binary\shellcodes\messagebox.bin')" />
   </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Spectre.Console" Version="*" />
   </ItemGroup>
-  <!-- After building CLI, copy all output files next to washmachine.exe (GUI output dir) -->
-  <Target Name="CopyCliToGuiOutput" AfterTargets="Build">
-    <PropertyGroup>
-      <GuiOutputDir>$(MSBuildProjectDirectory)\..\Output\$(Configuration)\net8.0-windows10.0.19041.0\</GuiOutputDir>
-    </PropertyGroup>
-    <MakeDir Directories="$(GuiOutputDir)" Condition="!Exists('$(GuiOutputDir)')" />
-    <ItemGroup>
-      <_CliFiles Include="$(OutputPath)\washmachine-cli.*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(_CliFiles)" DestinationFolder="$(GuiOutputDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
-  </Target>
 
 </Project>

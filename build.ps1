@@ -28,8 +28,8 @@ Write-Host "Building washmachine ($Config)..." -ForegroundColor Cyan
 dotnet build "$root\washmachine.sln" -c $Config --nologo
 if ($LASTEXITCODE -ne 0) { Write-Host "Build failed." -ForegroundColor Red; exit 1 }
 
-$guiExe = "$root\Output\$Config\net8.0-windows10.0.19041.0\washmachine.exe"
-$cliExe = "$root\Output\$Config\net8.0-windows10.0.19041.0\washmachine-cli.exe"
+$guiExe = "$root\Output\$Config\washmachine.exe"
+$cliExe = "$root\Output\$Config\washmachine-cli.exe"
 
 Write-Host ""
 Write-Host "Output:" -ForegroundColor Green
