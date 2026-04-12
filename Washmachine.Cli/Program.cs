@@ -712,7 +712,10 @@ public static class Program
     private static async Task<int> RunEncodeAsync(string[] args)
     {
         if (args.Length == 0)
+        {
+            await PrintEncoderCatalogAsync();
             return await RunSubMode("encode", RunEncodeAsync, PrintEncodeUsage);
+        }
 
         string? shellcodeFilePath = null;
         string? shellcodeHex = null;
@@ -2624,12 +2627,80 @@ public static class Program
                     await provisioner.EnsureRequirementsAsync(reporter);
                 });
 
+            AnsiConsole.WriteLine();
+            await PrintEncoderCatalogAsync();
             return 0;
         }
         catch (Exception ex)
         {
             logger.Error($"Provisioning failed: {ex.Message}");
             return 1;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  encoder catalog helpers
+    // ═══════════════════════════════════════════════════════════════════════
+
+    private static bool IsProvisioned()
+    {
+        var paths = new AppPaths();
+        return File.Exists(paths.Bin2ShellScript) && File.Exists(paths.Bin2ShellAlgos);
+    }
+
+    private static async Task PrintEncoderCatalogAsync()
+    {
+        var paths = new AppPaths();
+
+        if (!IsProvisioned())
+        {
+            AnsiConsole.MarkupLine($"[{UiColors.Warning}]⚠ Bin2Shell is not provisioned.[/] Run [{UiColors.Accent}]provision[/] to download Bin2Shell and unlock encoders and envelopes.");
+            return;
+        }
+
+        var runner = new Bin2ShellRunner(paths);
+        var service = new ShellcodeEncodingCatalogService(runner, paths);
+
+        try
+        {
+            var catalog = await service.GetCatalogAsync();
+
+            if (catalog.Encoders.Count > 0)
+            {
+                var encTable = new Table()
+                    .Border(TableBorder.Rounded)
+                    .BorderColor(UiColors.BoxBorderColor)
+                    .Title($"[bold {UiColors.Header}]Encoders[/] [{UiColors.Muted}]({catalog.Encoders.Count})[/]")
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]#[/]").Width(5))
+                    .AddColumn($"[{UiColors.Accent}]Name[/]")
+                    .AddColumn($"[{UiColors.Accent}]Description[/]");
+
+                foreach (var e in catalog.Encoders)
+                    encTable.AddRow($"[{UiColors.Hex}]{e.Index}[/]", $"[{UiColors.Value}]{Markup.Escape(e.Name)}[/]", $"[{UiColors.Muted}]{Markup.Escape(e.Description)}[/]");
+
+                AnsiConsole.Write(encTable);
+            }
+
+            if (catalog.Envelopes.Count > 0)
+            {
+                AnsiConsole.WriteLine();
+                var envTable = new Table()
+                    .Border(TableBorder.Rounded)
+                    .BorderColor(UiColors.BoxBorderColor)
+                    .Title($"[bold {UiColors.Header}]Envelopes[/] [{UiColors.Muted}]({catalog.Envelopes.Count})[/]")
+                    .AddColumn(new TableColumn($"[{UiColors.Accent}]#[/]").Width(5))
+                    .AddColumn($"[{UiColors.Accent}]Name[/]")
+                    .AddColumn($"[{UiColors.Accent}]Description[/]");
+
+                foreach (var e in catalog.Envelopes)
+                    envTable.AddRow($"[{UiColors.Hex}]{e.Index}[/]", $"[{UiColors.Value}]{Markup.Escape(e.Name)}[/]", $"[{UiColors.Muted}]{Markup.Escape(e.Description)}[/]");
+
+                AnsiConsole.Write(envTable);
+            }
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[{UiColors.Warning}]⚠ Could not load encoding catalog: {Markup.Escape(ex.Message)}[/]");
         }
     }
 
@@ -2683,6 +2754,7 @@ public static class Program
                 $"  Run [{UiColors.Accent}]list --templates[/] to see available code templates.",
                 $"  Run [{UiColors.Accent}]list --encoders[/] to see available Bin2Shell encoders and envelopes.",
             }));
+        PrintEncoderCatalogAsync().GetAwaiter().GetResult();
         return 0;
     }
 
