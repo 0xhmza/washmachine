@@ -3,11 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Washmachine - A CLI-first shellcode loader builder with WinUI 3 desktop app">
-    <title>Washmachine - Shellcode Loader Builder</title>
+    <meta name="description" content="Washmachine — Template-driven shellcode evasion framework. CLI-first with WinUI 3 desktop app. YAML playbooks, 89 snippets, 5 PE injection methods.">
+    <title>Washmachine — The Last Shellcode Loader Builder You'll Ever Need</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+
+    <!-- ============================== Navigation ============================== -->
     <header>
         <nav>
             <div class="container">
@@ -26,131 +28,250 @@
     </header>
 
     <main>
+
+        <!-- ============================== Hero ============================== -->
         <section class="hero">
             <div class="container">
                 <h2>Washmachine</h2>
-                <p class="tagline">A CLI-first shellcode loader builder with a WinUI 3 desktop app — driven entirely by a single YAML catalog.</p>
+                <p class="tagline">The last shellcode loader builder you'll ever need.</p>
+                <p class="hero-subtitle">Template-driven evasion powered by YAML playbooks. Build, encode, inject, and deploy — all from one tool. No recompilation. No juggling. Just results.</p>
                 <div class="cta-buttons">
                     <a href="getting-started.html" class="btn btn-primary">Get Started</a>
                     <a href="https://github.com/0xhmza/washmachine" class="btn btn-secondary" target="_blank">View on GitHub</a>
                 </div>
+                <div class="hero-badges">
+                    <span class="badge badge-gold">89 Snippets</span>
+                    <span class="badge badge-gold">5 Injection Methods</span>
+                    <span class="badge badge-gold">6 Templates</span>
+                    <span class="badge">CLI + GUI</span>
+                    <span class="badge">.NET 8.0</span>
+                </div>
             </div>
         </section>
 
+        <!-- ============================== Stats ============================== -->
+        <section class="stats-section">
+            <div class="container">
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-number">89</div>
+                        <div class="stat-label">Code Snippets</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">10</div>
+                        <div class="stat-label">Playbook Categories</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">5</div>
+                        <div class="stat-label">Injection Methods</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">6</div>
+                        <div class="stat-label">Ready Templates</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">4</div>
+                        <div class="stat-label">Extraction Modes</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">3</div>
+                        <div class="stat-label">Compiler Backends</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================== Why Washmachine ============================== -->
+        <section class="why-section">
+            <div class="container">
+                <h2 class="gradient-text">Why Washmachine?</h2>
+                <hr class="divider">
+                <p class="section-intro">Other tools make you choose between flexibility and power. Washmachine gives you both — wrapped in a single, opinionated workflow that just works.</p>
+                <div class="why-grid">
+                    <div class="why-card">
+                        <h3>🔄 Adapt, Don't Rewrite</h3>
+                        <p>When a technique gets flagged, update the YAML playbook. No code changes, no recompilation. Hand it to an LLM if you want — the playbook is all you need.</p>
+                    </div>
+                    <div class="why-card">
+                        <h3>🏗️ One Tool, Full Pipeline</h3>
+                        <p>From raw shellcode to encoded loader to backdoored PE — the entire offensive workflow lives under one roof. No juggling between five different tools.</p>
+                    </div>
+                    <div class="why-card">
+                        <h3>⌨️ CLI-First, GUI-Ready</h3>
+                        <p>Every feature works headlessly through the CLI for automation and scripting. Prefer a visual workflow? The WinUI 3 desktop app has you covered with the exact same capabilities.</p>
+                    </div>
+                    <div class="why-card">
+                        <h3>🌍 Community-Extensible</h3>
+                        <p>Custom templates, custom snippets, custom sections — all through YAML. Share your playbooks, import others'. The ecosystem grows without touching C#.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================== Features ============================== -->
         <section class="features">
             <div class="container">
-                <h2>Features</h2>
+                <h2>Everything You Need</h2>
+                <hr class="divider">
+                <p class="section-intro">Ten capabilities that cover the entire shellcode lifecycle — from input to deployment. Every one of them battle-tested.</p>
                 <div class="feature-grid">
                     <div class="feature-card">
-                        <h3>🔄 Multiple Shellcode Sources</h3>
-                        <p>Support for file (.bin), raw hex paste, URL (web delivery), or built-in test payload</p>
+                        <span class="feature-icon">🗂️</span>
+                        <h3>Shellcode Input Flexibility</h3>
+                        <p>File, hex paste, URL web delivery, or built-in test payload. Every operational scenario covered — no format left behind.</p>
                     </div>
                     <div class="feature-card">
-                        <h3>🌐 Web Payload Wizard</h3>
-                        <p>Step-by-step UI to configure encoding, envelope, and web-fetch helper via Bin2Shell</p>
+                        <span class="feature-icon">📄</span>
+                        <h3>YAML Playbook Engine</h3>
+                        <p>One file defines every C++ template and snippet. Add new evasion techniques in minutes. Share playbooks across teams without touching source code.</p>
                     </div>
                     <div class="feature-card">
-                        <h3>📝 YAML Template Engine</h3>
-                        <p>One file defines every C++ template and snippet — no recompile needed to add new techniques</p>
+                        <span class="feature-icon">🔌</span>
+                        <h3>89 Pluggable Snippets <span class="badge badge-solid">NEW</span></h3>
+                        <p>Anti-debugging, anti-emulation, guardrails, process injection, shellcode execution, UAC bypass, sleep obfuscation — stack and combine freely across 10 categories.</p>
                     </div>
                     <div class="feature-card">
-                        <h3>🔌 Pluggable Snippets</h3>
-                        <p>Anti-debugging, evasion, guardrails, process injection, shellcode execution, UAC bypass</p>
+                        <span class="feature-icon">💉</span>
+                        <h3>5 PE Injection Methods</h3>
+                        <p>Code cave (stealth king), new section (unlimited payload), section extension, text section padding (zero file growth), and TLS callback (pre-main execution).</p>
                     </div>
                     <div class="feature-card">
-                        <h3>🔍 Auto-discovered Compiler</h3>
-                        <p>Detects MSVC (cl.exe), GCC (g++.exe), or Clang (clang++.exe) from PATH and VS install paths</p>
+                        <span class="feature-icon">🔐</span>
+                        <h3>Bin2Shell Encoding</h3>
+                        <p>XOR, RC4, AES, and more. Stack encoders with envelopes — Base64, Base32, Base91. Anti-emulation options baked right in.</p>
                     </div>
                     <div class="feature-card">
-                        <h3>🔐 Payload Encoding</h3>
-                        <p>Bin2Shell integration for encoder, envelope, anti-emulation, and web-helper selection</p>
+                        <span class="feature-icon">🔍</span>
+                        <h3>PE Analysis Engine</h3>
+                        <p>Deep-dive into any PE: headers, sections, imports, code caves. Know exactly where to inject before you commit.</p>
                     </div>
                     <div class="feature-card">
-                        <h3>🔧 PE Backdooring</h3>
-                        <p>5 injection methods: code cave, new section, section extension, text section padding, and TLS callback</p>
+                        <span class="feature-icon">📦</span>
+                        <h3>Binary Stripping</h3>
+                        <p>Extract flat shellcode from compiled PEs. Four modes: entry-point, section, all-exec, and raw range — surgical precision extraction.</p>
                     </div>
                     <div class="feature-card">
-                        <h3>📦 Binary Stripping</h3>
-                        <p>Extract flat shellcode from PE files with 4 extraction modes</p>
+                        <span class="feature-icon">🌐</span>
+                        <h3>Web Payload Wizard</h3>
+                        <p>Step-by-step hosted payload setup. Configures encoding, envelope, fetch helper, and verifies the endpoint is live before you deploy.</p>
+                    </div>
+                    <div class="feature-card">
+                        <span class="feature-icon">🔧</span>
+                        <h3>Auto-Discovered Compilers</h3>
+                        <p>Detects MSVC, GCC, or Clang automatically from PATH and Visual Studio install paths. Missing a compiler? MinGW gets downloaded and configured for you.</p>
+                    </div>
+                    <div class="feature-card">
+                        <span class="feature-icon">🧪</span>
+                        <h3>Built-In Test Harness</h3>
+                        <p>Three-phase automated testing: encoding combos, template permutations, and multi-shellcode validation. Know your payloads work before they matter.</p>
                     </div>
                 </div>
             </div>
         </section>
 
-        <section class="overview">
+        <!-- ============================== Workflow ============================== -->
+        <section class="workflow-section">
             <div class="container">
-                <h2>Overview</h2>
-                <p>Washmachine wraps the full shellcode-loader workflow into one tool: pick a shellcode source, choose a C++ template, stack pluggable feature snippets (anti-debugging, evasion, guardrails, process injection, shellcode execution, UAC bypass), and compile with whatever toolchain is on the machine.</p>
-
-                <p>Available as both a <strong>standalone CLI</strong> (<code>washmachine-cli</code>) and a <strong>WinUI 3 desktop app</strong>.</p>
-
-                <h3>Requirements</h3>
-                <div class="requirements-grid">
-                    <div class="requirement-card">
-                        <h4>CLI (washmachine-cli)</h4>
-                        <ul>
-                            <li><strong>OS:</strong> Windows 10 1809+ / Windows 11</li>
-                            <li><strong>.NET:</strong> 8.0 Runtime x64</li>
-                            <li><strong>C++ Compiler:</strong> MSVC, MinGW-w64, or Clang</li>
-                            <li><strong>Python:</strong> 3.10+ (for Bin2Shell)</li>
-                        </ul>
+                <h2>From Shellcode to Deployment in Minutes</h2>
+                <hr class="divider">
+                <p class="section-intro">Six steps. One tool. No context switching.</p>
+                <div class="workflow-steps">
+                    <div class="workflow-step">
+                        <div class="step-number">1</div>
+                        <h3>Choose Your Source</h3>
+                        <p>File, hex, URL, or test payload — start from wherever your shellcode lives.</p>
                     </div>
-                    <div class="requirement-card">
-                        <h4>Desktop App (washmachine)</h4>
-                        <ul>
-                            <li><strong>OS:</strong> Windows 10 1809+ / Windows 11</li>
-                            <li><strong>.NET:</strong> 8.0 Desktop Runtime x64</li>
-                            <li><strong>Windows App SDK:</strong> 1.8 Runtime</li>
-                            <li><strong>C++ Compiler:</strong> MSVC, MinGW-w64, or Clang</li>
-                            <li><strong>Python:</strong> 3.10+ (for Bin2Shell)</li>
-                        </ul>
+                    <div class="workflow-step">
+                        <div class="step-number">2</div>
+                        <h3>Pick a Template</h3>
+                        <p>Select from 6 ready-made C++ templates or write your own in the YAML playbook.</p>
+                    </div>
+                    <div class="workflow-step">
+                        <div class="step-number">3</div>
+                        <h3>Stack Your Snippets</h3>
+                        <p>Mix anti-debugging, guardrails, process injection, and more. 89 snippets to choose from.</p>
+                    </div>
+                    <div class="workflow-step">
+                        <div class="step-number">4</div>
+                        <h3>Encode &amp; Build</h3>
+                        <p>Bin2Shell encoding plus automatic compilation with your preferred toolchain.</p>
+                    </div>
+                    <div class="workflow-step">
+                        <div class="step-number">5</div>
+                        <h3>Backdoor a PE</h3>
+                        <p>Inject into any target executable with 5 different methods — from stealth to brute force.</p>
+                    </div>
+                    <div class="workflow-step">
+                        <div class="step-number">6</div>
+                        <h3>Deploy</h3>
+                        <p>Your payload is ready. Test, validate, and deliver with confidence.</p>
                     </div>
                 </div>
             </div>
         </section>
 
+        <!-- ============================== Use Cases ============================== -->
+        <section class="use-cases">
+            <div class="container">
+                <h2>Built For</h2>
+                <hr class="divider">
+                <div class="use-case-grid">
+                    <div class="use-case-card">
+                        <span class="use-case-icon">🎯</span>
+                        <h3>Red Team Operations</h3>
+                        <p>Full-featured payload generation pipeline for authorized engagements. From initial access to persistence — every stage covered.</p>
+                    </div>
+                    <div class="use-case-card">
+                        <span class="use-case-icon">🔬</span>
+                        <h3>Security Research</h3>
+                        <p>Experiment with evasion techniques in a controlled, reproducible environment. Iterate fast, test faster.</p>
+                    </div>
+                    <div class="use-case-card">
+                        <span class="use-case-icon">🛡️</span>
+                        <h3>Purple Team Exercises</h3>
+                        <p>Generate known-technique payloads to validate detection capabilities. Measure your defenses against real-world attack patterns.</p>
+                    </div>
+                    <div class="use-case-card">
+                        <span class="use-case-icon">📚</span>
+                        <h3>Training &amp; Education</h3>
+                        <p>Learn how shellcode loaders, PE injection, and evasion techniques work under the hood. The YAML playbooks make every technique transparent.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================== Quick Start ============================== -->
         <section class="quick-start">
             <div class="container">
-                <h2>Quick Start</h2>
+                <h2>See It in Action</h2>
+                <hr class="divider" style="background: linear-gradient(90deg, var(--accent-gold), var(--accent-gold-light));">
+                <p class="section-intro" style="color: rgba(255,255,255,0.7);">Four commands that show the breadth of what Washmachine can do.</p>
                 <div class="code-example">
-                    <h3>Building</h3>
-                    <pre><code># Build all three projects
-dotnet build washmachine.sln</code></pre>
-                </div>
+                    <pre><code># Build a loader with guardrails — domain-locked execution
+washmachine-cli encode -s payload.bin -t default --snippet guardrails=domain_check
 
-                <div class="code-example">
-                    <h3>CLI Examples</h3>
-                    <pre><code># Encode from a .bin shellcode file
-washmachine-cli encode -s payload.bin -t shellcode-minimal
+# Backdoor a PE via TLS callback — runs before main(), pre-entry stealth
+washmachine-cli backdoor --pe target.exe -s payload.bin -m tls-callback
 
-# Encode with XOR encoding
-washmachine-cli encode -s payload.bin -e 1 --json
-
-# Analyze a PE file
+# Deep-dive PE analysis with structured JSON output
 washmachine-cli analyze target.exe --json
 
-# Inject shellcode into an existing PE (new section method)
-washmachine-cli backdoor --pe target.exe -s payload.bin -m new-section
-
-# Inject via TLS callback (x64 only — runs before main)
-washmachine-cli backdoor --pe target.exe -s payload.bin -m tls-callback -o backdoored.exe
-
-# Extract flat shellcode from a PE
-washmachine-cli strip loader.exe -o shellcode.bin
-
-# List available templates and compilers
-washmachine-cli list --templates
-washmachine-cli list --compilers</code></pre>
+# Browse all 89 available snippets across 10 categories
+washmachine-cli list --snippets</code></pre>
                 </div>
             </div>
         </section>
+
     </main>
 
+    <!-- ============================== Footer ============================== -->
     <footer>
         <div class="container">
-            <p>&copy; 2026 Washmachine. For educational and authorized security testing purposes only.</p>
+            <p>&copy; 2026 Washmachine. Built on .NET 8.0.</p>
             <p><a href="https://github.com/0xhmza/washmachine">GitHub Repository</a></p>
+            <p class="footer-disclaimer">For educational and authorized security testing purposes only.</p>
         </div>
     </footer>
+
 </body>
 </html>

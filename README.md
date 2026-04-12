@@ -1,10 +1,12 @@
 # <img src="Icon/icon-128.png" width="40" height="40" align="absmiddle" /> Washmachine
 
-> Template based Evasion Framework.
+> **The last shellcode loader builder you'll ever need.**
 
-Washmachine is a modular, template-driven shellcode evasion framework built for red teamers and security researchers.
-Shellcode is processed through a customizable pipeline with three core phases: Encoding → Backdooring → Packing — each configurable to fit your operational needs.
-The standout feature is the YAML-based playbook system. When a technique gets flagged by a new static or behavioral signature, simply update the relevant playbook (or give it to a LLM to rewrite it 🙄).
+Washmachine is a modular, template-driven shellcode evasion framework built for red teamers and security researchers. From raw shellcode to fully backdoored PE — the entire offensive pipeline lives under one roof.
+
+The standout feature is the **YAML-based playbook system**. Every C++ template and code snippet is defined in a single `.yaml` catalog — **89 snippets** across **10 categories**, **6 templates**, and **5 PE injection methods** — all swappable without touching the codebase. When a technique gets flagged by a new signature, update the playbook. Hand it to an LLM if you want. No recompilation needed.
+
+Available as both a **standalone CLI** (`washmachine-cli`) with an interactive REPL shell, and a **WinUI 3 desktop app** with the exact same capabilities.
 
 ⚠️ Active development.
 
@@ -56,7 +58,9 @@ The standout feature is the YAML-based playbook system. When a technique gets fl
 | 🔌 **Pluggable Snippet Sections** | Mix and match independently selectable modules: anti-debugging, evasion, guardrails, process injection, shellcode execution, and UAC bypass. Extend with your own custom snippets directly in the playbook |
 | 🔍 **Auto-Discovered Compiler** | Automatically detects MSVC (`cl.exe`), GCC (`g++.exe`), or Clang (`clang++.exe`) from PATH, common Visual Studio install paths, and `VCToolsInstallDir`. No compiler found? MinGW is fetched and configured automatically |
 | 🔄 **EXE → Flat Binary Conversion** | Seamlessly converts the compiled encoded `.exe` to a raw `.bin` for downstream pipeline stages such as backdooring |
-| 💉 **PE Backdooring** | Inject your payload into any target PE binary — works with or without prior encoding through the CLI |
+| 💉 **5 PE Injection Methods** | Code cave (zero structural changes), new section (unlimited payload), section extension, text section padding (zero file growth), and TLS callback (pre-main execution, x64). Pick the right balance of stealth vs. capacity for every engagement |
+| 🔍 **PE Analysis Engine** | Deep-dive into any PE: headers, sections, imports, and code cave discovery. Know exactly where to inject before you commit |
+| 🧪 **Built-In Test Harness** | Three-phase automated testing: encoding combos, template permutations, and multi-shellcode validation. Know your payloads work before they matter |
 ---
 
 ## Requirements
@@ -93,7 +97,7 @@ washmachine-cli <command> [options]
 | `encode` | Encode shellcode via Bin2Shell and build a loader executable |
 | `analyze` | Analyze a PE file (headers, sections, imports, code caves) |
 | `strip` | Extract, remove, or dump PE sections and overlays |
-| `backdoor` | Inject shellcode into an existing PE via code-cave |
+| `backdoor` | Inject shellcode into an existing PE (5 methods: code-cave, new-section, section-ext, text-pad, tls-callback) |
 | `list` | List available templates, encoders, snippets, or compilers |
 | `provision` | Download and install required external tools (Bin2Shell) |
 | `test` | Run the automated test harness |

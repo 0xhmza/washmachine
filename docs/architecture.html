@@ -68,7 +68,10 @@ Washmachine.Core ──no internal project dependencies──</code></pre>
 │   ├── Bin2ShellRunner.cs          ← spawns python main.py
 │   ├── Bin2ShellWebOutputParser.cs ← parses Bin2Shell -w YAML output
 │   ├── PeAnalyzerService.cs        ← PE header / section analysis
-│   ├── PeBackdoorService.cs        ← PE backdoor injection (5 methods)
+│   ├── PeBackdoorService.cs        ← PE backdoor injection engine supporting 5 methods:
+│   │                                  code cave search, new section creation,
+│   │                                  section extension, text section padding,
+│   │                                  and TLS callback injection
 │   ├── RequirementProvisioner.cs   ← downloads Bin2Shell
 │   ├── ProgressReporter.cs         ← IProgressReporter + ConsoleProgressReporter
 │   ├── ShellcodeEncodingCatalogService.cs
@@ -83,11 +86,11 @@ Washmachine.Core ──no internal project dependencies──</code></pre>
                 <pre><code>Washmachine.Cli/
 ├── Program.cs                      ← subcommands: encode / analyze / backdoor /
 │                                      strip / list / provision / test
-├── Constants.cs                    ← shared constants
+├── Constants.cs                    ← shared constants &amp; method aliases
 ├── Ui/
-│   ├── UiColors.cs                 ← luxury color palette
-│   ├── UsageFormatter.cs           ← MSF-style help renderer
-│   └── TableFactory.cs             ← styled table factory
+│   ├── UiColors.cs                 ← centralized bright-on-black color palette
+│   ├── UsageFormatter.cs           ← MSF-style panel-based help renderer
+│   └── TableFactory.cs             ← styled table factory for CLI output
 └── Washmachine.Cli.csproj</code></pre>
 
                 <h3>washmachine (GUI Application)</h3>
@@ -104,10 +107,11 @@ Washmachine.Core ──no internal project dependencies──</code></pre>
 │   ├── UiDataFactory.cs            ← walks WinUI visual tree → UIData
 │   ├── UserInteractionService.cs
 │   └── WindowProgressReporter.cs   ← IProgressReporter wrapping RequirementsProgressWindow
-├── Views/                          ← WinUI pages & windows
+├── Views/                          ← WinUI pages &amp; windows
 │   ├── MainPage.xaml[.cs]
+│   ├── CompilePage.xaml[.cs]       ← encode page (builds loaders)
 │   ├── BackdooringPage.xaml[.cs]
-│   ├── SettingsPage.xaml[.cs]
+│   ├── SettingsPage.xaml[.cs]      ← collapsible settings with WinUI Expanders
 │   ├── WebPayloadWizardWindow.cs
 │   └── RequirementsProgressWindow.cs
 ├── App.xaml[.cs]

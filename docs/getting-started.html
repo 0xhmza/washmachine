@@ -29,6 +29,9 @@
         <section class="content">
             <div class="container">
                 <h1>Getting Started</h1>
+                <p>Get up and running with Washmachine in minutes. This guide covers everything from installation to your first encoded payload and PE backdoor.</p>
+
+                <!-- ── Requirements ─────────────────────────────────── -->
 
                 <h2>Requirements</h2>
 
@@ -92,14 +95,14 @@
                     </tbody>
                 </table>
 
+                <!-- ── Building from Source ──────────────────────────── -->
+
                 <h2>Building from Source</h2>
 
-                <h3>Clone the Repository</h3>
+                <h3>Clone &amp; Build</h3>
                 <pre><code>git clone https://github.com/0xhmza/washmachine.git
-cd washmachine</code></pre>
-
-                <h3>Build All Projects</h3>
-                <pre><code>dotnet build washmachine.sln</code></pre>
+cd washmachine
+dotnet build washmachine.sln</code></pre>
 
                 <p>Debug outputs:</p>
                 <table>
@@ -131,9 +134,56 @@ dotnet publish Washmachine.Cli\Washmachine.Cli.csproj -c Release</code></pre>
                 <pre><code># GUI — framework-dependent → Output\Release\publish\
 dotnet publish washmachine.csproj -c Release</code></pre>
 
-                <h2>Usage Guide</h2>
+                <!-- ── Initial Setup ────────────────────────────────── -->
 
-                <h3>Shellcode Sources</h3>
+                <h2>Initial Setup</h2>
+
+                <h3>Bin2Shell Provisioning</h3>
+                <p>Bin2Shell is required for encoding features and is downloaded automatically on first run:</p>
+
+                <h4>CLI</h4>
+                <pre><code>washmachine-cli provision</code></pre>
+
+                <h4>GUI</h4>
+                <p>The GUI will prompt automatically on first launch if Bin2Shell is not present.</p>
+
+                <!-- ── Quick Start Guide ────────────────────────────── -->
+
+                <h2>Quick Start Guide</h2>
+
+                <h3>1. Your First Encoded Payload</h3>
+                <pre><code># List available templates
+washmachine-cli list --templates
+
+# Encode a shellcode file with the minimal template
+washmachine-cli encode -s payload.bin -t shellcode-minimal
+
+# Encode with XOR encoding
+washmachine-cli encode -s payload.bin -e 1 --verbose</code></pre>
+
+                <h3>2. Exploring the Catalog</h3>
+                <pre><code># See what snippets are available
+washmachine-cli list --snippets
+
+# See available encoders
+washmachine-cli list --encoders
+
+# Check which compilers are detected
+washmachine-cli list --compilers</code></pre>
+
+                <h3>3. Your First PE Backdoor</h3>
+                <pre><code># Analyze target PE
+washmachine-cli analyze target.exe
+
+# Inject shellcode via code cave
+washmachine-cli backdoor --pe target.exe -s payload.bin -m code-cave
+
+# Verify the result
+washmachine-cli analyze target.backdoored.exe</code></pre>
+
+                <!-- ── Shellcode Sources ─────────────────────────────── -->
+
+                <h2>Shellcode Sources</h2>
                 <p>Choose one source mode from the Source section:</p>
 
                 <table>
@@ -163,7 +213,9 @@ dotnet publish washmachine.csproj -c Release</code></pre>
                     </tbody>
                 </table>
 
-                <h3>Web Payload Wizard</h3>
+                <!-- ── Web Payload Wizard ─────────────────────────────── -->
+
+                <h2>Web Payload Wizard</h2>
                 <p>When URL mode is selected, click Web Payload Wizard to:</p>
                 <ol>
                     <li>Choose an encoder and envelope from Bin2Shell's catalog</li>
@@ -172,7 +224,9 @@ dotnet publish washmachine.csproj -c Release</code></pre>
                     <li>On success, the generated C++ fetch + decode code is stitched into the template automatically</li>
                 </ol>
 
-                <h3>Templates</h3>
+                <!-- ── Templates ──────────────────────────────────────── -->
+
+                <h2>Templates</h2>
                 <p>The Template combo lists every <code>id</code> defined under <code>templates:</code> in <code>Assets/vx_api_snippets.yaml</code>. Two ship by default:</p>
 
                 <table>
@@ -194,12 +248,22 @@ dotnet publish washmachine.csproj -c Release</code></pre>
                     </tbody>
                 </table>
 
-                <h3>Snippet Sections</h3>
+                <!-- ── Snippet Sections ──────────────────────────────── -->
+
+                <h2>Snippet Sections</h2>
                 <p>Each template placeholder of <code>kind: snippet</code> maps to one section in the catalog. The UI renders a dropdown per section populated with that section's items.</p>
                 <p>Sections that declare <code>allowMultiple: true</code> (e.g. Anti Debugging) let you stack several snippets; others allow only one choice.</p>
                 <p>Sections that declare <code>inputs</code> render extra text boxes in the UI for parameters (e.g. target process name for process injection, guardrail condition string).</p>
 
-                <h3>Encoding Options</h3>
+                <h3>Using Snippets from the CLI</h3>
+                <p>Format: <code>--snippet &lt;section&gt;=&lt;snippet_id&gt;</code></p>
+                <p>Example:</p>
+                <pre><code>washmachine-cli encode -s payload.bin --snippet antidebugging=IsDebuggerPresentCheck</code></pre>
+                <p>Use <code>washmachine-cli list --snippets</code> to see all available snippet IDs grouped by section.</p>
+
+                <!-- ── Encoding Options ──────────────────────────────── -->
+
+                <h2>Encoding Options</h2>
                 <p>The Encoding panel (enabled only when Bin2Shell is present) exposes:</p>
                 <ul>
                     <li><strong>Encoder</strong> — transforms the raw shellcode bytes (XOR, RC4, AES, etc.)</li>
@@ -207,7 +271,9 @@ dotnet publish washmachine.csproj -c Release</code></pre>
                     <li><strong>Anti-emulation</strong> — adds sandbox-detection arguments to the Bin2Shell invocation</li>
                 </ul>
 
-                <h3>Compilation</h3>
+                <!-- ── Compilation Pipeline ──────────────────────────── -->
+
+                <h2>Compilation Pipeline</h2>
                 <p>After clicking Go, the pipeline runs in order:</p>
                 <ol>
                     <li>Shellcode is encoded via Bin2Shell (if encoding is configured)</li>
@@ -218,7 +284,9 @@ dotnet publish washmachine.csproj -c Release</code></pre>
                     <li>Session artifacts (<code>source.cpp</code>, <code>build_log.txt</code>) are saved under <code>logging/session_&lt;timestamp&gt;_&lt;uuid&gt;/</code></li>
                 </ol>
 
-                <h3>PE Backdooring</h3>
+                <!-- ── PE Backdooring ────────────────────────────────── -->
+
+                <h2>PE Backdooring</h2>
                 <p>Washmachine can inject shellcode directly into an existing PE file. The recommended workflow:</p>
 
                 <ol>
@@ -234,7 +302,7 @@ dotnet publish washmachine.csproj -c Release</code></pre>
                     </li>
                 </ol>
 
-                <h4>Injection Method Comparison</h4>
+                <h3>Injection Method Comparison</h3>
                 <table>
                     <thead>
                         <tr>
@@ -284,18 +352,41 @@ dotnet publish washmachine.csproj -c Release</code></pre>
                     </tbody>
                 </table>
 
+                <h3>Carrier Types</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Carrier</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>entry-point</code></td>
+                            <td>Hijack the PE entry point (default)</td>
+                        </tr>
+                        <tr>
+                            <td><code>tls-callback</code></td>
+                            <td>TLS callback — runs before main (x64)</td>
+                        </tr>
+                        <tr>
+                            <td><code>dll-main</code></td>
+                            <td>Hook DllMain (DLL targets)</td>
+                        </tr>
+                        <tr>
+                            <td><code>dll-export</code></td>
+                            <td>Hook a DLL export function</td>
+                        </tr>
+                        <tr>
+                            <td><code>entry-func</code></td>
+                            <td>Backdoor JMP/CALL in entry function</td>
+                        </tr>
+                    </tbody>
+                </table>
+
                 <p>For full option details, see the <a href="cli-reference.html">CLI Reference</a>.</p>
 
-                <h2>Initial Setup</h2>
-
-                <h3>Download Bin2Shell</h3>
-                <p>Bin2Shell is required for encoding features and is downloaded automatically on first run:</p>
-
-                <h4>CLI</h4>
-                <pre><code>washmachine-cli provision</code></pre>
-
-                <h4>GUI</h4>
-                <p>The GUI will prompt automatically on first launch if Bin2Shell is not present.</p>
+                <!-- ── Next Steps ─────────────────────────────────────── -->
 
                 <h2>Next Steps</h2>
                 <ul>
