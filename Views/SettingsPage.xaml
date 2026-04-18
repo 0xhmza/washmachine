@@ -1,4 +1,4 @@
-﻿<Page x:Class="Washmachine.Views.SettingsPage"
+<Page x:Class="Washmachine.Views.SettingsPage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -6,48 +6,70 @@
       mc:Ignorable="d"
       NavigationCacheMode="Enabled">
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,32,0,0">
-        <StackPanel Margin="36,24,36,24" Spacing="24">
+    <Grid Background="Transparent">
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Padding="0,32,0,0">
+            <StackPanel Margin="{StaticResource PageMargin}"
+                        Orientation="Vertical"
+                        Width="{StaticResource ContentMaxWidth}"
+                        HorizontalAlignment="Center">
 
-            <StackPanel>
-                <TextBlock Text="Settings" FontSize="28" FontWeight="SemiBold" />
-                <TextBlock Text="Manage templates and application preferences."
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           Margin="0,4,0,0" />
-            </StackPanel>
-
-            <!-- ── Template Import ─────────────────────────────── -->
-            <Expander x:Name="templateExpander"
-                      HorizontalAlignment="Stretch"
-                      HorizontalContentAlignment="Stretch"
-                      IsExpanded="True">
-                <Expander.Header>
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <FontIcon Glyph="&#xE8B5;" FontSize="16" />
-                        <TextBlock Text="Template Import" FontSize="16" FontWeight="SemiBold"
-                                   VerticalAlignment="Center" />
+                <!-- Page header -->
+                <StackPanel Margin="0,0,0,16">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <FontIcon Glyph="&#xE80F;" FontSize="11" Margin="0,2,4,0" VerticalAlignment="Center"
+                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock Text="Application" Margin="2,0,0,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text=" › " Margin="0,0,5,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="Settings" FontSize="12" VerticalAlignment="Center" />
                     </StackPanel>
-                </Expander.Header>
-                <Expander.Content>
-                    <StackPanel Spacing="12" Padding="4,8,4,4">
-                        <TextBlock Text="Import a template catalog from a URL or local file."
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <StackPanel Margin="0,20,0,20" Orientation="Horizontal" VerticalAlignment="Center">
+                        <FontIcon Glyph="&#xE713;" FontSize="30" Margin="0,2,12,0" />
+                        <StackPanel>
+                            <TextBlock Text="Settings" Style="{StaticResource PageTitleText}" />
+                            <TextBlock Text="Manage templates and application preferences."
+                                       Style="{StaticResource PageSubtitleText}"
+                                       Margin="0,4,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
 
-                        <TextBlock Text="Import from URL:" Margin="0,4,0,0" />
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="templateCatalogUrl"
-                                     PlaceholderText="https://example.com/vx_api_snippets.yaml"
-                                     Margin="0,0,8,0" />
-                            <Button x:Name="importTemplateUrlButton"
-                                    Grid.Column="1"
-                                    Content="Import URL"
-                                    MinWidth="110"
-                                    Click="importTemplateUrlButton_Click" />
-                        </Grid>
+                <Border Style="{StaticResource SectionDivider}" />
+
+                <!-- Template Import -->
+                <Expander x:Name="templateExpander"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Stretch"
+                          IsExpanded="True"
+                          Margin="0,0,0,4">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <FontIcon Glyph="&#xE8B5;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Template Import" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Expander.Header>
+                    <StackPanel Margin="0,12,0,4" Spacing="12">
+                        <TextBlock Text="Import a template catalog from a URL or local file."
+                                   Style="{StaticResource SectionSubtitleText}" />
+
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Import from URL" Style="{StaticResource SectionSubtitleText}" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="templateCatalogUrl"
+                                         PlaceholderText="https://example.com/vx_api_snippets.yaml"
+                                         Margin="0,0,8,0" />
+                                <Button x:Name="importTemplateUrlButton"
+                                        Grid.Column="1"
+                                        Content="Import URL"
+                                        MinWidth="110"
+                                        Click="importTemplateUrlButton_Click" />
+                            </Grid>
+                        </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button x:Name="importTemplateFileButton"
@@ -60,61 +82,121 @@
                                     Click="openTemplateFolderButton_Click" />
                         </StackPanel>
                     </StackPanel>
-                </Expander.Content>
-            </Expander>
+                </Expander>
 
-            <!-- ── Session Logging ─────────────────────────────── -->
-            <Expander x:Name="loggingExpander"
-                      HorizontalAlignment="Stretch"
-                      HorizontalContentAlignment="Stretch"
-                      IsExpanded="True">
-                <Expander.Header>
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <FontIcon Glyph="&#xE9D9;" FontSize="16" />
-                        <TextBlock Text="Session Logging" FontSize="16" FontWeight="SemiBold"
-                                   VerticalAlignment="Center" />
-                    </StackPanel>
-                </Expander.Header>
-                <Expander.Content>
-                    <StackPanel Spacing="12" Padding="4,8,4,4">
+                <Border Style="{StaticResource SectionDivider}" />
+
+                <!-- Session Logging -->
+                <Expander x:Name="loggingExpander"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Stretch"
+                          IsExpanded="True"
+                          Margin="0,0,0,4">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <FontIcon Glyph="&#xE9D9;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Session Logging" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Expander.Header>
+                    <StackPanel Margin="0,12,0,4" Spacing="12">
                         <TextBlock Text="Control what gets saved when a backdoor operation runs."
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                   Style="{StaticResource SectionSubtitleText}" />
 
-                        <ToggleSwitch x:Name="toggleSessionLogging"
-                                      Header="Enable Session Logging"
-                                      OnContent="On" OffContent="Off"
-                                      Toggled="toggleSessionLogging_Toggled" />
-                        <TextBlock Text="Automatically create a session log folder for each backdoor operation"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   Margin="0,-8,0,0" />
+                        <Border Style="{StaticResource CardBorder}">
+                            <Grid Padding="20,16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="3*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="4,0,16,0">
+                                    <TextBlock Text="Enable Session Logging" Style="{StaticResource SectionTitleText}" />
+                                    <TextBlock Text="Automatically create a session log folder for each backdoor operation."
+                                               Style="{StaticResource SectionSubtitleText}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                                <ToggleSwitch x:Name="toggleSessionLogging"
+                                              Grid.Column="1"
+                                              OnContent="On" OffContent="Off"
+                                              Toggled="toggleSessionLogging_Toggled"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              MinWidth="0" Margin="8,0,8,0" Header="" />
+                            </Grid>
+                        </Border>
 
-                        <ToggleSwitch x:Name="toggleSaveBinary"
-                                      Header="Save Binary Artifact"
-                                      OnContent="On" OffContent="Off"
-                                      Toggled="toggleSaveBinary_Toggled" />
-                        <TextBlock Text="Copy the backdoored output binary into the session folder"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   Margin="0,-8,0,0" />
+                        <Border Style="{StaticResource CardBorder}">
+                            <Grid Padding="20,16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="3*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="4,0,16,0">
+                                    <TextBlock Text="Save Binary Artifact" Style="{StaticResource SectionTitleText}" />
+                                    <TextBlock Text="Copy the backdoored output binary into the session folder."
+                                               Style="{StaticResource SectionSubtitleText}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                                <ToggleSwitch x:Name="toggleSaveBinary"
+                                              Grid.Column="1"
+                                              OnContent="On" OffContent="Off"
+                                              Toggled="toggleSaveBinary_Toggled"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              MinWidth="0" Margin="8,0,8,0" Header="" />
+                            </Grid>
+                        </Border>
 
-                        <ToggleSwitch x:Name="toggleSaveShellcode"
-                                      Header="Save Shellcode Copy"
-                                      OnContent="On" OffContent="Off"
-                                      Toggled="toggleSaveShellcode_Toggled" />
-                        <TextBlock Text="Copy the original shellcode .bin into the session folder"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   Margin="0,-8,0,0" />
+                        <Border Style="{StaticResource CardBorder}">
+                            <Grid Padding="20,16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="3*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="4,0,16,0">
+                                    <TextBlock Text="Save Shellcode Copy" Style="{StaticResource SectionTitleText}" />
+                                    <TextBlock Text="Copy the original shellcode .bin into the session folder."
+                                               Style="{StaticResource SectionSubtitleText}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                                <ToggleSwitch x:Name="toggleSaveShellcode"
+                                              Grid.Column="1"
+                                              OnContent="On" OffContent="Off"
+                                              Toggled="toggleSaveShellcode_Toggled"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              MinWidth="0" Margin="8,0,8,0" Header="" />
+                            </Grid>
+                        </Border>
 
-                        <ToggleSwitch x:Name="toggleVerboseLogging"
-                                      Header="Verbose File Logging"
-                                      OnContent="On" OffContent="Off"
-                                      Toggled="toggleVerboseLogging_Toggled" />
-                        <TextBlock Text="Include debug-level messages in the session log file"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   Margin="0,-8,0,0" />
+                        <Border Style="{StaticResource CardBorder}">
+                            <Grid Padding="20,16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="3*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="4,0,16,0">
+                                    <TextBlock Text="Verbose File Logging" Style="{StaticResource SectionTitleText}" />
+                                    <TextBlock Text="Include debug-level messages in the session log file."
+                                               Style="{StaticResource SectionSubtitleText}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                                <ToggleSwitch x:Name="toggleVerboseLogging"
+                                              Grid.Column="1"
+                                              OnContent="On" OffContent="Off"
+                                              Toggled="toggleVerboseLogging_Toggled"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              MinWidth="0" Margin="8,0,8,0" Header="" />
+                            </Grid>
+                        </Border>
                     </StackPanel>
-                </Expander.Content>
-            </Expander>
+                </Expander>
 
-        </StackPanel>
-    </ScrollViewer>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
 </Page>

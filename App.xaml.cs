@@ -1,10 +1,12 @@
 using Microsoft.UI.Xaml;
+using Washmachine.Views;
 
 namespace Washmachine;
 
 public partial class App : Application
 {
     internal static Window? ActiveWindow { get; private set; }
+    internal static StartupOutcome? StartupOutcome { get; private set; }
 
     public App()
     {
@@ -21,13 +23,35 @@ public partial class App : Application
     {
         try
         {
-            ActiveWindow = new MainWindow();
-            ActiveWindow.Activate();
+            var startup = new StartupWindow();
+            startup.Show();
+            _ = RunStartupAsync(startup);
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[FATAL] {ex}");
             ShowFatalError(ex.Message);
+        }
+    }
+
+    private static async Task RunStartupAsync(StartupWindow startup)
+    {
+        try
+        {
+            StartupOutcome = await startup.RunAsync();
+
+            // Open the main window BEFORE closing the startup window — otherwise
+            // the last-window-closed heuristic begins app shutdown and the new
+            // MainWindow gets activated into a dying process.
+            ActiveWindow = new MainWindow();
+            ActiveWindow.Activate();
+            startup.Close();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[FATAL] startup: {ex}");
+            try { startup.Close(); } catch { }
+            ShowFatalError($"Startup failed: {ex.Message}");
         }
     }
 

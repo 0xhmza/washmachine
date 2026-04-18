@@ -57,6 +57,7 @@ Available as both a **standalone CLI** (`washmachine-cli`) with an interactive R
 | 📄 **YAML Template Engine** | A single `.yaml` playbook defines all C++ templates and available snippets. Swap, add, or retire techniques without touching the codebase or recompiling |
 | 🔌 **Pluggable Snippet Sections** | Mix and match independently selectable modules: anti-debugging, evasion, guardrails, process injection, shellcode execution, and UAC bypass. Extend with your own custom snippets directly in the playbook |
 | 🔍 **Auto-Discovered Compiler** | Automatically detects MSVC (`cl.exe`), GCC (`g++.exe`), or Clang (`clang++.exe`) from PATH, common Visual Studio install paths, and `VCToolsInstallDir`. No compiler found? MinGW is fetched and configured automatically |
+| 🧩 **Output Finalization** | Clone resources/icon/metadata from a donor `.exe` and optionally append configurable NOP padding bytes during post-compilation |
 | 🔄 **EXE → Flat Binary Conversion** | Seamlessly converts the compiled encoded `.exe` to a raw `.bin` for downstream pipeline stages such as backdooring |
 | 💉 **5 PE Injection Methods** | Code cave (zero structural changes), new section (unlimited payload), section extension, text section padding (zero file growth), and TLS callback (pre-main execution, x64). Pick the right balance of stealth vs. capacity for every engagement |
 | 🔍 **PE Analysis Engine** | Deep-dive into any PE: headers, sections, imports, and code cave discovery. Know exactly where to inject before you commit |
@@ -73,6 +74,7 @@ Available as both a **standalone CLI** (`washmachine-cli`) with an interactive R
 | .NET | 8.0 Runtime x64 |
 | C++ Compiler | Any of: MSVC (VS Build Tools), MinGW-w64 `g++`, or `clang++` on PATH |
 | Python | 3.10+ on PATH — required for Bin2Shell encoding features |
+| Optional encoder tool | SGN (Shikata Ga Nai) — auto-provisioned by `washmachine-cli provision` |
 
 ### For the GUI / Desktop App (`washmachine`)
 
@@ -83,6 +85,7 @@ Available as both a **standalone CLI** (`washmachine-cli`) with an interactive R
 | Windows App SDK | 1.8 Runtime |
 | C++ Compiler | Any of: MSVC (VS Build Tools), MinGW-w64 `g++`, or `clang++` on PATH |
 | Python | 3.10+ on PATH — required for Bin2Shell encoding features |
+| Optional encoder tool | SGN (Shikata Ga Nai) — auto-provisioned on first-run provisioning |
 
 ---
 
@@ -99,7 +102,7 @@ washmachine-cli <command> [options]
 | `strip` | Extract, remove, or dump PE sections and overlays |
 | `backdoor` | Inject shellcode into an existing PE (5 methods: code-cave, new-section, section-ext, text-pad, tls-callback) |
 | `list` | List available templates, encoders, snippets, or compilers |
-| `provision` | Download and install required external tools (Bin2Shell) |
+| `provision` | Download and install required external tools (Bin2Shell + SGN) |
 | `test` | Run the automated test harness |
 
 ### Examples
@@ -110,6 +113,12 @@ washmachine-cli encode -s payload.bin -t shellcode-minimal
 
 # Encode with XOR encoding, output as JSON
 washmachine-cli encode -s payload.bin -e 1 --json
+
+# Apply Shikata Ga Nai before Bin2Shell
+washmachine-cli encode -s payload.bin --sgn --shikata-enc 2 --shikata-max 64
+
+# Clone resources/metadata from donor EXE and add 1 MB NOP padding
+washmachine-cli encode -s payload.bin --clone-from donor.exe --pad-nops 1048576
 
 # Analyze a PE file
 washmachine-cli analyze target.exe --json
@@ -216,6 +225,7 @@ The **Encoding** panel (enabled only when Bin2Shell is present) exposes:
 
 - **Encoder** — transforms the raw shellcode bytes (XOR, RC4, AES, etc.)
 - **Envelope** — wraps the encoded payload (Base64, Base32, Base91, etc.)
+- **Shikata Ga Nai (optional)** — preprocesses shellcode before Bin2Shell with configurable encode count and decoder-obfuscation max bytes
 - **Anti-emulation** — adds sandbox-detection arguments to the Bin2Shell invocation
 
 These options are read live from Bin2Shell's help output, so new algorithms added to `algos.yaml` appear automatically.
@@ -224,12 +234,23 @@ These options are read live from Bin2Shell's help output, so new algorithms adde
 
 After clicking **Go**, the pipeline runs in order:
 
-1. Shellcode is encoded via Bin2Shell (if encoding is configured)
-2. Snippets are collected; their `includes` and `implementation` blocks are deduplicated and merged
-3. The selected template's `content` is rendered — all `{{PLACEHOLDER}}` tokens are substituted
-4. The final `.cpp` source is written to `temp/cpp/`
-5. The compiler is invoked; output exe lands in `temp/cpp/Compiled BInaries/`
-6. Session artifacts (`source.cpp`, `build_log.txt`) are saved under `logging/session_<timestamp>_<uuid>/`
+1. Raw shellcode is optionally transformed with **Shikata Ga Nai**
+2. Shellcode is encoded via **Bin2Shell**
+3. Snippets are collected; their `includes` and `implementation` blocks are deduplicated and merged
+4. The selected template's `content` is rendered — all `{{PLACEHOLDER}}` tokens are substituted
+5. The final `.cpp` source is written to `temp/cpp/`
+6. The compiler is invoked; output exe lands in `temp/cpp/Compiled BInaries/`
+7. Optional post-compile stages can run: strip loader to `.bin`, backdoor a target PE, then pack
+8. Session artifacts (`source.cpp`, `build_log.txt`) are saved under `logging/session_<timestamp>_<uuid>/`
+
+### Finalize Output (GUI)
+
+Use the **Finalize** page to configure post-compilation output processing:
+
+1. Import a donor `.exe` and choose whether to clone resources, icon, and metadata
+2. Confirm import settings
+3. Optionally set NOP padding byte size
+4. Build from **Compile** page — finalization is applied to the generated output
 
 ---
 

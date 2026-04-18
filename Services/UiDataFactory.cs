@@ -30,6 +30,14 @@ public static class UiDataFactory
                 case TextBox textBox:
                     textBoxes[key] = textBox.Text ?? string.Empty;
                     break;
+                case NumberBox numberBox:
+                    textBoxes[key] = numberBox.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    break;
+                case CheckBox checkBox:
+                    textBoxes[key] = checkBox.IsChecked == true
+                        ? bool.TrueString
+                        : bool.FalseString;
+                    break;
                 case ComboBox comboBox:
                     comboBoxes[key] = comboBox.SelectedValue?.ToString()
                                       ?? comboBox.SelectedItem?.ToString()

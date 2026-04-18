@@ -113,6 +113,7 @@ public sealed partial class CompilePage : Page
         var mainPage = MainPage.Instance;
         var backdoorPage = BackdooringPage.Instance;
         var packingPage = PackingPage.Instance;
+        var finalizePage = FinalizePage.Instance;
 
         // ── Payload summary ────────────────────────────────────────────
         if (mainPage != null)
@@ -147,6 +148,11 @@ public sealed partial class CompilePage : Page
                 SummaryEncoder.Text = mainPage.EncoderCombo.SelectedItem.ToString() ?? "None";
             else
                 SummaryEncoder.Text = "None";
+
+            if (mainPage.IsShikataGaNaiEnabled)
+            {
+                SummaryEncoder.Text = $"{SummaryEncoder.Text} + SGN (x{mainPage.ShikataGaNaiEncodeCount}, max {mainPage.ShikataGaNaiMaxBytes} bytes)";
+            }
 
             // Envelope
             if (mainPage.EnvelopeCombo.SelectedItem is not null)
@@ -222,13 +228,21 @@ public sealed partial class CompilePage : Page
         }
 
         // ── Build pipeline description ─────────────────────────────────
-        var steps = new List<string> { "Compile payload" };
+        var steps = new List<string> { "Template compile" };
+        if (mainPage?.IsShikataGaNaiEnabled == true)
+            steps.Insert(0, "Shikata Ga Nai");
+        steps.Insert(mainPage?.IsShikataGaNaiEnabled == true ? 1 : 0, "Bin2Shell");
         if (StripToBinCheck?.IsChecked == true)
             steps.Add("Strip to .bin");
         if (backdoorPage?.IsBackdooringEnabled == true)
             steps.Add("Backdoor PE");
         if (packingPage?.IsPackingEnabled == true)
             steps.Add("Pack with UPX");
+        if (finalizePage is { IsFinalizationEnabled: true } &&
+            (finalizePage.IsCloneEnabled || finalizePage.NopPaddingBytes > 0))
+        {
+            steps.Add("Finalize output");
+        }
         steps.Add("Output");
         BuildDescription.Text = string.Join(" → ", steps);
     }
@@ -740,6 +754,7 @@ public sealed partial class CompilePage : Page
         }
 
         var args = new List<string> { "encode" };
+        var finalizePage = FinalizePage.Instance;
 
         // Shellcode source
         switch (mainPage.CurrentShellcodeSource)
@@ -797,6 +812,13 @@ public sealed partial class CompilePage : Page
         if (envelopeIndex.HasValue)
             args.AddRange(["-v", envelopeIndex.Value.ToString()]);
 
+        if (mainPage.IsShikataGaNaiEnabled)
+        {
+            args.Add("--shikata-ga-nai");
+            args.AddRange(["--shikata-enc", mainPage.ShikataGaNaiEncodeCount.ToString()]);
+            args.AddRange(["--shikata-max", mainPage.ShikataGaNaiMaxBytes.ToString()]);
+        }
+
         // Snippets — read from coordinator's template options (combos live in the dialog, not the visual tree)
         var templateOptions = mainPage.Coordinator.TemplateOptions;
         foreach (var (key, value) in templateOptions.ComboValues)
@@ -805,6 +827,22 @@ public sealed partial class CompilePage : Page
             {
                 args.AddRange(["--snippet", $"{key}={value}"]);
                 _logger.Debug($"[ui] snippet arg: {key}={value}");
+            }
+        }
+
+        if (finalizePage is { IsFinalizationEnabled: true })
+        {
+            if (finalizePage.IsCloneEnabled && !string.IsNullOrWhiteSpace(finalizePage.CloneSourceExePath))
+            {
+                args.AddRange(["--clone-from", finalizePage.CloneSourceExePath]);
+                args.Add(finalizePage.CloneResources ? "--clone-resources" : "--no-clone-resources");
+                args.Add(finalizePage.CloneIcon ? "--clone-icon" : "--no-clone-icon");
+                args.Add(finalizePage.CloneMetadata ? "--clone-metadata" : "--no-clone-metadata");
+            }
+
+            if (finalizePage.NopPaddingBytes > 0)
+            {
+                args.AddRange(["--pad-nops", finalizePage.NopPaddingBytes.ToString()]);
             }
         }
 

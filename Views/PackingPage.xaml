@@ -7,47 +7,59 @@
       NavigationCacheMode="Required">
 
     <Grid Background="Transparent">
-        <StackPanel Margin="{StaticResource PageMargin}">
-            <!-- Breadcrumb -->
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,8" Spacing="4">
-                <TextBlock Text="Home" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                <TextBlock Text="›" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                <TextBlock Text="Packing" />
-            </StackPanel>
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Padding="0,32,0,0">
+            <StackPanel Margin="{StaticResource PageMargin}"
+                        Orientation="Vertical"
+                        Width="{StaticResource ContentMaxWidth}"
+                        HorizontalAlignment="Center">
 
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                <FontIcon Glyph="&#xE7B8;" FontSize="22" Margin="0,2,12,0" />
-                <StackPanel>
-                    <TextBlock Text="Packing Configuration" Style="{StaticResource PageTitleText}" />
-                    <TextBlock Text="Configure packing and compression for the final executable."
-                               Style="{StaticResource PageSubtitleText}"
-                               Margin="0,4,0,0" />
+                <!-- Page header -->
+                <StackPanel Margin="0,0,0,16">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <FontIcon Glyph="&#xE80F;" FontSize="11" Margin="0,2,4,0" VerticalAlignment="Center"
+                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock Text="Pipeline" Margin="2,0,0,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text=" › " Margin="0,0,5,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="Packing" FontSize="12" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Margin="0,20,0,20" Orientation="Horizontal" VerticalAlignment="Center">
+                        <FontIcon Glyph="&#xE7B8;" FontSize="30" Margin="0,2,12,0" />
+                        <StackPanel>
+                            <TextBlock Text="Packing Configuration" Style="{StaticResource PageTitleText}" />
+                            <TextBlock Text="Configure packing and compression for the final executable."
+                                       Style="{StaticResource PageSubtitleText}"
+                                       Margin="0,4,0,0" />
+                        </StackPanel>
+                    </StackPanel>
                 </StackPanel>
-            </StackPanel>
 
-            <Border Style="{StaticResource SectionDivider}" />
+                <Border Style="{StaticResource SectionDivider}" />
 
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Spacing="16" MaxWidth="700" HorizontalAlignment="Left">
+                <StackPanel Spacing="16">
 
                     <!-- Enable Packing Toggle -->
                     <Border Style="{StaticResource CardBorder}">
-                        <Grid Margin="16">
+                        <Grid Padding="20,16">
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="3*" />
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="4,0,16,0">
                                 <TextBlock Text="Enable Packing" Style="{StaticResource SectionTitleText}" />
                                 <TextBlock Text="Pack the output executable using UPX compression."
                                            Style="{StaticResource SectionSubtitleText}"
+                                           TextWrapping="Wrap"
                                            Margin="0,4,0,0" />
                             </StackPanel>
-                            <ToggleSwitch x:Name="EnablePackingToggle" 
-                                          Grid.Column="1" 
-                                          IsOn="False" 
+                            <ToggleSwitch x:Name="EnablePackingToggle"
+                                          Grid.Column="1"
+                                          IsOn="False"
                                           Toggled="EnablePackingToggle_Toggled"
-                                          VerticalAlignment="Center" />
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          MinWidth="0" Margin="8,0,8,0" Header="" />
                         </Grid>
                     </Border>
 
@@ -160,8 +172,8 @@
                                 </Grid.ColumnDefinitions>
                                 <FontIcon Glyph="&#xE768;" Grid.Column="0" Margin="0,0,12,0" Foreground="{ThemeResource AccentFillColorDefaultBrush}" />
                                 <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Next: Compile" FontWeight="SemiBold" />
-                                    <TextBlock Text="Build the final executable with all settings"
+                                    <TextBlock Text="Next: Finalize" FontWeight="SemiBold" />
+                                    <TextBlock Text="Configure post-compilation output settings"
                                                Style="{StaticResource CaptionTextBlockStyle}"
                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 </StackPanel>
@@ -173,7 +185,7 @@
                     </StackPanel> <!-- End PackingConfigPanel -->
 
                 </StackPanel>
-            </ScrollViewer>
-        </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
     </Grid>
 </Page>

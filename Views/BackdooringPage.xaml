@@ -10,19 +10,22 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled"
                       Padding="0,32,0,0">
-            <StackPanel Margin="{StaticResource PageMargin}" Orientation="Vertical">
+            <StackPanel Margin="{StaticResource PageMargin}"
+                        Orientation="Vertical"
+                        Width="{StaticResource ContentMaxWidth}"
+                        HorizontalAlignment="Center">
 
                 <!-- Page header -->
                 <StackPanel Margin="0,0,0,16">
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                         <FontIcon Glyph="&#xE80F;" FontSize="11" Margin="0,2,4,0" VerticalAlignment="Center"
                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock Text="Pipeline" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
-                        <TextBlock Text=" › " FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="Pipeline" Margin="2,0,0,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text=" › " Margin="0,0,5,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
                         <TextBlock Text="Backdooring" FontSize="12" VerticalAlignment="Center" />
                     </StackPanel>
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <FontIcon Glyph="&#xE72E;" FontSize="22" Margin="0,2,12,0" />
+                    <StackPanel Margin="0,20,0,20" Orientation="Horizontal" VerticalAlignment="Center">
+                        <FontIcon Glyph="&#xE72E;" FontSize="30" Margin="0,2,12,0" />
                         <StackPanel>
                             <TextBlock Text="PE Backdooring" Style="{StaticResource PageTitleText}" />
                             <TextBlock Text="Configure target executable for payload injection. Payload comes from the Payload page."
@@ -36,20 +39,22 @@
 
                 <!-- Enable/Disable Backdooring -->
                 <Border Style="{StaticResource CardBorder}" Margin="0,0,0,8">
-                    <Grid Margin="16">
+                    <Grid Padding="20,16">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="3*" />
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <StackPanel>
-                            <TextBlock Text="Enable PE Backdooring" FontWeight="SemiBold" />
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="4,0,16,0">
+                            <TextBlock Text="Enable PE Backdooring" Style="{StaticResource SectionTitleText}" />
                             <TextBlock Text="When enabled, the compiled payload will be injected into the target executable instead of generating a standalone loader."
                                        Style="{StaticResource SectionSubtitleText}"
                                        TextWrapping="Wrap"
                                        Margin="0,4,0,0" />
                         </StackPanel>
-                        <ToggleSwitch x:Name="EnableBackdooringToggle" Grid.Column="1" 
-                                      IsOn="False" Toggled="EnableBackdooringToggle_Toggled" />
+                        <ToggleSwitch x:Name="EnableBackdooringToggle" Grid.Column="1"
+                                      IsOn="False" Toggled="EnableBackdooringToggle_Toggled"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      MinWidth="0" Margin="8,0,8,0" Header=""/>
                     </Grid>
                 </Border>
 

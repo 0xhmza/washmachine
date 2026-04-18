@@ -12,6 +12,11 @@
             <Thickness x:Key="PageMargin">24,18,24,28</Thickness>
             <Thickness x:Key="SectionMargin">0,0,0,16</Thickness>
 
+            <!-- Windows Settings-style centered content width. Pages center a
+                 StackPanel with this MaxWidth so the rest of the page becomes
+                 side padding at wider window sizes. -->
+            <x:Double x:Key="ContentMaxWidth">760</x:Double>
+
             <Style x:Key="PageTitleText" TargetType="TextBlock">
                 <Setter Property="FontSize" Value="28" />
                 <Setter Property="FontWeight" Value="SemiBold" />

@@ -34,9 +34,14 @@
 
 
         <NavigationView.MenuItems>
-            <NavigationViewItem Content="Payload" Tag="MainPage">
+            <NavigationViewItem Content="Payload"
+                                Tag="MainPage"
+                                Foreground="#FFD14D4D"
+                                Background="#1AFF5C5C"
+                                BorderBrush="#66FF5C5C"
+                                BorderThickness="1">
                 <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE943;" />
+                    <FontIcon Glyph="&#xE943;" Foreground="#FFD14D4D" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem Content="Backdooring" Tag="BackdooringPage">
@@ -47,6 +52,11 @@
             <NavigationViewItem Content="Packing" Tag="PackingPage">
                 <NavigationViewItem.Icon>
                     <FontIcon Glyph="&#xE7B8;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="Finalize" Tag="FinalizePage">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE73E;" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem Content="Compile" Tag="CompilePage">

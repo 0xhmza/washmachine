@@ -8,8 +8,10 @@ public interface IAppPaths
     string AssetsDirectory { get; }
     string SnippetCatalogFile { get; }
     string ActivePlaybookPath { get; }
+    string ActivePlaybookFullPath { get; }
     string Bin2ShellScript { get; }
     string Bin2ShellAlgos { get; }
+    string SgnExecutable { get; }
     bool SetActivePlaybook(string playbookPath);
     IReadOnlyList<string> GetAvailablePlaybookFiles();
     string EnsureTempShellcodeDirectory();
@@ -38,6 +40,7 @@ public sealed class AppPaths : IAppPaths
 
         Bin2ShellScript = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "main.py");
         Bin2ShellAlgos = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "data", "yaml", "algos.yaml");
+        SgnExecutable = Path.Combine(ExecutableDirectory, "Tools", "SGN", "sgn.exe");
 
         _tempShellcodeDir = new Lazy<string>(CreateTempShellcodeDir, LazyThreadSafetyMode.ExecutionAndPublication);
         _tempSourceDir = new Lazy<string>(CreateTempSourceDirectory, LazyThreadSafetyMode.ExecutionAndPublication);
@@ -47,6 +50,15 @@ public sealed class AppPaths : IAppPaths
     public string AssetsDirectory { get; }
     public string SnippetCatalogFile { get; }
     public string ActivePlaybookPath
+    {
+        get
+        {
+            var fullPath = ActivePlaybookFullPath;
+            return Path.GetRelativePath(ExecutableDirectory, fullPath);
+        }
+    }
+
+    public string ActivePlaybookFullPath
     {
         get
         {
@@ -88,6 +100,7 @@ public sealed class AppPaths : IAppPaths
     }
     public string Bin2ShellScript { get; }
     public string Bin2ShellAlgos { get; }
+    public string SgnExecutable { get; }
 
     public bool SetActivePlaybook(string playbookPath)
     {
@@ -165,7 +178,7 @@ public sealed class AppPaths : IAppPaths
     {
         var errors = new List<string>();
 
-        if (!File.Exists(ActivePlaybookPath))
+        if (!File.Exists(ActivePlaybookFullPath))
             errors.Add($"Snippet catalog missing: '{ActivePlaybookPath}'.");
 
         return errors;

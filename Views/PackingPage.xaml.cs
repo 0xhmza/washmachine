@@ -239,7 +239,7 @@ public sealed partial class PackingPage : Page
             if (navView != null)
             {
                 var item = navView.MenuItems.OfType<NavigationViewItem>()
-                    .FirstOrDefault(i => i.Tag?.ToString() == "CompilePage");
+                    .FirstOrDefault(i => i.Tag?.ToString() == "FinalizePage");
                 if (item != null)
                 {
                     navView.SelectedItem = item;

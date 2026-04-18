@@ -21,6 +21,15 @@ public static class UiDataKeys
     /// <summary>Path to the shellcode .bin used by the URL wizard (URL source).</summary>
     public const string ShellcodeUrlFile = "shellcodeUrlFileInput";
 
+    /// <summary>Whether Shikata Ga Nai preprocessing is enabled.</summary>
+    public const string ShikataGaNaiEnabled = "shikataGaNaiEnabledCheckBox";
+
+    /// <summary>Shikata Ga Nai iteration count.</summary>
+    public const string ShikataGaNaiEncodeCount = "shikataGaNaiEncodeCountInput";
+
+    /// <summary>Shikata Ga Nai maximum decoder-obfuscation bytes.</summary>
+    public const string ShikataGaNaiMaxBytes = "shikataGaNaiMaxBytesInput";
+
     // ── ComboBox keys ─────────────────────────────────────────────────────────
 
     /// <summary>Bin2Shell encoder selection (index string).</summary>

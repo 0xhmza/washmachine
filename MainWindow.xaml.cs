@@ -28,20 +28,32 @@ public sealed partial class MainWindow : Window
             presenter.IsMaximizable = true;
             presenter.IsResizable = true;
         }
-        AppWindow.Changed += (s, e) =>
+        AppWindow.Changed += (_, e) =>
         {
-            if (e.DidSizeChange && s.Size.Width < 700)
+            if (!e.DidSizeChange)
+                return;
+
+            var size = AppWindow.Size;
+            const int minWidth = 700;
+            const int minHeight = 520;
+
+            int width = Math.Max(size.Width, minWidth);
+            int height = Math.Max(size.Height, minHeight);
+            if (width != size.Width || height != size.Height)
             {
-                s.Resize(new SizeInt32(700, s.Size.Height));
+                AppWindow.Resize(new SizeInt32(width, height));
             }
         };
 
         AppWindow.Resize(new SizeInt32(980, 820));
         var display = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
-        var work = display.WorkArea;
-        AppWindow.Move(new PointInt32(
-            work.X + (work.Width - 980) / 2,
-            work.Y + (work.Height - 820) / 2));
+        if (display != null)
+        {
+            var work = display.WorkArea;
+            AppWindow.Move(new PointInt32(
+                work.X + (work.Width - 980) / 2,
+                work.Y + (work.Height - 820) / 2));
+        }
 
         ContentFrame.Navigate(typeof(MainPage));
         mainNavigationView.SelectedItem = mainNavigationView.MenuItems[0];
@@ -64,6 +76,7 @@ public sealed partial class MainWindow : Window
             "MainPage" => typeof(MainPage),
             "CompilePage" => typeof(CompilePage),
             "PackingPage" => typeof(PackingPage),
+            "FinalizePage" => typeof(FinalizePage),
             "BackdooringPage" => typeof(BackdooringPage),
             _ => (Type?)null
         };

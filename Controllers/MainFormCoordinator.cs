@@ -675,7 +675,7 @@ public sealed class MainFormCoordinator
             return Task.CompletedTask;
         }
 
-        string targetPath = _paths.ActivePlaybookPath;
+        string targetPath = _paths.ActivePlaybookFullPath;
         string? backup = null;
 
         try

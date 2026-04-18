@@ -34,9 +34,15 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
         _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Requirements", "1.0"));
     }
 
-    public async Task EnsureRequirementsAsync(IProgressReporter? progress = null, CancellationToken cancellationToken = default)
+    public Task EnsureRequirementsAsync(IProgressReporter? progress = null, CancellationToken cancellationToken = default) =>
+        EnsureRequirementsAsync(progress, includeOptionalTools: false, cancellationToken);
+
+    public async Task EnsureRequirementsAsync(
+        IProgressReporter? progress,
+        bool includeOptionalTools,
+        CancellationToken cancellationToken = default)
     {
-        var missing = GetMissingRequirements().ToList();
+        var missing = GetMissingRequirements(includeOptionalTools).ToList();
         if (missing.Count == 0)
         {
             EnsureBin2ShellAlgorithmDescriptions();
@@ -80,13 +86,17 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
         }
     }
 
-    private IEnumerable<RequirementData> GetMissingRequirements()
+    private IEnumerable<RequirementData> GetMissingRequirements(bool includeOptionalTools)
     {
         string? bin2ShellDir = Path.GetDirectoryName(_paths.Bin2ShellScript);
         bool needsBin2Shell = string.IsNullOrWhiteSpace(bin2ShellDir)
                               || !Directory.Exists(bin2ShellDir)
                               || !File.Exists(_paths.Bin2ShellScript)
                               || !File.Exists(_paths.Bin2ShellAlgos);
+        string? sgnDir = Path.GetDirectoryName(_paths.SgnExecutable);
+        bool needsSgn = string.IsNullOrWhiteSpace(sgnDir)
+                        || !Directory.Exists(sgnDir)
+                        || !File.Exists(_paths.SgnExecutable);
 
         if (needsBin2Shell)
         {
@@ -97,6 +107,18 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
                 {
                     new Uri("https://github.com/0xhmza/bin2shell/archive/refs/heads/main.zip"),
                     new Uri("https://github.com/0xhmza/bin2shell/archive/refs/heads/master.zip")
+                });
+        }
+
+        if (includeOptionalTools && needsSgn)
+        {
+            yield return new RequirementData(
+                "SGN",
+                Path.Combine(_paths.ExecutableDirectory, "Tools", "SGN"),
+                new[]
+                {
+                    new Uri("https://github.com/EgeBalci/sgn/releases/download/v2.0.1/sgn_windows_amd64_2.0.1.zip"),
+                    new Uri("https://github.com/EgeBalci/sgn/releases/download/v2.0.1/sgn_windows_386_2.0.1.zip")
                 });
         }
     }

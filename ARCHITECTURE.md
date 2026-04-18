@@ -38,7 +38,8 @@ washmachine/
 │   │   ├── Bin2ShellWebOutputParser.cs ← parses Bin2Shell -w YAML output
 │   │   ├── PeAnalyzerService.cs        ← PE header / section analysis
 │   │   ├── PeBackdoorService.cs        ← PE code-cave injection
-│   │   ├── RequirementProvisioner.cs   ← downloads Bin2Shell if missing
+│   │   ├── PePostCompileService.cs     ← post-build resource clone + NOP padding
+│   │   ├── RequirementProvisioner.cs   ← downloads Bin2Shell + SGN if missing
 │   │   ├── ProgressReporter.cs         ← IProgressReporter + ConsoleProgressReporter
 │   │   ├── ShellcodeEncodingCatalogService.cs
 │   │   └── YamlCodeSnippetCatalogService.cs
@@ -68,6 +69,7 @@ washmachine/
 ├── Views/                              ← all WinUI pages & windows (GUI only)
 │   ├── MainPage.xaml[.cs]
 │   ├── BackdooringPage.xaml[.cs]
+│   ├── FinalizePage.xaml[.cs]
 │   ├── SettingsPage.xaml[.cs]
 │   ├── WebPayloadWizardWindow.cs
 │   ├── RequirementsProgressWindow.cs
@@ -108,6 +110,7 @@ UIData (control-value snapshot)
 CompilerService.CompileAsync(data)
     │
     ├─ YamlCodeSnippetCatalogService  ← resolves template + snippets from YAML
+    ├─ SGN (optional)                 ← optional Shikata Ga Nai preprocessing
     ├─ Bin2ShellRunner                ← optional encoding (spawns python main.py)
     │
     ▼
@@ -122,6 +125,8 @@ CppFileConverter.ConvertAsync()       ← cl.exe / g++ / clang++ subprocess
     │
     ▼
 <timestamp>-<sha256>.exe              ← output binary
+    │
+    └─► optional PePostCompileService ← clone donor EXE resources/icon/metadata + NOP padding
 logging/session_*/source.cpp          ← saved source
 logging/session_*/build_log.txt       ← compiler stdout/stderr
 ```
@@ -209,7 +214,7 @@ Assets\
 └── vx_api_snippets.yaml    ← YAML catalog (required at runtime)
 ```
 
-Bin2Shell is downloaded automatically on first use of encoding features (`washmachine-cli provision`).
+Bin2Shell and SGN are downloaded automatically on first use of encoding features (`washmachine-cli provision`).
 
 Runtime prerequisite: [.NET 8 Runtime x64](https://dotnet.microsoft.com/download/dotnet/8.0)
 
@@ -233,9 +238,9 @@ Runtime prerequisites:
 
 Both products rely on `Assets/vx_api_snippets.yaml` being present **next to the executable** (resolved via `AppPaths.AssetsDirectory`). Always include the `Assets/` folder alongside the binary.
 
-### Bin2Shell (optional, auto-provisioned)
+### Bin2Shell + SGN (optional, auto-provisioned)
 
-Bin2Shell is expected at `Tools\Bin2Shell\main.py` relative to the executable. It is downloaded automatically when:
+Bin2Shell is expected at `Tools\Bin2Shell\main.py` and SGN at `Tools\SGN\sgn.exe` relative to the executable. They are downloaded automatically when:
 - Running `washmachine-cli provision`
 - Launching the GUI for the first time (via `RequirementProvisioner`)
 

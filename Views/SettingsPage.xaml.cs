@@ -84,7 +84,7 @@ public sealed partial class SettingsPage : Page
 
     private void openTemplateFolderButton_Click(object sender, RoutedEventArgs e)
     {
-        var catalogDir = System.IO.Path.GetDirectoryName(_paths.ActivePlaybookPath);
+        var catalogDir = _paths.AssetsDirectory;
         if (!string.IsNullOrEmpty(catalogDir) && System.IO.Directory.Exists(catalogDir))
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
