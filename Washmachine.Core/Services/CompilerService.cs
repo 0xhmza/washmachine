@@ -174,6 +174,13 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         "shikataMaxBytes",
         "shikataMax"
     };
+    private static readonly string[] ShikataPlacementKeys =
+    {
+        UiDataKeys.ShikataGaNaiPlacement,
+        "shikataGaNaiPlacement",
+        "shikataPlacement",
+        "sgnPlacement"
+    };
 
     private readonly IAppPaths _paths;
     private readonly IBin2ShellRunner _bin2ShellRunner;
@@ -1960,7 +1967,25 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         bool enabled = TryGetBooleanValue(data, ShikataEnabledKeys, defaultValue: false);
         int encodeCount = TryGetPositiveIntValue(data, ShikataEncodeCountKeys, defaultValue: 1);
         int maxBytes = TryGetPositiveIntValue(data, ShikataMaxBytesKeys, defaultValue: 50);
-        return new ShikataGaNaiOptions(enabled, encodeCount, maxBytes);
+
+        string placement = "pre";
+        foreach (var key in ShikataPlacementKeys)
+        {
+            if (TryReadTextOrComboValue(data, key, out var raw) && !string.IsNullOrWhiteSpace(raw))
+            {
+                var trimmed = raw.Trim().ToLowerInvariant();
+                if (trimmed == "post" || trimmed == "pre")
+                {
+                    placement = trimmed;
+                    break;
+                }
+            }
+        }
+
+        // Only "pre" placement applies SGN in the encoding pipeline.
+        // "post" placement is handled by the build pipeline after strip-to-bin.
+        bool innerEnabled = enabled && placement == "pre";
+        return new ShikataGaNaiOptions(innerEnabled, encodeCount, maxBytes);
     }
 
     private static bool TryGetBooleanValue(UiData data, IReadOnlyList<string> keys, bool defaultValue)

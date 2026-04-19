@@ -32,62 +32,95 @@ public sealed class StartupWindow
 
     public StartupWindow()
     {
+        // Brand cluster — icon glyph + product/role text
+        var brandIcon = new FontIcon
+        {
+            Glyph = "\uE943",
+            FontSize = 22,
+            Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"],
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 12, 0),
+        };
+
         _title = new TextBlock
         {
             Text = "Washmachine",
             FontSize = 22,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"],
         };
+
+        var brandRow = new StackPanel { Orientation = Orientation.Horizontal };
+        brandRow.Children.Add(brandIcon);
+        brandRow.Children.Add(_title);
 
         _subtitle = new TextBlock
         {
             Text = "Preparing requirements…",
             FontSize = 13,
-            Opacity = 0.7,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
             Margin = new Thickness(0, 2, 0, 14),
         };
 
-        _provisionRow = new StepRow("Ensuring external requirements (Bin2Shell)");
+        _provisionRow = new StepRow("Ensuring external requirements (Bin2Shell, SGN)");
         _compilerRow = new StepRow("Locating a C/C++ compiler");
 
-        _steps = new StackPanel { Spacing = 6 };
+        _steps = new StackPanel { Spacing = 8 };
         _steps.Children.Add(_provisionRow.Root);
         _steps.Children.Add(_compilerRow.Root);
+
+        // Steps live inside a subtle Fluent card so they read as a grouped panel
+        var stepsCard = new Border
+        {
+            Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
+            BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(16, 14, 16, 14),
+            Child = _steps,
+        };
 
         _progress = new ProgressBar
         {
             IsIndeterminate = true,
-            Margin = new Thickness(0, 14, 0, 6),
+            Margin = new Thickness(0, 16, 0, 6),
         };
 
         _footer = new TextBlock
         {
-            Text = "This takes a moment the first time — downloads cache under Tools/.",
+            Text = "First-run downloads cache under Tools/.",
             FontSize = 11,
-            Opacity = 0.6,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
         };
 
         var root = new StackPanel
         {
-            Margin = new Thickness(24, 20, 24, 18),
+            // Top padding accounts for the now-extended (invisible) title bar
+            Margin = new Thickness(28, 44, 28, 22),
             Spacing = 2,
         };
-        root.Children.Add(_title);
+        root.Children.Add(brandRow);
         root.Children.Add(_subtitle);
-        root.Children.Add(_steps);
+        root.Children.Add(stepsCard);
         root.Children.Add(_progress);
         root.Children.Add(_footer);
 
         _window = new Window { Title = "Washmachine — starting up", Content = root };
-        _window.AppWindow.Resize(new SizeInt32(520, 240));
+
+        // Fluent chrome to match MainWindow
+        _window.SystemBackdrop = new MicaBackdrop();
+        _window.ExtendsContentIntoTitleBar = true;
+
+        _window.AppWindow.Resize(new SizeInt32(560, 320));
 
         var display = DisplayArea.GetFromWindowId(_window.AppWindow.Id, DisplayAreaFallback.Primary);
         if (display != null)
         {
             var work = display.WorkArea;
             _window.AppWindow.Move(new PointInt32(
-                work.X + (work.Width - 520) / 2,
-                work.Y + (work.Height - 240) / 2));
+                work.X + (work.Width - 560) / 2,
+                work.Y + (work.Height - 320) / 2));
         }
 
         var presenter = _window.AppWindow.Presenter as OverlappedPresenter;
@@ -110,7 +143,7 @@ public sealed class StartupWindow
     public async Task<StartupOutcome> RunAsync()
     {
         // ── 1) Provision ─────────────────────────────────────────
-        _provisionRow.SetRunning("Checking Bin2Shell toolchain…");
+        _provisionRow.SetRunning("Checking Bin2Shell + SGN toolchains…");
         bool provisioned;
         try
         {
@@ -343,7 +376,7 @@ public sealed class StartupWindow
         {
             _icon.Text = "◐";
             _icon.Opacity = 1.0;
-            _icon.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Goldenrod);
+            _icon.Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"];
             _detail.Text = detail;
         }
 
@@ -351,7 +384,7 @@ public sealed class StartupWindow
         {
             _icon.Text = "✓";
             _icon.Opacity = 1.0;
-            _icon.Foreground = new SolidColorBrush(Microsoft.UI.Colors.LimeGreen);
+            _icon.Foreground = (Brush)Application.Current.Resources["SystemFillColorSuccessBrush"];
             _detail.Text = detail;
         }
 
@@ -359,7 +392,7 @@ public sealed class StartupWindow
         {
             _icon.Text = "!";
             _icon.Opacity = 1.0;
-            _icon.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Orange);
+            _icon.Foreground = (Brush)Application.Current.Resources["SystemFillColorCautionBrush"];
             _detail.Text = detail;
         }
     }

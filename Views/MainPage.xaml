@@ -253,9 +253,23 @@
                         <TextBlock Text="Polymorphic pre-encoding applied before the envelope/encoder stage."
                                    Style="{StaticResource SectionSubtitleText}" />
                         <CheckBox x:Name="shikataGaNaiEnabledCheckBox"
-                                  Content="Apply Shikata Ga Nai before Bin2Shell"
+                                  Content="Enable Shikata Ga Nai encoding"
                                   Checked="ShikataGaNaiEnabledChanged"
                                   Unchecked="ShikataGaNaiEnabledChanged" />
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Placement" Style="{StaticResource SectionSubtitleText}" />
+                            <RadioButton x:Name="shikataPlacementPre"
+                                         GroupName="SgnPlacement"
+                                         Content="Pre-Bin2Shell — bake SGN into the loader's shellcode (needs RWX at execution)"
+                                         IsChecked="True"
+                                         Checked="ShikataGaNaiPlacementChanged" />
+                            <RadioButton x:Name="shikataPlacementPost"
+                                         GroupName="SgnPlacement"
+                                         Content="Post-Bin2Shell — emit an extra SGN-encoded .bin from the stripped loader (any execution method works)"
+                                         Checked="ShikataGaNaiPlacementChanged" />
+                        </StackPanel>
+
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />

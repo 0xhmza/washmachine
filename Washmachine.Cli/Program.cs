@@ -34,7 +34,7 @@ public static class Program
         {
             "--shellcode", "-s", "--shellcode-hex", "--shellcode-url", "-u", "--template", "-t",
             "--encoder", "-e", "--envelope", "-v",
-            "--shikata-ga-nai", "--sgn", "--shikata-enc", "--shikata-max",
+            "--shikata-ga-nai", "--sgn", "--shikata-enc", "--shikata-max", "--sgn-placement",
             "--clone-from", "--clone-resources", "--no-clone-resources",
             "--clone-icon", "--no-clone-icon", "--clone-metadata", "--no-clone-metadata",
             "--pad-nops",
@@ -759,6 +759,7 @@ public static class Program
         bool shikataGaNai = false;
         string? shikataEncodeCount = null;
         string? shikataMaxBytes = null;
+        string shikataPlacement = "pre";
         string? cloneFromExe = null;
         bool? cloneResources = null;
         bool? cloneIcon = null;
@@ -790,6 +791,15 @@ public static class Program
                     shikataEncodeCount = args[++i]; break;
                 case "--shikata-max" when i + 1 < args.Length:
                     shikataMaxBytes = args[++i]; break;
+                case "--sgn-placement" when i + 1 < args.Length:
+                    var placementValue = args[++i].Trim().ToLowerInvariant();
+                    if (placementValue != "pre" && placementValue != "post")
+                    {
+                        AnsiConsole.MarkupLine("[red]Error:[/] --sgn-placement must be 'pre' or 'post'.");
+                        return 1;
+                    }
+                    shikataPlacement = placementValue;
+                    break;
                 case "--clone-from" when i + 1 < args.Length:
                     cloneFromExe = args[++i]; break;
                 case "--clone-resources":
@@ -904,6 +914,7 @@ public static class Program
             [UiDataKeys.ShikataGaNaiEnabled] = shikataGaNai ? bool.TrueString : bool.FalseString,
             [UiDataKeys.ShikataGaNaiEncodeCount] = shikataEncodeCount ?? "1",
             [UiDataKeys.ShikataGaNaiMaxBytes] = shikataMaxBytes ?? "50",
+            [UiDataKeys.ShikataGaNaiPlacement] = shikataPlacement,
         };
 
         var comboBoxes = new Dictionary<string, string>
@@ -2014,16 +2025,16 @@ public static class Program
                     .AddColumn("Property")
                     .AddColumn("Value");
 
-                peTable.AddRow("[{UiColors.Accent}]File[/]", $"[white]{Markup.Escape(Path.GetFileName(peFile))}[/]");
-                peTable.AddRow("[{UiColors.Accent}]Size[/]", $"[white]{new FileInfo(peFile).Length:N0} bytes ({new FileInfo(peFile).Length / 1024.0 / 1024.0:F1} MB)[/]");
-                peTable.AddRow("[{UiColors.Accent}]Arch[/]", $"[white]{(peInfo.Is64Bit ? "x64 (PE32+)" : "x86 (PE32)")}[/]");
-                peTable.AddRow("[{UiColors.Accent}]Type[/]", $"[white]{(peInfo.IsDll ? "DLL" : "GUI Executable")}[/]");
-                peTable.AddRow("[{UiColors.Accent}]Entry[/]", $"[mediumpurple1]0x{peInfo.EntryPoint:X}[/]");
-                peTable.AddRow("[{UiColors.Accent}]ImageBase[/]", $"[mediumpurple1]0x{peInfo.ImageBase:X}[/]");
-                peTable.AddRow("[{UiColors.Accent}]Signature[/]", $"[white]{(peInfo.HasSignature ? "Present (will be removed)" : "None")}[/]");
-                peTable.AddRow("[{UiColors.Accent}].NET[/]", $"[white]{(analysisResult.IsDotNet ? "Yes" : "No")}[/]");
-                peTable.AddRow("[{UiColors.Accent}]ASLR[/]", $"[white]{(peInfo.HasAslr ? "Yes" : "No")}[/]");
-                peTable.AddRow("[{UiColors.Accent}]Sections[/]", $"[white]{peInfo.Sections.Count}[/]");
+                peTable.AddRow($"[{UiColors.Accent}]File[/]", $"[white]{Markup.Escape(Path.GetFileName(peFile))}[/]");
+                peTable.AddRow($"[{UiColors.Accent}]Size[/]", $"[white]{new FileInfo(peFile).Length:N0} bytes ({new FileInfo(peFile).Length / 1024.0 / 1024.0:F1} MB)[/]");
+                peTable.AddRow($"[{UiColors.Accent}]Arch[/]", $"[white]{(peInfo.Is64Bit ? "x64 (PE32+)" : "x86 (PE32)")}[/]");
+                peTable.AddRow($"[{UiColors.Accent}]Type[/]", $"[white]{(peInfo.IsDll ? "DLL" : "GUI Executable")}[/]");
+                peTable.AddRow($"[{UiColors.Accent}]Entry[/]", $"[mediumpurple1]0x{peInfo.EntryPoint:X}[/]");
+                peTable.AddRow($"[{UiColors.Accent}]ImageBase[/]", $"[mediumpurple1]0x{peInfo.ImageBase:X}[/]");
+                peTable.AddRow($"[{UiColors.Accent}]Signature[/]", $"[white]{(peInfo.HasSignature ? "Present (will be removed)" : "None")}[/]");
+                peTable.AddRow($"[{UiColors.Accent}].NET[/]", $"[white]{(analysisResult.IsDotNet ? "Yes" : "No")}[/]");
+                peTable.AddRow($"[{UiColors.Accent}]ASLR[/]", $"[white]{(peInfo.HasAslr ? "Yes" : "No")}[/]");
+                peTable.AddRow($"[{UiColors.Accent}]Sections[/]", $"[white]{peInfo.Sections.Count}[/]");
 
                 AnsiConsole.Write(peTable);
                 AnsiConsole.WriteLine();
@@ -2111,9 +2122,9 @@ public static class Program
                     .AddColumn("Property")
                     .AddColumn("Value");
 
-                scTable.AddRow("[{UiColors.Accent}]File[/]", $"[white]{Markup.Escape(Path.GetFileName(shellcodeFile))}[/]");
-                scTable.AddRow("[{UiColors.Accent}]Size[/]", $"[white]{shellcodeBytes.Length} bytes[/]");
-                scTable.AddRow("[{UiColors.Accent}]First bytes[/]", $"[mediumpurple1]{BitConverter.ToString(shellcodeBytes.Take(Math.Min(16, shellcodeBytes.Length)).ToArray()).Replace("-", " ")}[/]");
+                scTable.AddRow($"[{UiColors.Accent}]File[/]", $"[white]{Markup.Escape(Path.GetFileName(shellcodeFile))}[/]");
+                scTable.AddRow($"[{UiColors.Accent}]Size[/]", $"[white]{shellcodeBytes.Length} bytes[/]");
+                scTable.AddRow($"[{UiColors.Accent}]First bytes[/]", $"[mediumpurple1]{BitConverter.ToString(shellcodeBytes.Take(Math.Min(16, shellcodeBytes.Length)).ToArray()).Replace("-", " ")}[/]");
 
                 AnsiConsole.Write(scTable);
 
@@ -2147,11 +2158,11 @@ public static class Program
                     .AddColumn("Property")
                     .AddColumn("Value");
 
-                planTable.AddRow("[{UiColors.Accent}]Method[/]", $"[white]{injectionMethod}[/]");
-                planTable.AddRow("[{UiColors.Accent}]Encryption[/]", $"[white]{encryptionMethod}{(encryptionMethod == PayloadEncryption.Xor ? $" (key=0x{xorKey:X2})" : "")}[/]");
-                planTable.AddRow("[{UiColors.Accent}]Invoke[/]", $"[white]{carrierInvoke}[/]");
-                planTable.AddRow("[{UiColors.Accent}]Remove sig[/]", $"[white]{removeSig}[/]");
-                planTable.AddRow("[{UiColors.Accent}]Patch GUI[/]", $"[white]{patchSubsystem}[/]");
+                planTable.AddRow($"[{UiColors.Accent}]Method[/]", $"[white]{injectionMethod}[/]");
+                planTable.AddRow($"[{UiColors.Accent}]Encryption[/]", $"[white]{encryptionMethod}{(encryptionMethod == PayloadEncryption.Xor ? $" (key=0x{xorKey:X2})" : "")}[/]");
+                planTable.AddRow($"[{UiColors.Accent}]Invoke[/]", $"[white]{carrierInvoke}[/]");
+                planTable.AddRow($"[{UiColors.Accent}]Remove sig[/]", $"[white]{removeSig}[/]");
+                planTable.AddRow($"[{UiColors.Accent}]Patch GUI[/]", $"[white]{patchSubsystem}[/]");
 
                 AnsiConsole.Write(planTable);
                 AnsiConsole.WriteLine();

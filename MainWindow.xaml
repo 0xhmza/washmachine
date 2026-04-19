@@ -66,6 +66,19 @@
             </NavigationViewItem>
         </NavigationView.MenuItems>
 
+        <NavigationView.FooterMenuItems>
+            <NavigationViewItem Content="Pipeline"
+                                Tag="PipelinePage"
+                                Foreground="#FF00E0FF"
+                                Background="#1A00E0FF"
+                                BorderBrush="#5500E0FF"
+                                BorderThickness="1">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE9D9;" Foreground="#FF00E0FF" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+        </NavigationView.FooterMenuItems>
+
         <Frame x:Name="ContentFrame" />
     </NavigationView>
 </Window>

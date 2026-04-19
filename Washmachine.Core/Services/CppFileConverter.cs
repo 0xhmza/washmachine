@@ -13,7 +13,7 @@ public static class CppFileConverter
 {
     /// <summary>
     /// Compiles all .cpp files in <paramref name="directory"/> to a single minimized .exe using a compiler found in <paramref name="compilerDirectory"/>.
-    /// The exe is written to "Compiled BInaries" and named "yyyyMMdd_HHmmss-xxxxx.exe" (xxxxx = first 5 chars of SHA-256 of the exe).
+    /// The exe is written to "compiled" and named "yyyyMMdd_HHmmss-xxxxx.exe" (xxxxx = first 5 chars of SHA-256 of the exe).
     /// </summary>
     public static async Task<CppFileConversionResult> ConvertAsync(
         string directory,
@@ -55,8 +55,9 @@ public static class CppFileConverter
 
         logger.Debug($"Discovered {sources.Length} .cpp file(s) to compile. First few: {string.Join(", ", sources.Take(3).Select(Path.GetFileName))}{(sources.Length > 3 ? ", ..." : string.Empty)}");
 
-        // Ensure output directory exists (exact casing/spaces requested)
-        var outputDir = Path.Combine(directory, "Compiled BInaries");
+        // Build artifacts land in `<temp>/cpp/compiled` (lowercase, no spaces).
+        // The host UI may purge this directory after each build depending on user settings.
+        var outputDir = Path.Combine(directory, "compiled");
         Directory.CreateDirectory(outputDir);
         logger.Debug($"Output directory: {outputDir}");
 

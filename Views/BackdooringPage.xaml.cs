@@ -93,6 +93,55 @@ public sealed partial class BackdooringPage : Page
         UpdateInjectionFeasibility();
     }
 
+    public void ApplyRecipe(BackdoorRecipe recipe)
+    {
+        EnableBackdooringToggle.IsOn = recipe.Enabled;
+        if (!string.IsNullOrEmpty(recipe.TargetPePath)) TargetPePath.Text = recipe.TargetPePath;
+
+        if (Enum.TryParse<InjectionMethod>(recipe.InjectionMethod, out var im))
+        {
+            InjectionMethodCombo.SelectedIndex = im switch
+            {
+                InjectionMethod.CodeCave => 0,
+                InjectionMethod.NewSection => 1,
+                InjectionMethod.SectionExtension => 2,
+                _ => 1
+            };
+        }
+        if (Enum.TryParse<CarrierInvoke>(recipe.CarrierInvoke, out var ci))
+        {
+            CarrierInvokeCombo.SelectedIndex = ci switch
+            {
+                CarrierInvoke.EntryPointHijack => 0,
+                CarrierInvoke.EntryFunctionBackdoor => 1,
+                CarrierInvoke.TlsCallback => 2,
+                _ => 0
+            };
+        }
+
+        PreserveEntryCheck.IsChecked = recipe.PreserveEntry;
+        PatchIatCheck.IsChecked = recipe.PatchIat;
+        RemoveSignatureCheck.IsChecked = recipe.RemoveSignature;
+        PatchSubsystemCheck.IsChecked = recipe.PatchSubsystem;
+        PatchExitCheck.IsChecked = recipe.PatchExit;
+        DryRunCheck.IsChecked = recipe.DryRun;
+
+        if (recipe.XorKey != null && XorKeyInput != null) XorKeyInput.Text = recipe.XorKey;
+        if (recipe.SectionName != null && SectionNameInput != null) SectionNameInput.Text = recipe.SectionName;
+        if (CaveMinSizeBox != null) CaveMinSizeBox.Value = recipe.CaveMinSize;
+
+        if (Enum.TryParse<PayloadEncryption>(recipe.Encryption, out var enc))
+        {
+            EncryptionCombo.SelectedIndex = enc switch
+            {
+                PayloadEncryption.Xor => 1,
+                PayloadEncryption.Xor2 => 2,
+                PayloadEncryption.Rc4 => 3,
+                _ => 0
+            };
+        }
+    }
+
     #endregion
 
     private void EnableBackdooringToggle_Toggled(object sender, RoutedEventArgs e)

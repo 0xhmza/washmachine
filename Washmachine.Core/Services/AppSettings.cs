@@ -27,6 +27,16 @@ public sealed class AppSettings
     /// <summary>Include debug-level messages in the session log file.</summary>
     [JsonPropertyName("verboseFileLogging")]
     public bool VerboseFileLogging { get; set; } = false;
+
+    // ── Build artifacts ──────────────────────────────────────────
+
+    /// <summary>
+    /// When true, retain the timestamp+hash-named build artifact copies under
+    /// <c>temp/cpp/compiled/</c> across builds (default: false — wipe after each build
+    /// so the directory does not accumulate stale binaries).
+    /// </summary>
+    [JsonPropertyName("keepBuildArtifacts")]
+    public bool KeepBuildArtifacts { get; set; } = false;
 }
 
 /// <summary>

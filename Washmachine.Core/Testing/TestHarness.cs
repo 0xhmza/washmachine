@@ -686,8 +686,8 @@ public static class TestHarness
         if (!string.IsNullOrEmpty(result.OutputExePath) && File.Exists(result.OutputExePath))
             return result.OutputExePath;
 
-        // Fallback: scan the Compiled BInaries directory for the newest exe/dll
-        var tempDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "temp", "cpp", "Compiled BInaries");
+        // Fallback: scan the build-artifact directory for the newest exe/dll
+        var tempDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "temp", "cpp", "compiled");
         if (!Directory.Exists(tempDir)) return null;
         return Directory.GetFiles(tempDir)
             .Where(f => f.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||

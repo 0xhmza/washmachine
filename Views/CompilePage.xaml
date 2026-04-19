@@ -179,6 +179,34 @@
 
                 <Border Style="{StaticResource SectionDivider}" />
 
+                <!-- Pipeline visualization moved to dedicated 'Pipeline' page in the navbar footer.
+                     Open it for the live cinematic readout, recipe export/import, and SGN-compat analysis. -->
+                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,4">
+                    <Grid Padding="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE9D9;" FontSize="20" Margin="0,2,12,0" VerticalAlignment="Center"
+                                  Foreground="#FF00E0FF" />
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Text="Pipeline readout" Style="{StaticResource SectionTitleText}" />
+                            <TextBlock Text="Live recipe view, recipe export/import, and stage analysis live on the dedicated Pipeline page."
+                                       Style="{StaticResource SectionSubtitleText}"
+                                       Margin="0,4,0,0"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button Grid.Column="2"
+                                Content="Open Pipeline →"
+                                MinWidth="160"
+                                VerticalAlignment="Center"
+                                Click="OpenPipelinePage_Click" />
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource SectionDivider}" />
+
                 <!-- Compiler Selection -->
                 <Expander IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
                     <Expander.Header>

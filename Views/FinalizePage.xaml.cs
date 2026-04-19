@@ -55,6 +55,26 @@ public sealed partial class FinalizePage : Page
         }
     }
 
+    public void ApplyRecipe(FinalizeRecipe recipe)
+    {
+        EnableFinalizeToggle.IsOn = recipe.Enabled;
+        if (recipe.CloneSource != null) CloneSourcePath.Text = recipe.CloneSource;
+        CloneResourcesCheck.IsChecked = recipe.CloneResources;
+        CloneIconCheck.IsChecked = recipe.CloneIcon;
+        CloneMetadataCheck.IsChecked = recipe.CloneMetadata;
+
+        if (recipe.NopPaddingBytes > 0)
+        {
+            EnableNopPaddingToggle.IsOn = true;
+            NopPaddingUnitCombo.SelectedIndex = 0; // bytes
+            NopPaddingBytesBox.Value = recipe.NopPaddingBytes;
+        }
+        else
+        {
+            EnableNopPaddingToggle.IsOn = false;
+        }
+    }
+
     private void EnableFinalizeToggle_Toggled(object sender, RoutedEventArgs e)
     {
         bool enabled = EnableFinalizeToggle.IsOn;

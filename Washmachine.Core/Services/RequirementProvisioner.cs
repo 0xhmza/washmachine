@@ -35,7 +35,7 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
     }
 
     public Task EnsureRequirementsAsync(IProgressReporter? progress = null, CancellationToken cancellationToken = default) =>
-        EnsureRequirementsAsync(progress, includeOptionalTools: false, cancellationToken);
+        EnsureRequirementsAsync(progress, includeOptionalTools: true, cancellationToken);
 
     public async Task EnsureRequirementsAsync(
         IProgressReporter? progress,

@@ -11,6 +11,21 @@ public sealed partial class MainWindow : Window
 {
     public Frame GetContentFrame() => ContentFrame;
 
+    public void NavigateToPipeline()
+    {
+        if (ContentFrame.CurrentSourcePageType != typeof(PipelinePage))
+            ContentFrame.Navigate(typeof(PipelinePage));
+
+        foreach (var item in mainNavigationView.FooterMenuItems)
+        {
+            if (item is NavigationViewItem nvi && nvi.Tag as string == "PipelinePage")
+            {
+                mainNavigationView.SelectedItem = nvi;
+                break;
+            }
+        }
+    }
+
     public MainWindow()
     {
         InitializeComponent();
@@ -45,14 +60,23 @@ public sealed partial class MainWindow : Window
             }
         };
 
-        AppWindow.Resize(new SizeInt32(980, 820));
-        var display = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
-        if (display != null)
+        // Open maximized so the user gets the full canvas without a manual resize.
+        // Fall back to a sensibly-sized centered window if the presenter isn't an OverlappedPresenter.
+        if (presenter != null)
         {
-            var work = display.WorkArea;
-            AppWindow.Move(new PointInt32(
-                work.X + (work.Width - 980) / 2,
-                work.Y + (work.Height - 820) / 2));
+            presenter.Maximize();
+        }
+        else
+        {
+            AppWindow.Resize(new SizeInt32(980, 820));
+            var display = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
+            if (display != null)
+            {
+                var work = display.WorkArea;
+                AppWindow.Move(new PointInt32(
+                    work.X + (work.Width - 980) / 2,
+                    work.Y + (work.Height - 820) / 2));
+            }
         }
 
         ContentFrame.Navigate(typeof(MainPage));
@@ -78,6 +102,7 @@ public sealed partial class MainWindow : Window
             "PackingPage" => typeof(PackingPage),
             "FinalizePage" => typeof(FinalizePage),
             "BackdooringPage" => typeof(BackdooringPage),
+            "PipelinePage" => typeof(PipelinePage),
             _ => (Type?)null
         };
 

@@ -72,6 +72,22 @@ public sealed partial class PackingPage : Page
         return string.Join(" ", args);
     }
 
+    public void ApplyRecipe(PackingRecipe recipe)
+    {
+        EnablePackingToggle.IsOn = recipe.Enabled;
+        CompressionLevelCombo.SelectedIndex = recipe.CompressionLevel switch
+        {
+            "Fast" => 0,
+            "Normal" => 1,
+            "Best" => 2,
+            _ => 1
+        };
+        var argsText = recipe.UpxArgs ?? "";
+        StripRelocCheck.IsChecked = argsText.Contains("--strip-relocs");
+        OverlayCheck.IsChecked = argsText.Contains("--overlay=copy");
+        BackupCheck.IsChecked = argsText.Contains("-k");
+    }
+
     private async Task DetectUpxAsync()
     {
         // Check common locations

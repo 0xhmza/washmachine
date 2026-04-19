@@ -30,6 +30,10 @@ public static class UiDataKeys
     /// <summary>Shikata Ga Nai maximum decoder-obfuscation bytes.</summary>
     public const string ShikataGaNaiMaxBytes = "shikataGaNaiMaxBytesInput";
 
+    /// <summary>Where SGN runs in the pipeline: "pre" (default, baked into loader shellcode)
+    /// or "post" (applied to the stripped loader .bin after compile as a separate artifact).</summary>
+    public const string ShikataGaNaiPlacement = "shikataGaNaiPlacement";
+
     // ── ComboBox keys ─────────────────────────────────────────────────────────
 
     /// <summary>Bin2Shell encoder selection (index string).</summary>

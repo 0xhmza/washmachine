@@ -94,6 +94,10 @@ public sealed partial class MainPage : Page, IMainFormView
 
     public int ShikataGaNaiMaxBytes => GetPositiveNumberBoxValue(shikataGaNaiMaxBytesInput, 50);
 
+    public string ShikataGaNaiPlacement => shikataPlacementPost?.IsChecked == true ? "post" : "pre";
+
+    public bool IsShikataGaNaiPostPlacement => ShikataGaNaiPlacement == "post";
+
     public void SetPayloadEncodingEnabled(bool enabled)
     {
         PayloadEncodingExpander.IsEnabled = enabled;
@@ -230,6 +234,53 @@ public sealed partial class MainPage : Page, IMainFormView
         {
             shikataGaNaiEncodeCountInput.Value = ShikataGaNaiEncodeCount;
             shikataGaNaiMaxBytesInput.Value = ShikataGaNaiMaxBytes;
+        }
+    }
+
+    private void ShikataGaNaiPlacementChanged(object sender, RoutedEventArgs e)
+    {
+        // Pipeline page re-renders on navigation; no push notification needed here.
+    }
+
+    public void ApplySgnRecipe(bool enabled, int encodeCount, int maxBytes, string placement)
+    {
+        shikataGaNaiEnabledCheckBox.IsChecked = enabled;
+        if (shikataGaNaiEncodeCountInput != null)
+            shikataGaNaiEncodeCountInput.Value = encodeCount > 0 ? encodeCount : 1;
+        if (shikataGaNaiMaxBytesInput != null)
+            shikataGaNaiMaxBytesInput.Value = maxBytes > 0 ? maxBytes : 50;
+
+        bool post = string.Equals(placement, "post", StringComparison.OrdinalIgnoreCase);
+        if (shikataPlacementPost != null) shikataPlacementPost.IsChecked = post;
+        if (shikataPlacementPre != null)  shikataPlacementPre.IsChecked  = !post;
+    }
+
+    public void ApplyTemplateAndEncoding(string? templateId, int? encoderIndex, int? envelopeIndex)
+    {
+        if (!string.IsNullOrEmpty(templateId))
+        {
+            foreach (var item in TemplateCombo.Items)
+            {
+                if (item is string s && s == templateId) { TemplateCombo.SelectedItem = item; break; }
+                // Items may be objects with a Value property; fall back to ToString compare
+                if (item?.ToString() == templateId) { TemplateCombo.SelectedItem = item; break; }
+            }
+        }
+
+        if (encoderIndex is int ei)
+        {
+            foreach (var item in EncoderCombo.Items)
+            {
+                if (item is int i && i == ei) { EncoderCombo.SelectedItem = item; break; }
+            }
+        }
+
+        if (envelopeIndex is int vi)
+        {
+            foreach (var item in EnvelopeCombo.Items)
+            {
+                if (item is int i && i == vi) { EnvelopeCombo.SelectedItem = item; break; }
+            }
         }
     }
 
