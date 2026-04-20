@@ -103,6 +103,7 @@ public sealed partial class MainWindow : Window
             "FinalizePage" => typeof(FinalizePage),
             "BackdooringPage" => typeof(BackdooringPage),
             "PipelinePage" => typeof(PipelinePage),
+            "PayloadHistoryPage" => typeof(PayloadHistoryPage),
             _ => (Type?)null
         };
 

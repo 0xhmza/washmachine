@@ -77,6 +77,11 @@
                     <FontIcon Glyph="&#xE9D9;" Foreground="#FF00E0FF" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
+            <NavigationViewItem Content="History" Tag="PayloadHistoryPage">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE81C;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
         </NavigationView.FooterMenuItems>
 
         <Frame x:Name="ContentFrame" />

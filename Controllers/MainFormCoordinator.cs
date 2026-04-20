@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.UI.Xaml;
@@ -368,6 +369,163 @@ public sealed class MainFormCoordinator
         view.ShellcodeUrlTextBox.Text = wizardResult.PayloadUrl;
 
         _logger.Ok($"Web payload ready. URL: {wizardResult.PayloadUrl}");
+        PersistWebPayloadHistory(filePath, wizardResult, catalog);
+    }
+
+    private void PersistWebPayloadHistory(string sourceFilePath, WebPayloadWizardResult wizardResult, ShellcodeEncodingCatalog catalog)
+    {
+        var webOutput = wizardResult.WebOutput ?? new Bin2ShellWebOutput();
+        var encoder = ResolveEncodingItem(catalog.Encoders, wizardResult.EncoderIndex);
+        var envelope = ResolveEncodingItem(catalog.Envelopes, wizardResult.EnvelopeIndex);
+        var webHelper = ResolveEncodingItem(catalog.WebHelpers, wizardResult.WebHelperIndex);
+
+        long sourceFileSize = 0;
+        try
+        {
+            sourceFileSize = new FileInfo(sourceFilePath).Length;
+        }
+        catch (IOException ex)
+        {
+            _logger.Warn($"Could not read source file size for history: {ex.Message}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.Warn($"Could not access source file size for history: {ex.Message}");
+        }
+
+        string sourceFileSha256 = string.Empty;
+        try
+        {
+            sourceFileSha256 = ComputeFileSha256(sourceFilePath);
+        }
+        catch (IOException ex)
+        {
+            _logger.Warn($"Could not hash source file for history: {ex.Message}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.Warn($"Could not access source file for hashing: {ex.Message}");
+        }
+
+        int payloadLength = webOutput.PayloadLen > 0
+            ? webOutput.PayloadLen
+            : EstimatePayloadByteCount(webOutput.Payload);
+
+        var entry = new PayloadHistoryEntry
+        {
+            GeneratedAtUtc = DateTime.UtcNow,
+            SourceFilePath = sourceFilePath,
+            SourceFileSizeBytes = sourceFileSize,
+            SourceFileSha256 = sourceFileSha256,
+            EncoderIndex = wizardResult.EncoderIndex,
+            EncoderName = encoder?.Name ?? string.Empty,
+            EncoderDescription = encoder?.Description ?? string.Empty,
+            EnvelopeIndex = wizardResult.EnvelopeIndex,
+            EnvelopeName = envelope?.Name ?? string.Empty,
+            EnvelopeDescription = envelope?.Description ?? string.Empty,
+            WebHelperIndex = wizardResult.WebHelperIndex,
+            WebHelperName = webHelper?.Name ?? string.Empty,
+            WebHelperDescription = webHelper?.Description ?? string.Empty,
+            PayloadUrl = wizardResult.PayloadUrl ?? string.Empty,
+            PayloadLengthBytes = payloadLength,
+            PayloadChecksum = webOutput.PayloadChecksum ?? string.Empty,
+            Bin2ShellCommandLine = BuildWebPayloadCommandLine(
+                sourceFilePath,
+                wizardResult.EncoderIndex,
+                wizardResult.EnvelopeIndex,
+                wizardResult.WebHelperIndex),
+            Payload = webOutput.Payload ?? string.Empty,
+            CppIncludes = webOutput.CppIncludes ?? string.Empty,
+            CppDeclarations = webOutput.CppDeclarations ?? string.Empty,
+            CppWebFetch = webOutput.CppWebFetch ?? string.Empty,
+            CppPayloadInit = webOutput.CppPayloadInit ?? string.Empty,
+            CppDecode = webOutput.CppDecode ?? string.Empty,
+            CppPreamble = webOutput.BuildPreamble(),
+            CppBody = webOutput.BuildBody()
+        };
+
+        try
+        {
+            PayloadHistoryStore.Append(entry);
+            _logger.Debug("Web payload history entry recorded.");
+        }
+        catch (IOException ex)
+        {
+            _logger.Warn($"Failed to write payload history: {ex.Message}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.Warn($"Payload history path is not writable: {ex.Message}");
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            _logger.Warn($"Payload history file is malformed: {ex.Message}");
+        }
+    }
+
+    private static ShellcodeEncodingItem? ResolveEncodingItem(IReadOnlyList<ShellcodeEncodingItem> items, int index)
+    {
+        if (items == null || items.Count == 0)
+            return null;
+
+        return items.FirstOrDefault(item => item.Index == index);
+    }
+
+    private string BuildWebPayloadCommandLine(string sourceFilePath, int encoderIdx, int envelopeIdx, int webHelperIdx)
+    {
+        var args = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(_paths.Bin2ShellAlgos) && File.Exists(_paths.Bin2ShellAlgos))
+        {
+            args.Add("-y");
+            args.Add(QuoteCliArg(_paths.Bin2ShellAlgos));
+        }
+
+        args.Add("-w");
+        args.Add("-e");
+        args.Add(encoderIdx.ToString(CultureInfo.InvariantCulture));
+        args.Add("-v");
+        args.Add(envelopeIdx.ToString(CultureInfo.InvariantCulture));
+        args.Add("-wh");
+        args.Add(webHelperIdx.ToString(CultureInfo.InvariantCulture));
+        args.Add(QuoteCliArg(sourceFilePath));
+
+        return $"python {QuoteCliArg(_paths.Bin2ShellScript)} {string.Join(" ", args)}";
+    }
+
+    private static string QuoteCliArg(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "\"\"";
+
+        if (value.IndexOfAny(new[] { ' ', '\t', '"' }) < 0)
+            return value;
+
+        return "\"" + value.Replace("\"", "\\\"") + "\"";
+    }
+
+    private static string ComputeFileSha256(string filePath)
+    {
+        using var stream = File.OpenRead(filePath);
+        using var sha256 = SHA256.Create();
+        var hash = sha256.ComputeHash(stream);
+        return Convert.ToHexString(hash);
+    }
+
+    private static int EstimatePayloadByteCount(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+            return 0;
+
+        int count = 0;
+        int idx = 0;
+        while ((idx = payload.IndexOf("0x", idx, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            count++;
+            idx += 2;
+        }
+
+        return count > 0 ? count : payload.Length;
     }
 
     private void PopulateTemplateCombo(IMainFormView view, string? preferredTemplateId = null)
