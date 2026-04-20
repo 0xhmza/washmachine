@@ -211,54 +211,77 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         var notes = new List<string>();
         CompilerToolDiscoveryResult? discovery = null;
         string? sessionDir = null;
+        TeeLogger? sessionLogger = null;
 
         try
         {
-            sessionDir = _paths.CreateCompilationSessionDirectory();
+            // Resolve the input name for the session folder
+            var inputName = ExtractInputName(data);
+            sessionDir = _paths.CreateCompilationSessionDirectory(inputName: inputName);
             notes.Add($"Session log directory: {sessionDir}");
-            _logger.Debug($"Session log: {sessionDir}");
 
-            SaveSessionSettings(sessionDir, data);
+            // Create a session-scoped TeeLogger so every log message is captured
+            var sessionLogPath = Path.Combine(sessionDir, "session.log");
+            sessionLogger = new TeeLogger(_logger, sessionLogPath);
+            IAppLogger log = sessionLogger;
 
-            discovery = await TryDiscoverCompilerAsync(notes, cancellationToken).ConfigureAwait(false);
+            sessionLogger.FileOnly("════════════════════════════════════════════════════════════");
+            sessionLogger.FileOnly("  Washmachine Compilation Session");
+            sessionLogger.FileOnly($"  Session dir : {sessionDir}");
+            sessionLogger.FileOnly($"  Started     : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sessionLogger.FileOnly("════════════════════════════════════════════════════════════");
+            sessionLogger.FileOnly("");
 
-            var template = ResolveTemplate(data);
+            log.Debug($"Session log: {sessionDir}");
+
+            SaveSessionSettings(sessionDir, data, log);
+
+            discovery = await TryDiscoverCompilerAsync(notes, log, cancellationToken).ConfigureAwait(false);
+
+            var template = ResolveTemplate(data, log);
             notes.Add($"Template: {template.Display} ({template.Id}).");
 
             // Build the plan, render the template, then compile if a toolchain is available.
             var plan = new CppCompilationPlan();
             var shellcodeSource = DetermineShellcodeSource(data);
 
-            await ApplyShellcodeAsync(plan, data, shellcodeSource, notes, cancellationToken).ConfigureAwait(false);
+            // Save the raw shellcode input to session/input/
+            SaveStageArtifact(sessionDir, shellcodeSource, log);
+
+            await ApplyShellcodeAsync(plan, data, shellcodeSource, sessionDir, notes, log, cancellationToken).ConfigureAwait(false);
             ApplyFeatureSelections(plan, data, template, notes);
 
+            var sourceDir = Path.Combine(sessionDir, "source");
             var sourceCode = RenderTemplate(plan, template);
-            var sourcePath = await PersistSourceAsync(sourceCode, cancellationToken).ConfigureAwait(false);
-
-            // Copy the .cpp to the session log before compilation.
-            CopyToSessionDir(sessionDir, sourcePath, "source.cpp");
+            var sourcePath = await PersistSourceAsync(sourceCode, sourceDir, cancellationToken).ConfigureAwait(false);
 
             notes.Add($"Generated C++ source at {sourcePath}.");
-            _logger.Debug($"Source saved: {sourcePath}");
+            log.Debug($"Source saved: {sourcePath}");
 
             notes.Add("Compiling...");
-            _logger.Info("Compiling...");
+            log.Info("Compiling...");
 
             var compilerDirectory = ResolveCompilerDirectory(discovery);
-            var conversionResult = await ExecuteConversionAsync(sourcePath, compilerDirectory, notes, cancellationToken).ConfigureAwait(false);
+            var buildDir = Path.Combine(sessionDir, "build");
+            var conversionResult = await ExecuteConversionAsync(sourcePath, compilerDirectory, buildDir, notes, log, cancellationToken).ConfigureAwait(false);
 
-            DeleteTemporarySource(sourcePath, notes);
+            // Save compiler stdout/stderr to session/build/
+            SaveCompilerOutput(sessionDir, conversionResult, log);
 
-            SaveSessionLog(sessionDir, notes, conversionResult);
+            SaveSessionLog(sessionDir, notes, conversionResult, log);
 
-            // Copy the compiled binary into the session folder for later analysis
-            if (conversionResult.Success && !string.IsNullOrWhiteSpace(conversionResult.OutputExePath)
-                && File.Exists(conversionResult.OutputExePath))
-            {
-                var artifactName = Path.GetFileName(conversionResult.OutputExePath);
-                CopyToSessionDir(sessionDir, conversionResult.OutputExePath, artifactName);
-                _logger.Debug($"Binary artifact saved: {artifactName}");
-            }
+            // Save a structured JSON summary of all user inputs
+            SaveSessionSummary(sessionDir, data, template, shellcodeSource, conversionResult, log);
+
+            // Generate professional session report
+            GenerateSessionReport(sessionDir, data, template, shellcodeSource, conversionResult, notes, log);
+
+            sessionLogger.FileOnly("");
+            sessionLogger.FileOnly("── Session Complete ───────────────────────────────────────");
+            sessionLogger.FileOnly($"  Finished at : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sessionLogger.FileOnly($"  Success     : {conversionResult.Success}");
+            sessionLogger.FileOnly($"  Session dir : {sessionDir}");
+            sessionLogger.FileOnly("════════════════════════════════════════════════════════════");
 
             return new CompilerResult(conversionResult.Success, null, sourceCode, notes, discovery, conversionResult);
         }
@@ -266,7 +289,14 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         {
             _logger.Warn("Generation cancelled by user.");
             notes.Add("Generation cancelled.");
-            SaveSessionLog(sessionDir, notes, null);
+            SaveSessionLog(sessionDir, notes, null, sessionLogger ?? _logger);
+            GenerateSessionReport(sessionDir, null, null, null, null, notes, sessionLogger ?? _logger, cancelled: true);
+
+            sessionLogger?.FileOnly("");
+            sessionLogger?.FileOnly("── Session Cancelled ─────────────────────────────────────");
+            sessionLogger?.FileOnly($"  Cancelled at : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sessionLogger?.FileOnly("════════════════════════════════════════════════════════════");
+
             var cancellation = new CppFileConversionResult(false, "Operation cancelled.");
             return new CompilerResult(false, null, null, notes, discovery, cancellation);
         }
@@ -274,9 +304,22 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         {
             _logger.Error($"Generation failed: {ex.Message}");
             notes.Add(ex.Message);
-            SaveSessionLog(sessionDir, notes, null);
+            SaveSessionLog(sessionDir, notes, null, sessionLogger ?? _logger);
+            GenerateSessionReport(sessionDir, null, null, null, null, notes, sessionLogger ?? _logger, error: ex);
+
+            sessionLogger?.FileOnly("");
+            sessionLogger?.FileOnly("── Session Failed ────────────────────────────────────────");
+            sessionLogger?.FileOnly($"  Failed at : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sessionLogger?.FileOnly($"  Error     : {ex.Message}");
+            sessionLogger?.FileOnly($"  Stack     :\n{ex.StackTrace}");
+            sessionLogger?.FileOnly("════════════════════════════════════════════════════════════");
+
             var failure = new CppFileConversionResult(false, ex.Message);
             return new CompilerResult(false, null, null, notes, discovery, failure);
+        }
+        finally
+        {
+            sessionLogger?.Dispose();
         }
     }
 
@@ -320,6 +363,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
     private async Task<CompilerToolDiscoveryResult?> TryDiscoverCompilerAsync(
         ICollection<string> notes,
+        IAppLogger logger,
         CancellationToken cancellationToken)
     {
         try
@@ -334,12 +378,12 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         {
             var message = $"Compiler tool discovery failed: {ex.Message}";
             notes.Add(message);
-            _logger.Warn(message);
+            logger.Warn(message);
             return null;
         }
     }
 
-    private CodeTemplateDefinition ResolveTemplate(UiData data)
+    private CodeTemplateDefinition ResolveTemplate(UiData data, IAppLogger logger)
     {
         string selectedId = string.Empty;
         if (data.ComboBoxes.TryGetValue(UiDataKeys.Template, out var rawSelection))
@@ -362,24 +406,26 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         CppCompilationPlan plan,
         UiData data,
         ShellcodeSource source,
+        string sessionDir,
         ICollection<string> notes,
+        IAppLogger logger,
         CancellationToken cancellationToken)
     {
         switch (source.Kind)
         {
             case ShellcodeSourceKind.None:
-                _logger.Warn("No shellcode source supplied; using default stub.");
+                logger.Warn("No shellcode source supplied; using default stub.");
                 notes.Add("No external shellcode supplied; using default stub.");
                 break;
 
             case ShellcodeSourceKind.File:
-                await EncodeShellcodeFromFileAsync(plan, source.Value, data, notes, cancellationToken).ConfigureAwait(false);
+                await EncodeShellcodeFromFileAsync(plan, source.Value, data, sessionDir, notes, logger, cancellationToken).ConfigureAwait(false);
                 break;
 
             case ShellcodeSourceKind.Raw:
-                string savedPath = SaveRawHexToBin(source.Value);
+                string savedPath = SaveRawHexToBin(source.Value, sessionDir, logger);
                 notes.Add($"Raw shellcode saved to {savedPath}.");
-                await EncodeShellcodeFromFileAsync(plan, savedPath, data, notes, cancellationToken).ConfigureAwait(false);
+                await EncodeShellcodeFromFileAsync(plan, savedPath, data, sessionDir, notes, logger, cancellationToken).ConfigureAwait(false);
                 break;
 
             case ShellcodeSourceKind.Url:
@@ -400,7 +446,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
                     plan.WebPayloadPreamble = preambleBlock;
                 }
                 notes.Add("Web payload code block injected from wizard.");
-                _logger.Debug("Web payload code block applied.");
+                logger.Debug("Web payload code block applied.");
                 break;
 
             default:
@@ -412,7 +458,9 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         CppCompilationPlan plan,
         string filePath,
         UiData data,
+        string sessionDir,
         ICollection<string> notes,
+        IAppLogger logger,
         CancellationToken cancellationToken)
     {
         if (!File.Exists(filePath))
@@ -426,14 +474,14 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         {
             if (shikataOptions.Enabled)
             {
-                shikataOutputPath = await ApplyShikataGaNaiAsync(filePath, shikataOptions, cancellationToken).ConfigureAwait(false);
+                shikataOutputPath = await ApplyShikataGaNaiAsync(filePath, shikataOptions, sessionDir, logger, cancellationToken).ConfigureAwait(false);
                 inputPath = shikataOutputPath;
                 notes.Add($"Shikata Ga Nai applied (count={shikataOptions.EncodeCount}, max={shikataOptions.MaxDecoderObfuscationBytes}).");
-                _logger.Debug($"Shikata Ga Nai applied: input='{Path.GetFileName(filePath)}', output='{Path.GetFileName(shikataOutputPath)}'.");
+                logger.Debug($"Shikata Ga Nai applied: input='{Path.GetFileName(filePath)}', output='{Path.GetFileName(shikataOutputPath)}'.");
             }
 
             var args = BuildBin2ShellArguments(data, inputPath);
-            _logger.Debug($"Bin2Shell args: {string.Join(" ", args.Select(QuoteArg))}");
+            logger.Debug($"Bin2Shell args: {string.Join(" ", args.Select(QuoteArg))}");
 
             string encoded = await _bin2ShellRunner
                 .RunAsync(args, cancellationToken: cancellationToken)
@@ -446,28 +494,26 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             encoded = PatchBin2ShellPayloadLambda(encoded, out patched);
             if (patched)
             {
-                _logger.Debug("Normalized Bin2Shell payload lambda capture.");
+                logger.Debug("Normalized Bin2Shell payload lambda capture.");
             }
 
             encoded = RepairCStringLiteralQuotes(encoded);
 
             plan.EncodedShellcodeSnippet = encoded.Trim();
             notes.Add("Encoded shellcode prepared.");
-            _logger.Debug("Encoded shellcode prepared.");
+            logger.Debug("Encoded shellcode prepared.");
         }
         finally
         {
-            if (!string.IsNullOrWhiteSpace(shikataOutputPath) && File.Exists(shikataOutputPath))
-            {
-                TryDeleteTempFile(shikataOutputPath);
-            }
+            // SGN output is preserved in session/input/ — no cleanup needed
         }
     }
 
-    private async Task<string> ApplyShikataGaNaiAsync(string inputPath, ShikataGaNaiOptions options, CancellationToken cancellationToken)
+    private async Task<string> ApplyShikataGaNaiAsync(string inputPath, ShikataGaNaiOptions options, string sessionDir, IAppLogger logger, CancellationToken cancellationToken)
     {
-        var outputDirectory = _paths.EnsureTempShellcodeDirectory();
-        var outputPath = Path.Combine(outputDirectory, $"wm_sgn_{Guid.NewGuid():N}.bin");
+        var outputDirectory = Path.Combine(sessionDir, "input");
+        Directory.CreateDirectory(outputDirectory);
+        var outputPath = Path.Combine(outputDirectory, $"sgn_encoded_{Guid.NewGuid():N}.bin");
         var startErrors = new List<Exception>();
         var candidates = BuildSgnCandidates();
 
@@ -487,18 +533,6 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         throw new InvalidOperationException(
             "Shikata Ga Nai is enabled, but SGN was not found. Run 'washmachine-cli provision' or install sgn and add it to PATH.",
             startErrors.LastOrDefault());
-    }
-
-    private static void TryDeleteTempFile(string path)
-    {
-        try
-        {
-            File.Delete(path);
-        }
-        catch
-        {
-            // Best-effort cleanup.
-        }
     }
 
     private IReadOnlyList<string> BuildSgnCandidates()
@@ -803,24 +837,12 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         }
         """;
 
-    private async Task<string> PersistSourceAsync(string sourceCode, CancellationToken cancellationToken)
+    private async Task<string> PersistSourceAsync(string sourceCode, string sourceDirectory, CancellationToken cancellationToken)
     {
-        string directory = _paths.EnsureTempSourceDirectory();
-        Directory.CreateDirectory(directory);
-
-        // Clean up leftover .cpp files from previous compilations to prevent
-        // CppFileConverter from compiling stale sources alongside the new one.
-        try
-        {
-            foreach (var staleFile in Directory.GetFiles(directory, "*.cpp", SearchOption.TopDirectoryOnly))
-            {
-                try { File.Delete(staleFile); } catch { /* ignore */ }
-            }
-        }
-        catch { /* ignore enumeration errors */ }
+        Directory.CreateDirectory(sourceDirectory);
 
         string fileName = $"wash_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}.cpp";
-        string path = Path.Combine(directory, fileName);
+        string path = Path.Combine(sourceDirectory, fileName);
 
         await File.WriteAllTextAsync(path, sourceCode, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), cancellationToken)
             .ConfigureAwait(false);
@@ -957,7 +979,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         return string.Empty;
     }
 
-    private async Task<CppFileConversionResult> ExecuteConversionAsync(string sourcePath, string compilerDirectory, ICollection<string> notes, CancellationToken cancellationToken)
+    private async Task<CppFileConversionResult> ExecuteConversionAsync(string sourcePath, string compilerDirectory, string buildDirectory, ICollection<string> notes, IAppLogger logger, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(sourcePath))
             throw new ArgumentException("Source path must be provided.", nameof(sourcePath));
@@ -967,7 +989,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         {
             const string message = "Unable to determine directory for generated C++ source file.";
             notes.Add(message);
-            _logger.Error(message);
+            logger.Error(message);
             return new CppFileConversionResult(false, message);
         }
 
@@ -976,18 +998,18 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         {
             const string message = "No compiler toolchain detected. Register a compiler or provide a manual cl.exe location.";
             notes.Add(message);
-            _logger.Warn(message);
+            logger.Warn(message);
             return new CppFileConversionResult(false, message);
         }
 
         try
         {
-            var result = await CppFileConverter.ConvertAsync(directory, compilerDirectory, _logger, cancellationToken).ConfigureAwait(false);
+            var result = await CppFileConverter.ConvertAsync(directory, compilerDirectory, logger, cancellationToken, outputDirectory: buildDirectory).ConfigureAwait(false);
 
             if (result.Success)
             {
                 notes.Add("Compilation completed.");
-                _logger.Debug("CppFileConverter completed successfully.");
+                logger.Debug("CppFileConverter completed successfully.");
             }
             else
             {
@@ -995,7 +1017,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
                     ? "CppFileConverter reported an unspecified error."
                     : result.Error!;
                 notes.Add(errorMessage);
-                _logger.Warn(errorMessage);
+                logger.Warn(errorMessage);
             }
 
             return result;
@@ -1008,35 +1030,12 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         {
             var message = $"CppFileConverter failed with exception: {ex.Message}";
             notes.Add(message);
-            _logger.Error(message);
+            logger.Error(message);
             return new CppFileConversionResult(false, ex.Message);
         }
     }
 
-    private void DeleteTemporarySource(string sourcePath, ICollection<string> notes)
-    {
-        if (string.IsNullOrWhiteSpace(sourcePath))
-            return;
-
-        try
-        {
-            if (!File.Exists(sourcePath))
-                return;
-
-            File.Delete(sourcePath);
-            var message = $"Temporary C++ source deleted: {sourcePath}.";
-            notes.Add(message);
-            _logger.Debug(message);
-        }
-        catch (Exception ex)
-        {
-            var message = $"Failed to delete temporary C++ source '{sourcePath}': {ex.Message}";
-            notes.Add(message);
-            _logger.Warn(message);
-        }
-    }
-
-    private void SaveSessionSettings(string? sessionDir, UiData data)
+    private void SaveSessionSettings(string? sessionDir, UiData data, IAppLogger logger)
     {
         if (string.IsNullOrWhiteSpace(sessionDir))
             return;
@@ -1070,11 +1069,11 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         }
         catch (Exception ex)
         {
-            _logger.Warn($"Failed to save session settings: {ex.Message}");
+            logger.Warn($"Failed to save session settings: {ex.Message}");
         }
     }
 
-    private void SaveSessionLog(string? sessionDir, IReadOnlyList<string> notes, CppFileConversionResult? conversionResult)
+    private void SaveSessionLog(string? sessionDir, IReadOnlyList<string> notes, CppFileConversionResult? conversionResult, IAppLogger logger)
     {
         if (string.IsNullOrWhiteSpace(sessionDir))
             return;
@@ -1094,11 +1093,11 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         }
         catch (Exception ex)
         {
-            _logger.Warn($"Failed to save session log: {ex.Message}");
+            logger.Warn($"Failed to save session log: {ex.Message}");
         }
     }
 
-    private void CopyToSessionDir(string? sessionDir, string? sourcePath, string targetName)
+    private void CopyToSessionDir(string? sessionDir, string? sourcePath, string targetName, IAppLogger logger)
     {
         if (string.IsNullOrWhiteSpace(sessionDir) || string.IsNullOrWhiteSpace(sourcePath))
             return;
@@ -1110,7 +1109,236 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         }
         catch (Exception ex)
         {
-            _logger.Warn($"Failed to copy '{sourcePath}' to session dir: {ex.Message}");
+            logger.Warn($"Failed to copy '{sourcePath}' to session dir: {ex.Message}");
+        }
+    }
+
+    /// <summary>Extracts a human-readable input name from the UiData for session folder naming.</summary>
+    private static string? ExtractInputName(UiData data)
+    {
+        if (data.TextBoxes.TryGetValue(UiDataKeys.ShellcodeFile, out var filePath) && !string.IsNullOrWhiteSpace(filePath))
+            return Path.GetFileName(filePath.Trim());
+        if (data.TextBoxes.TryGetValue(UiDataKeys.ShellcodeUrlFile, out var urlFile) && !string.IsNullOrWhiteSpace(urlFile))
+            return Path.GetFileName(urlFile.Trim());
+        if (data.TextBoxes.TryGetValue(UiDataKeys.ShellcodeUrl, out var url) && !string.IsNullOrWhiteSpace(url))
+            return "url";
+        if (data.TextBoxes.TryGetValue(UiDataKeys.ShellcodeRaw, out var raw) && !string.IsNullOrWhiteSpace(raw))
+            return "raw";
+        if (data.ComboBoxes.TryGetValue(UiDataKeys.GenericShellcode, out var generic) && !string.IsNullOrWhiteSpace(generic))
+            return $"generic_{generic.Replace(" ", "_")}";
+        return null;
+    }
+
+    /// <summary>Saves the raw shellcode input to the session's input/ subdirectory.</summary>
+    private void SaveStageArtifact(string? sessionDir, ShellcodeSource source, IAppLogger logger)
+    {
+        if (string.IsNullOrWhiteSpace(sessionDir)) return;
+
+        var inputDir = Path.Combine(sessionDir, "input");
+
+        try
+        {
+            switch (source.Kind)
+            {
+                case ShellcodeSourceKind.File:
+                    if (File.Exists(source.Value))
+                    {
+                        var ext = Path.GetExtension(source.Value);
+                        var destName = $"shellcode_raw{ext}";
+                        File.Copy(source.Value, Path.Combine(inputDir, destName), overwrite: true);
+                        logger.Debug($"Saved raw shellcode to input/{destName}");
+                    }
+                    break;
+                case ShellcodeSourceKind.Raw:
+                    File.WriteAllText(Path.Combine(inputDir, "shellcode_raw_hex.txt"), source.Value);
+                    logger.Debug("Saved raw hex shellcode to input/shellcode_raw_hex.txt");
+                    break;
+                case ShellcodeSourceKind.Url:
+                    File.WriteAllText(Path.Combine(inputDir, "shellcode_url.txt"), source.Value);
+                    logger.Debug("Saved shellcode URL to input/shellcode_url.txt");
+                    break;
+                case ShellcodeSourceKind.Generic:
+                    File.WriteAllText(Path.Combine(inputDir, "shellcode_generic.txt"), source.Value);
+                    logger.Debug("Saved generic shellcode to input/shellcode_generic.txt");
+                    break;
+                case ShellcodeSourceKind.WebPayload:
+                    File.WriteAllText(Path.Combine(inputDir, "shellcode_web_payload.txt"), source.Value);
+                    logger.Debug("Saved web payload to input/shellcode_web_payload.txt");
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.Warn($"Failed to save stage artifact: {ex.Message}");
+        }
+    }
+
+    /// <summary>Saves compiler stdout and stderr to the session's build/ subdirectory.</summary>
+    private void SaveCompilerOutput(string? sessionDir, CppFileConversionResult? result, IAppLogger logger)
+    {
+        if (string.IsNullOrWhiteSpace(sessionDir) || result == null) return;
+
+        var buildDir = Path.Combine(sessionDir, "build");
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(result.CompilerStdout))
+                File.WriteAllText(Path.Combine(buildDir, "stdout.txt"), result.CompilerStdout);
+            if (!string.IsNullOrWhiteSpace(result.CompilerStderr))
+                File.WriteAllText(Path.Combine(buildDir, "stderr.txt"), result.CompilerStderr);
+        }
+        catch (Exception ex)
+        {
+            logger.Warn($"Failed to save compiler output: {ex.Message}");
+        }
+    }
+
+    private void SaveSessionSummary(
+        string? sessionDir,
+        UiData data,
+        CodeTemplateDefinition template,
+        ShellcodeSource shellcodeSource,
+        CppFileConversionResult? conversionResult,
+        IAppLogger logger)
+    {
+        if (string.IsNullOrWhiteSpace(sessionDir)) return;
+
+        try
+        {
+            var summary = new Dictionary<string, object>
+            {
+                ["timestamp"] = DateTime.UtcNow.ToString("O"),
+                ["template"] = new { template.Id, template.Display },
+                ["shellcodeSource"] = new { Kind = shellcodeSource.Kind.ToString(), shellcodeSource.Value },
+                ["encoder"] = data.ComboBoxes.GetValueOrDefault(UiDataKeys.Encoder, "N/A"),
+                ["envelope"] = data.ComboBoxes.GetValueOrDefault(UiDataKeys.Envelope, "N/A"),
+                ["success"] = conversionResult?.Success ?? false,
+                ["outputExe"] = conversionResult?.OutputExePath ?? "N/A",
+                ["error"] = conversionResult?.Error ?? string.Empty,
+            };
+
+            // Collect snippet selections
+            var snippets = new Dictionary<string, object>();
+            foreach (var kv in data.ComboBoxes.Where(k => k.Key.StartsWith("snippetCombo_", StringComparison.OrdinalIgnoreCase)))
+                snippets[kv.Key] = kv.Value;
+            foreach (var kv in data.ListBoxes.Where(k => k.Key.StartsWith("snippetList_", StringComparison.OrdinalIgnoreCase)))
+                snippets[kv.Key] = kv.Value;
+            summary["snippets"] = snippets;
+
+            var json = System.Text.Json.JsonSerializer.Serialize(summary, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(Path.Combine(sessionDir, "session_summary.json"), json);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"Failed to save session summary: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Generates a professional human-readable session report (report.txt).
+    /// Called on every code path: success, failure, and cancellation.
+    /// </summary>
+    private void GenerateSessionReport(
+        string? sessionDir,
+        UiData? data,
+        CodeTemplateDefinition? template,
+        ShellcodeSource? shellcodeSource,
+        CppFileConversionResult? conversionResult,
+        IReadOnlyList<string> notes,
+        IAppLogger logger,
+        bool cancelled = false,
+        Exception? error = null)
+    {
+        if (string.IsNullOrWhiteSpace(sessionDir)) return;
+
+        try
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("╔══════════════════════════════════════════════════════════╗");
+            sb.AppendLine("║         WASHMACHINE — COMPILATION SESSION REPORT        ║");
+            sb.AppendLine("╚══════════════════════════════════════════════════════════╝");
+            sb.AppendLine();
+            sb.AppendLine($"  Generated : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"  Session   : {Path.GetFileName(sessionDir)}");
+            sb.AppendLine();
+
+            // Status
+            if (cancelled)
+            {
+                sb.AppendLine("  STATUS: CANCELLED");
+            }
+            else if (error != null)
+            {
+                sb.AppendLine("  STATUS: FAILED");
+                sb.AppendLine($"  Error : {error.Message}");
+            }
+            else if (conversionResult != null)
+            {
+                sb.AppendLine($"  STATUS: {(conversionResult.Success ? "SUCCESS" : "FAILED")}");
+                if (!string.IsNullOrWhiteSpace(conversionResult.Error))
+                    sb.AppendLine($"  Error : {conversionResult.Error}");
+                if (!string.IsNullOrWhiteSpace(conversionResult.OutputExePath))
+                    sb.AppendLine($"  Output: {conversionResult.OutputExePath}");
+            }
+            sb.AppendLine();
+
+            // Configuration
+            sb.AppendLine("── Configuration ──────────────────────────────────────────");
+            if (template != null)
+                sb.AppendLine($"  Template     : {template.Display} ({template.Id})");
+            if (shellcodeSource != null)
+                sb.AppendLine($"  Shellcode    : {shellcodeSource.Kind} — {(shellcodeSource.Value.Length > 80 ? shellcodeSource.Value[..80] + "..." : shellcodeSource.Value)}");
+            if (data != null)
+            {
+                var encoder = data.ComboBoxes.GetValueOrDefault(UiDataKeys.Encoder, "N/A");
+                var envelope = data.ComboBoxes.GetValueOrDefault(UiDataKeys.Envelope, "N/A");
+                sb.AppendLine($"  Encoder      : {encoder}");
+                sb.AppendLine($"  Envelope     : {envelope}");
+            }
+            sb.AppendLine();
+
+            // Session artifacts
+            sb.AppendLine("── Session Artifacts ──────────────────────────────────────");
+            try
+            {
+                foreach (var subdir in new[] { "input", "source", "build" })
+                {
+                    var dir = Path.Combine(sessionDir, subdir);
+                    if (Directory.Exists(dir))
+                    {
+                        var files = Directory.GetFiles(dir, "*", SearchOption.TopDirectoryOnly);
+                        foreach (var file in files)
+                        {
+                            var info = new FileInfo(file);
+                            sb.AppendLine($"  {subdir}/{info.Name,-40} {info.Length,10:N0} bytes");
+                        }
+                    }
+                }
+                // Root-level files
+                foreach (var file in Directory.GetFiles(sessionDir, "*", SearchOption.TopDirectoryOnly))
+                {
+                    var info = new FileInfo(file);
+                    if (info.Name != "report.txt") // skip self
+                        sb.AppendLine($"  {info.Name,-47} {info.Length,10:N0} bytes");
+                }
+            }
+            catch { /* ignore enumeration errors */ }
+            sb.AppendLine();
+
+            // Build notes
+            sb.AppendLine("── Build Notes ────────────────────────────────────────────");
+            foreach (var note in notes)
+                sb.AppendLine($"  {note}");
+            sb.AppendLine();
+
+            sb.AppendLine("══════════════════════════════════════════════════════════");
+
+            File.WriteAllText(Path.Combine(sessionDir, "report.txt"), sb.ToString());
+            logger.Debug("Session report saved.");
+        }
+        catch (Exception ex)
+        {
+            logger.Warn($"Failed to generate session report: {ex.Message}");
         }
     }
 
@@ -2214,7 +2442,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         throw new InvalidOperationException("Unable to resolve the selected shellcode source.");
     }
 
-    private string SaveRawHexToBin(string raw)
+    private string SaveRawHexToBin(string raw, string sessionDir, IAppLogger logger)
     {
         if (string.IsNullOrWhiteSpace(raw))
             throw new ArgumentException("Raw hex input is required.", nameof(raw));
@@ -2251,7 +2479,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             sb.Append(b.ToString("x2"));
         string hashHex = sb.ToString();
 
-        string dir = _paths.EnsureTempShellcodeDirectory();
+        string dir = Path.Combine(sessionDir, "input");
         Directory.CreateDirectory(dir);
 
         string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
@@ -2259,7 +2487,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         string path = Path.Combine(dir, fileName);
 
         File.WriteAllBytes(path, bytes);
-        _logger.Debug($"Raw shellcode persisted to {path}.");
+        logger.Debug($"Raw shellcode persisted to {path}.");
         return path;
     }
 

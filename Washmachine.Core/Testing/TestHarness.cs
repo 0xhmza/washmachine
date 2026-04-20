@@ -779,22 +779,13 @@ public static class TestHarness
     }
 
     /// <summary>
-    /// Removes generated wash_*.cpp and .obj files from the temp directory between tests.
+    /// No-op — per-session directories are self-contained and don't need inter-test cleanup.
+    /// Kept for API compatibility with existing test orchestration code.
     /// </summary>
     private static void CleanTempCpp(IAppPaths paths, bool fullClean = true)
     {
-        var tempDir = Path.Combine(paths.ExecutableDirectory, "temp", "cpp");
-        if (!Directory.Exists(tempDir)) return;
-
-        foreach (var f in Directory.GetFiles(tempDir, "*.cpp"))
-        {
-            try { File.Delete(f); } catch { }
-        }
-
-        foreach (var f in Directory.GetFiles(tempDir, "*.obj"))
-        {
-            try { File.Delete(f); } catch { }
-        }
+        // Each session now writes to its own directory under logging/,
+        // so there's nothing to clean between test runs.
     }
 
     // ═══════════════════════════════════════════════════════════════════════

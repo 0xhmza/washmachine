@@ -765,7 +765,7 @@ public static class Program
         bool? cloneIcon = null;
         bool? cloneMetadata = null;
         string? nopPaddingRaw = null;
-        var snippets = new Dictionary<string, string>();
+        var snippets = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         bool verbose = false;
         bool jsonOutput = false;
 
@@ -818,7 +818,18 @@ public static class Program
                     nopPaddingRaw = args[++i]; break;
                 case "--snippet" when i + 1 < args.Length:
                     var kv = args[++i].Split('=', 2);
-                    if (kv.Length == 2) snippets[kv[0]] = kv[1];
+                    if (kv.Length == 2)
+                    {
+                        var sectionKey = kv[0];
+                        // Support comma-separated IDs: --snippet antidebugging=Sleep,IsDebuggerPresent
+                        var ids = kv[1].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                        if (!snippets.TryGetValue(sectionKey, out var existing))
+                        {
+                            existing = new List<string>();
+                            snippets[sectionKey] = existing;
+                        }
+                        existing.AddRange(ids);
+                    }
                     break;
                 case "--verbose": verbose = true; break;
                 case "--json": jsonOutput = true; break;
@@ -958,17 +969,34 @@ public static class Program
         // Apply snippet selections.
         // Accept both internal format (snippetCombo_ANTISANDBOX_0=Default) and
         // friendly format (antisandbox=Default) which resolves via the catalog.
+        // For AllowMultiple sections, populate listBoxes; for single-select, use comboBoxes.
+        var listBoxes = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         foreach (var kv in snippets)
         {
-            if (kv.Key.StartsWith("snippetCombo_", StringComparison.OrdinalIgnoreCase) ||
-                kv.Key.StartsWith("snippetList_", StringComparison.OrdinalIgnoreCase))
+            if (kv.Key.StartsWith("snippetCombo_", StringComparison.OrdinalIgnoreCase))
             {
-                comboBoxes[kv.Key] = kv.Value;
+                // Internal combo format: use first value only
+                comboBoxes[kv.Key] = kv.Value.FirstOrDefault() ?? string.Empty;
+            }
+            else if (kv.Key.StartsWith("snippetList_", StringComparison.OrdinalIgnoreCase))
+            {
+                // Internal list format: pass all values
+                listBoxes[kv.Key] = kv.Value;
             }
             else if (snippetService.TryResolveSection(kv.Key, out var resolvedSection))
             {
-                string comboName = SnippetControlNaming.GetComboName(resolvedSection, 0);
-                comboBoxes[comboName] = kv.Value;
+                if (resolvedSection.AllowMultiple)
+                {
+                    // Multi-select: write all IDs to the list control
+                    string listName = SnippetControlNaming.GetListName(resolvedSection, 0);
+                    listBoxes[listName] = kv.Value;
+                }
+                else
+                {
+                    // Single-select: use first ID for the combo control
+                    string comboName = SnippetControlNaming.GetComboName(resolvedSection, 0);
+                    comboBoxes[comboName] = kv.Value.FirstOrDefault() ?? string.Empty;
+                }
             }
             else
             {
@@ -983,14 +1011,28 @@ public static class Program
             {
                 if (!snippetService.TryResolveSection(ph.SnippetTemplateKey, out var section))
                     continue;
-                // Use GetComboName so the key is normalized (uppercase) and matches what the GUI sends.
-                string comboName = SnippetControlNaming.GetComboName(section, 0);
-                if (!comboBoxes.ContainsKey(comboName))
+
+                if (section.AllowMultiple)
                 {
-                    var defaultItem = section.Items.FirstOrDefault(si => si.IsDefault)
-                                      ?? section.Items.FirstOrDefault();
-                    if (defaultItem != null)
-                        comboBoxes[comboName] = defaultItem.Id;
+                    string listName = SnippetControlNaming.GetListName(section, 0);
+                    if (!listBoxes.ContainsKey(listName))
+                    {
+                        var defaultItem = section.Items.FirstOrDefault(si => si.IsDefault)
+                                          ?? section.Items.FirstOrDefault();
+                        if (defaultItem != null)
+                            listBoxes[listName] = new List<string> { defaultItem.Id };
+                    }
+                }
+                else
+                {
+                    string comboName = SnippetControlNaming.GetComboName(section, 0);
+                    if (!comboBoxes.ContainsKey(comboName))
+                    {
+                        var defaultItem = section.Items.FirstOrDefault(si => si.IsDefault)
+                                          ?? section.Items.FirstOrDefault();
+                        if (defaultItem != null)
+                            comboBoxes[comboName] = defaultItem.Id;
+                    }
                 }
             }
 
@@ -1005,7 +1047,7 @@ public static class Program
             }
         }
 
-        var data = new UiData(textBoxes, comboBoxes);
+        var data = new UiData(textBoxes, comboBoxes, listBoxes);
 
         try
         {
@@ -1901,7 +1943,7 @@ public static class Program
         if (sessionLoggingEnabled)
         {
             sessionDir = paths.CreateBackdoorSessionDirectory();
-            string sessionLogPath = Path.Combine(sessionDir, "backdoor_log.txt");
+            string sessionLogPath = Path.Combine(sessionDir, "session.log");
             teeLogger = new TeeLogger(consoleLogger, sessionLogPath);
             logger = teeLogger;
 
@@ -1998,13 +2040,14 @@ public static class Program
             teeLogger?.FileOnly($"  Patch exit  : {patchExitCalls}");
             teeLogger?.FileOnly("");
 
-            // Copy original shellcode to session directory
+            // Copy original shellcode to session's input/ directory
             if (sessionDir != null && appSettings.SaveShellcodeCopy)
             {
                 try
                 {
-                    File.Copy(shellcodeFile, Path.Combine(sessionDir, Path.GetFileName(shellcodeFile)), overwrite: true);
-                    teeLogger?.FileOnly($"  Copied shellcode to session: {Path.GetFileName(shellcodeFile)}");
+                    var inputDir = Path.Combine(sessionDir, "input");
+                    File.Copy(shellcodeFile, Path.Combine(inputDir, Path.GetFileName(shellcodeFile)), overwrite: true);
+                    teeLogger?.FileOnly($"  Copied shellcode to session: input/{Path.GetFileName(shellcodeFile)}");
                 }
                 catch (Exception ex)
                 {
@@ -2235,18 +2278,19 @@ public static class Program
             }
             teeLogger?.FileOnly("");
 
-            // Copy the backdoored binary to session directory
+            // Copy the backdoored binary to session's output/ directory
             if (sessionDir != null && appSettings.SaveBinaryArtifact
                 && result.Success && !string.IsNullOrEmpty(result.OutputPath) && File.Exists(result.OutputPath))
             {
                 try
                 {
                     string destBinaryName = Path.GetFileName(result.OutputPath);
-                    string destBinaryPath = Path.Combine(sessionDir, destBinaryName);
+                    var outputSubDir = Path.Combine(sessionDir, "output");
+                    string destBinaryPath = Path.Combine(outputSubDir, destBinaryName);
                     File.Copy(result.OutputPath, destBinaryPath, overwrite: true);
                     var outputInfo = new FileInfo(result.OutputPath);
                     teeLogger?.FileOnly($"── Binary Artifact ────────────────────────────────────────");
-                    teeLogger?.FileOnly($"  Copied to session: {destBinaryName}");
+                    teeLogger?.FileOnly($"  Copied to session: output/{destBinaryName}");
                     teeLogger?.FileOnly($"  Size             : {outputInfo.Length:N0} bytes");
                     teeLogger?.FileOnly($"  SHA-256          : {Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(result.OutputPath)))}");
                     teeLogger?.FileOnly("");
@@ -2256,6 +2300,9 @@ public static class Program
                     teeLogger?.FileOnly($"  Warning: Could not copy binary to session: {ex.Message}");
                 }
             }
+
+            // Generate professional session report
+            GenerateBackdoorReport(sessionDir, result, shellcodeFile, peFile, outputFile, teeLogger);
 
             teeLogger?.FileOnly("── Session Complete ───────────────────────────────────────");
             teeLogger?.FileOnly($"  Finished at : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
@@ -2335,6 +2382,70 @@ public static class Program
         finally
         {
             teeLogger?.Dispose();
+        }
+    }
+
+    private static void GenerateBackdoorReport(string? sessionDir, BackdoorResult result,
+        string shellcodeFile, string peFile, string? outputFile, TeeLogger? teeLogger)
+    {
+        if (sessionDir == null) return;
+        try
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("╔══════════════════════════════════════════════════════════════╗");
+            sb.AppendLine("║            WASHMACHINE PE BACKDOOR — SESSION REPORT         ║");
+            sb.AppendLine("╚══════════════════════════════════════════════════════════════╝");
+            sb.AppendLine();
+            sb.AppendLine($"  Status      : {(result.Success ? "SUCCESS" : "FAILED")}");
+            sb.AppendLine($"  Timestamp   : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"  Session     : {Path.GetFileName(sessionDir)}");
+            sb.AppendLine();
+            sb.AppendLine("── Configuration ──────────────────────────────────────────────");
+            sb.AppendLine($"  Target PE   : {peFile}");
+            sb.AppendLine($"  Shellcode   : {shellcodeFile}");
+            sb.AppendLine($"  Output      : {result.OutputPath ?? outputFile ?? "(default)"}");
+            sb.AppendLine();
+
+            if (result.Success && !string.IsNullOrEmpty(result.OutputPath) && File.Exists(result.OutputPath))
+            {
+                var info = new FileInfo(result.OutputPath);
+                sb.AppendLine("── Output Binary ──────────────────────────────────────────────");
+                sb.AppendLine($"  Path        : {result.OutputPath}");
+                sb.AppendLine($"  Size        : {info.Length:N0} bytes");
+                sb.AppendLine($"  SHA-256     : {Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(result.OutputPath)))}");
+                sb.AppendLine();
+            }
+
+            if (!result.Success && !string.IsNullOrEmpty(result.ErrorMessage))
+            {
+                sb.AppendLine("── Error ──────────────────────────────────────────────────────");
+                sb.AppendLine($"  {result.ErrorMessage}");
+                sb.AppendLine();
+            }
+
+            if (result.Warnings?.Count > 0)
+            {
+                sb.AppendLine("── Warnings ───────────────────────────────────────────────────");
+                foreach (var w in result.Warnings)
+                    sb.AppendLine($"  ⚠ {w}");
+                sb.AppendLine();
+            }
+
+            sb.AppendLine("── Session Artifacts ──────────────────────────────────────────");
+            foreach (var file in Directory.GetFiles(sessionDir, "*", SearchOption.AllDirectories))
+            {
+                var rel = Path.GetRelativePath(sessionDir, file);
+                var size = new FileInfo(file).Length;
+                sb.AppendLine($"  {rel,-45} {size,10:N0} bytes");
+            }
+            sb.AppendLine();
+            sb.AppendLine("═══════════════════════════════════════════════════════════════");
+
+            File.WriteAllText(Path.Combine(sessionDir, "report.txt"), sb.ToString());
+        }
+        catch (Exception ex)
+        {
+            teeLogger?.FileOnly($"  Warning: Could not generate session report: {ex.Message}");
         }
     }
 
@@ -2693,9 +2804,15 @@ public static class Program
                 foreach (var s in sections)
                 {
                     var sectionKey = !string.IsNullOrWhiteSpace(s.Template) ? s.Template : s.Header;
+                    var multiTag = s.AllowMultiple
+                        ? $" [{UiColors.Accent}]\u25C6 multi-select[/]"
+                        : string.Empty;
+                    var syntaxHint = s.AllowMultiple
+                        ? $"--snippet {Markup.Escape(sectionKey)}=<id1>,<id2>,..."
+                        : $"--snippet {Markup.Escape(sectionKey)}=<id>";
                     var node = tree.AddNode(
-                        $"[bold {UiColors.Warning}]{Markup.Escape(s.Header)}[/] [{UiColors.Muted}]({s.Items.Count} items)[/]  " +
-                        $"[{UiColors.Muted}]--snippet {Markup.Escape(sectionKey)}=<id>[/]");
+                        $"[bold {UiColors.Warning}]{Markup.Escape(s.Header)}[/] [{UiColors.Muted}]({s.Items.Count} items)[/]{multiTag}  " +
+                        $"[{UiColors.Muted}]{syntaxHint}[/]");
                     foreach (var item in s.Items)
                     {
                         var label = item.IsDefault

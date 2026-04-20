@@ -787,34 +787,6 @@ public sealed partial class CompilePage : Page
 
             _lastOutputPath = outputDir;
 
-            // Clean up the cpp build tree.
-            // Default (KeepBuildArtifacts = false): wipe after every build so
-            //   temp/cpp/compiled/ doesn't accumulate stale timestamp+hash binaries.
-            // Opt-in: keep the artifacts. We still avoid wiping when the user explicitly
-            //   chose the temp dir as their output target (would delete the user's file).
-            var settings = AppSettingsService.Load();
-            bool keep = settings.KeepBuildArtifacts;
-            bool sameAsOutput = tempDir != null && string.Equals(tempDir, outputDir, StringComparison.OrdinalIgnoreCase);
-
-            if (tempDir != null && !sameAsOutput && !keep)
-            {
-                try
-                {
-                    var cppTempRoot = Path.GetDirectoryName(tempDir);
-                    var dirToClean = cppTempRoot != null && Directory.Exists(cppTempRoot) ? cppTempRoot : tempDir;
-                    Directory.Delete(dirToClean, recursive: true);
-                    _logger.Debug($"Cleaned temp directory: {dirToClean}");
-                }
-                catch (Exception cleanEx)
-                {
-                    _logger.Debug($"Temp cleanup skipped: {cleanEx.Message}");
-                }
-            }
-            else if (tempDir != null && !sameAsOutput && keep)
-            {
-                _logger.Debug($"Keeping build artifacts in {Path.GetDirectoryName(tempDir)} (settings.KeepBuildArtifacts = true).");
-            }
-
             _logger.Info("\n═══════════════════════════════════════════════");
             _logger.Ok($"Build complete! Output: {Path.GetFileName(currentOutput)}");
             _logger.Info("═══════════════════════════════════════════════");

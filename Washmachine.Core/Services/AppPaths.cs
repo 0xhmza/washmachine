@@ -14,9 +14,14 @@ public interface IAppPaths
     string SgnExecutable { get; }
     bool SetActivePlaybook(string playbookPath);
     IReadOnlyList<string> GetAvailablePlaybookFiles();
-    string EnsureTempShellcodeDirectory();
-    string EnsureTempSourceDirectory();
-    string CreateCompilationSessionDirectory();
+    string CreateCompilationSessionDirectory(string? inputName = null, string? outputName = null);
+    string CreateBackdoorSessionDirectory();
+
+    /// <summary>
+    /// Ensures a subdirectory exists within a session directory and returns its path.
+    /// </summary>
+    string EnsureSessionSubdirectory(string sessionDir, string subdirectory);
+
     IReadOnlyList<string> Validate();
 }
 
@@ -26,8 +31,6 @@ public interface IAppPaths
 /// </summary>
 public sealed class AppPaths : IAppPaths
 {
-    private readonly Lazy<string> _tempShellcodeDir;
-    private readonly Lazy<string> _tempSourceDir;
     private readonly string _activePlaybookStateFile;
 
     public AppPaths()
@@ -41,9 +44,6 @@ public sealed class AppPaths : IAppPaths
         Bin2ShellScript = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "main.py");
         Bin2ShellAlgos = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "data", "yaml", "algos.yaml");
         SgnExecutable = Path.Combine(ExecutableDirectory, "Tools", "SGN", "sgn.exe");
-
-        _tempShellcodeDir = new Lazy<string>(CreateTempShellcodeDir, LazyThreadSafetyMode.ExecutionAndPublication);
-        _tempSourceDir = new Lazy<string>(CreateTempSourceDirectory, LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
     public string ExecutableDirectory { get; }
@@ -151,14 +151,21 @@ public sealed class AppPaths : IAppPaths
             .ToList();
     }
 
-    public string EnsureTempShellcodeDirectory() => _tempShellcodeDir.Value;
-    public string EnsureTempSourceDirectory() => _tempSourceDir.Value;
-
-    public string CreateCompilationSessionDirectory()
+    public string CreateCompilationSessionDirectory(string? inputName = null, string? outputName = null)
     {
         string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture);
-        string sessionDir = Path.Combine(ExecutableDirectory, "logging", $"session_{timestamp}_{Guid.NewGuid():N}");
+        string slug = BuildSessionSlug(inputName, outputName);
+        string folderName = string.IsNullOrEmpty(slug)
+            ? $"session_{timestamp}_{Guid.NewGuid().ToString("N")[..8]}"
+            : $"session_{timestamp}_{slug}";
+        string sessionDir = Path.Combine(ExecutableDirectory, "logging", folderName);
         Directory.CreateDirectory(sessionDir);
+
+        // Pre-create standard subdirectories
+        Directory.CreateDirectory(Path.Combine(sessionDir, "input"));
+        Directory.CreateDirectory(Path.Combine(sessionDir, "source"));
+        Directory.CreateDirectory(Path.Combine(sessionDir, "build"));
+
         return sessionDir;
     }
 
@@ -171,7 +178,19 @@ public sealed class AppPaths : IAppPaths
         string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture);
         string sessionDir = Path.Combine(ExecutableDirectory, "logging", $"backdoor_{timestamp}_{Guid.NewGuid():N}");
         Directory.CreateDirectory(sessionDir);
+
+        // Pre-create standard subdirectories
+        Directory.CreateDirectory(Path.Combine(sessionDir, "input"));
+        Directory.CreateDirectory(Path.Combine(sessionDir, "output"));
+
         return sessionDir;
+    }
+
+    public string EnsureSessionSubdirectory(string sessionDir, string subdirectory)
+    {
+        var path = Path.Combine(sessionDir, subdirectory);
+        Directory.CreateDirectory(path);
+        return path;
     }
 
     public IReadOnlyList<string> Validate()
@@ -184,17 +203,38 @@ public sealed class AppPaths : IAppPaths
         return errors;
     }
 
-    private string CreateTempShellcodeDir()
+    /// <summary>
+    /// Builds a short, filesystem-safe slug from input/output names for session folder naming.
+    /// Falls back to a short GUID segment when no meaningful names are available.
+    /// </summary>
+    private static string BuildSessionSlug(string? inputName, string? outputName)
     {
-        var tempDir = Path.Combine(ExecutableDirectory, "temp", "shellcodes");
-        Directory.CreateDirectory(tempDir);
-        return tempDir;
-    }
+        static string Sanitize(string? name, int maxLen = 40)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+            // Strip to filename without extension
+            var stem = Path.GetFileNameWithoutExtension(name.Trim());
+            if (string.IsNullOrWhiteSpace(stem)) return string.Empty;
+            // Replace unsafe chars
+            var sb = new System.Text.StringBuilder(stem.Length);
+            foreach (var ch in stem)
+            {
+                if (char.IsLetterOrDigit(ch) || ch == '-' || ch == '_')
+                    sb.Append(ch);
+                else if (ch == ' ' || ch == '.')
+                    sb.Append('_');
+            }
+            var result = sb.ToString().Trim('_');
+            return result.Length > maxLen ? result[..maxLen] : result;
+        }
 
-    private string CreateTempSourceDirectory()
-    {
-        var tempDir = Path.Combine(ExecutableDirectory, "temp", "cpp");
-        Directory.CreateDirectory(tempDir);
-        return tempDir;
+        var parts = new List<string>();
+        var inp = Sanitize(inputName);
+        var outp = Sanitize(outputName);
+        if (!string.IsNullOrEmpty(inp)) parts.Add(inp);
+        if (!string.IsNullOrEmpty(outp)) parts.Add(outp);
+        return parts.Count > 0
+            ? string.Join("_", parts)
+            : Guid.NewGuid().ToString("N")[..8];
     }
 }

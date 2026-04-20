@@ -87,47 +87,6 @@
                 <Border Style="{StaticResource SectionDivider}" />
 
                 <!-- Build Artifacts -->
-                <Expander x:Name="buildArtifactsExpander"
-                          HorizontalAlignment="Stretch"
-                          HorizontalContentAlignment="Stretch"
-                          IsExpanded="True"
-                          Margin="0,0,0,4">
-                    <Expander.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <FontIcon Glyph="&#xE74E;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Build Artifacts" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Expander.Header>
-                    <StackPanel Margin="0,12,0,4" Spacing="12">
-                        <TextBlock Text="Compiled loader copies are written to temp/cpp/compiled/ during a build."
-                                   Style="{StaticResource SectionSubtitleText}"
-                                   TextWrapping="Wrap" />
-
-                        <Border Style="{StaticResource CardBorder}">
-                            <Grid Padding="20,16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="3*" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="4,0,16,0">
-                                    <TextBlock Text="Keep build artifact copies" Style="{StaticResource SectionTitleText}" />
-                                    <TextBlock Text="Off (default): wipe temp/cpp/ after every successful build so timestamp-named copies don't accumulate. On: retain the copies (forensic comparison, debugging)."
-                                               Style="{StaticResource SectionSubtitleText}"
-                                               TextWrapping="Wrap"
-                                               Margin="0,4,0,0" />
-                                </StackPanel>
-                                <ToggleSwitch x:Name="toggleKeepBuildArtifacts"
-                                              Grid.Column="1"
-                                              OnContent="On" OffContent="Off"
-                                              Toggled="toggleKeepBuildArtifacts_Toggled"
-                                              HorizontalAlignment="Center"
-                                              VerticalAlignment="Center"
-                                              MinWidth="0" Margin="8,0,8,0" Header="" />
-                            </Grid>
-                        </Border>
-                    </StackPanel>
-                </Expander>
-
                 <Border Style="{StaticResource SectionDivider}" />
 
                 <!-- Session Logging -->

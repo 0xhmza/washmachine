@@ -13,13 +13,15 @@ public static class CppFileConverter
 {
     /// <summary>
     /// Compiles all .cpp files in <paramref name="directory"/> to a single minimized .exe using a compiler found in <paramref name="compilerDirectory"/>.
-    /// The exe is written to "compiled" and named "yyyyMMdd_HHmmss-xxxxx.exe" (xxxxx = first 5 chars of SHA-256 of the exe).
+    /// The exe is written to <paramref name="outputDirectory"/> (or "compiled" under <paramref name="directory"/> if not specified)
+    /// and named "yyyyMMdd_HHmmss-xxxxx.exe" (xxxxx = first 5 chars of SHA-256 of the exe).
     /// </summary>
     public static async Task<CppFileConversionResult> ConvertAsync(
         string directory,
         string compilerDirectory,
         IAppLogger logger,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? outputDirectory = null)
     {
         ArgumentNullException.ThrowIfNull(directory);
         ArgumentNullException.ThrowIfNull(compilerDirectory);
@@ -55,9 +57,11 @@ public static class CppFileConverter
 
         logger.Debug($"Discovered {sources.Length} .cpp file(s) to compile. First few: {string.Join(", ", sources.Take(3).Select(Path.GetFileName))}{(sources.Length > 3 ? ", ..." : string.Empty)}");
 
-        // Build artifacts land in `<temp>/cpp/compiled` (lowercase, no spaces).
-        // The host UI may purge this directory after each build depending on user settings.
-        var outputDir = Path.Combine(directory, "compiled");
+        // Build artifacts land in the caller-specified output directory, or
+        // `<directory>/compiled` as a default fallback.
+        var outputDir = !string.IsNullOrWhiteSpace(outputDirectory)
+            ? outputDirectory
+            : Path.Combine(directory, "compiled");
         Directory.CreateDirectory(outputDir);
         logger.Debug($"Output directory: {outputDir}");
 
@@ -201,7 +205,9 @@ public static class CppFileConverter
 
             var finalMsg = msg.ToString().TrimEnd();
             logger.Warn(Truncate(finalMsg, 4000));
-            return new CppFileConversionResult(false, finalMsg);
+            return new CppFileConversionResult(false, finalMsg,
+                CompilerStdout: stdOut.ToString(),
+                CompilerStderr: stdErr.ToString());
         }
 
         // Compute SHA-256 of the produced exe, take first 5 hex chars
@@ -255,7 +261,9 @@ public static class CppFileConverter
             }
         }
 
-        return new CppFileConversionResult(true, null, finalExe);
+        return new CppFileConversionResult(true, null, finalExe,
+            CompilerStdout: stdOut.ToString(),
+            CompilerStderr: stdErr.ToString());
     }
 
     // ----- helpers -----

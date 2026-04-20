@@ -25,15 +25,8 @@ public sealed partial class SettingsPage : Page
         toggleSaveBinary.IsOn = _settings.SaveBinaryArtifact;
         toggleSaveShellcode.IsOn = _settings.SaveShellcodeCopy;
         toggleVerboseLogging.IsOn = _settings.VerboseFileLogging;
-        toggleKeepBuildArtifacts.IsOn = _settings.KeepBuildArtifacts;
 
         _settingsLoaded = true;
-    }
-
-    private void toggleKeepBuildArtifacts_Toggled(object sender, RoutedEventArgs e)
-    {
-        _settings.KeepBuildArtifacts = toggleKeepBuildArtifacts.IsOn;
-        SaveIfReady();
     }
 
     private void SaveIfReady()
