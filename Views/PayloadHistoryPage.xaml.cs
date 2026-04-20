@@ -25,7 +25,50 @@ public sealed partial class PayloadHistoryPage : Page
 
     private void HistoryList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        ShowSelectedEntry(HistoryList.SelectedItem as PayloadHistoryEntry);
+        var selected = HistoryList.SelectedItem as PayloadHistoryEntry;
+        DeleteButton.IsEnabled = selected != null;
+        ShowSelectedEntry(selected);
+    }
+
+    private async void Delete_Click(object sender, RoutedEventArgs e)
+    {
+        if (HistoryList.SelectedItem is not PayloadHistoryEntry entry)
+            return;
+
+        var dialog = new ContentDialog
+        {
+            Title = "Delete entry",
+            Content = $"Delete the history entry from {entry.DisplayTimestamp}?",
+            PrimaryButtonText = "Delete",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = this.XamlRoot
+        };
+        var choice = await dialog.ShowAsync();
+        if (choice != ContentDialogResult.Primary)
+            return;
+
+        PayloadHistoryStore.Delete(entry.Id);
+        LoadHistory();
+    }
+
+    private async void Clear_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "Clear all history",
+            Content = "This will permanently delete all payload history entries. Continue?",
+            PrimaryButtonText = "Clear All",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = this.XamlRoot
+        };
+        var choice = await dialog.ShowAsync();
+        if (choice != ContentDialogResult.Primary)
+            return;
+
+        PayloadHistoryStore.Clear();
+        LoadHistory();
     }
 
     private void LoadHistory()

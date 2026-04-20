@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Media;
 using Washmachine.Models;
 using Washmachine.Services;
 using Windows.Graphics;
+using Windows.Storage.Pickers;
 
 namespace Washmachine.Views;
 
@@ -15,6 +16,7 @@ namespace Washmachine.Views;
 /// </summary>
 public sealed class WebPayloadWizardResult
 {
+    public string SourceFilePath { get; set; } = string.Empty;
     public int EncoderIndex { get; set; }
     public int EnvelopeIndex { get; set; }
     public int WebHelperIndex { get; set; }
@@ -23,30 +25,34 @@ public sealed class WebPayloadWizardResult
 }
 
 /// <summary>
-/// Three-step wizard for configuring a web-mode payload via Bin2Shell.
-/// Step 1: Choose encoder, envelope, web helper.
-/// Step 2: Shows payload text, asks user to upload and provide URL.
-/// Step 3: Verifies the URL returns the correct payload.
+/// Four-step wizard for configuring a web-mode payload via Bin2Shell.
+/// Step 1: Select .bin shellcode file.
+/// Step 2: Choose encoder, envelope, web helper.
+/// Step 3: Generates payload, shows text, asks user to upload and provide URL.
+/// Step 4: Verifies the URL returns the correct payload.
 /// </summary>
 public sealed class WebPayloadWizardWindow
 {
     private readonly Window _window;
     private readonly TaskCompletionSource<WebPayloadWizardResult?> _tcs;
     private readonly ShellcodeEncodingCatalog _catalog;
-    private readonly Func<int, int, int, Task<Bin2ShellWebOutput>> _runBin2Shell;
+    private readonly Func<string, int, int, int, Task<Bin2ShellWebOutput>> _runBin2Shell;
 
     // Step 1 controls
+    private TextBox _filePathTextBox = null!;
+
+    // Step 2 controls
     private readonly ComboBox _encoderCombo;
     private readonly ComboBox _envelopeCombo;
     private readonly ComboBox _webHelperCombo;
     private StackPanel _webHelperPanel = null!;
 
-    // Step 2 controls
+    // Step 3 controls
     private TextBox _payloadTextBox = null!;
     private TextBox _urlTextBox = null!;
     private TextBlock _payloadLenLabel = null!;
 
-    // Step 3 controls
+    // Step 4 controls
     private TextBlock _verifyStatusText = null!;
     private FontIcon _verifyIcon = null!;
     private Button _verifyButton = null!;
@@ -65,7 +71,7 @@ public sealed class WebPayloadWizardWindow
 
     private WebPayloadWizardWindow(
         ShellcodeEncodingCatalog catalog,
-        Func<int, int, int, Task<Bin2ShellWebOutput>> runBin2Shell,
+        Func<string, int, int, int, Task<Bin2ShellWebOutput>> runBin2Shell,
         TaskCompletionSource<WebPayloadWizardResult?> tcs)
     {
         _catalog = catalog;
@@ -95,10 +101,11 @@ public sealed class WebPayloadWizardWindow
         _envelopeCombo = new ComboBox { Width = 300 };
         _webHelperCombo = new ComboBox { Width = 300 };
 
-        var page1 = BuildPage1();
-        var page2 = BuildPage2();
-        var page3 = BuildPage3();
-        _pages = new[] { page1, page2, page3 };
+        var page1 = BuildPage1_SelectFile();
+        var page2 = BuildPage2_Configure();
+        var page3 = BuildPage3_Payload();
+        var page4 = BuildPage4_Verify();
+        _pages = new[] { page1, page2, page3, page4 };
 
         var contentHost = new Grid { Margin = new Thickness(0, 4, 0, 0) };
         foreach (var page in _pages)
@@ -118,7 +125,7 @@ public sealed class WebPayloadWizardWindow
         root.Children.Add(scrollViewer);
 
         // Navigation bar
-        _stepLabel = new TextBlock { Text = "Step 1 of 3", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
+        _stepLabel = new TextBlock { Text = "Step 1 of 4", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
         _backButton = new Button { Content = "Back", MinWidth = 90 };
         _backButton.Click += (_, _) => Navigate(-1);
         _backButton.IsEnabled = false;
@@ -163,7 +170,7 @@ public sealed class WebPayloadWizardWindow
     public static Task<WebPayloadWizardResult?> ShowAsync(
         nint ownerHandle,
         ShellcodeEncodingCatalog catalog,
-        Func<int, int, int, Task<Bin2ShellWebOutput>> runBin2Shell)
+        Func<string, int, int, int, Task<Bin2ShellWebOutput>> runBin2Shell)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(runBin2Shell);
@@ -171,12 +178,12 @@ public sealed class WebPayloadWizardWindow
         var tcs = new TaskCompletionSource<WebPayloadWizardResult?>();
         var wiz = new WebPayloadWizardWindow(catalog, runBin2Shell, tcs);
 
-        wiz._window.AppWindow.Resize(new SizeInt32(820, 680));
+        wiz._window.AppWindow.Resize(new SizeInt32(820, 720));
         var display = DisplayArea.GetFromWindowId(wiz._window.AppWindow.Id, DisplayAreaFallback.Primary);
         var work = display.WorkArea;
         wiz._window.AppWindow.Move(new PointInt32(
             work.X + (work.Width - 820) / 2,
-            work.Y + (work.Height - 680) / 2));
+            work.Y + (work.Height - 720) / 2));
 
         // Make the wizard modal: disable the owner window until wizard closes.
         if (ownerHandle != 0)
@@ -192,7 +199,39 @@ public sealed class WebPayloadWizardWindow
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool EnableWindow(nint hWnd, bool bEnable);
 
-    private StackPanel BuildPage1()
+    private StackPanel BuildPage1_SelectFile()
+    {
+        var panel = new StackPanel { Margin = new Thickness(24, 16, 24, 16), Spacing = 16 };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Select Shellcode File",
+            FontSize = 18,
+            FontWeight = new Windows.UI.Text.FontWeight(600)
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Browse to the .bin shellcode file that will be processed by Bin2Shell for web delivery.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = new SolidColorBrush(Colors.Gray)
+        });
+
+        _filePathTextBox = new TextBox
+        {
+            PlaceholderText = "No file selected…",
+            IsReadOnly = true,
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        panel.Children.Add(_filePathTextBox);
+
+        var browseButton = new Button { Content = "Browse…", MinWidth = 120 };
+        browseButton.Click += OnBrowseBinFile;
+        panel.Children.Add(browseButton);
+
+        return panel;
+    }
+
+    private StackPanel BuildPage2_Configure()
     {
         var panel = new StackPanel { Margin = new Thickness(24, 16, 24, 16), Spacing = 16 };
 
@@ -218,7 +257,7 @@ public sealed class WebPayloadWizardWindow
         return panel;
     }
 
-    private StackPanel BuildPage2()
+    private StackPanel BuildPage3_Payload()
     {
         var panel = new StackPanel { Margin = new Thickness(24, 16, 24, 16), Spacing = 12 };
 
@@ -271,7 +310,7 @@ public sealed class WebPayloadWizardWindow
         return panel;
     }
 
-    private StackPanel BuildPage3()
+    private StackPanel BuildPage4_Verify()
     {
         var panel = new StackPanel { Margin = new Thickness(24, 16, 24, 16), Spacing = 12 };
 
@@ -350,17 +389,35 @@ public sealed class WebPayloadWizardWindow
 
     private async void OnNextClick(object sender, RoutedEventArgs e)
     {
+        // Step 1 (page 0): Validate .bin file is selected
         if (_currentPage == 0)
         {
-            // Run bin2shell before going to page 2
+            var filePath = _filePathTextBox.Text?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath))
+            {
+                var dialog = new ContentDialog
+                {
+                    Title = "No File Selected",
+                    Content = "Please browse to a valid .bin shellcode file before continuing.",
+                    CloseButtonText = "OK",
+                    XamlRoot = _window.Content.XamlRoot
+                };
+                await dialog.ShowAsync();
+                return;
+            }
+        }
+        // Step 2 (page 1): Run bin2shell with selected file before navigating to payload page
+        else if (_currentPage == 1)
+        {
             _nextButton.IsEnabled = false;
             try
             {
                 int encoderIdx = GetSelectedIndex(_encoderCombo);
                 int envelopeIdx = GetSelectedIndex(_envelopeCombo);
                 int webHelperIdx = GetSelectedIndex(_webHelperCombo);
+                string filePath = _filePathTextBox.Text?.Trim() ?? string.Empty;
 
-                _webOutput = await _runBin2Shell(encoderIdx, envelopeIdx, webHelperIdx);
+                _webOutput = await _runBin2Shell(filePath, encoderIdx, envelopeIdx, webHelperIdx);
 
                 _payloadTextBox.Text = _webOutput.Payload;
                 int displayLen = _webOutput.PayloadLen > 0
@@ -499,6 +556,7 @@ public sealed class WebPayloadWizardWindow
 
         var result = new WebPayloadWizardResult
         {
+            SourceFilePath = _filePathTextBox.Text?.Trim() ?? string.Empty,
             EncoderIndex = GetSelectedIndex(_encoderCombo),
             EnvelopeIndex = GetSelectedIndex(_envelopeCombo),
             WebHelperIndex = GetSelectedIndex(_webHelperCombo),
@@ -580,5 +638,23 @@ public sealed class WebPayloadWizardWindow
         }
 
         return sb.ToString().Trim();
+    }
+
+    private async void OnBrowseBinFile(object sender, RoutedEventArgs e)
+    {
+        var picker = new FileOpenPicker();
+        picker.FileTypeFilter.Add(".bin");
+        picker.FileTypeFilter.Add("*");
+        picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+
+        // Initialize the picker with the wizard's window handle
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(_window);
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+
+        var file = await picker.PickSingleFileAsync();
+        if (file != null)
+        {
+            _filePathTextBox.Text = file.Path;
+        }
     }
 }

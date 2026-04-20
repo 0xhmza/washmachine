@@ -292,25 +292,6 @@ public sealed class MainFormCoordinator
     {
         ArgumentNullException.ThrowIfNull(view);
 
-        string filePathRaw = view.ShellcodeUrlFileTextBox?.Text ?? string.Empty;
-        string filePath = filePathRaw.Trim();
-
-        if (string.IsNullOrWhiteSpace(filePath))
-        {
-            const string message = "Select a shellcode file before generating a web payload.";
-            _logger.Warn(message);
-            ShowMessage(view, message, "Web Payload", MsgBoxButton.OK, MsgBoxIcon.Warning);
-            return;
-        }
-
-        if (!File.Exists(filePath))
-        {
-            string message = $"Shellcode file not found: {filePath}";
-            _logger.Warn(message);
-            ShowMessage(view, message, "Web Payload", MsgBoxButton.OK, MsgBoxIcon.Warning);
-            return;
-        }
-
         ShellcodeEncodingCatalog catalog;
         try
         {
@@ -327,7 +308,7 @@ public sealed class MainFormCoordinator
         var wizardResult = await WebPayloadWizardWindow.ShowAsync(
             view.WindowHandle,
             catalog,
-            async (encoderIdx, envelopeIdx, webHelperIdx) =>
+            async (filePath, encoderIdx, envelopeIdx, webHelperIdx) =>
             {
                 var args = new List<string>();
 
@@ -347,7 +328,7 @@ public sealed class MainFormCoordinator
 
                 args.Add(filePath);
 
-                _logger.Debug($"Running Bin2Shell web mode: encoder={encoderIdx}, envelope={envelopeIdx}, webHelper={webHelperIdx}");
+                _logger.Debug($"Running Bin2Shell web mode: file={filePath}, encoder={encoderIdx}, envelope={envelopeIdx}, webHelper={webHelperIdx}");
                 string output = await _bin2ShellRunner.RunAsync(args, cancellationToken: default);
 
                 if (string.IsNullOrWhiteSpace(output))
@@ -368,8 +349,12 @@ public sealed class MainFormCoordinator
         // Populate the hidden URL textbox so source validation passes.
         view.ShellcodeUrlTextBox.Text = wizardResult.PayloadUrl;
 
+        // Also populate the file textbox with the wizard-selected file
+        if (!string.IsNullOrWhiteSpace(wizardResult.SourceFilePath) && view.ShellcodeUrlFileTextBox != null)
+            view.ShellcodeUrlFileTextBox.Text = wizardResult.SourceFilePath;
+
         _logger.Ok($"Web payload ready. URL: {wizardResult.PayloadUrl}");
-        PersistWebPayloadHistory(filePath, wizardResult, catalog);
+        PersistWebPayloadHistory(wizardResult.SourceFilePath, wizardResult, catalog);
     }
 
     private void PersistWebPayloadHistory(string sourceFilePath, WebPayloadWizardResult wizardResult, ShellcodeEncodingCatalog catalog)

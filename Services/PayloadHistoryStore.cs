@@ -148,6 +148,32 @@ public static class PayloadHistoryStore
         }
     }
 
+    public static bool Delete(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return false;
+
+        lock (SyncRoot)
+        {
+            var entries = LoadInternal();
+            int removed = entries.RemoveAll(e => string.Equals(e.Id, id, StringComparison.OrdinalIgnoreCase));
+            if (removed == 0) return false;
+
+            Directory.CreateDirectory(HistoryDirectory);
+            var json = JsonSerializer.Serialize(entries, JsonOptions);
+            File.WriteAllText(HistoryFile, json);
+            return true;
+        }
+    }
+
+    public static void Clear()
+    {
+        lock (SyncRoot)
+        {
+            Directory.CreateDirectory(HistoryDirectory);
+            File.WriteAllText(HistoryFile, "[]");
+        }
+    }
+
     private static List<PayloadHistoryEntry> LoadInternal()
     {
         if (!File.Exists(HistoryFile))
