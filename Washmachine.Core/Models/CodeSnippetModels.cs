@@ -124,7 +124,8 @@ public sealed class CodeSnippetItem
         string snippet,
         bool isDefault = false,
         string? includes = null,
-        string? implementation = null)
+        string? implementation = null,
+        IEnumerable<CodeSnippetInput>? inputs = null)
     {
         Id = id ?? string.Empty;
         Display = string.IsNullOrWhiteSpace(display) ? Id : display;
@@ -132,6 +133,8 @@ public sealed class CodeSnippetItem
         IsDefault = isDefault;
         Includes = includes ?? string.Empty;
         Implementation = implementation ?? string.Empty;
+        Inputs = new System.Collections.ObjectModel.ReadOnlyCollection<CodeSnippetInput>(
+            (inputs ?? Enumerable.Empty<CodeSnippetInput>()).ToList());
     }
 
     public string Id { get; }
@@ -149,6 +152,12 @@ public sealed class CodeSnippetItem
     /// so the call in <see cref="Snippet"/> can reference it.
     /// </summary>
     public string Implementation { get; }
+
+    /// <summary>
+    /// Per-snippet configurable parameters. Input IDs are local to this snippet;
+    /// the runtime prefixes them with the section+item for global uniqueness.
+    /// </summary>
+    public IReadOnlyList<CodeSnippetInput> Inputs { get; }
 }
 
 public sealed class CodeSnippetInput

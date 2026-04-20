@@ -896,7 +896,23 @@ public sealed partial class CompilePage : Page
             if (!string.IsNullOrEmpty(value))
             {
                 args.AddRange(["--snippet", $"{key}={value}"]);
-                _logger.Debug($"[ui] snippet arg: {key}={value}");
+                _logger.Debug($"[ui] snippet combo: {key}={value}");
+            }
+        }
+        foreach (var (key, values) in templateOptions.ListValues)
+        {
+            if (values is { Count: > 0 })
+            {
+                args.AddRange(["--snippet", $"{key}={string.Join(",", values)}"]);
+                _logger.Debug($"[ui] snippet list: {key}={string.Join(",", values)}");
+            }
+        }
+        foreach (var (key, value) in templateOptions.TextValues)
+        {
+            if (!string.IsNullOrEmpty(value))
+            {
+                args.AddRange(["--text", $"{key}={value}"]);
+                _logger.Debug($"[ui] text: {key}={value}");
             }
         }
 

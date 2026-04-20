@@ -1444,8 +1444,8 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             return;
 
         apply(plan, selection);
-        CollectSnippetExtras(plan, selection);
-        AddCustomSnippet(plan, placeholderName, selection.Snippet);
+        string snippet = SubstituteAndCollect(plan, data, section, selection, notes);
+        AddCustomSnippet(plan, placeholderName, snippet);
         LogSnippetEnabled(section.Template, selection.Id, notes);
     }
 
@@ -1462,7 +1462,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             ? rawParam.Trim()
             : string.Empty;
 
-        string snippet = selection.Snippet;
+        string snippet = SubstituteAndCollect(plan, data, section, selection, notes);
         bool requiresParameter =
             snippet.Contains("$guardrail_param$", StringComparison.Ordinal) ||
             snippet.Contains("__GUARDRAIL_PARAM__", StringComparison.Ordinal);
@@ -1474,7 +1474,6 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
                          .Replace("__GUARDRAIL_PARAM__", parameter);
 
         plan.GuardrailSnippets.Add(snippet);
-        CollectSnippetExtras(plan, selection);
         AddCustomSnippet(plan, placeholderName, snippet);
         LogSnippetEnabled(section.Template, selection.Id, notes);
     }
@@ -1492,11 +1491,11 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
             throw new InvalidOperationException("Process injection requires a target process name.");
 
         var trimmedName = psName.Trim();
-        string snippet = selection.Snippet.Replace("$psname$", trimmedName);
+        string snippet = SubstituteAndCollect(plan, data, section, selection, notes);
+        snippet = snippet.Replace("$psname$", trimmedName);
 
         plan.ProcessInjectionSnippet = snippet;
         plan.ProcessLookupHelper = ProcessLookupHelper;
-        CollectSnippetExtras(plan, selection);
         AddCustomSnippet(plan, placeholderName, snippet);
 
         LogSnippetEnabled(section.Template, selection.Id, notes);
@@ -1517,9 +1516,9 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
         foreach (var item in selections)
         {
-            plan.AntiDebuggingSnippets.Add(item.Snippet);
-            CollectSnippetExtras(plan, item);
-            AddCustomSnippet(plan, placeholderName, item.Snippet);
+            string snippet = SubstituteAndCollect(plan, data, section, item, notes);
+            plan.AntiDebuggingSnippets.Add(snippet);
+            AddCustomSnippet(plan, placeholderName, snippet);
             LogSnippetEnabled(section.Template, item.Id, notes);
         }
     }
@@ -1543,8 +1542,8 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
         foreach (var item in selections)
         {
-            CollectSnippetExtras(plan, item);
-            AddCustomSnippet(plan, placeholder.Name, item.Snippet);
+            string snippet = SubstituteAndCollect(plan, data, section, item, notes);
+            AddCustomSnippet(plan, placeholder.Name, snippet);
             LogSnippetEnabled(section.Template, item.Id, notes);
         }
     }
@@ -1582,6 +1581,96 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
         if (!string.IsNullOrWhiteSpace(item.Implementation))
             plan.SnippetImplementations.Add(item.Implementation);
+    }
+
+    /// <summary>
+    /// Builds a scoped TextBox key for a per-snippet input:
+    /// <c>{sectionTemplate}_{itemId}_{inputId}</c>.
+    /// </summary>
+    public static string BuildScopedInputKey(string sectionTemplate, string itemId, string inputId)
+        => $"{sectionTemplate}_{itemId}_{inputId}";
+
+    private static readonly Regex TokenPattern = new(@"\$([a-zA-Z_][a-zA-Z0-9_]*)\$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Substitutes <c>$token$</c> placeholders in a snippet item's Snippet, Includes and
+    /// Implementation using per-item input values from <see cref="UiData.TextBoxes"/>.
+    /// Returns the substituted snippet text. Includes/Implementation are collected into the plan.
+    /// </summary>
+    private string SubstituteAndCollect(
+        CppCompilationPlan plan,
+        UiData data,
+        CodeSnippetSection section,
+        CodeSnippetItem item,
+        ICollection<string> notes)
+    {
+        var paramMap = BuildParamMap(data, section, item);
+        string snippet = SubstituteTokens(item.Snippet, paramMap);
+        string includes = SubstituteTokens(item.Includes, paramMap);
+        string implementation = SubstituteTokens(item.Implementation, paramMap);
+
+        ValidateNoUnresolvedTokens(snippet, section.Template, item.Id);
+        ValidateNoUnresolvedTokens(includes, section.Template, item.Id);
+        ValidateNoUnresolvedTokens(implementation, section.Template, item.Id);
+
+        if (!string.IsNullOrWhiteSpace(includes))
+            plan.SnippetIncludes.Add(includes);
+        if (!string.IsNullOrWhiteSpace(implementation))
+            plan.SnippetImplementations.Add(implementation);
+
+        // Log any non-default param values
+        foreach (var input in item.Inputs)
+        {
+            if (paramMap.TryGetValue(input.Id, out var val) && val != input.DefaultValue)
+            {
+                var msg = $"Snippet {section.Template}:{item.Id} param {input.Id}={val}";
+                notes.Add(msg);
+                _logger.Debug(msg);
+            }
+        }
+
+        return snippet;
+    }
+
+    private static Dictionary<string, string> BuildParamMap(
+        UiData data, CodeSnippetSection section, CodeSnippetItem item)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var input in item.Inputs)
+        {
+            string scopedKey = BuildScopedInputKey(section.Template, item.Id, input.Id);
+            if (data.TextBoxes.TryGetValue(scopedKey, out var val) && !string.IsNullOrWhiteSpace(val))
+                map[input.Id] = val;
+            else if (!string.IsNullOrWhiteSpace(input.DefaultValue))
+                map[input.Id] = input.DefaultValue;
+        }
+        return map;
+    }
+
+    private static string SubstituteTokens(string text, Dictionary<string, string> paramMap)
+    {
+        if (string.IsNullOrEmpty(text) || paramMap.Count == 0)
+            return text;
+
+        return TokenPattern.Replace(text, match =>
+        {
+            var key = match.Groups[1].Value;
+            return paramMap.TryGetValue(key, out var val) ? val : match.Value;
+        });
+    }
+
+    private static void ValidateNoUnresolvedTokens(string text, string sectionTemplate, string itemId)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        var match = TokenPattern.Match(text);
+        if (match.Success)
+        {
+            throw new InvalidOperationException(
+                $"Unresolved parameter '${ match.Groups[1].Value}$' in snippet " +
+                $"'{sectionTemplate}:{itemId}'. Provide a value via --text or the UI.");
+        }
     }
 
     private string RenderTemplate(CppCompilationPlan plan, CodeTemplateDefinition template)

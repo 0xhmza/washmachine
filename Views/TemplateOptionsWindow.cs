@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Washmachine.Models;
+using Washmachine.Services;
 using Windows.Graphics;
 
 namespace Washmachine.Views;
@@ -359,19 +360,50 @@ public sealed class TemplateOptionsWindow
             var selectedIds = new HashSet<string>(resolved, StringComparer.OrdinalIgnoreCase);
             var checkPanel = new StackPanel { Orientation = Orientation.Vertical };
 
+            // Map item IDs to their CodeSnippetItem for input lookup
+            var itemById = section.Items
+                .Where(it => it != null && !string.IsNullOrWhiteSpace(it.Id))
+                .ToDictionary(it => it.Id, StringComparer.OrdinalIgnoreCase);
+
             foreach (var option in options)
             {
+                var isChecked = !string.IsNullOrWhiteSpace(option.Id) && selectedIds.Contains(option.Id);
                 var cb = new CheckBox
                 {
                     Content = option.Display,
                     Tag = option.Id,
-                    IsChecked = !string.IsNullOrWhiteSpace(option.Id) && selectedIds.Contains(option.Id),
+                    IsChecked = isChecked,
                     Margin = new Thickness(2, 1, 2, 1)
                 };
                 checkPanel.Children.Add(cb);
+
+                // Per-snippet inputs (show inline below checkbox when checked)
+                if (!string.IsNullOrWhiteSpace(option.Id)
+                    && itemById.TryGetValue(option.Id, out var snippetItem)
+                    && snippetItem.Inputs.Count > 0)
+                {
+                    var inputPanel = BuildSnippetItemInputPanel(section, snippetItem);
+                    inputPanel.Visibility = isChecked ? Visibility.Visible : Visibility.Collapsed;
+                    checkPanel.Children.Add(inputPanel);
+
+                    cb.Checked += (_, _) => inputPanel.Visibility = Visibility.Visible;
+                    cb.Unchecked += (_, _) =>
+                    {
+                        inputPanel.Visibility = Visibility.Collapsed;
+                        // Clear stale values from the textboxes
+                        foreach (var child in inputPanel.Children.OfType<StackPanel>())
+                            foreach (var tb in child.Children.OfType<TextBox>())
+                                tb.Text = tb.PlaceholderText ?? string.Empty;
+                    };
+                }
             }
 
             int height = Math.Clamp(options.Count * 30, MinSelectorHeight, MaxSelectorHeight);
+            // Expand height when items have inputs
+            bool hasInputs = section.Items.Any(it => it.Inputs.Count > 0);
+            if (hasInputs)
+                height = Math.Min(height + 120, MaxSelectorHeight + 120);
+
             var sv = new ScrollViewer
             {
                 Content = checkPanel,
@@ -400,9 +432,91 @@ public sealed class TemplateOptionsWindow
             SelectComboItem(combo, options, resolved);
             row.Children.Add(combo);
             _bindings.Add(new FieldBinding(key, FieldKind.SingleSelect, combo));
+
+            // Per-snippet inputs for single-select: show inputs for selected item
+            var itemById = section.Items
+                .Where(it => it != null && !string.IsNullOrWhiteSpace(it.Id))
+                .ToDictionary(it => it.Id, StringComparer.OrdinalIgnoreCase);
+
+            var inputHost = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(0, 4, 0, 0) };
+            var currentItemInputPanel = new StackPanel { Orientation = Orientation.Vertical };
+            inputHost.Children.Add(currentItemInputPanel);
+
+            void UpdateComboInputs()
+            {
+                currentItemInputPanel.Children.Clear();
+                // Remove old bindings for scoped text keys of this section
+                _bindings.RemoveAll(b => b.Kind == FieldKind.Text && b.Key.StartsWith(section.Template + "_", StringComparison.Ordinal));
+
+                if (combo.SelectedItem is OptionItem sel && !string.IsNullOrWhiteSpace(sel.Id)
+                    && itemById.TryGetValue(sel.Id, out var snippetItem) && snippetItem.Inputs.Count > 0)
+                {
+                    var panel = BuildSnippetItemInputPanel(section, snippetItem);
+                    currentItemInputPanel.Children.Add(panel);
+                }
+            }
+
+            combo.SelectionChanged += (_, _) => UpdateComboInputs();
+            UpdateComboInputs();
+
+            // Only add host if any items actually have inputs
+            if (section.Items.Any(it => it.Inputs.Count > 0))
+                host.Children.Add(inputHost);
         }
 
         host.Children.Add(row);
+    }
+
+    /// <summary>
+    /// Builds a panel of inline text inputs for a specific snippet item.
+    /// Uses scoped keys: {sectionTemplate}_{itemId}_{inputId}.
+    /// </summary>
+    private StackPanel BuildSnippetItemInputPanel(CodeSnippetSection section, CodeSnippetItem item)
+    {
+        var panel = new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            Margin = new Thickness(24, 2, 0, 4),
+            Padding = new Thickness(8, 4, 8, 4),
+            BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Gray),
+            BorderThickness = new Thickness(1, 0, 0, 0)
+        };
+
+        foreach (var input in item.Inputs)
+        {
+            var scopedKey = Washmachine.Services.CompilerService.BuildScopedInputKey(
+                section.Template, item.Id, input.Id);
+
+            var inputRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
+
+            string labelText = string.IsNullOrWhiteSpace(input.Label) ? input.Id : input.Label;
+            inputRow.Children.Add(new TextBlock
+            {
+                Text = labelText,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0),
+                MinWidth = 100
+            });
+
+            string initial = GetInitialTextValue(scopedKey);
+            if (string.IsNullOrWhiteSpace(initial) && !string.IsNullOrWhiteSpace(input.DefaultValue))
+                initial = input.DefaultValue;
+
+            var textBox = new TextBox
+            {
+                Width = 120,
+                Text = initial,
+                PlaceholderText = input.Placeholder ?? input.DefaultValue ?? string.Empty,
+                Margin = new Thickness(0, 0, 4, 0)
+            };
+
+            inputRow.Children.Add(textBox);
+            panel.Children.Add(inputRow);
+
+            _bindings.Add(new FieldBinding(scopedKey, FieldKind.Text, textBox));
+        }
+
+        return panel;
     }
 
     private static StackPanel CreateRow()

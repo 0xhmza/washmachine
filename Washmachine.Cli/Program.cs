@@ -38,7 +38,7 @@ public static class Program
             "--clone-from", "--clone-resources", "--no-clone-resources",
             "--clone-icon", "--no-clone-icon", "--clone-metadata", "--no-clone-metadata",
             "--pad-nops",
-            "--snippet", "--verbose", "--json"
+            "--snippet", "--text", "--verbose", "--json"
         },
         ["analyze"] = new[] { "--json" },
         ["backdoor"] = new[]
@@ -766,6 +766,7 @@ public static class Program
         bool? cloneMetadata = null;
         string? nopPaddingRaw = null;
         var snippets = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var textInputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         bool verbose = false;
         bool jsonOutput = false;
 
@@ -830,6 +831,11 @@ public static class Program
                         }
                         existing.AddRange(ids);
                     }
+                    break;
+                case "--text" when i + 1 < args.Length:
+                    var tkv = args[++i].Split('=', 2);
+                    if (tkv.Length == 2 && !string.IsNullOrWhiteSpace(tkv[0]))
+                        textInputs[tkv[0].Trim()] = tkv[1];
                     break;
                 case "--verbose": verbose = true; break;
                 case "--json": jsonOutput = true; break;
@@ -1035,14 +1041,31 @@ public static class Program
                     }
                 }
             }
+        }
 
-            // Apply default input values
-            foreach (var section in snippetService.GetAllSections())
+        // Apply explicit --text inputs (override defaults) — runs regardless of template resolution
+        foreach (var kv in textInputs)
+        {
+            textBoxes[kv.Key] = kv.Value;
+            logger.Debug($"Merged --text input: {kv.Key}={kv.Value}");
+        }
+
+        // Apply default input values (section-level and item-level)
+        foreach (var section in snippetService.GetAllSections())
+        {
+            foreach (var input in section.Inputs)
             {
-                foreach (var input in section.Inputs)
+                if (!string.IsNullOrWhiteSpace(input.DefaultValue) && !textBoxes.ContainsKey(input.Id))
+                    textBoxes[input.Id] = input.DefaultValue;
+            }
+
+            foreach (var item in section.Items)
+            {
+                foreach (var input in item.Inputs)
                 {
-                    if (!string.IsNullOrWhiteSpace(input.DefaultValue) && !textBoxes.ContainsKey(input.Id))
-                        textBoxes[input.Id] = input.DefaultValue;
+                    var scopedKey = CompilerService.BuildScopedInputKey(section.Template, item.Id, input.Id);
+                    if (!string.IsNullOrWhiteSpace(input.DefaultValue) && !textBoxes.ContainsKey(scopedKey))
+                        textBoxes[scopedKey] = input.DefaultValue;
                 }
             }
         }
