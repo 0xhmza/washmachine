@@ -38,7 +38,19 @@ public sealed class CodeTemplateCatalog
             return false;
         }
 
-        return _templatesById.TryGetValue(id, out template);
+        if (_templatesById.TryGetValue(id, out template))
+            return true;
+
+        var legacyAlias = NormalizeLegacyTemplateAlias(id);
+        return legacyAlias is not null && _templatesById.TryGetValue(legacyAlias, out template);
+    }
+
+    private static string? NormalizeLegacyTemplateAlias(string id)
+    {
+        const string legacyPrefix = "shellcode-";
+        return id.StartsWith(legacyPrefix, StringComparison.OrdinalIgnoreCase)
+            ? id[legacyPrefix.Length..]
+            : null;
     }
 }
 

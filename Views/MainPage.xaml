@@ -341,8 +341,8 @@
                 <Expander IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                     <Expander.Header>
                         <StackPanel Orientation="Horizontal">
-                            <FontIcon Glyph="&#xE8A5;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="#FFC9920A" />
-                            <TextBlock Text="Payload Features" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" Foreground="#FFC9920A" />
+                            <FontIcon Glyph="&#xE8A5;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{StaticResource DraculaOrangeBrush}" />
+                            <TextBlock Text="Payload Features" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" Foreground="{StaticResource DraculaOrangeBrush}" />
                         </StackPanel>
                     </Expander.Header>
 
@@ -390,17 +390,17 @@
                         MinWidth="110"
                         Margin="0,0,8,0"
                         Click="ConfigureTemplate_Click"
-                        Foreground="#FF3D2400"
+                        Foreground="{StaticResource DraculaBackgroundBrush}"
                         FontWeight="SemiBold">
                                     <Button.Background>
                                         <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                            <GradientStop Color="#FFF5C518" Offset="0.0" />
-                                            <GradientStop Color="#FFE8A800" Offset="0.6" />
-                                            <GradientStop Color="#FFC9850A" Offset="1.0" />
+                                            <GradientStop Color="{StaticResource DraculaYellowColor}" Offset="0.0" />
+                                            <GradientStop Color="{StaticResource DraculaOrangeColor}" Offset="0.55" />
+                                            <GradientStop Color="{StaticResource DraculaPinkColor}" Offset="1.0" />
                                         </LinearGradientBrush>
                                     </Button.Background>
                                     <Button.BorderBrush>
-                                        <SolidColorBrush Color="#FFB07800" />
+                                        <SolidColorBrush Color="{StaticResource DraculaOrangeColor}" />
                                     </Button.BorderBrush>
                                 </Button>
 

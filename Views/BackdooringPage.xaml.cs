@@ -370,8 +370,8 @@ public sealed partial class BackdooringPage : Page
                     SizeFormatted = FormatFileSize(c.Size),
                     StatusIcon = c.Size >= _estimatedPayloadSize ? "\uE73E" : "\uE711",
                     StatusColor = c.Size >= _estimatedPayloadSize
-                        ? new SolidColorBrush(Colors.Green)
-                        : new SolidColorBrush(Colors.Orange),
+                        ? App.ThemeBrush("DraculaGreenBrush")
+                        : App.ThemeBrush("DraculaOrangeBrush"),
                     Assessment = c.Size >= _estimatedPayloadSize
                         ? "Suitable for payload"
                         : c.Size >= 100 ? "Usable" : "Too small"
@@ -439,13 +439,13 @@ public sealed partial class BackdooringPage : Page
 
         var protections = new List<ProtectionItem>
         {
-            new() { Name = "ASLR (Address Randomization)", Icon = security.HasAslr ? "\uE73E" : "\uE711", Color = security.HasAslr ? new SolidColorBrush(Colors.Green) : new SolidColorBrush(Colors.Red) },
-            new() { Name = "DEP (Data Execution Prevention)", Icon = security.HasDep ? "\uE73E" : "\uE711", Color = security.HasDep ? new SolidColorBrush(Colors.Green) : new SolidColorBrush(Colors.Red) },
-            new() { Name = "CFG (Control Flow Guard)", Icon = security.HasCfg ? "\uE73E" : "\uE711", Color = security.HasCfg ? new SolidColorBrush(Colors.Green) : new SolidColorBrush(Colors.Red) },
-            new() { Name = "Authenticode Signature", Icon = security.HasAuthenticode ? "\uE73E" : "\uE711", Color = security.HasAuthenticode ? new SolidColorBrush(Colors.Green) : new SolidColorBrush(Colors.Red) },
-            new() { Name = "High Entropy VA", Icon = security.HasHighEntropyVa ? "\uE73E" : "\uE711", Color = security.HasHighEntropyVa ? new SolidColorBrush(Colors.Green) : new SolidColorBrush(Colors.Red) },
-            new() { Name = "SafeSEH", Icon = security.HasSafeSeh ? "\uE73E" : "\uE711", Color = security.HasSafeSeh ? new SolidColorBrush(Colors.Green) : new SolidColorBrush(Colors.Red) },
-            new() { Name = "Force Integrity Check", Icon = security.ForceIntegrity ? "\uE73E" : "\uE711", Color = security.ForceIntegrity ? new SolidColorBrush(Colors.Green) : new SolidColorBrush(Colors.Red) },
+            new() { Name = "ASLR (Address Randomization)", Icon = security.HasAslr ? "\uE73E" : "\uE711", Color = security.HasAslr ? App.ThemeBrush("DraculaGreenBrush") : App.ThemeBrush("DraculaRedBrush") },
+            new() { Name = "DEP (Data Execution Prevention)", Icon = security.HasDep ? "\uE73E" : "\uE711", Color = security.HasDep ? App.ThemeBrush("DraculaGreenBrush") : App.ThemeBrush("DraculaRedBrush") },
+            new() { Name = "CFG (Control Flow Guard)", Icon = security.HasCfg ? "\uE73E" : "\uE711", Color = security.HasCfg ? App.ThemeBrush("DraculaGreenBrush") : App.ThemeBrush("DraculaRedBrush") },
+            new() { Name = "Authenticode Signature", Icon = security.HasAuthenticode ? "\uE73E" : "\uE711", Color = security.HasAuthenticode ? App.ThemeBrush("DraculaGreenBrush") : App.ThemeBrush("DraculaRedBrush") },
+            new() { Name = "High Entropy VA", Icon = security.HasHighEntropyVa ? "\uE73E" : "\uE711", Color = security.HasHighEntropyVa ? App.ThemeBrush("DraculaGreenBrush") : App.ThemeBrush("DraculaRedBrush") },
+            new() { Name = "SafeSEH", Icon = security.HasSafeSeh ? "\uE73E" : "\uE711", Color = security.HasSafeSeh ? App.ThemeBrush("DraculaGreenBrush") : App.ThemeBrush("DraculaRedBrush") },
+            new() { Name = "Force Integrity Check", Icon = security.ForceIntegrity ? "\uE73E" : "\uE711", Color = security.ForceIntegrity ? App.ThemeBrush("DraculaGreenBrush") : App.ThemeBrush("DraculaRedBrush") },
         };
 
         ProtectionsItemsControl.ItemsSource = protections;
@@ -660,7 +660,7 @@ public sealed partial class BackdooringPage : Page
         public string AddressHex { get; set; } = "";
         public string SizeFormatted { get; set; } = "";
         public string StatusIcon { get; set; } = "";
-        public SolidColorBrush StatusColor { get; set; } = new(Colors.Gray);
+        public SolidColorBrush StatusColor { get; set; } = App.ThemeBrush("TextFillColorSecondaryBrush");
         public string Assessment { get; set; } = "";
     }
 
@@ -675,7 +675,7 @@ public sealed partial class BackdooringPage : Page
     {
         public string Name { get; set; } = "";
         public string Icon { get; set; } = "";
-        public SolidColorBrush Color { get; set; } = new(Colors.Gray);
+        public SolidColorBrush Color { get; set; } = App.ThemeBrush("TextFillColorSecondaryBrush");
     }
 
     #endregion

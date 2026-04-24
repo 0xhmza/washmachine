@@ -213,7 +213,7 @@ public sealed class WebPayloadWizardWindow
         {
             Text = "Browse to the .bin shellcode file that will be processed by Bin2Shell for web delivery.",
             TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Colors.Gray)
+            Foreground = App.ThemeBrush("TextFillColorSecondaryBrush")
         });
 
         _filePathTextBox = new TextBox
@@ -245,7 +245,7 @@ public sealed class WebPayloadWizardWindow
         {
             Text = "Choose the encoder, envelope, and web helper that Bin2Shell will use to prepare your payload for web delivery.",
             TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Colors.Gray)
+            Foreground = App.ThemeBrush("TextFillColorSecondaryBrush")
         });
 
         panel.Children.Add(CreateLabeledControl("Encoder:", _encoderCombo));
@@ -271,7 +271,7 @@ public sealed class WebPayloadWizardWindow
         _payloadLenLabel = new TextBlock
         {
             Text = "Payload length: --",
-            Foreground = new SolidColorBrush(Colors.Gray)
+            Foreground = App.ThemeBrush("TextFillColorSecondaryBrush")
         };
         panel.Children.Add(_payloadLenLabel);
 
@@ -279,7 +279,7 @@ public sealed class WebPayloadWizardWindow
         {
             Text = "Copy the payload text below and upload it to an HTTP(S) endpoint. Then enter the URL where the payload is hosted.",
             TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Colors.Gray)
+            Foreground = App.ThemeBrush("TextFillColorSecondaryBrush")
         });
 
         _payloadTextBox = new TextBox
@@ -324,7 +324,7 @@ public sealed class WebPayloadWizardWindow
         {
             Text = "Click Verify to confirm the URL returns the correct payload content.",
             TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Colors.Gray)
+            Foreground = App.ThemeBrush("TextFillColorSecondaryBrush")
         });
 
         var statusRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 8, 0, 0) };
@@ -455,7 +455,7 @@ public sealed class WebPayloadWizardWindow
         {
             _verifyStatusText.Text = "Enter a URL first.";
             _verifyIcon.Glyph = "\uEA39";
-            _verifyIcon.Foreground = new SolidColorBrush(Colors.Orange);
+            _verifyIcon.Foreground = App.ThemeBrush("DraculaOrangeBrush");
             return;
         }
 
@@ -464,7 +464,7 @@ public sealed class WebPayloadWizardWindow
         {
             _verifyStatusText.Text = "URL must start with http:// or https://";
             _verifyIcon.Glyph = "\uEA39";
-            _verifyIcon.Foreground = new SolidColorBrush(Colors.Orange);
+            _verifyIcon.Foreground = App.ThemeBrush("DraculaOrangeBrush");
             return;
         }
 
@@ -483,7 +483,7 @@ public sealed class WebPayloadWizardWindow
             {
                 _verifyStatusText.Text = $"Warning: HTTP {statusCode}. The server returned an error, but you can still proceed.";
                 _verifyIcon.Glyph = "\uEA39";
-                _verifyIcon.Foreground = new SolidColorBrush(Colors.Orange);
+                _verifyIcon.Foreground = App.ThemeBrush("DraculaOrangeBrush");
                 _urlVerified = false;
                 _verifyButton.IsEnabled = true;
                 return;
@@ -497,14 +497,14 @@ public sealed class WebPayloadWizardWindow
             {
                 _verifyStatusText.Text = $"Verified! HTTP {statusCode}. Payload matches.";
                 _verifyIcon.Glyph = "\uE73E";
-                _verifyIcon.Foreground = new SolidColorBrush(Colors.Green);
+                _verifyIcon.Foreground = App.ThemeBrush("DraculaGreenBrush");
                 _urlVerified = true;
             }
             else
             {
                 _verifyStatusText.Text = $"Warning: HTTP {statusCode} but payload content does not match. You can still proceed.";
                 _verifyIcon.Glyph = "\uEA39";
-                _verifyIcon.Foreground = new SolidColorBrush(Colors.Orange);
+                _verifyIcon.Foreground = App.ThemeBrush("DraculaOrangeBrush");
                 _urlVerified = false;
             }
         }
@@ -512,7 +512,7 @@ public sealed class WebPayloadWizardWindow
         {
             _verifyStatusText.Text = $"Verification failed: {ex.Message}";
             _verifyIcon.Glyph = "\uEA39";
-            _verifyIcon.Foreground = new SolidColorBrush(Colors.Red);
+            _verifyIcon.Foreground = App.ThemeBrush("DraculaRedBrush");
             _urlVerified = false;
         }
 
@@ -526,7 +526,7 @@ public sealed class WebPayloadWizardWindow
         {
             _verifyStatusText.Text = "Enter a payload URL before finishing.";
             _verifyIcon.Glyph = "\uEA39";
-            _verifyIcon.Foreground = new SolidColorBrush(Colors.Orange);
+            _verifyIcon.Foreground = App.ThemeBrush("DraculaOrangeBrush");
             return;
         }
 

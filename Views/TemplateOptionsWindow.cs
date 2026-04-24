@@ -108,7 +108,7 @@ public sealed class TemplateOptionsWindow
         _emptyLabel = new TextBlock
         {
             Text = "No options are available for this template.",
-            Foreground = new SolidColorBrush(Microsoft.UI.Colors.Gray),
+            Foreground = App.ThemeBrush("TextFillColorSecondaryBrush"),
             Margin = new Thickness(12, 12, 12, 0)
         };
 
@@ -270,7 +270,7 @@ public sealed class TemplateOptionsWindow
             body.Children.Add(new TextBlock
             {
                 Text = "No options available.",
-                Foreground = new SolidColorBrush(Microsoft.UI.Colors.Gray),
+                Foreground = App.ThemeBrush("TextFillColorSecondaryBrush"),
                 Margin = new Thickness(0, 4, 0, 0)
             });
         }
@@ -350,7 +350,7 @@ public sealed class TemplateOptionsWindow
                 row.Children.Add(new TextBlock
                 {
                     Text = "No snippets defined.",
-                    Foreground = new SolidColorBrush(Microsoft.UI.Colors.Gray),
+                    Foreground = App.ThemeBrush("TextFillColorSecondaryBrush"),
                     VerticalAlignment = VerticalAlignment.Center
                 });
                 host.Children.Add(row);
@@ -478,7 +478,7 @@ public sealed class TemplateOptionsWindow
             Orientation = Orientation.Vertical,
             Margin = new Thickness(24, 2, 0, 4),
             Padding = new Thickness(8, 4, 8, 4),
-            BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Gray),
+            BorderBrush = App.ThemeBrush("DraculaCurrentLineBrush"),
             BorderThickness = new Thickness(1, 0, 0, 0)
         };
 

@@ -26,6 +26,13 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    public void NavigateToSettingsPage()
+    {
+        mainNavigationView.SelectedItem = mainNavigationView.SettingsItem;
+        if (ContentFrame.CurrentSourcePageType != typeof(SettingsPage))
+            ContentFrame.Navigate(typeof(SettingsPage));
+    }
+
     public MainWindow()
     {
         InitializeComponent();

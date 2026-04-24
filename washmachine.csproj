@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <DefaultItemExcludes>$(DefaultItemExcludes);Washmachine.Core\**;Washmachine.Cli\**;Output\**;Testing\**;Icon\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Washmachine.Core\**;Washmachine.Cli\**;Output\**;Testing\**;Icon\**;metasploit-framework-master\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <PropertyGroup>

@@ -344,7 +344,7 @@ public sealed class UserInteractionService : IUserInteractionService
         {
             Text = bodyText,
             TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Microsoft.UI.Colors.Gray)
+            Foreground = App.ThemeBrush("TextFillColorSecondaryBrush")
         });
 
         contentPanel.Children.Add(new TextBox

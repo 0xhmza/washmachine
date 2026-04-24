@@ -10,15 +10,16 @@
     Title="Washmachine - Loader Builder"
     >
 
-    <NavigationView x:Name="mainNavigationView"
-                    PaneDisplayMode="Left"
-                    IsPaneOpen="True"
-                    IsBackButtonVisible="Collapsed"
-                    OpenPaneLength="240"
-                    CompactPaneLength="56"
-                    IsSettingsVisible="True"
-                    IsDoubleTapEnabled="False"
-                    SelectionChanged="NavView_SelectionChanged">
+    <Grid>
+        <NavigationView x:Name="mainNavigationView"
+                        PaneDisplayMode="Left"
+                        IsPaneOpen="True"
+                        IsBackButtonVisible="Collapsed"
+                        OpenPaneLength="240"
+                        CompactPaneLength="56"
+                        IsSettingsVisible="True"
+                        IsDoubleTapEnabled="False"
+                        SelectionChanged="NavView_SelectionChanged">
 
         <NavigationView.PaneHeader>
             <StackPanel Orientation="Horizontal" Margin="-100,70,0,20" HorizontalAlignment="Center" >
@@ -36,12 +37,12 @@
         <NavigationView.MenuItems>
             <NavigationViewItem Content="Payload"
                                 Tag="MainPage"
-                                Foreground="#FFD14D4D"
-                                Background="#1AFF5C5C"
-                                BorderBrush="#66FF5C5C"
+                                Foreground="{StaticResource DraculaRedBrush}"
+                                Background="{StaticResource DraculaRedSoftBrush}"
+                                BorderBrush="{StaticResource DraculaRedBrush}"
                                 BorderThickness="1">
                 <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE943;" Foreground="#FFD14D4D" />
+                    <FontIcon Glyph="&#xE943;" Foreground="{StaticResource DraculaRedBrush}" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem Content="Backdooring" Tag="BackdooringPage">
@@ -69,12 +70,12 @@
         <NavigationView.FooterMenuItems>
             <NavigationViewItem Content="Pipeline"
                                 Tag="PipelinePage"
-                                Foreground="#FF00E0FF"
-                                Background="#1A00E0FF"
-                                BorderBrush="#5500E0FF"
+                                Foreground="{StaticResource DraculaCyanBrush}"
+                                Background="{StaticResource DraculaCyanSoftBrush}"
+                                BorderBrush="{StaticResource DraculaCyanBrush}"
                                 BorderThickness="1">
                 <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE9D9;" Foreground="#FF00E0FF" />
+                    <FontIcon Glyph="&#xE9D9;" Foreground="{StaticResource DraculaCyanBrush}" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem Content="History" Tag="PayloadHistoryPage">
@@ -84,6 +85,7 @@
             </NavigationViewItem>
         </NavigationView.FooterMenuItems>
 
-        <Frame x:Name="ContentFrame" />
-    </NavigationView>
+            <Frame x:Name="ContentFrame" />
+        </NavigationView>
+    </Grid>
 </Window>

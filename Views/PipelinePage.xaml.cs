@@ -200,8 +200,8 @@ public sealed partial class PipelinePage : Page
         };
         var accentSoft = stage.Severity switch
         {
-            Severity.Warning => new SolidColorBrush(Color.FromArgb(0x55, 0xFF, 0xB3, 0x47)),
-            Severity.Skipped => new SolidColorBrush(Color.FromArgb(0x33, 0x42, 0x58, 0x7A)),
+            Severity.Warning => (Brush)Resources["HudWarningSoftBrush"],
+            Severity.Skipped => (Brush)Resources["HudSkippedSoftBrush"],
             _                => (Brush)Resources["HudCyanSoftBrush"],
         };
 
@@ -288,8 +288,8 @@ public sealed partial class PipelinePage : Page
             var chip = new Border
             {
                 Background = stage.Severity == Severity.Warning
-                    ? new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xB3, 0x47))
-                    : new SolidColorBrush(Color.FromArgb(0x33, 0x00, 0xE0, 0xFF)),
+                    ? (Brush)Resources["HudWarningGhostBrush"]
+                    : (Brush)Resources["HudCyanGhostBrush"],
                 BorderBrush = accentSoft,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(2),
@@ -377,7 +377,7 @@ public sealed partial class PipelinePage : Page
         {
             var codeBox = new Border
             {
-                Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x05, 0x0B, 0x18)),
+                Background = (Brush)Resources["HudCodeBackgroundBrush"],
                 BorderBrush = accentSoft,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(2),
@@ -448,7 +448,7 @@ public sealed partial class PipelinePage : Page
         var stack = new StackPanel();
         var head = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x0A, 0x15, 0x25)),
+            Background = (Brush)Resources["HudHeaderPanelBrush"],
             Padding = new Thickness(10, 5, 10, 5),
             Child = new TextBlock
             {

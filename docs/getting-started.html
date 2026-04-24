@@ -152,8 +152,8 @@ dotnet publish washmachine.csproj -c Release</code></pre>
                 <h2>Quick Start Guide</h2>
 
                 <h3>1. Your First Encoded Payload</h3>
-                <pre><code># List available templates
-washmachine-cli list --templates
+                <pre><code># Show available templates
+washmachine-cli show templates
 
 # Encode a shellcode file with the minimal template
 washmachine-cli encode -s payload.bin -t shellcode-minimal
@@ -162,14 +162,14 @@ washmachine-cli encode -s payload.bin -t shellcode-minimal
 washmachine-cli encode -s payload.bin -e 1 --verbose</code></pre>
 
                 <h3>2. Exploring the Catalog</h3>
-                <pre><code># See what snippets are available
-washmachine-cli list --snippets
+                <pre><code># See what modules are available
+washmachine-cli show modules
 
 # See available encoders
-washmachine-cli list --encoders
+washmachine-cli show encoders
 
 # Check which compilers are detected
-washmachine-cli list --compilers</code></pre>
+washmachine-cli show compilers</code></pre>
 
                 <h3>3. Your First PE Backdoor</h3>
                 <pre><code># Analyze target PE
@@ -259,7 +259,7 @@ washmachine-cli analyze target.backdoored.exe</code></pre>
                 <p>Format: <code>--snippet &lt;section&gt;=&lt;snippet_id&gt;</code></p>
                 <p>Example:</p>
                 <pre><code>washmachine-cli encode -s payload.bin --snippet antidebugging=IsDebuggerPresentCheck</code></pre>
-                <p>Use <code>washmachine-cli list --snippets</code> to see all available snippet IDs grouped by section.</p>
+                <p>Use <code>washmachine-cli show modules</code> to see all available snippet IDs grouped by section.</p>
 
                 <!-- ── Encoding Options ──────────────────────────────── -->
 

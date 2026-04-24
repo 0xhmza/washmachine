@@ -7,40 +7,31 @@
       NavigationCacheMode="Required">
 
     <Page.Resources>
-        <!-- Cinematic palette -->
-        <Color x:Key="HudBgDeep">#FF050912</Color>
-        <Color x:Key="HudBgMid">#FF0A1322</Color>
-        <Color x:Key="HudBgPanel">#FF0E1A2E</Color>
-        <Color x:Key="HudCyan">#FF00E0FF</Color>
-        <Color x:Key="HudCyanSoft">#5500E0FF</Color>
-        <Color x:Key="HudCyanGhost">#1A00E0FF</Color>
-        <Color x:Key="HudAmber">#FFFFB347</Color>
-        <Color x:Key="HudMint">#FF7CFFA8</Color>
-        <Color x:Key="HudInk">#FFE6F1FF</Color>
-        <Color x:Key="HudInkDim">#FF7A8CB0</Color>
-        <Color x:Key="HudInkFaint">#FF42587A</Color>
-        <Color x:Key="HudGridLine">#22418FBB</Color>
-
-        <SolidColorBrush x:Key="HudCyanBrush" Color="{StaticResource HudCyan}" />
-        <SolidColorBrush x:Key="HudCyanSoftBrush" Color="{StaticResource HudCyanSoft}" />
-        <SolidColorBrush x:Key="HudCyanGhostBrush" Color="{StaticResource HudCyanGhost}" />
-        <SolidColorBrush x:Key="HudAmberBrush" Color="{StaticResource HudAmber}" />
-        <SolidColorBrush x:Key="HudMintBrush" Color="{StaticResource HudMint}" />
-        <SolidColorBrush x:Key="HudInkBrush" Color="{StaticResource HudInk}" />
-        <SolidColorBrush x:Key="HudInkDimBrush" Color="{StaticResource HudInkDim}" />
-        <SolidColorBrush x:Key="HudInkFaintBrush" Color="{StaticResource HudInkFaint}" />
-        <SolidColorBrush x:Key="HudPanelBrush" Color="{StaticResource HudBgPanel}" />
-        <SolidColorBrush x:Key="HudGridLineBrush" Color="{StaticResource HudGridLine}" />
+        <SolidColorBrush x:Key="HudCyanBrush" Color="{StaticResource DraculaCyanColor}" />
+        <SolidColorBrush x:Key="HudCyanSoftBrush" Color="#558BE9FD" />
+        <SolidColorBrush x:Key="HudCyanGhostBrush" Color="#1A8BE9FD" />
+        <SolidColorBrush x:Key="HudAmberBrush" Color="{StaticResource DraculaOrangeColor}" />
+        <SolidColorBrush x:Key="HudMintBrush" Color="{StaticResource DraculaGreenColor}" />
+        <SolidColorBrush x:Key="HudInkBrush" Color="{StaticResource DraculaForegroundColor}" />
+        <SolidColorBrush x:Key="HudInkDimBrush" Color="{StaticResource DraculaCurrentLineColor}" />
+        <SolidColorBrush x:Key="HudInkFaintBrush" Color="{StaticResource DraculaCurrentLineColor}" />
+        <SolidColorBrush x:Key="HudPanelBrush" Color="{StaticResource DraculaSelectionColor}" />
+        <SolidColorBrush x:Key="HudGridLineBrush" Color="#226272A4" />
+        <SolidColorBrush x:Key="HudWarningSoftBrush" Color="#55FFB86C" />
+        <SolidColorBrush x:Key="HudWarningGhostBrush" Color="#22FFB86C" />
+        <SolidColorBrush x:Key="HudSkippedSoftBrush" Color="#3344475A" />
+        <SolidColorBrush x:Key="HudCodeBackgroundBrush" Color="{StaticResource DraculaBackgroundColor}" />
+        <SolidColorBrush x:Key="HudHeaderPanelBrush" Color="{StaticResource DraculaCurrentLineColor}" />
 
         <LinearGradientBrush x:Key="HudBackdropBrush" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="{StaticResource HudBgDeep}" Offset="0.0" />
-            <GradientStop Color="{StaticResource HudBgMid}"  Offset="0.6" />
-            <GradientStop Color="{StaticResource HudBgDeep}" Offset="1.0" />
+            <GradientStop Color="{StaticResource DraculaBackgroundColor}" Offset="0.0" />
+            <GradientStop Color="{StaticResource DraculaSelectionColor}"  Offset="0.6" />
+            <GradientStop Color="{StaticResource DraculaBackgroundColor}" Offset="1.0" />
         </LinearGradientBrush>
 
         <LinearGradientBrush x:Key="HudHeaderBrush" StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Color="#FF0B1628" Offset="0.0" />
-            <GradientStop Color="#FF050912" Offset="1.0" />
+            <GradientStop Color="{StaticResource DraculaCurrentLineColor}" Offset="0.0" />
+            <GradientStop Color="{StaticResource DraculaBackgroundColor}" Offset="1.0" />
         </LinearGradientBrush>
 
         <Style x:Key="HudMonoText" TargetType="TextBlock">
@@ -197,7 +188,7 @@
                     </Border>
                     <Border x:Name="ChipWarningBorder"
                             Visibility="Collapsed"
-                            Background="#22FFB347"
+                            Background="{StaticResource HudWarningGhostBrush}"
                             BorderBrush="{StaticResource HudAmberBrush}"
                             BorderThickness="1" CornerRadius="2" Padding="10,4">
                         <StackPanel>
@@ -228,7 +219,7 @@
                         </Grid.RowDefinitions>
 
                         <Grid Grid.Row="0" Padding="14,10,14,8"
-                              Background="#FF0A1525">
+                              Background="{StaticResource HudHeaderPanelBrush}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
@@ -251,7 +242,7 @@
                         <!-- Top alert banner (SGN/exec compatibility, etc) -->
                         <Border x:Name="AlertBanner"
                                 Grid.Row="1" Margin="14,8,14,4"
-                                Background="#22FFB347"
+                                Background="{StaticResource HudWarningGhostBrush}"
                                 BorderBrush="{StaticResource HudAmberBrush}"
                                 BorderThickness="1" CornerRadius="2"
                                 Padding="12,8" Visibility="Collapsed">
@@ -291,7 +282,7 @@
 
             <!-- ═════════════════════════ BOTTOM TELEMETRY ═════════════════════════ -->
             <Border Grid.Row="3"
-                    Background="#FF070D1A"
+                    Background="{StaticResource HudCodeBackgroundBrush}"
                     BorderBrush="{StaticResource HudCyanSoftBrush}"
                     BorderThickness="0,1,0,0"
                     Padding="14,6"

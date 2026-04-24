@@ -101,7 +101,7 @@ washmachine-cli <command> [options]
 | `analyze` | Analyze a PE file (headers, sections, imports, code caves) |
 | `strip` | Extract, remove, or dump PE sections and overlays |
 | `backdoor` | Inject shellcode into an existing PE (5 methods: code-cave, new-section, section-ext, text-pad, tls-callback) |
-| `list` | List available templates, encoders, snippets, or compilers |
+| `show` | Display encoders, envelopes, modules, templates, or compilers |
 | `provision` | Download and install required external tools (Bin2Shell + SGN) |
 | `test` | Run the automated test harness |
 
@@ -109,7 +109,7 @@ washmachine-cli <command> [options]
 
 ```powershell
 # Encode from a .bin shellcode file using the minimal template
-washmachine-cli encode -s payload.bin -t shellcode-minimal
+washmachine-cli encode -s payload.bin -t minimal
 
 # Encode with XOR encoding, output as JSON
 washmachine-cli encode -s payload.bin -e 1 --json
@@ -126,9 +126,9 @@ washmachine-cli analyze target.exe --json
 # Inject shellcode into an existing PE
 washmachine-cli backdoor --pe target.exe -s payload.bin -o patched.exe
 
-# List discovered compilers and available templates
-washmachine-cli list --compilers
-washmachine-cli list --templates
+# Inspect discovered compilers and available templates
+washmachine-cli show compilers
+washmachine-cli show templates
 
 # Download Bin2Shell (run once before using encoding features)
 washmachine-cli provision
@@ -207,7 +207,7 @@ The **Template** combo lists every `id` defined under `templates:` in `Assets/vx
 | Template ID | Description |
 |---|---|
 | `default` | Full loader with all feature placeholders (`GUARDRAILS`, `ANTI_DEBUGGING`, `UAC_BYPASS`, `PROCESS_INJECTION`, `SHELLCODE_EXECUTION`) |
-| `shellcode-minimal` | Bare minimum — shellcode source + one execution snippet, nothing else |
+| `minimal` | Bare minimum — shellcode source + one execution snippet, nothing else |
 
 Selecting a template resets the available snippet combos to only those referenced by that template's `placeholders`.
 
@@ -464,7 +464,7 @@ The following shows a fully self-contained catalog with two templates and one cu
 templates:
 
   # Minimal template — shellcode source + one execution snippet
-  - id: "shellcode-minimal"
+  - id: "minimal"
     display: "Shellcode Minimal"
     description: "Bare VirtualAlloc loader, no extra features."
     content: |
@@ -701,7 +701,7 @@ washmachine/
 │   └── Washmachine.Core.csproj
 │
 ├── Washmachine.Cli/                    ← console app (net8.0)
-│   ├── Program.cs                      ← encode / analyze / backdoor / list / provision / test
+│   ├── Program.cs                      ← encode / analyze / backdoor / show / provision / test
 │   └── Washmachine.Cli.csproj
 │
 ├── Assets/

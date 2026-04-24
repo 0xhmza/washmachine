@@ -165,8 +165,9 @@ public sealed partial class PackingPage : Page
     {
         UpxStatusText.Text = message;
         UpxStatusIcon.Glyph = found ? "\uE73E" : "\uE9CE";
-        UpxStatusIcon.Foreground = new SolidColorBrush(
-            found ? Microsoft.UI.Colors.Green : Microsoft.UI.Colors.Gray);
+        UpxStatusIcon.Foreground = found
+            ? App.ThemeBrush("DraculaGreenBrush")
+            : App.ThemeBrush("TextFillColorSecondaryBrush");
     }
 
     private void EnablePackingToggle_Toggled(object sender, RoutedEventArgs e)

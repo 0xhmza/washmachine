@@ -93,7 +93,7 @@ public sealed partial class CompilePage : Page
                 CompilerCombo.IsEnabled = false;
                 CompileButton.IsEnabled = false;
                 CompilerStatus.Text = "No compiler detected. Install Visual Studio or MinGW.";
-                CompilerStatus.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Orange);
+                CompilerStatus.Foreground = App.ThemeBrush("DraculaOrangeBrush");
                 DownloadCompilerPanel.Visibility = Visibility.Visible;
             }
             else
@@ -107,13 +107,13 @@ public sealed partial class CompilePage : Page
                 CompilerCombo.IsEnabled = true;
                 CompileButton.IsEnabled = true;
                 CompilerStatus.Text = $"Found {result.Candidates.Count} compiler(s)";
-                CompilerStatus.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Green);
+                CompilerStatus.Foreground = App.ThemeBrush("DraculaGreenBrush");
             }
         }
         catch (Exception ex)
         {
             CompilerStatus.Text = $"Error: {ex.Message}";
-            CompilerStatus.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Red);
+            CompilerStatus.Foreground = App.ThemeBrush("DraculaRedBrush");
             DownloadCompilerPanel.Visibility = Visibility.Visible;
         }
     }
@@ -182,7 +182,7 @@ public sealed partial class CompilePage : Page
         if (backdoorPage != null && backdoorPage.IsBackdooringEnabled)
         {
             BackdoorSummaryCard.Opacity = 1.0;
-            BackdoorStatusBadge.Background = new SolidColorBrush(Microsoft.UI.Colors.Green);
+            BackdoorStatusBadge.Background = App.ThemeBrush("DraculaGreenBrush");
             BackdoorStatusText.Text = "Enabled";
             BackdoorDetails.Visibility = Visibility.Visible;
             BackdoorDisabledText.Visibility = Visibility.Collapsed;
@@ -210,7 +210,7 @@ public sealed partial class CompilePage : Page
         else
         {
             BackdoorSummaryCard.Opacity = 0.5;
-            BackdoorStatusBadge.Background = new SolidColorBrush(Microsoft.UI.Colors.Gray);
+            BackdoorStatusBadge.Background = App.ThemeBrush("TextFillColorSecondaryBrush");
             BackdoorStatusText.Text = "Disabled";
             BackdoorDetails.Visibility = Visibility.Collapsed;
             BackdoorDisabledText.Visibility = Visibility.Visible;
@@ -220,7 +220,7 @@ public sealed partial class CompilePage : Page
         if (packingPage != null && packingPage.IsPackingEnabled)
         {
             PackingSummaryCard.Opacity = 1.0;
-            PackingStatusBadge.Background = new SolidColorBrush(Microsoft.UI.Colors.Green);
+            PackingStatusBadge.Background = App.ThemeBrush("DraculaGreenBrush");
             PackingStatusText.Text = "Enabled";
             PackingDetails.Visibility = Visibility.Visible;
             PackingDisabledText.Visibility = Visibility.Collapsed;
@@ -231,7 +231,7 @@ public sealed partial class CompilePage : Page
         else
         {
             PackingSummaryCard.Opacity = 0.5;
-            PackingStatusBadge.Background = new SolidColorBrush(Microsoft.UI.Colors.Gray);
+            PackingStatusBadge.Background = App.ThemeBrush("TextFillColorSecondaryBrush");
             PackingStatusText.Text = "Disabled";
             PackingDetails.Visibility = Visibility.Collapsed;
             PackingDisabledText.Visibility = Visibility.Visible;
@@ -312,7 +312,7 @@ public sealed partial class CompilePage : Page
                 CompilerCombo.IsEnabled = false;
                 CompileButton.IsEnabled = false;
                 CompilerStatus.Text = "No compiler detected. Install Visual Studio or MinGW.";
-                CompilerStatus.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Orange);
+                CompilerStatus.Foreground = App.ThemeBrush("DraculaOrangeBrush");
                 DownloadCompilerPanel.Visibility = Visibility.Visible;
 
                 detectionWindow.SetComplete(false, "No compilers found");
@@ -330,7 +330,7 @@ public sealed partial class CompilePage : Page
                 CompilerCombo.IsEnabled = true;
                 CompileButton.IsEnabled = true;
                 CompilerStatus.Text = $"Found {result.Candidates.Count} compiler(s)";
-                CompilerStatus.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Green);
+                CompilerStatus.Foreground = App.ThemeBrush("DraculaGreenBrush");
                 DownloadCompilerPanel.Visibility = Visibility.Collapsed;
 
                 detectionWindow.SetComplete(true, $"Found {result.Candidates.Count} compiler(s)");
@@ -350,7 +350,7 @@ public sealed partial class CompilePage : Page
         catch (Exception ex)
         {
             CompilerStatus.Text = $"Error: {ex.Message}";
-            CompilerStatus.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Red);
+            CompilerStatus.Foreground = App.ThemeBrush("DraculaRedBrush");
             DownloadCompilerPanel.Visibility = Visibility.Visible;
 
             detectionWindow.SetComplete(false, "Detection failed");
@@ -1311,13 +1311,13 @@ public sealed partial class CompilePage : Page
         if (success)
         {
             CompileResultIcon.Glyph = "\uE73E"; // Checkmark
-            CompileResultIcon.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Green);
+            CompileResultIcon.Foreground = App.ThemeBrush("DraculaGreenBrush");
             CompileOutputLink.Visibility = Visibility.Visible;
         }
         else
         {
             CompileResultIcon.Glyph = "\uEA39"; // Warning
-            CompileResultIcon.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Orange);
+            CompileResultIcon.Foreground = App.ThemeBrush("DraculaOrangeBrush");
             CompileOutputLink.Visibility = Visibility.Collapsed;
         }
     }

@@ -1,104 +1,180 @@
 namespace Washmachine.Cli.Ui;
 
 using Spectre.Console;
-using Spectre.Console.Rendering;
 
-public record UsageOption(string Flag, string Description, string? Default = null);
-public record UsageExample(string Command, string Description);
+public record UsageOption(
+    string Flag,
+    string Description,
+    string? Default = null,
+    string? AcceptedValues = null);
+
+public record UsageOptionGroup(
+    string Title,
+    string? Description,
+    UsageOption[] Options);
+
+public record UsageExample(
+    string Command,
+    string Description,
+    string Shell = "Any shell");
+
+public record UsageNote(
+    string Label,
+    string Description);
+
+public record UsageSection(
+    string Title,
+    string? Description = null,
+    UsageNote[]? Notes = null,
+    string[]? Bullets = null);
 
 public record CommandUsage(
     string Name,
+    string Summary,
     string Syntax,
-    string Description,
-    UsageOption[]? Required = null,
-    UsageOption[]? Options = null,
+    string? Description = null,
+    string? WhenToUse = null,
+    string? Output = null,
+    UsageOptionGroup[]? OptionGroups = null,
+    UsageSection[]? Sections = null,
     UsageExample[]? Examples = null,
-    string[]? Notes = null);
+    UsageNote[]? Related = null);
 
 /// <summary>
-/// Renders Metasploit-framework-style usage / help text using boxed panels.
+/// Flat, box-free help renderer. Sections are separated by bold headers and
+/// a thin rule — no panels, no borders.
 /// </summary>
 public static class UsageFormatter
 {
-    public static void Print(CommandUsage usage)
+    public static int GetConsoleWidth()
     {
-        AnsiConsole.WriteLine();
-
-        // ── Module-info panel ──────────────────────────────
-        var info = new Grid().AddColumn().AddColumn();
-        info.AddRow($"[{UiColors.Label}]Module:[/]", $"[bold {UiColors.Accent}]washmachine-cli {usage.Name}[/]");
-        info.AddRow($"[{UiColors.Label}]Info:[/]",   $"[{UiColors.Value}]{usage.Description}[/]");
-        info.AddRow($"[{UiColors.Label}]Usage:[/]",  $"[{UiColors.Muted}]washmachine-cli[/] {usage.Syntax}");
-
-        AnsiConsole.Write(MakePanel(usage.Name, info));
-
-        // ── Required arguments ─────────────────────────────
-        if (usage.Required is { Length: > 0 })
+        try
         {
-            var table = MakeOptionTable(showDefault: false);
-            foreach (var opt in usage.Required)
-                table.AddRow(
-                    $"[{UiColors.Accent}]{Markup.Escape(opt.Flag)}[/]",
-                    $"[{UiColors.Value}]{opt.Description}[/]");
-            AnsiConsole.Write(MakePanel("Required Arguments", table));
+            int width = Console.WindowWidth;
+            return width > 40 ? width : 100;
         }
-
-        // ── Optional arguments ─────────────────────────────
-        if (usage.Options is { Length: > 0 })
+        catch
         {
-            var table = MakeOptionTable(showDefault: true);
-            foreach (var opt in usage.Options)
-                table.AddRow(
-                    $"[{UiColors.Accent}]{Markup.Escape(opt.Flag)}[/]",
-                    $"[{UiColors.Value}]{opt.Description}[/]",
-                    opt.Default != null
-                        ? $"[{UiColors.Muted}]{Markup.Escape(opt.Default)}[/]"
-                        : $"[{UiColors.Muted}]—[/]");
-            AnsiConsole.Write(MakePanel("Options", table));
-        }
-
-        // ── Examples ───────────────────────────────────────
-        if (usage.Examples is { Length: > 0 })
-        {
-            var rows = new List<IRenderable>();
-            foreach (var ex in usage.Examples)
-            {
-                rows.Add(new Markup($"[{UiColors.Muted}]#[/] [{UiColors.Label}]{ex.Description}[/]"));
-                rows.Add(new Markup($"[{UiColors.Accent}]$[/] [{UiColors.Value}]{Markup.Escape(ex.Command)}[/]"));
-                rows.Add(new Text(""));
-            }
-            AnsiConsole.Write(MakePanel("Examples", new Rows(rows)));
-        }
-
-        // ── Notes ──────────────────────────────────────────
-        if (usage.Notes is { Length: > 0 })
-        {
-            var rows = usage.Notes.Select(n =>
-                (IRenderable)new Markup($"[{UiColors.Muted}]{n}[/]")).ToList();
-            AnsiConsole.Write(MakePanel("Notes", new Rows(rows)));
+            return 100;
         }
     }
 
-    // ── Helpers ────────────────────────────────────────────
-
-    public static Panel MakePanel(string title, IRenderable content) =>
-        new Panel(content)
-            .Header($"[bold {UiColors.Header}] {title} [/]")
-            .Border(BoxBorder.Rounded)
-            .BorderColor(UiColors.BoxBorderColor)
-            .Padding(1, 0);
-
-    private static Table MakeOptionTable(bool showDefault)
+    /// <summary>Print a section header with an underline rule.</summary>
+    public static void PrintSectionHeader(string title)
     {
-        var t = new Table()
-            .Border(TableBorder.Simple)
-            .BorderColor(UiColors.BoxBorderColor)
-            .AddColumn(new TableColumn($"[{UiColors.Accent}]Name[/]"))
-            .AddColumn(new TableColumn($"[{UiColors.Accent}]Description[/]"));
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"[bold {UiColors.Header}]{Markup.Escape(title.ToUpperInvariant())}[/]");
+        AnsiConsole.MarkupLine($"[{UiColors.Rule}]{new string('─', title.Length + 2)}[/]");
+        AnsiConsole.WriteLine();
+    }
 
-        if (showDefault)
-            t.AddColumn(new TableColumn($"[{UiColors.Accent}]Default[/]"));
+    public static void Print(CommandUsage usage)
+    {
+        PrintSectionHeader($"{usage.Name} command");
 
-        return t;
+        // Overview fields
+        PrintKv("Summary", usage.Summary, UiColors.Value);
+        PrintKv("Usage",   usage.Syntax,  UiColors.Accent);
+        if (!string.IsNullOrWhiteSpace(usage.Description))
+            PrintKv("Details",  usage.Description!, UiColors.Value);
+        if (!string.IsNullOrWhiteSpace(usage.WhenToUse))
+            PrintKv("Best for", usage.WhenToUse!,   UiColors.Value);
+        if (!string.IsNullOrWhiteSpace(usage.Output))
+            PrintKv("Output",   usage.Output!,       UiColors.Value);
+
+        // Option groups
+        foreach (var group in usage.OptionGroups ?? Array.Empty<UsageOptionGroup>())
+        {
+            PrintSectionHeader(group.Title);
+
+            if (!string.IsNullOrWhiteSpace(group.Description))
+            {
+                AnsiConsole.MarkupLine($"  [{UiColors.Value}]{Markup.Escape(group.Description)}[/]");
+                AnsiConsole.WriteLine();
+            }
+
+            if (group.Options.Length > 0)
+            {
+                int flagWidth = group.Options.Max(o => o.Flag.Length);
+                foreach (var opt in group.Options)
+                {
+                    string flag = opt.Flag.PadRight(flagWidth);
+                    AnsiConsole.MarkupLine($"  [{UiColors.Accent}]{Markup.Escape(flag)}[/]   [{UiColors.Value}]{Markup.Escape(opt.Description)}[/]");
+
+                    var extras = new List<string>();
+                    if (!string.IsNullOrWhiteSpace(opt.AcceptedValues))
+                        extras.Add($"Values: {opt.AcceptedValues}");
+                    if (!string.IsNullOrWhiteSpace(opt.Default))
+                        extras.Add($"Default: {opt.Default}");
+                    if (extras.Count > 0)
+                        AnsiConsole.MarkupLine($"  {new string(' ', flagWidth)}   [{UiColors.Muted}]{Markup.Escape(string.Join("  ·  ", extras))}[/]");
+                }
+            }
+        }
+
+        // Generic sections
+        foreach (var section in usage.Sections ?? Array.Empty<UsageSection>())
+        {
+            PrintSectionHeader(section.Title);
+
+            if (!string.IsNullOrWhiteSpace(section.Description))
+            {
+                AnsiConsole.MarkupLine($"  [{UiColors.Value}]{Markup.Escape(section.Description)}[/]");
+                AnsiConsole.WriteLine();
+            }
+
+            if (section.Notes is { Length: > 0 })
+            {
+                int labelWidth = section.Notes.Max(n => n.Label.Length);
+                foreach (var note in section.Notes)
+                {
+                    string label = note.Label.PadRight(labelWidth);
+                    AnsiConsole.MarkupLine($"  [{UiColors.Label}]{Markup.Escape(label)}[/]   [{UiColors.Value}]{Markup.Escape(note.Description)}[/]");
+                }
+            }
+
+            if (section.Bullets is { Length: > 0 })
+            {
+                foreach (var bullet in section.Bullets)
+                    AnsiConsole.MarkupLine($"  [{UiColors.Value}]· {Markup.Escape(bullet)}[/]");
+            }
+        }
+
+        // Examples
+        if (usage.Examples is { Length: > 0 })
+        {
+            PrintSectionHeader("Examples");
+            bool first = true;
+            foreach (var ex in usage.Examples)
+            {
+                if (!first) AnsiConsole.WriteLine();
+                AnsiConsole.MarkupLine($"  [{UiColors.Label}]{Markup.Escape(ex.Description)}[/]");
+                if (ex.Shell != "Any shell")
+                    AnsiConsole.MarkupLine($"  [{UiColors.Muted}]({Markup.Escape(ex.Shell)})[/]");
+                AnsiConsole.MarkupLine($"  [{UiColors.Accent}]>[/] [{UiColors.Value}]{Markup.Escape(ex.Command)}[/]");
+                first = false;
+            }
+        }
+
+        // Related commands
+        if (usage.Related is { Length: > 0 })
+        {
+            PrintSectionHeader("Related commands");
+            int labelWidth = usage.Related.Max(r => r.Label.Length);
+            foreach (var rel in usage.Related)
+            {
+                string label = rel.Label.PadRight(labelWidth);
+                AnsiConsole.MarkupLine($"  [{UiColors.Accent}]{Markup.Escape(label)}[/]   [{UiColors.Value}]{Markup.Escape(rel.Description)}[/]");
+            }
+        }
+
+        AnsiConsole.WriteLine();
+    }
+
+    private static void PrintKv(string label, string value, string valueColor)
+    {
+        const int labelWidth = 8; // "Best for" = 8
+        string paddedLabel = label.PadRight(labelWidth);
+        AnsiConsole.MarkupLine($"  [{UiColors.Label}]{Markup.Escape(paddedLabel)}[/]   [{valueColor}]{Markup.Escape(value)}[/]");
     }
 }

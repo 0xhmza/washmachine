@@ -172,13 +172,12 @@ public static class Banner
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine(
             $"  [{s.Muted}]Type[/] [{s.Accent}]help[/] [{s.Muted}]for commands,[/] " +
-            $"[{s.Accent}]help <command>[/] [{s.Muted}]for details,[/] " +
-            $"[{s.Accent}]help --all[/] [{s.Muted}]for full reference[/]");
+            $"[{s.Accent}]help <command>[/] [{s.Muted}]for details[/]");
         AnsiConsole.MarkupLine(
             $"  [{s.Muted}]Keys:[/] [{s.Accent}]↑/↓[/] history  " +
             $"[{s.Accent}]←/→[/] move  [{s.Accent}]Home/End[/] jump  [{s.Accent}]Tab[/] complete");
         AnsiConsole.MarkupLine(
-            $"  [{s.Muted}]Theme:[/] [{s.Accent}]scheme[/] [{s.Muted}]lists schemes,[/] " +
+            $"  [{s.Muted}]Theme:[/] [{s.Accent}]scheme[/] [{s.Muted}]lists color schemes,[/] " +
             $"[{s.Accent}]scheme <name>[/] [{s.Muted}]switches theme[/]");
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"  [{s.Muted}]💡 {Markup.Escape(fact)}[/]");

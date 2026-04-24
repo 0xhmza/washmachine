@@ -30,7 +30,7 @@
             <div class="container">
                 <h1>CLI Reference</h1>
                 <p>Complete command reference for <code>washmachine-cli</code>. Every command, option, and flag documented.</p>
-                <p><strong>Tip:</strong> Run <code>washmachine-cli help --all</code> for a full scrollable reference in the terminal. Use <code>washmachine-cli help &lt;command&gt;</code> for per-command help.</p>
+                <p><strong>Tip:</strong> Run <code>washmachine-cli help &lt;command&gt;</code> for focused terminal help. Use this page for the broader command reference and examples.</p>
 
                 <h2 id="interactive-shell">Interactive Shell</h2>
                 <p>Washmachine CLI includes an interactive REPL shell. Launch it by running <code>washmachine-cli</code> with no arguments.</p>
@@ -49,7 +49,7 @@
                     <li><a href="#analyze">analyze</a> &mdash; Analyze a PE file</li>
                     <li><a href="#backdoor">backdoor</a> &mdash; Inject shellcode into a PE</li>
                     <li><a href="#strip">strip</a> &mdash; Extract shellcode from a PE</li>
-                    <li><a href="#list">list</a> &mdash; List templates, encoders, snippets, compilers</li>
+                    <li><a href="#show">show</a> &mdash; Display encoders, envelopes, modules, templates, compilers</li>
                     <li><a href="#provision">provision</a> &mdash; Download required tools</li>
                     <li><a href="#test">test</a> &mdash; Run the test harness</li>
                     <li><a href="#workflows">Recommended Workflows</a></li>
@@ -82,10 +82,10 @@
                         <tr><th>Option</th><th>Default</th><th>Description</th></tr>
                     </thead>
                     <tbody>
-                        <tr><td><code>-t, --template &lt;id&gt;</code></td><td><code>shellcode-minimal</code></td><td>Template ID from YAML catalog. Use <code>list --templates</code> to see available.</td></tr>
-                        <tr><td><code>-e, --encoder &lt;index&gt;</code></td><td><code>0</code></td><td>Encoder index (0=none, 1=XOR, 2=RC4, etc.). Use <code>list --encoders</code> to see all.</td></tr>
+                        <tr><td><code>-t, --template &lt;id&gt;</code></td><td><code>shellcode-minimal</code></td><td>Template ID from YAML catalog. Use <code>show templates</code> to see available.</td></tr>
+                        <tr><td><code>-e, --encoder &lt;index&gt;</code></td><td><code>0</code></td><td>Encoder index (0=none, 1=XOR, 2=RC4, etc.). Use <code>show encoders</code> to see all.</td></tr>
                         <tr><td><code>-v, --envelope &lt;index&gt;</code></td><td><code>0</code></td><td>Envelope index (0=none, 1=Base64, 2=Base32, etc.)</td></tr>
-                        <tr><td><code>--snippet &lt;section&gt;=&lt;id&gt;</code></td><td></td><td>Attach a snippet to a template section. Repeatable. Use <code>list --snippets</code> to see all.</td></tr>
+                        <tr><td><code>--snippet &lt;section&gt;=&lt;id&gt;</code></td><td></td><td>Attach a snippet to a template section. Repeatable. Use <code>show modules</code> to see all.</td></tr>
                         <tr><td><code>--verbose</code></td><td></td><td>Show detailed compilation output</td></tr>
                         <tr><td><code>--json</code></td><td></td><td>Output result as JSON</td></tr>
                     </tbody>
@@ -102,7 +102,7 @@
   --snippet antiemulation=SirAllocALot \
   --snippet guardrails=domain_check \
   --snippet antidebugging=IsDebuggerPresentCheck</code></pre>
-                <p>Use <code>washmachine-cli list --snippets</code> to see the full catalog of available sections and snippet IDs.</p>
+                <p>Use <code>washmachine-cli show modules</code> to see the full catalog of available sections and snippet IDs.</p>
 
                 <h3>Examples</h3>
 <pre><code># Encode from a .bin shellcode file using the minimal template
@@ -272,10 +272,10 @@ washmachine-cli strip loader.exe -m range --range 0x400:512
 washmachine-cli strip loader.exe --analyze --no-trim</code></pre>
 
                 <!-- ════════════════════════════════════════════ -->
-                <!-- list                                        -->
+                <!-- show                                        -->
                 <!-- ════════════════════════════════════════════ -->
-                <h2 id="list">list</h2>
-                <p>List available templates, encoders, snippets, or compilers.</p>
+                <h2 id="show">show</h2>
+                <p>Display encoders, envelopes, modules, templates, or compilers in a Metasploit-style catalog view.</p>
 
                 <h3>Options</h3>
                 <table>
@@ -283,18 +283,20 @@ washmachine-cli strip loader.exe --analyze --no-trim</code></pre>
                         <tr><th>Option</th><th>Description</th></tr>
                     </thead>
                     <tbody>
-                        <tr><td><code>--templates</code></td><td>List available C++ templates from YAML catalog</td></tr>
-                        <tr><td><code>--encoders</code></td><td>List available Bin2Shell encoders</td></tr>
-                        <tr><td><code>--snippets</code></td><td>List all code snippets organized by section</td></tr>
-                        <tr><td><code>--compilers</code></td><td>List discovered C++ compilers on the system</td></tr>
+                        <tr><td><code>templates</code></td><td>Show available C++ templates from the active playbook</td></tr>
+                        <tr><td><code>encoders</code></td><td>Show available Bin2Shell encoders as <code>encoder/&lt;name&gt;</code></td></tr>
+                        <tr><td><code>envelopes</code></td><td>Show available Bin2Shell envelopes as <code>envelope/&lt;name&gt;</code></td></tr>
+                        <tr><td><code>modules [category]</code></td><td>Show playbook-backed modules as <code>module/&lt;category&gt;/&lt;name&gt;</code></td></tr>
+                        <tr><td><code>compilers</code></td><td>Show discovered C++ compilers on the system</td></tr>
                     </tbody>
                 </table>
 
                 <h3>Examples</h3>
-<pre><code>washmachine-cli list --compilers
-washmachine-cli list --templates
-washmachine-cli list --encoders
-washmachine-cli list --snippets</code></pre>
+<pre><code>washmachine-cli show compilers
+washmachine-cli show templates
+washmachine-cli show encoders
+washmachine-cli show modules
+washmachine-cli show modules anti_analysis</code></pre>
 
                 <!-- ════════════════════════════════════════════ -->
                 <!-- provision                                   -->
