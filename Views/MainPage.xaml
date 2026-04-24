@@ -297,7 +297,6 @@
                     </StackPanel>
                 </Expander>
 
-                <Border Margin="10,10,10,10"/>
                 <!-- Payload Encoding section -->
                 <Expander x:Name="PayloadEncodingExpander" IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
                     <Expander.Header>
@@ -336,13 +335,12 @@
                     </StackPanel>
                 </Expander>
 
-                <Border Margin="10,10,10,10"/>
                 <!-- Template section -->
                 <Expander IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                     <Expander.Header>
                         <StackPanel Orientation="Horizontal">
-                            <FontIcon Glyph="&#xE8A5;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{StaticResource DraculaOrangeBrush}" />
-                            <TextBlock Text="Payload Features" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" Foreground="{StaticResource DraculaOrangeBrush}" />
+                            <FontIcon Glyph="&#xE8A5;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Payload Features" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Expander.Header>
 
@@ -383,26 +381,13 @@
                           Margin="0,0,8,0"
                           SelectionChanged="Template_SelectionChanged" />
 
-                                <!-- Golden eye-catching Configure button -->
                                 <Button x:Name="configureTemplateButton"
                         Grid.Column="1"
                         Content="Configure"
                         MinWidth="110"
                         Margin="0,0,8,0"
                         Click="ConfigureTemplate_Click"
-                        Foreground="{StaticResource DraculaBackgroundBrush}"
-                        FontWeight="SemiBold">
-                                    <Button.Background>
-                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                            <GradientStop Color="{StaticResource DraculaYellowColor}" Offset="0.0" />
-                                            <GradientStop Color="{StaticResource DraculaOrangeColor}" Offset="0.55" />
-                                            <GradientStop Color="{StaticResource DraculaPinkColor}" Offset="1.0" />
-                                        </LinearGradientBrush>
-                                    </Button.Background>
-                                    <Button.BorderBrush>
-                                        <SolidColorBrush Color="{StaticResource DraculaOrangeColor}" />
-                                    </Button.BorderBrush>
-                                </Button>
+                        Style="{StaticResource AccentButtonStyle}" />
 
                                 <Button x:Name="refreshTemplateButton"
                         Grid.Column="2"
@@ -415,7 +400,6 @@
                 </Expander>
 
 
-                <Border Margin="10,10,10,30"/>
                 <!-- Next Step card -->
                 <Border Style="{StaticResource CardBorder}" Margin="0">
                     <StackPanel Margin="12">

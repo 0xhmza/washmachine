@@ -7,260 +7,117 @@
       NavigationCacheMode="Required">
 
     <Page.Resources>
-        <SolidColorBrush x:Key="HudCyanBrush" Color="{StaticResource DraculaCyanColor}" />
-        <SolidColorBrush x:Key="HudCyanSoftBrush" Color="#558BE9FD" />
-        <SolidColorBrush x:Key="HudCyanGhostBrush" Color="#1A8BE9FD" />
-        <SolidColorBrush x:Key="HudAmberBrush" Color="{StaticResource DraculaOrangeColor}" />
-        <SolidColorBrush x:Key="HudMintBrush" Color="{StaticResource DraculaGreenColor}" />
-        <SolidColorBrush x:Key="HudInkBrush" Color="{StaticResource DraculaForegroundColor}" />
-        <SolidColorBrush x:Key="HudInkDimBrush" Color="{StaticResource DraculaCurrentLineColor}" />
-        <SolidColorBrush x:Key="HudInkFaintBrush" Color="{StaticResource DraculaCurrentLineColor}" />
-        <SolidColorBrush x:Key="HudPanelBrush" Color="{StaticResource DraculaSelectionColor}" />
-        <SolidColorBrush x:Key="HudGridLineBrush" Color="#226272A4" />
-        <SolidColorBrush x:Key="HudWarningSoftBrush" Color="#55FFB86C" />
-        <SolidColorBrush x:Key="HudWarningGhostBrush" Color="#22FFB86C" />
-        <SolidColorBrush x:Key="HudSkippedSoftBrush" Color="#3344475A" />
-        <SolidColorBrush x:Key="HudCodeBackgroundBrush" Color="{StaticResource DraculaBackgroundColor}" />
-        <SolidColorBrush x:Key="HudHeaderPanelBrush" Color="{StaticResource DraculaCurrentLineColor}" />
-
-        <LinearGradientBrush x:Key="HudBackdropBrush" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="{StaticResource DraculaBackgroundColor}" Offset="0.0" />
-            <GradientStop Color="{StaticResource DraculaSelectionColor}"  Offset="0.6" />
-            <GradientStop Color="{StaticResource DraculaBackgroundColor}" Offset="1.0" />
-        </LinearGradientBrush>
-
-        <LinearGradientBrush x:Key="HudHeaderBrush" StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Color="{StaticResource DraculaCurrentLineColor}" Offset="0.0" />
-            <GradientStop Color="{StaticResource DraculaBackgroundColor}" Offset="1.0" />
-        </LinearGradientBrush>
-
-        <Style x:Key="HudMonoText" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Courier New" />
-            <Setter Property="FontSize" Value="11" />
-            <Setter Property="Foreground" Value="{StaticResource HudInkDimBrush}" />
-        </Style>
-
-        <Style x:Key="HudLabel" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Courier New" />
-            <Setter Property="FontSize" Value="10" />
-            <Setter Property="CharacterSpacing" Value="200" />
-            <Setter Property="Foreground" Value="{StaticResource HudInkFaintBrush}" />
-        </Style>
-
-        <Style x:Key="HudValue" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Courier New" />
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="Foreground" Value="{StaticResource HudInkBrush}" />
-            <Setter Property="TextWrapping" Value="Wrap" />
-        </Style>
-
-        <Style x:Key="HudPanel" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource HudPanelBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource HudCyanSoftBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="2" />
-            <Setter Property="Padding" Value="14" />
-        </Style>
+        <!-- Semantic brushes for code-built stage cards and spec panels.
+             Defined here so code-behind can access via Resources["key"]. -->
+        <SolidColorBrush x:Key="PipeAccentBrush"     Color="{ThemeResource SystemAccentColor}" />
+        <SolidColorBrush x:Key="PipeWarnBrush"       Color="{ThemeResource SystemFillColorCaution}" />
+        <SolidColorBrush x:Key="PipeSkipBrush"       Color="{ThemeResource TextFillColorDisabled}" />
+        <SolidColorBrush x:Key="PipeTextDimBrush"    Color="{ThemeResource TextFillColorSecondary}" />
+        <SolidColorBrush x:Key="PipeDividerBrush"    Color="{ThemeResource DividerStrokeColorDefault}" />
+        <SolidColorBrush x:Key="PipeCodeBgBrush"     Color="{ThemeResource LayerFillColorDefault}" />
+        <SolidColorBrush x:Key="PipeCardBgBrush"     Color="{ThemeResource CardBackgroundFillColorDefault}" />
+        <SolidColorBrush x:Key="PipeCardBorderBrush" Color="{ThemeResource CardStrokeColorDefault}" />
     </Page.Resources>
 
-    <Grid Background="{StaticResource HudBackdropBrush}">
-        <!-- Faint scan-line / grid texture (decorative) -->
-        <Canvas x:Name="GridOverlay" IsHitTestVisible="False" Opacity="0.35" />
-
-        <Grid Margin="22,18,22,18">
+    <Grid Background="Transparent">
+        <Grid Margin="24,18,24,18">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />   <!-- top status bar -->
-                <RowDefinition Height="Auto" />   <!-- title block -->
+                <RowDefinition Height="Auto" />   <!-- header -->
+                <RowDefinition Height="Auto" />   <!-- divider -->
+                <RowDefinition Height="Auto" />   <!-- warning info bar -->
                 <RowDefinition Height="*" />      <!-- main content -->
-                <RowDefinition Height="Auto" />   <!-- bottom telemetry strip -->
+                <RowDefinition Height="Auto" />   <!-- status line -->
             </Grid.RowDefinitions>
 
-            <!-- ═════════════════════════ TOP STATUS BAR ═════════════════════════ -->
-            <Border Grid.Row="0"
-                    Background="{StaticResource HudHeaderBrush}"
-                    BorderBrush="{StaticResource HudCyanSoftBrush}"
-                    BorderThickness="0,0,0,1"
-                    Padding="16,8">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                        <Ellipse x:Name="StatusIndicatorDot"
-                                 Width="9" Height="9"
-                                 Fill="{StaticResource HudMintBrush}" />
-                        <TextBlock x:Name="StatusIndicatorText"
-                                   Text="◤ PIPELINE NOMINAL"
-                                   Style="{StaticResource HudLabel}"
-                                   Foreground="{StaticResource HudMintBrush}"
-                                   VerticalAlignment="Center" />
-                    </StackPanel>
-
-                    <StackPanel Grid.Column="1" Orientation="Horizontal"
-                                HorizontalAlignment="Center" Spacing="22">
-                        <TextBlock x:Name="HeaderBuildId"   Style="{StaticResource HudLabel}" Text="BUILD-ID ⋯⋯⋯⋯" />
-                        <TextBlock x:Name="HeaderTimestamp" Style="{StaticResource HudLabel}" Text="UTC ⋯⋯⋯⋯⋯⋯" />
-                        <TextBlock x:Name="HeaderTarget"    Style="{StaticResource HudLabel}" Text="TARGET ⋯⋯⋯⋯" />
-                    </StackPanel>
-
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
-                        <Button x:Name="ImportRecipeButton"
-                                Content="↑ Load recipe"
-                                Click="ImportRecipe_Click"
-                                Background="Transparent"
-                                BorderBrush="{StaticResource HudCyanSoftBrush}"
-                                Foreground="{StaticResource HudCyanBrush}"
-                                FontFamily="Cascadia Mono, Consolas"
-                                FontSize="11"
-                                Padding="10,4" />
-                        <Button x:Name="ExportRecipeButton"
-                                Content="↓ Save recipe"
-                                Click="ExportRecipe_Click"
-                                Background="Transparent"
-                                BorderBrush="{StaticResource HudCyanSoftBrush}"
-                                Foreground="{StaticResource HudCyanBrush}"
-                                FontFamily="Cascadia Mono, Consolas"
-                                FontSize="11"
-                                Padding="10,4" />
-                        <Border Width="1" Background="{StaticResource HudCyanGhostBrush}" Margin="2,4" />
-                        <Button x:Name="RefreshButton"
-                                Content="↻ Re-sync"
-                                Click="Refresh_Click"
-                                Background="Transparent"
-                                BorderBrush="{StaticResource HudCyanSoftBrush}"
-                                Foreground="{StaticResource HudCyanBrush}"
-                                FontFamily="Cascadia Mono, Consolas"
-                                FontSize="11"
-                                Padding="10,4" />
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <!-- ═════════════════════════ TITLE BLOCK ═════════════════════════ -->
-            <Grid Grid.Row="1" Margin="2,16,2,14">
+            <!-- ═════════ HEADER ═════════ -->
+            <Grid Grid.Row="0" Margin="0,0,0,16">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <StackPanel>
-                    <TextBlock Text="┌── BUILD PIPELINE ──┐"
-                               FontFamily="Cascadia Mono, Consolas"
-                               FontSize="11"
-                               Foreground="{StaticResource HudCyanBrush}" />
-                    <TextBlock Text="OPERATIONAL READOUT"
-                               FontFamily="Cascadia Mono, Consolas"
-                               FontSize="28"
-                               FontWeight="SemiBold"
-                               CharacterSpacing="120"
-                               Foreground="{StaticResource HudInkBrush}"
-                               Margin="0,2,0,0" />
-                    <TextBlock x:Name="TitleSubline"
-                               Style="{StaticResource HudMonoText}"
-                               Margin="0,4,0,0"
-                               Text="// live recipe — autoderived from Payload, Backdooring, Packing, Finalize, Compile" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <FontIcon Glyph="&#xE9D9;" FontSize="28" Margin="0,4,12,0" />
+                    <StackPanel>
+                        <TextBlock Text="Build Pipeline" Style="{StaticResource PageTitleText}" />
+                        <TextBlock x:Name="RecipeSummaryText"
+                                   Style="{StaticResource PageSubtitleText}"
+                                   Text="Configure stages on the other pages to build your recipe."
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
                 </StackPanel>
 
-                <!-- Pipeline integrity / count chip cluster -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">
-                    <Border Background="{StaticResource HudCyanGhostBrush}"
-                            BorderBrush="{StaticResource HudCyanSoftBrush}"
-                            BorderThickness="1" CornerRadius="2" Padding="10,4">
-                        <StackPanel>
-                            <TextBlock x:Name="ChipStepsLabel" Style="{StaticResource HudLabel}" Text="STAGES" />
-                            <TextBlock x:Name="ChipStepsValue" Style="{StaticResource HudValue}"
-                                       Text="0" FontSize="16"
-                                       Foreground="{StaticResource HudCyanBrush}" />
-                        </StackPanel>
-                    </Border>
-                    <Border Background="{StaticResource HudCyanGhostBrush}"
-                            BorderBrush="{StaticResource HudCyanSoftBrush}"
-                            BorderThickness="1" CornerRadius="2" Padding="10,4">
-                        <StackPanel>
-                            <TextBlock Style="{StaticResource HudLabel}" Text="ARTIFACTS" />
-                            <TextBlock x:Name="ChipArtifactsValue" Style="{StaticResource HudValue}"
-                                       Text="0" FontSize="16"
-                                       Foreground="{StaticResource HudCyanBrush}" />
-                        </StackPanel>
-                    </Border>
-                    <Border x:Name="ChipWarningBorder"
-                            Visibility="Collapsed"
-                            Background="{StaticResource HudWarningGhostBrush}"
-                            BorderBrush="{StaticResource HudAmberBrush}"
-                            BorderThickness="1" CornerRadius="2" Padding="10,4">
-                        <StackPanel>
-                            <TextBlock Style="{StaticResource HudLabel}" Text="ALERTS" Foreground="{StaticResource HudAmberBrush}" />
-                            <TextBlock x:Name="ChipWarningValue" Style="{StaticResource HudValue}"
-                                       Text="0" FontSize="16"
-                                       Foreground="{StaticResource HudAmberBrush}" />
-                        </StackPanel>
-                    </Border>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Button x:Name="ImportRecipeButton"
+                            Content="Load recipe"
+                            Click="ImportRecipe_Click" />
+                    <Button x:Name="ExportRecipeButton"
+                            Content="Save recipe"
+                            Click="ExportRecipe_Click" />
+                    <Button x:Name="RefreshButton"
+                            Content="Sync"
+                            Click="Refresh_Click" />
                 </StackPanel>
             </Grid>
 
-            <!-- ═════════════════════════ MAIN CONTENT ═════════════════════════ -->
-            <Grid Grid.Row="2">
+            <!-- ═════════ DIVIDER ═════════ -->
+            <Border Grid.Row="1" Style="{StaticResource SectionDivider}" />
+
+            <!-- ═════════ WARNING INFOBAR ═════════ -->
+            <InfoBar x:Name="WarningBar"
+                     Grid.Row="2"
+                     IsOpen="False"
+                     IsClosable="False"
+                     Severity="Warning"
+                     Margin="0,0,0,10" />
+
+            <!-- ═════════ MAIN CONTENT ═════════ -->
+            <Grid Grid.Row="3">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="2*" />   <!-- step rail -->
-                    <ColumnDefinition Width="14" />
-                    <ColumnDefinition Width="*" />    <!-- spec sidebar -->
+                    <ColumnDefinition Width="2*" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <!-- ─── STEP RAIL (left) ─── -->
-                <Border Grid.Column="0" Style="{StaticResource HudPanel}" Padding="0">
+                <!-- ─── Stage rail (left) ─── -->
+                <Border Grid.Column="0"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8">
                     <Grid>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <Grid Grid.Row="0" Padding="14,10,14,8"
-                              Background="{StaticResource HudHeaderPanelBrush}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                <TextBlock Text="◢"
-                                           FontFamily="Segoe UI Symbol"
-                                           Foreground="{StaticResource HudCyanBrush}" />
-                                <TextBlock Text="STAGE TRANSPORT"
-                                           Style="{StaticResource HudLabel}"
-                                           Foreground="{StaticResource HudInkBrush}" />
-                                <TextBlock x:Name="RailEtaText"
-                                           Style="{StaticResource HudLabel}"
-                                           Margin="14,0,0,0" />
-                            </StackPanel>
-                            <TextBlock Grid.Column="1" Style="{StaticResource HudLabel}"
-                                       Text="// linear, top → bottom" />
-                        </Grid>
-
-                        <!-- Top alert banner (SGN/exec compatibility, etc) -->
-                        <Border x:Name="AlertBanner"
-                                Grid.Row="1" Margin="14,8,14,4"
-                                Background="{StaticResource HudWarningGhostBrush}"
-                                BorderBrush="{StaticResource HudAmberBrush}"
-                                BorderThickness="1" CornerRadius="2"
-                                Padding="12,8" Visibility="Collapsed">
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <TextBlock Text="⚠"
-                                           Foreground="{StaticResource HudAmberBrush}"
-                                           VerticalAlignment="Top" FontSize="14" />
-                                <TextBlock x:Name="AlertBannerText"
-                                           Style="{StaticResource HudMonoText}"
-                                           Foreground="{StaticResource HudAmberBrush}"
-                                           TextWrapping="Wrap" />
-                            </StackPanel>
+                        <!-- Section header -->
+                        <Border Grid.Row="0"
+                                Padding="16,12,16,12"
+                                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                                BorderThickness="0,0,0,1">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Pipeline Stages"
+                                           FontWeight="SemiBold"
+                                           FontSize="14"
+                                           VerticalAlignment="Center" />
+                                <TextBlock x:Name="StageCountText"
+                                           Grid.Column="1"
+                                           Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           VerticalAlignment="Center" />
+                            </Grid>
                         </Border>
 
-                        <ScrollViewer Grid.Row="2"
+                        <ScrollViewer Grid.Row="1"
                                       VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled"
-                                      Padding="14,4,14,14">
+                                      Padding="12,8,12,12">
                             <ItemsControl x:Name="StepsList">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
@@ -272,36 +129,20 @@
                     </Grid>
                 </Border>
 
-                <!-- ─── SPEC SIDEBAR (right) ─── -->
+                <!-- ─── Spec sidebar (right) ─── -->
                 <ScrollViewer Grid.Column="2"
                               VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Spacing="10" x:Name="SpecPanelHost" />
+                    <StackPanel x:Name="SpecPanelHost" Spacing="8" />
                 </ScrollViewer>
             </Grid>
 
-            <!-- ═════════════════════════ BOTTOM TELEMETRY ═════════════════════════ -->
-            <Border Grid.Row="3"
-                    Background="{StaticResource HudCodeBackgroundBrush}"
-                    BorderBrush="{StaticResource HudCyanSoftBrush}"
-                    BorderThickness="0,1,0,0"
-                    Padding="14,6"
-                    Margin="0,12,0,0">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="TelemetryLine"
-                               Style="{StaticResource HudMonoText}"
-                               Foreground="{StaticResource HudInkDimBrush}"
-                               Text="◦ awaiting sync ◦" />
-                    <TextBlock Grid.Column="1"
-                               Style="{StaticResource HudLabel}"
-                               Foreground="{StaticResource HudInkFaintBrush}"
-                               Text="WASHMACHINE // PIPELINE TELEMETRY v1" />
-                </Grid>
-            </Border>
+            <!-- ═════════ STATUS LINE ═════════ -->
+            <TextBlock x:Name="TelemetryLine"
+                       Grid.Row="4"
+                       Style="{StaticResource CaptionTextBlockStyle}"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Margin="0,8,0,0" />
         </Grid>
     </Grid>
 </Page>

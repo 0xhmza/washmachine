@@ -86,9 +86,6 @@
 
                 <Border Style="{StaticResource SectionDivider}" />
 
-                <!-- Build Artifacts -->
-                <Border Style="{StaticResource SectionDivider}" />
-
                 <!-- Session Logging -->
                 <Expander x:Name="loggingExpander"
                           HorizontalAlignment="Stretch"

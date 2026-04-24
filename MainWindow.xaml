@@ -35,14 +35,9 @@
 
 
         <NavigationView.MenuItems>
-            <NavigationViewItem Content="Payload"
-                                Tag="MainPage"
-                                Foreground="{StaticResource DraculaRedBrush}"
-                                Background="{StaticResource DraculaRedSoftBrush}"
-                                BorderBrush="{StaticResource DraculaRedBrush}"
-                                BorderThickness="1">
+            <NavigationViewItem Content="Payload" Tag="MainPage">
                 <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE943;" Foreground="{StaticResource DraculaRedBrush}" />
+                    <FontIcon Glyph="&#xE943;" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem Content="Backdooring" Tag="BackdooringPage">
@@ -68,14 +63,9 @@
         </NavigationView.MenuItems>
 
         <NavigationView.FooterMenuItems>
-            <NavigationViewItem Content="Pipeline"
-                                Tag="PipelinePage"
-                                Foreground="{StaticResource DraculaCyanBrush}"
-                                Background="{StaticResource DraculaCyanSoftBrush}"
-                                BorderBrush="{StaticResource DraculaCyanBrush}"
-                                BorderThickness="1">
+            <NavigationViewItem Content="Pipeline" Tag="PipelinePage">
                 <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE9D9;" Foreground="{StaticResource DraculaCyanBrush}" />
+                    <FontIcon Glyph="&#xE9D9;" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem Content="History" Tag="PayloadHistoryPage">

@@ -1,12 +1,9 @@
-using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
-using Microsoft.UI.Xaml.Shapes;
 using Washmachine.Models;
 using Washmachine.Services;
-using Windows.UI;
 using WinRT.Interop;
 using Path = System.IO.Path;
 
@@ -16,44 +13,19 @@ public sealed partial class PipelinePage : Page
 {
     private readonly AppPaths _paths = new();
     private readonly ICodeSnippetCatalogService _snippets;
-    private readonly string _buildId = Guid.NewGuid().ToString("N").Substring(0, 8).ToUpperInvariant();
-    private DispatcherTimer? _clockTimer;
 
     public PipelinePage()
     {
         InitializeComponent();
         _snippets = new YamlCodeSnippetCatalogService(_paths);
 
-        Loaded += OnPageLoaded;
-        Unloaded += OnPageUnloaded;
-        SizeChanged += (_, _) => DrawScanLines();
+        Loaded += (_, _) => Render();
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
         Render();
-    }
-
-    private void OnPageLoaded(object sender, RoutedEventArgs e)
-    {
-        DrawScanLines();
-        StartClock();
-        Render();
-    }
-
-    private void OnPageUnloaded(object sender, RoutedEventArgs e)
-    {
-        _clockTimer?.Stop();
-        _clockTimer = null;
-    }
-
-    private void StartClock()
-    {
-        _clockTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        _clockTimer.Tick += (_, _) => HeaderTimestamp.Text = $"UTC {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}";
-        _clockTimer.Start();
-        HeaderTimestamp.Text = $"UTC {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}";
     }
 
     private void Refresh_Click(object sender, RoutedEventArgs e) => Render();
@@ -68,7 +40,7 @@ public sealed partial class PipelinePage : Page
         }
         var hwnd = WindowNative.GetWindowHandle(App.ActiveWindow!);
         if (await compile.ExportRecipeAsync(hwnd))
-            FlashTelemetry("◦ recipe exported");
+            TelemetryLine.Text = "Recipe exported successfully.";
     }
 
     private async void ImportRecipe_Click(object sender, RoutedEventArgs e)
@@ -82,7 +54,7 @@ public sealed partial class PipelinePage : Page
         var hwnd = WindowNative.GetWindowHandle(App.ActiveWindow!);
         if (await compile.ImportRecipeAsync(hwnd))
         {
-            FlashTelemetry("◦ recipe imported — re-syncing");
+            TelemetryLine.Text = "Recipe imported — re-syncing.";
             Render();
         }
     }
@@ -99,40 +71,8 @@ public sealed partial class PipelinePage : Page
         await dlg.ShowAsync();
     }
 
-    private void FlashTelemetry(string text)
-    {
-        TelemetryLine.Text = text;
-    }
-
     // ═══════════════════════════════════════════════════════════════════════
-    // Scan-line decorative overlay
-    // ═══════════════════════════════════════════════════════════════════════
-    private void DrawScanLines()
-    {
-        if (GridOverlay == null || ActualWidth <= 0 || ActualHeight <= 0)
-            return;
-
-        GridOverlay.Children.Clear();
-
-        var lineBrush = (Brush)Resources["HudGridLineBrush"];
-        const double spacing = 3.0;
-
-        for (double y = 0; y < ActualHeight; y += spacing)
-        {
-            var line = new Line
-            {
-                X1 = 0, X2 = ActualWidth,
-                Y1 = y, Y2 = y,
-                Stroke = lineBrush,
-                StrokeThickness = 0.5,
-                Opacity = 0.18,
-            };
-            GridOverlay.Children.Add(line);
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // Render orchestrator
+    // Render
     // ═══════════════════════════════════════════════════════════════════════
     private void Render()
     {
@@ -140,181 +80,131 @@ public sealed partial class PipelinePage : Page
 
         StepsList.Items.Clear();
         SpecPanelHost.Children.Clear();
-        AlertBanner.Visibility = Visibility.Collapsed;
 
         var snap = Snapshot.Capture(_snippets);
 
-        // Header chips & status indicators
-        HeaderBuildId.Text   = $"BUILD-ID {_buildId}";
-        HeaderTarget.Text    = $"TARGET {snap.OutputArchHint}";
-        ChipStepsValue.Text  = snap.Stages.Count.ToString();
-        ChipArtifactsValue.Text = snap.ExpectedArtifacts.Count.ToString();
-        TitleSubline.Text    = $"// {snap.RecipeOneLiner}";
+        // Header / summary
+        RecipeSummaryText.Text = string.IsNullOrWhiteSpace(snap.RecipeOneLiner)
+            ? "Configure stages on the other pages to build your recipe."
+            : snap.RecipeOneLiner;
 
+        // Stage count chip
+        int active = snap.Stages.Count(s => s.Enabled);
+        StageCountText.Text = $"{active} of {snap.Stages.Count} active";
+
+        // Warning bar
         if (snap.Warnings.Count > 0)
         {
-            ChipWarningBorder.Visibility = Visibility.Visible;
-            ChipWarningValue.Text        = snap.Warnings.Count.ToString();
-            StatusIndicatorDot.Fill      = (Brush)Resources["HudAmberBrush"];
-            StatusIndicatorText.Text     = "◤ PIPELINE — REVIEW REQUIRED";
-            StatusIndicatorText.Foreground = (Brush)Resources["HudAmberBrush"];
-            AlertBanner.Visibility       = Visibility.Visible;
-            AlertBannerText.Text         = string.Join("\n", snap.Warnings);
+            WarningBar.Title   = "Pipeline review required";
+            WarningBar.Message = string.Join("\n", snap.Warnings);
+            WarningBar.IsOpen  = true;
         }
         else
         {
-            ChipWarningBorder.Visibility = Visibility.Collapsed;
-            StatusIndicatorDot.Fill      = (Brush)Resources["HudMintBrush"];
-            StatusIndicatorText.Text     = "◤ PIPELINE NOMINAL";
-            StatusIndicatorText.Foreground = (Brush)Resources["HudMintBrush"];
+            WarningBar.IsOpen = false;
         }
-
-        RailEtaText.Text = $"// {snap.Stages.Count(s => s.Enabled)} active / {snap.Stages.Count} declared";
 
         // Stage cards
         for (int i = 0; i < snap.Stages.Count; i++)
-        {
-            var stage = snap.Stages[i];
-            StepsList.Items.Add(BuildStageCard(i + 1, stage, isLast: i == snap.Stages.Count - 1));
-        }
+            StepsList.Items.Add(BuildStageCard(i + 1, snap.Stages[i], isLast: i == snap.Stages.Count - 1));
 
         // Spec sidebar
         BuildSpecSidebar(snap);
 
-        // Telemetry line
-        TelemetryLine.Text = snap.TelemetryLine;
+        // Status line
+        TelemetryLine.Text =
+            $"Stages: {snap.Stages.Count}  ·  Active: {active}  ·  Artifacts: {snap.ExpectedArtifacts.Count}  ·  Warnings: {snap.Warnings.Count}";
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Stage card builder
+    // Stage card builder — uses native WinUI ThemeResource styling
     // ═══════════════════════════════════════════════════════════════════════
     private FrameworkElement BuildStageCard(int index, Stage stage, bool isLast)
     {
-        var container = new StackPanel { Orientation = Orientation.Vertical };
+        var container = new StackPanel();
 
-        var accent = stage.Severity switch
+        var accentBrush = stage.Severity switch
         {
-            Severity.Warning => (Brush)Resources["HudAmberBrush"],
-            Severity.Skipped => (Brush)Resources["HudInkFaintBrush"],
-            _                => (Brush)Resources["HudCyanBrush"],
-        };
-        var accentSoft = stage.Severity switch
-        {
-            Severity.Warning => (Brush)Resources["HudWarningSoftBrush"],
-            Severity.Skipped => (Brush)Resources["HudSkippedSoftBrush"],
-            _                => (Brush)Resources["HudCyanSoftBrush"],
+            Severity.Warning => (Brush)Resources["PipeWarnBrush"],
+            Severity.Skipped => (Brush)Resources["PipeSkipBrush"],
+            _                => (Brush)Resources["PipeAccentBrush"],
         };
 
+        // Card
         var card = new Border
         {
-            Background = (Brush)Resources["HudPanelBrush"],
-            BorderBrush = accentSoft,
+            Background      = (Brush)Resources["PipeCardBgBrush"],
+            BorderBrush     = (Brush)Resources["PipeCardBorderBrush"],
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(2),
-            Padding = new Thickness(0),
-            Opacity = stage.Enabled ? 1.0 : 0.55,
+            CornerRadius    = new CornerRadius(6),
+            Opacity         = stage.Enabled ? 1.0 : 0.55,
         };
 
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6) });   // accent rail
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(50) });  // index
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var innerGrid = new Grid();
+        innerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
+        innerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(48) });
+        innerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-        // Vertical accent bar
+        // Left accent rail
         var rail = new Border
         {
-            Background = accent,
+            Background          = accentBrush,
+            CornerRadius        = new CornerRadius(5, 0, 0, 5),
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Stretch,
-            Opacity = 0.85,
+            VerticalAlignment   = VerticalAlignment.Stretch,
+            Opacity             = stage.Severity == Severity.Skipped ? 0.3 : 0.7,
         };
         Grid.SetColumn(rail, 0);
-        grid.Children.Add(rail);
+        innerGrid.Children.Add(rail);
 
-        // Index pill
-        var indexBlock = new StackPanel
+        // Step number
+        var stepNumBlock = new TextBlock
         {
-            Orientation = Orientation.Vertical,
+            Text                = $"{index:00}",
+            FontSize            = 18,
+            FontWeight          = Microsoft.UI.Text.FontWeights.SemiBold,
             HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(4, 14, 4, 12),
-            Spacing = 2,
+            VerticalAlignment   = VerticalAlignment.Top,
+            Margin              = new Thickness(4, 13, 4, 0),
+            Foreground          = accentBrush,
         };
-        indexBlock.Children.Add(new TextBlock
-        {
-            Text = $"{index:00}",
-            FontFamily = MonoFont,
-            FontSize = 22,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Foreground = accent,
-        });
-        indexBlock.Children.Add(new TextBlock
-        {
-            Text = "STAGE",
-            FontFamily = MonoFont,
-            FontSize = 9,
-            CharacterSpacing = 200,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Foreground = (Brush)Resources["HudInkFaintBrush"],
-        });
-        Grid.SetColumn(indexBlock, 1);
-        grid.Children.Add(indexBlock);
+        Grid.SetColumn(stepNumBlock, 1);
+        innerGrid.Children.Add(stepNumBlock);
 
         // Body
-        var body = new StackPanel { Orientation = Orientation.Vertical, Spacing = 6, Margin = new Thickness(8, 12, 14, 14) };
+        var body = new StackPanel { Spacing = 4, Margin = new Thickness(8, 12, 14, 14) };
 
-        // Title row
+        // Title row: icon + name + status chip
         var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         titleRow.Children.Add(new FontIcon
         {
-            Glyph = stage.Glyph,
-            FontSize = 14,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = accent,
+            Glyph               = stage.Glyph,
+            FontSize            = 13,
+            Foreground          = accentBrush,
+            VerticalAlignment   = VerticalAlignment.Center,
         });
         titleRow.Children.Add(new TextBlock
         {
-            Text = stage.Title.ToUpperInvariant(),
-            FontFamily = MonoFont,
-            FontSize = 13,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            CharacterSpacing = 100,
+            Text              = stage.Title,
+            FontWeight        = Microsoft.UI.Text.FontWeights.SemiBold,
+            FontSize          = 13,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = (Brush)Resources["HudInkBrush"],
         });
         if (!string.IsNullOrEmpty(stage.StatusChip))
         {
-            var chip = new Border
+            titleRow.Children.Add(new Border
             {
-                Background = stage.Severity == Severity.Warning
-                    ? (Brush)Resources["HudWarningGhostBrush"]
-                    : (Brush)Resources["HudCyanGhostBrush"],
-                BorderBrush = accentSoft,
+                BorderBrush     = accentBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(2),
-                Padding = new Thickness(6, 1, 6, 1),
+                CornerRadius    = new CornerRadius(3),
+                Padding         = new Thickness(6, 1, 6, 1),
                 VerticalAlignment = VerticalAlignment.Center,
-                Child = new TextBlock
+                Child           = new TextBlock
                 {
-                    Text = stage.StatusChip,
-                    FontFamily = MonoFont,
-                    FontSize = 9,
-                    CharacterSpacing = 200,
-                    Foreground = accent,
+                    Text       = stage.StatusChip,
+                    FontSize   = 10,
+                    Foreground = accentBrush,
                 },
-            };
-            titleRow.Children.Add(chip);
-        }
-        if (!stage.Enabled)
-        {
-            titleRow.Children.Add(new TextBlock
-            {
-                Text = "// SKIPPED",
-                FontFamily = MonoFont,
-                FontSize = 10,
-                Foreground = (Brush)Resources["HudInkFaintBrush"],
-                VerticalAlignment = VerticalAlignment.Center,
             });
         }
         body.Children.Add(titleRow);
@@ -324,196 +214,183 @@ public sealed partial class PipelinePage : Page
         {
             body.Children.Add(new TextBlock
             {
-                Text = stage.Subtitle,
-                FontFamily = MonoFont,
-                FontSize = 11,
-                Foreground = (Brush)Resources["HudInkDimBrush"],
-                TextWrapping = TextWrapping.Wrap,
+                Text           = stage.Subtitle,
+                FontSize       = 12,
+                Foreground     = (Brush)Resources["PipeTextDimBrush"],
+                TextWrapping   = TextWrapping.Wrap,
+                Margin         = new Thickness(0, 2, 0, 0),
             });
         }
 
-        // Param table (key/value)
+        // Params grid
         if (stage.Params.Count > 0)
         {
-            var paramGrid = new Grid { Margin = new Thickness(0, 4, 0, 0) };
-            paramGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
+            var paramGrid = new Grid { Margin = new Thickness(0, 6, 0, 0) };
+            paramGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
             paramGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
             for (int r = 0; r < stage.Params.Count; r++)
             {
                 paramGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
                 var (k, v) = stage.Params[r];
 
-                var keyText = new TextBlock
+                var keyTb = new TextBlock
                 {
-                    Text = $"› {k}",
+                    Text       = k,
+                    FontSize   = 11,
                     FontFamily = MonoFont,
-                    FontSize = 10,
-                    CharacterSpacing = 100,
-                    Foreground = (Brush)Resources["HudInkFaintBrush"],
-                    Margin = new Thickness(0, 1, 8, 1),
+                    Foreground = (Brush)Resources["PipeTextDimBrush"],
+                    Margin     = new Thickness(0, 1, 8, 1),
                 };
-                Grid.SetRow(keyText, r);
-                Grid.SetColumn(keyText, 0);
-                paramGrid.Children.Add(keyText);
+                Grid.SetRow(keyTb, r);
+                paramGrid.Children.Add(keyTb);
 
-                var valText = new TextBlock
+                var valTb = new TextBlock
                 {
-                    Text = v,
-                    FontFamily = MonoFont,
-                    FontSize = 11,
-                    Foreground = (Brush)Resources["HudInkBrush"],
+                    Text         = v,
+                    FontSize     = 11,
+                    FontFamily   = MonoFont,
                     TextWrapping = TextWrapping.Wrap,
-                    Margin = new Thickness(0, 1, 0, 1),
+                    Margin       = new Thickness(0, 1, 0, 1),
                 };
-                Grid.SetRow(valText, r);
-                Grid.SetColumn(valText, 1);
-                paramGrid.Children.Add(valText);
+                Grid.SetRow(valTb, r);
+                Grid.SetColumn(valTb, 1);
+                paramGrid.Children.Add(valTb);
             }
             body.Children.Add(paramGrid);
         }
 
-        // Code line
+        // Command line code box
         if (!string.IsNullOrWhiteSpace(stage.CommandLine))
         {
-            var codeBox = new Border
+            body.Children.Add(new Border
             {
-                Background = (Brush)Resources["HudCodeBackgroundBrush"],
-                BorderBrush = accentSoft,
+                Background      = (Brush)Resources["PipeCodeBgBrush"],
+                BorderBrush     = (Brush)Resources["PipeDividerBrush"],
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(2),
-                Padding = new Thickness(8, 5, 8, 5),
-                Margin = new Thickness(0, 6, 0, 0),
+                CornerRadius    = new CornerRadius(4),
+                Padding         = new Thickness(8, 5, 8, 5),
+                Margin          = new Thickness(0, 6, 0, 0),
                 Child = new TextBlock
                 {
-                    Text = $"$ {stage.CommandLine}",
-                    FontFamily = MonoFont,
-                    FontSize = 11,
-                    Foreground = accent,
+                    Text         = $"$ {stage.CommandLine}",
+                    FontFamily   = MonoFont,
+                    FontSize     = 11,
+                    Foreground   = (Brush)Resources["PipeTextDimBrush"],
                     TextWrapping = TextWrapping.Wrap,
                 },
-            };
-            body.Children.Add(codeBox);
+            });
         }
 
         Grid.SetColumn(body, 2);
-        grid.Children.Add(body);
+        innerGrid.Children.Add(body);
 
-        card.Child = grid;
+        card.Child = innerGrid;
         container.Children.Add(card);
 
-        // Connector
+        // Connector between cards (thin vertical line)
         if (!isLast)
         {
-            var conn = new StackPanel { HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(28, 0, 0, 0) };
-            for (int i = 0; i < 3; i++)
+            container.Children.Add(new Border
             {
-                conn.Children.Add(new Ellipse
-                {
-                    Width = 3, Height = 3,
-                    Fill = (Brush)Resources["HudCyanSoftBrush"],
-                    Margin = new Thickness(0, 2, 0, 0),
-                });
-            }
-            container.Children.Add(conn);
+                Width               = 1,
+                Height              = 14,
+                Background          = (Brush)Resources["PipeDividerBrush"],
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin              = new Thickness(28, 0, 0, 0),
+            });
         }
 
         return container;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Spec sidebar
+    // Spec sidebar — uses native WinUI Expander controls
     // ═══════════════════════════════════════════════════════════════════════
     private void BuildSpecSidebar(Snapshot snap)
     {
-        SpecPanelHost.Children.Add(BuildSpecPanel("◢ TARGET SIGNATURE", snap.SignatureSpec));
-        SpecPanelHost.Children.Add(BuildSpecPanel("◢ ENCODING STACK",   snap.EncodingSpec));
-        SpecPanelHost.Children.Add(BuildSpecPanel("◢ EXECUTION VECTOR", snap.ExecutionSpec));
-        SpecPanelHost.Children.Add(BuildSpecPanel("◢ CARRIER PROFILE",  snap.CarrierSpec));
-        SpecPanelHost.Children.Add(BuildSpecPanel("◢ POST-PROCESSING",  snap.PostProcessingSpec));
-        SpecPanelHost.Children.Add(BuildSpecPanel("◢ COMPILE TARGET",   snap.CompileSpec));
-        SpecPanelHost.Children.Add(BuildSpecPanel("◢ ARTIFACT PROJECTION", snap.ArtifactSpec));
+        AddSpecExpander("Target Signature",  snap.SignatureSpec,       isFirst: true);
+        AddSpecExpander("Encoding",          snap.EncodingSpec);
+        AddSpecExpander("Execution",         snap.ExecutionSpec);
+        AddSpecExpander("Carrier",           snap.CarrierSpec);
+        AddSpecExpander("Post-processing",   snap.PostProcessingSpec);
+        AddSpecExpander("Compile Target",    snap.CompileSpec);
+        AddSpecExpander("Artifacts",         snap.ArtifactSpec);
     }
 
-    private Border BuildSpecPanel(string heading, IReadOnlyList<KeyValuePair<string, string>> rows)
+    private void AddSpecExpander(string title, IReadOnlyList<KeyValuePair<string, string>> rows, bool isFirst = false)
     {
-        var panel = new Border
-        {
-            Background = (Brush)Resources["HudPanelBrush"],
-            BorderBrush = (Brush)Resources["HudCyanSoftBrush"],
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(2),
-            Padding = new Thickness(0),
-        };
+        var content = BuildSpecContent(rows);
 
-        var stack = new StackPanel();
-        var head = new Border
+        var expander = new Expander
         {
-            Background = (Brush)Resources["HudHeaderPanelBrush"],
-            Padding = new Thickness(10, 5, 10, 5),
-            Child = new TextBlock
-            {
-                Text = heading,
-                FontFamily = MonoFont,
-                FontSize = 10,
-                CharacterSpacing = 200,
-                Foreground = (Brush)Resources["HudCyanBrush"],
-            }
+            Header                     = title,
+            Content                    = content,
+            IsExpanded                 = isFirst,
+            HorizontalAlignment        = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
         };
-        stack.Children.Add(head);
+        SpecPanelHost.Children.Add(expander);
+    }
 
-        var body = new StackPanel { Margin = new Thickness(10, 8, 10, 10), Spacing = 4 };
+    private FrameworkElement BuildSpecContent(IReadOnlyList<KeyValuePair<string, string>> rows)
+    {
+        var stack = new StackPanel { Spacing = 4, Margin = new Thickness(0, 4, 0, 4) };
 
         if (rows.Count == 0)
         {
-            body.Children.Add(new TextBlock
+            stack.Children.Add(new TextBlock
             {
-                Text = "// no data",
-                FontFamily = MonoFont,
-                FontSize = 11,
-                Foreground = (Brush)Resources["HudInkFaintBrush"],
+                Text       = "No data",
+                FontSize   = 12,
+                Foreground = (Brush)Resources["PipeTextDimBrush"],
+                FontStyle  = Windows.UI.Text.FontStyle.Italic,
             });
+            return stack;
         }
-        else
+
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(100) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        for (int r = 0; r < rows.Count; r++)
         {
-            foreach (var (k, v) in rows)
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var (k, v) = (rows[r].Key, rows[r].Value);
+
+            var keyTb = new TextBlock
             {
-                var row = new Grid();
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(98) });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                Text              = k,
+                FontSize          = 11,
+                FontFamily        = MonoFont,
+                Foreground        = (Brush)Resources["PipeTextDimBrush"],
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin            = new Thickness(0, 1, 8, 1),
+            };
+            Grid.SetRow(keyTb, r);
+            grid.Children.Add(keyTb);
 
-                row.Children.Add(new TextBlock
-                {
-                    Text = k,
-                    FontFamily = MonoFont,
-                    FontSize = 10,
-                    CharacterSpacing = 100,
-                    Foreground = (Brush)Resources["HudInkFaintBrush"],
-                    VerticalAlignment = VerticalAlignment.Top,
-                });
-
-                var valText = new TextBlock
-                {
-                    Text = v,
-                    FontFamily = MonoFont,
-                    FontSize = 11,
-                    Foreground = (Brush)Resources["HudInkBrush"],
-                    TextWrapping = TextWrapping.Wrap,
-                };
-                Grid.SetColumn(valText, 1);
-                row.Children.Add(valText);
-                body.Children.Add(row);
-            }
+            var valTb = new TextBlock
+            {
+                Text         = v,
+                FontSize     = 11,
+                FontFamily   = MonoFont,
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 1, 0, 1),
+            };
+            Grid.SetRow(valTb, r);
+            Grid.SetColumn(valTb, 1);
+            grid.Children.Add(valTb);
         }
 
-        stack.Children.Add(body);
-        panel.Child = stack;
-        return panel;
+        stack.Children.Add(grid);
+        return stack;
     }
 
     private static readonly FontFamily MonoFont = new("Cascadia Mono, Consolas, Courier New");
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Snapshot — extracts a structured view of the entire user configuration
+    // Snapshot — reads entire user config from all pages
     // ═══════════════════════════════════════════════════════════════════════
     private enum Severity { Normal, Warning, Skipped }
 
@@ -530,29 +407,28 @@ public sealed partial class PipelinePage : Page
     private sealed class Snapshot
     {
         public List<Stage> Stages { get; } = new();
-        public List<KeyValuePair<string, string>> SignatureSpec  { get; } = new();
-        public List<KeyValuePair<string, string>> EncodingSpec   { get; } = new();
-        public List<KeyValuePair<string, string>> ExecutionSpec  { get; } = new();
-        public List<KeyValuePair<string, string>> CarrierSpec    { get; } = new();
+        public List<KeyValuePair<string, string>> SignatureSpec      { get; } = new();
+        public List<KeyValuePair<string, string>> EncodingSpec       { get; } = new();
+        public List<KeyValuePair<string, string>> ExecutionSpec      { get; } = new();
+        public List<KeyValuePair<string, string>> CarrierSpec        { get; } = new();
         public List<KeyValuePair<string, string>> PostProcessingSpec { get; } = new();
-        public List<KeyValuePair<string, string>> CompileSpec    { get; } = new();
-        public List<KeyValuePair<string, string>> ArtifactSpec   { get; } = new();
-        public List<string> Warnings { get; } = new();
+        public List<KeyValuePair<string, string>> CompileSpec        { get; } = new();
+        public List<KeyValuePair<string, string>> ArtifactSpec       { get; } = new();
+        public List<string> Warnings          { get; } = new();
         public List<string> ExpectedArtifacts { get; } = new();
-        public string OutputArchHint { get; set; } = "x64-PE";
-        public string RecipeOneLiner { get; set; } = "";
-        public string TelemetryLine  { get; set; } = "";
+        public string OutputArchHint  { get; set; } = "x64-PE";
+        public string RecipeOneLiner  { get; set; } = "";
 
         public static Snapshot Capture(ICodeSnippetCatalogService snippets)
         {
-            var snap = new Snapshot();
+            var snap     = new Snapshot();
             var main     = MainPage.Instance;
             var backdoor = BackdooringPage.Instance;
             var packing  = PackingPage.Instance;
             var finalize = FinalizePage.Instance;
             var compile  = CompilePage.Instance;
 
-            // ─── Sidebar: TARGET SIGNATURE ───────────────────────────────
+            // ─── Sidebar: Target Signature ──────────────────────────────
             var src      = main?.CurrentShellcodeSource;
             string srcLabel = "(unconfigured)";
             string srcPath  = "—";
@@ -589,12 +465,12 @@ public sealed partial class PipelinePage : Page
                         break;
                 }
             }
-            snap.SignatureSpec.Add(new("KIND",     srcKind));
-            snap.SignatureSpec.Add(new("LABEL",    srcLabel));
-            snap.SignatureSpec.Add(new("LOCATION", srcPath));
-            snap.SignatureSpec.Add(new("SIZE",     srcSize));
+            snap.SignatureSpec.Add(new("kind",     srcKind));
+            snap.SignatureSpec.Add(new("label",    srcLabel));
+            snap.SignatureSpec.Add(new("location", srcPath));
+            snap.SignatureSpec.Add(new("size",     srcSize));
 
-            // ─── Sidebar: ENCODING STACK ─────────────────────────────────
+            // ─── Sidebar: Encoding ──────────────────────────────────────
             string sgnPlacement = "off";
             int sgnCount = 0, sgnMax = 0;
             if (main?.IsShikataGaNaiEnabled == true)
@@ -605,14 +481,14 @@ public sealed partial class PipelinePage : Page
             }
             string encName = main?.EncoderCombo?.SelectedItem?.ToString() ?? "(default)";
             string envName = main?.EnvelopeCombo?.SelectedItem?.ToString() ?? "(default)";
-            snap.EncodingSpec.Add(new("SGN MODE",   sgnPlacement));
-            snap.EncodingSpec.Add(new("SGN ITER",   sgnPlacement == "off" ? "—" : $"x{sgnCount}, max={sgnMax}B"));
-            snap.EncodingSpec.Add(new("ENCODER",    encName));
-            snap.EncodingSpec.Add(new("ENVELOPE",   envName));
-            if (main?.SelectedEncoderIndex is int ei)  snap.EncodingSpec.Add(new("ENC INDEX", ei.ToString()));
-            if (main?.SelectedEnvelopeIndex is int vi) snap.EncodingSpec.Add(new("ENV INDEX", vi.ToString()));
+            snap.EncodingSpec.Add(new("sgn",       sgnPlacement));
+            snap.EncodingSpec.Add(new("sgn-iters", sgnPlacement == "off" ? "—" : $"x{sgnCount}, max {sgnMax} B"));
+            snap.EncodingSpec.Add(new("encoder",   encName));
+            snap.EncodingSpec.Add(new("envelope",  envName));
+            if (main?.SelectedEncoderIndex is int ei)  snap.EncodingSpec.Add(new("enc-id", ei.ToString()));
+            if (main?.SelectedEnvelopeIndex is int vi) snap.EncodingSpec.Add(new("env-id", vi.ToString()));
 
-            // ─── Sidebar: EXECUTION VECTOR ───────────────────────────────
+            // ─── Sidebar: Execution ─────────────────────────────────────
             string execId = "(unset)";
             string execMem = "—";
             string execApis = "—";
@@ -638,10 +514,10 @@ public sealed partial class PipelinePage : Page
                 section!.TryGetItem(execId, out var item))
             {
                 var analysis = ExecutionSnippetAnalyzer.Analyze(execId, item!.Snippet);
-                execMem  = analysis.FinalProtection.ToString();
-                execApis = analysis.DetectedApis.Count > 0 ? string.Join(", ", analysis.DetectedApis) : "(none detected)";
-                execSgnSafe = analysis.IsSgnCompatible ? "✓ RWX-compatible" : "✗ requires RWX";
-                execSummary = analysis.Summary;
+                execMem      = analysis.FinalProtection.ToString();
+                execApis     = analysis.DetectedApis.Count > 0 ? string.Join(", ", analysis.DetectedApis) : "(none detected)";
+                execSgnSafe  = analysis.IsSgnCompatible ? "✓ RWX-compatible" : "✗ requires RWX";
+                execSummary  = analysis.Summary;
 
                 if (main?.IsShikataGaNaiEnabled == true && !main.IsShikataGaNaiPostPlacement && !analysis.IsSgnCompatible)
                 {
@@ -650,41 +526,42 @@ public sealed partial class PipelinePage : Page
                         "Either move SGN to post-placement, or pick an exec snippet that keeps the page RWX (e.g. RWXAlloc / DirectExec).");
                 }
             }
-            snap.ExecutionSpec.Add(new("SNIPPET ID", execId));
-            snap.ExecutionSpec.Add(new("MEM PROT",   execMem));
-            snap.ExecutionSpec.Add(new("APIs",       execApis));
-            snap.ExecutionSpec.Add(new("SGN SAFE",   execSgnSafe));
-            if (execSummary != null) snap.ExecutionSpec.Add(new("NOTE", execSummary));
+            snap.ExecutionSpec.Add(new("snippet",  execId));
+            snap.ExecutionSpec.Add(new("mem-prot", execMem));
+            snap.ExecutionSpec.Add(new("apis",     execApis));
+            snap.ExecutionSpec.Add(new("sgn-safe", execSgnSafe));
+            if (execSummary != null) snap.ExecutionSpec.Add(new("note", execSummary));
 
-            // ─── Sidebar: CARRIER PROFILE ────────────────────────────────
-            snap.CarrierSpec.Add(new("TEMPLATE",   main?.TemplateCombo?.SelectedItem?.ToString() ?? "(unset)"));
-            snap.CarrierSpec.Add(new("TEMPL ID",   main?.SelectedTemplateId ?? "(unknown)"));
+            // ─── Sidebar: Carrier ───────────────────────────────────────
+            snap.CarrierSpec.Add(new("template", main?.TemplateCombo?.SelectedItem?.ToString() ?? "(unset)"));
+            snap.CarrierSpec.Add(new("templ-id", main?.SelectedTemplateId ?? "(unknown)"));
             int snippetSlots = options?.ComboValues?.Count(x => !string.IsNullOrEmpty(x.Value)) ?? 0;
             int listSlots    = options?.ListValues?.Count(x => x.Value != null && x.Value.Count > 0) ?? 0;
-            snap.CarrierSpec.Add(new("SNIPPETS",   $"{snippetSlots} bound"));
-            if (listSlots > 0) snap.CarrierSpec.Add(new("LIST OPTS", $"{listSlots} slot(s)"));
+            snap.CarrierSpec.Add(new("snippets", $"{snippetSlots} bound"));
+            if (listSlots > 0) snap.CarrierSpec.Add(new("list-opts", $"{listSlots} slot(s)"));
 
-            // ─── Sidebar: POST-PROCESSING ────────────────────────────────
-            snap.PostProcessingSpec.Add(new("BACKDOOR", backdoor?.IsBackdooringEnabled == true ? "✓ enabled" : "✗ off"));
+            // ─── Sidebar: Post-processing ───────────────────────────────
+            snap.PostProcessingSpec.Add(new("backdoor", backdoor?.IsBackdooringEnabled == true ? "✓ enabled" : "✗ off"));
             if (backdoor?.IsBackdooringEnabled == true)
             {
-                snap.PostProcessingSpec.Add(new("METHOD",   InjectionLabel(backdoor.SelectedInjectionMethod)));
-                snap.PostProcessingSpec.Add(new("CARRIER",  CarrierLabel(backdoor.SelectedCarrierInvoke)));
-                snap.PostProcessingSpec.Add(new("ENCRYPT",  backdoor.SelectedEncryption.ToString()));
-                if (backdoor.TargetPeFilePath is { } tp) snap.PostProcessingSpec.Add(new("TARGET PE", Path.GetFileName(tp)));
+                snap.PostProcessingSpec.Add(new("method",  InjectionLabel(backdoor.SelectedInjectionMethod)));
+                snap.PostProcessingSpec.Add(new("carrier", CarrierLabel(backdoor.SelectedCarrierInvoke)));
+                snap.PostProcessingSpec.Add(new("encrypt", backdoor.SelectedEncryption.ToString()));
+                if (backdoor.TargetPeFilePath is { } tp)
+                    snap.PostProcessingSpec.Add(new("target-pe", Path.GetFileName(tp)));
             }
-            snap.PostProcessingSpec.Add(new("PACK",     packing?.IsPackingEnabled == true ? $"UPX {packing.SelectedCompressionLevel}" : "✗ off"));
-            snap.PostProcessingSpec.Add(new("FINALIZE", finalize?.IsFinalizationEnabled == true ? "✓ enabled" : "✗ off"));
+            snap.PostProcessingSpec.Add(new("pack",     packing?.IsPackingEnabled == true ? $"UPX {packing.SelectedCompressionLevel}" : "✗ off"));
+            snap.PostProcessingSpec.Add(new("finalize", finalize?.IsFinalizationEnabled == true ? "✓ enabled" : "✗ off"));
 
-            // ─── Sidebar: COMPILE TARGET ─────────────────────────────────
-            snap.CompileSpec.Add(new("COMPILER", compile?.SelectedCompilerDisplay ?? "(not detected)"));
-            snap.CompileSpec.Add(new("OUTPUT",   string.IsNullOrWhiteSpace(compile?.OutputDirectory) ? "(prompt on build)" : compile!.OutputDirectory!));
-            snap.CompileSpec.Add(new("DEBUG",    compile?.GenerateDebugInfoEnabled == true ? "✓ PDB on" : "stripped"));
-            snap.CompileSpec.Add(new("VERBOSE",  compile?.VerboseBuildEnabled == true ? "✓" : "—"));
-            snap.CompileSpec.Add(new("STRIP",    compile?.IsStripToBinChecked == true ? "✓ →.bin" : "—"));
+            // ─── Sidebar: Compile Target ────────────────────────────────
+            snap.CompileSpec.Add(new("compiler", compile?.SelectedCompilerDisplay ?? "(not detected)"));
+            snap.CompileSpec.Add(new("output",   string.IsNullOrWhiteSpace(compile?.OutputDirectory) ? "(prompt on build)" : compile!.OutputDirectory!));
+            snap.CompileSpec.Add(new("debug",    compile?.GenerateDebugInfoEnabled == true ? "✓ PDB on" : "stripped"));
+            snap.CompileSpec.Add(new("verbose",  compile?.VerboseBuildEnabled == true ? "✓" : "—"));
+            snap.CompileSpec.Add(new("strip",    compile?.IsStripToBinChecked == true ? "✓ →.bin" : "—"));
             snap.OutputArchHint = "x64-PE";
 
-            // ─── Sidebar: ARTIFACT PROJECTION ────────────────────────────
+            // ─── Sidebar: Artifacts ─────────────────────────────────────
             snap.ExpectedArtifacts.Add("loader.exe");
             if (compile?.IsStripToBinChecked == true || (main?.IsShikataGaNaiEnabled == true && main.IsShikataGaNaiPostPlacement))
                 snap.ExpectedArtifacts.Add("loader.bin");
@@ -700,7 +577,7 @@ public sealed partial class PipelinePage : Page
             foreach (var a in snap.ExpectedArtifacts)
                 snap.ArtifactSpec.Add(new(" •", a));
 
-            // ─── Stage timeline (mirrors CompilerService order) ──────────
+            // ─── Stage timeline ─────────────────────────────────────────
             snap.Stages.Add(new Stage(
                 Title: "Shellcode source",
                 Glyph: "\uE943",
@@ -752,7 +629,7 @@ public sealed partial class PipelinePage : Page
             snap.Stages.Add(new Stage(
                 Title: "Template compile",
                 Glyph: "\uE74E",
-                Subtitle: $"Carrier: {main?.TemplateCombo?.SelectedItem ?? "(unset)"}  •  Snippet slots bound: {snippetSlots}",
+                Subtitle: $"Carrier: {main?.TemplateCombo?.SelectedItem ?? "(unset)"}  •  Snippet slots: {snippetSlots}",
                 Params: BuildTemplateParams(main, options, execId),
                 CommandLine: $"cc <template>.c -o loader.exe   // execution: {execId}",
                 Enabled: true,
@@ -772,8 +649,8 @@ public sealed partial class PipelinePage : Page
                         : "Position-independent shellcode extracted from the compiled loader.",
                     Params: new List<(string, string)>
                     {
-                        ("mode",       "ep (entry-point relative)"),
-                        ("output",     "loader.bin"),
+                        ("mode",   "ep (entry-point relative)"),
+                        ("output", "loader.bin"),
                     },
                     CommandLine: "washmachine-cli strip <loader.exe> -o <loader.bin> --mode ep",
                     Enabled: true,
@@ -804,7 +681,7 @@ public sealed partial class PipelinePage : Page
                     snap.Stages.Add(new Stage(
                         Title: "SGN carrier wrap",
                         Glyph: "\uE7B8",
-                        Subtitle: "Backdoor disabled → wrap the SGN .bin in the 'sgncarrier' template so it ships as a runnable .exe.",
+                        Subtitle: "Backdoor disabled — wrap the SGN .bin in the 'sgncarrier' template so it ships as a runnable .exe.",
                         Params: new List<(string, string)>
                         {
                             ("template", "sgncarrier"),
@@ -823,22 +700,22 @@ public sealed partial class PipelinePage : Page
             {
                 var bp = new List<(string, string)>
                 {
-                    ("target",    backdoor.TargetPeFilePath is { } t ? Path.GetFileName(t) : "(not selected)"),
-                    ("method",    InjectionLabel(backdoor.SelectedInjectionMethod)),
-                    ("carrier",   CarrierLabel(backdoor.SelectedCarrierInvoke)),
-                    ("encrypt",   backdoor.SelectedEncryption.ToString()),
+                    ("target",  backdoor.TargetPeFilePath is { } t ? Path.GetFileName(t) : "(not selected)"),
+                    ("method",  InjectionLabel(backdoor.SelectedInjectionMethod)),
+                    ("carrier", CarrierLabel(backdoor.SelectedCarrierInvoke)),
+                    ("encrypt", backdoor.SelectedEncryption.ToString()),
                 };
-                if (backdoor.CustomSectionName is { } sn) bp.Add(("section", sn));
-                if (!backdoor.PreserveOriginalEntry)      bp.Add(("entry",   "no-preserve"));
-                if (!backdoor.PatchIat)                    bp.Add(("iat",     "no-patch"));
-                if (!backdoor.PatchExit)                   bp.Add(("exit",    "no-patch"));
-                if (!backdoor.RemoveSignature)             bp.Add(("sig",     "keep"));
-                if (backdoor.DryRun)                        bp.Add(("dry-run", "✓"));
+                if (backdoor.CustomSectionName is { } sn) bp.Add(("section",  sn));
+                if (!backdoor.PreserveOriginalEntry)       bp.Add(("entry",    "no-preserve"));
+                if (!backdoor.PatchIat)                    bp.Add(("iat",      "no-patch"));
+                if (!backdoor.PatchExit)                   bp.Add(("exit",     "no-patch"));
+                if (!backdoor.RemoveSignature)             bp.Add(("sig",      "keep"));
+                if (backdoor.DryRun)                       bp.Add(("dry-run",  "✓"));
 
                 snap.Stages.Add(new Stage(
                     Title: "Backdoor target PE",
                     Glyph: "\uE8AC",
-                    Subtitle: $"Inject ORIGINAL shellcode into {(backdoor.TargetPeFilePath is { } tn ? Path.GetFileName(tn) : "target")}.",
+                    Subtitle: $"Inject shellcode into {(backdoor.TargetPeFilePath is { } tn ? Path.GetFileName(tn) : "target")}.",
                     Params: bp,
                     CommandLine: "washmachine-cli backdoor <target.exe> -p <shellcode.bin> ...",
                     Enabled: true,
@@ -900,7 +777,7 @@ public sealed partial class PipelinePage : Page
                     if (finalize.CloneResources) flags.Add("rsrc");
                     if (finalize.CloneIcon)      flags.Add("icon");
                     if (finalize.CloneMetadata)  flags.Add("meta");
-                    if (flags.Count > 0) fp.Add(("clone-set", string.Join(",", flags)));
+                    if (flags.Count > 0) fp.Add(("clone-set", string.Join(", ", flags)));
                 }
                 if (finalize.NopPaddingBytes > 0) fp.Add(("nop-pad", $"{finalize.NopPaddingBytes:N0} B"));
 
@@ -939,7 +816,7 @@ public sealed partial class PipelinePage : Page
                 Severity: Severity.Normal,
                 StatusChip: "OUT"));
 
-            // Recipe one-liner / telemetry
+            // Recipe one-liner
             var oneLiner = new List<string>();
             oneLiner.Add($"src={srcKind.ToLowerInvariant()}");
             if (sgnPlacement != "off") oneLiner.Add($"sgn={sgnPlacement}");
@@ -950,10 +827,7 @@ public sealed partial class PipelinePage : Page
             if (backdoor?.IsBackdooringEnabled == true) oneLiner.Add("backdoor");
             if (packing?.IsPackingEnabled == true)      oneLiner.Add("upx");
             if (finalize?.IsFinalizationEnabled == true) oneLiner.Add("finalize");
-            snap.RecipeOneLiner = string.Join(" • ", oneLiner);
-
-            snap.TelemetryLine =
-                $"◦ stages={snap.Stages.Count} ◦ active={snap.Stages.Count(s => s.Enabled)} ◦ artifacts={snap.ExpectedArtifacts.Count} ◦ alerts={snap.Warnings.Count} ◦ exec={execId} ◦ mem={execMem}";
+            snap.RecipeOneLiner = string.Join("  ·  ", oneLiner);
 
             return snap;
         }
@@ -972,7 +846,7 @@ public sealed partial class PipelinePage : Page
         private static List<(string, string)> BuildTemplateParams(MainPage? main, TemplateOptionsState? options, string execId)
         {
             var list = new List<(string, string)>();
-            list.Add(("template-id", main?.SelectedTemplateId ?? "(unset)"));
+            list.Add(("template-id",  main?.SelectedTemplateId ?? "(unset)"));
             list.Add(("exec-snippet", execId));
             if (options != null)
             {
@@ -997,10 +871,10 @@ public sealed partial class PipelinePage : Page
 
         private static string CarrierLabel(CarrierInvoke c) => c switch
         {
-            CarrierInvoke.EntryPointHijack       => "entry-point",
-            CarrierInvoke.EntryFunctionBackdoor  => "function-backdoor",
-            CarrierInvoke.TlsCallback            => "tls-callback",
-            _                                    => c.ToString(),
+            CarrierInvoke.EntryPointHijack      => "entry-point",
+            CarrierInvoke.EntryFunctionBackdoor => "function-backdoor",
+            CarrierInvoke.TlsCallback           => "tls-callback",
+            _                                   => c.ToString(),
         };
     }
 }
