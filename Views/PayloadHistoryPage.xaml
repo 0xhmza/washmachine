@@ -36,7 +36,6 @@
                     </StackPanel>
                 </StackPanel>
 
-                <Border Style="{StaticResource SectionDivider}" />
 
                 <!-- History entries section -->
                 <Expander x:Name="HistoryExpander"
@@ -108,8 +107,7 @@
                     </StackPanel>
                 </Expander>
 
-                <Border Style="{StaticResource SectionDivider}" Margin="0,4,0,4" />
-
+                <Border Margin="0,0,0,15"/>
                 <!-- Entry Details section -->
                 <Expander x:Name="DetailsExpander"
                           HorizontalAlignment="Stretch"

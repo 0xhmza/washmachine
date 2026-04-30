@@ -35,7 +35,6 @@
                     </StackPanel>
                 </StackPanel>
 
-                <Border Style="{StaticResource SectionDivider}" />
 
                 <!-- Template Import -->
                 <Expander x:Name="templateExpander"
@@ -84,7 +83,6 @@
                     </StackPanel>
                 </Expander>
 
-                <Border Style="{StaticResource SectionDivider}" />
 
                 <!-- Session Logging -->
                 <Expander x:Name="loggingExpander"

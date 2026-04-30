@@ -399,6 +399,7 @@
                     </Grid>
                 </Expander>
 
+                <Border Margin="10,10,10,15"/>
 
                 <!-- Next Step card -->
                 <Border Style="{StaticResource CardBorder}" Margin="0">
@@ -428,7 +429,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border Margin="10,10,10,30"/>
+                <Border Margin="10,10,10,15"/>
                 <!-- Status section (read-only) -->
                 <Expander IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
                     <Expander.Header>

@@ -35,7 +35,6 @@
                     </StackPanel>
                 </StackPanel>
 
-                <Border Style="{StaticResource SectionDivider}" />
 
                 <!-- Enable/Disable Backdooring -->
                 <Border Style="{StaticResource CardBorder}" Margin="0,0,0,8">
@@ -57,6 +56,7 @@
                                       MinWidth="0" Margin="8,0,8,0" Header=""/>
                     </Grid>
                 </Border>
+                <Border Margin="10,10,10,15"/>
 
                 <!-- All configuration sections - greyed out when backdooring is disabled -->
                 <StackPanel x:Name="BackdoorConfigPanel" Opacity="0.4" IsHitTestVisible="False">
@@ -171,9 +171,7 @@
                     </StackPanel>
                 </Expander>
 
-                <Border Style="{StaticResource SectionDivider}" />
-
-                <!-- Deep Analysis Section -->
+                    <!-- Deep Analysis Section -->
                 <Expander x:Name="DeepAnalysisExpander" IsExpanded="False"
                           HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
                     <Expander.Header>
@@ -352,7 +350,6 @@
                     </StackPanel>
                 </Expander>
 
-                <Border Style="{StaticResource SectionDivider}" />
 
                 <!-- Injection Settings -->
                 <Expander x:Name="InjectionSettingsExpander" IsExpanded="True"
@@ -493,9 +490,9 @@
                     </StackPanel>
                 </Expander>
 
-                <Border Style="{StaticResource SectionDivider}" />
+                    <Border Margin="10,10,10,15"/>
 
-                <!-- Next Step card -->
+                    <!-- Next Step card -->
                 <Border Style="{StaticResource CardBorder}" Margin="0">
                     <StackPanel Margin="12">
                         <Grid>

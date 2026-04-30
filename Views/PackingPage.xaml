@@ -35,7 +35,6 @@
                     </StackPanel>
                 </StackPanel>
 
-                <Border Style="{StaticResource SectionDivider}" />
 
                 <StackPanel Spacing="16">
 
@@ -157,8 +156,10 @@
                             </Border>
                         </StackPanel>
                     </Expander>
+                    
+                     <Border Margin="10,10,10,0"/>
 
-                    <!-- Navigation to Next -->
+                        <!-- Navigation to Next -->
                     <Border Style="{StaticResource CardBorder}" Margin="0,8,0,0">
                         <Button HorizontalAlignment="Stretch" 
                                 HorizontalContentAlignment="Stretch"
