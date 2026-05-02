@@ -7,6 +7,15 @@ public sealed class CppCompilationPlan
     public Dictionary<string, List<string>> CustomSnippetBlocks { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
+    /// Tracks which snippet items were selected, keyed by the snippet section's
+    /// template id (e.g. "uacb", "persistence", "evasion"). Each value is the
+    /// ordered list of selected item IDs for that section. Used by the
+    /// requires-contract validation to confirm that snippet dependencies
+    /// (e.g. <c>requires: [uac_bypass]</c>) are satisfied with a non-stub pick.
+    /// </summary>
+    public Dictionary<string, List<string>> SelectedSnippets { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Collected <c>#include</c> lines from selected snippets. Deduplicated before rendering.
     /// </summary>
     public List<string> SnippetIncludes { get; } = new();

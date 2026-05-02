@@ -125,7 +125,8 @@ public sealed class CodeSnippetItem
         bool isDefault = false,
         string? includes = null,
         string? implementation = null,
-        IEnumerable<CodeSnippetInput>? inputs = null)
+        IEnumerable<CodeSnippetInput>? inputs = null,
+        IEnumerable<string>? requires = null)
     {
         Id = id ?? string.Empty;
         Display = string.IsNullOrWhiteSpace(display) ? Id : display;
@@ -135,6 +136,11 @@ public sealed class CodeSnippetItem
         Implementation = implementation ?? string.Empty;
         Inputs = new System.Collections.ObjectModel.ReadOnlyCollection<CodeSnippetInput>(
             (inputs ?? Enumerable.Empty<CodeSnippetInput>()).ToList());
+        Requires = new System.Collections.ObjectModel.ReadOnlyCollection<string>(
+            (requires ?? Enumerable.Empty<string>())
+                .Where(r => !string.IsNullOrWhiteSpace(r))
+                .Select(r => r.Trim())
+                .ToList());
     }
 
     public string Id { get; }
@@ -158,6 +164,14 @@ public sealed class CodeSnippetItem
     /// the runtime prefixes them with the section+item for global uniqueness.
     /// </summary>
     public IReadOnlyList<CodeSnippetInput> Inputs { get; }
+
+    /// <summary>
+    /// Capability tokens this snippet depends on (e.g. <c>uac_bypass</c>).
+    /// Resolved at compile time: when present, the corresponding snippet section
+    /// must contribute a non-stub selection or compilation fails. Reserved-for-future
+    /// for most snippets — only the Evasion section consumes it today.
+    /// </summary>
+    public IReadOnlyList<string> Requires { get; }
 }
 
 public sealed class CodeSnippetInput

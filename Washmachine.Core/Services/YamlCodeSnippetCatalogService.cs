@@ -164,7 +164,8 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
                                     inp.Placeholder,
                                     inp.InfoAction,
                                     inp.InfoButtonLabel,
-                                    inp.DefaultValue))))
+                                    inp.DefaultValue)),
+                                item.Requires))
                             ?? Enumerable.Empty<CodeSnippetItem>();
 
                 var inputs = section.Inputs?.Select(input => new CodeSnippetInput(
@@ -308,6 +309,7 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
         public string? Includes { get; set; }
         public string? Implementation { get; set; }
         public List<SnippetInputDto>? Inputs { get; set; }
+        public List<string>? Requires { get; set; }
     }
 
     private sealed class SnippetInputDto

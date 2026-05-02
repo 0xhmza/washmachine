@@ -17,7 +17,7 @@ public static partial class Program
     private static readonly Dictionary<string, List<string>> InputHistory = new(StringComparer.OrdinalIgnoreCase);
     private static readonly string[] RootReplCommands =
     {
-        "encode", "analyze", "backdoor", "strip", "show", "provision", "test", "help",
+        "encode", "analyze", "backdoor", "strip", "show", "provision", "test", "scan", "help",
         "banner", "scheme", "clear", "cls", "exit", "quit", "q"
     };
     private static StartupResult? _startupResult;
@@ -66,7 +66,8 @@ public static partial class Program
         ["show"] = ShowTargets,
         ["provision"] = new[] { "-CoreOnly", "--core-only" },
         ["test"] = new[] { "--help", "-h" },
-        ["help"] = new[] { "encode", "analyze", "backdoor", "strip", "show", "provision", "test" }
+        ["scan"] = new[] { "-Json", "--json", "--help", "-h" },
+        ["help"] = new[] { "encode", "analyze", "backdoor", "strip", "show", "provision", "test", "scan" }
     };
     private static bool _isRepl;
 
@@ -123,6 +124,7 @@ public static partial class Program
             "list"      => wantsHelp ? PrintShowUsage() : await RunShowAsync(cmdArgs),
             "provision" => wantsHelp ? PrintProvisionUsage() : await RunProvisionAsync(cmdArgs),
             "test"      => wantsHelp ? PrintTestUsage() : await TestHarness.RunAsync(cmdArgs),
+            "scan"      => wantsHelp ? PrintScanUsage() : RunScan(cmdArgs),
             "help" or "--help" or "-h" => HandleHelp(cmdArgs),
             _ => PrintUnknownCommand(command),
         };
@@ -141,6 +143,7 @@ public static partial class Program
             "show" or "list" => PrintShowUsage(),
             "provision" => PrintProvisionUsage(),
             "test"      => PrintTestUsage(),
+            "scan"      => PrintScanUsage(),
             _ => PrintUsage(),
         };
     }
@@ -2170,6 +2173,7 @@ public static partial class Program
         BuildShowUsage(),
         BuildProvisionUsage(),
         BuildTestUsage(),
+        BuildScanUsage(),
     ];
 
     private static CommandUsage BuildEncodeUsage() =>
@@ -2748,6 +2752,149 @@ public static partial class Program
     }
 
     // ═══════════════════════════════════════════════════════════════════════
+    //  scan — catalog conflict scanner
+    // ═══════════════════════════════════════════════════════════════════════
+
+    private static int RunScan(string[] args)
+    {
+        bool jsonMode = args.Any(a => string.Equals(a, "--json", StringComparison.OrdinalIgnoreCase)
+                                   || string.Equals(a, "-Json", StringComparison.Ordinal));
+
+        var unknown = args.FirstOrDefault(a =>
+            !string.Equals(a, "--json", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(a, "-Json", StringComparison.Ordinal));
+        if (unknown != null)
+        {
+            AnsiConsole.MarkupLine($"[{UiColors.Error}]Error:[/] Unknown option for scan: {Markup.Escape(unknown)}");
+            return 1;
+        }
+
+        var paths = new AppPaths();
+        var catalog = new YamlCodeSnippetCatalogService(paths);
+        var scanner = new TemplateScannerService(catalog);
+
+        TemplateScanReport report;
+        try
+        {
+            report = scanner.Scan();
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[{UiColors.Error}]scan failed:[/] {Markup.Escape(ex.Message)}");
+            return 1;
+        }
+
+        if (jsonMode)
+        {
+            var json = JsonSerializer.Serialize(new
+            {
+                errors = report.ErrorCount,
+                warnings = report.WarningCount,
+                info = report.InfoCount,
+                findings = report.Findings.Select(f => new
+                {
+                    severity = f.Severity.ToString(),
+                    code = f.Code,
+                    scope = f.Scope,
+                    target = f.TargetId,
+                    message = f.Message,
+                }),
+            }, new JsonSerializerOptions { WriteIndented = true });
+            AnsiConsole.WriteLine(json);
+            return report.HasErrors ? 1 : 0;
+        }
+
+        if (report.Findings.Count == 0)
+        {
+            AnsiConsole.MarkupLine($"[{UiColors.Success}][[+]][/] Catalog scan clean — no conflicts detected.");
+            return 0;
+        }
+
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .BorderColor(UiColors.BoxBorderColor)
+            .Title($"[bold {UiColors.Header}]Catalog Scan[/] [{UiColors.Muted}]({report.Findings.Count} findings)[/]")
+            .AddColumn($"[{UiColors.Accent}]Severity[/]")
+            .AddColumn($"[{UiColors.Accent}]Code[/]")
+            .AddColumn($"[{UiColors.Accent}]Scope[/]")
+            .AddColumn($"[{UiColors.Accent}]Target[/]")
+            .AddColumn($"[{UiColors.Accent}]Message[/]");
+
+        foreach (var f in report.Findings.OrderByDescending(x => x.Severity).ThenBy(x => x.Code))
+        {
+            string sevColor = f.Severity switch
+            {
+                TemplateScanSeverity.Error => UiColors.Error,
+                TemplateScanSeverity.Warning => UiColors.Warning,
+                _ => UiColors.Muted,
+            };
+            table.AddRow(
+                $"[{sevColor}]{f.Severity}[/]",
+                $"[{UiColors.Hex}]{Markup.Escape(f.Code)}[/]",
+                $"[{UiColors.Muted}]{Markup.Escape(f.Scope)}[/]",
+                $"[{UiColors.Value}]{Markup.Escape(f.TargetId)}[/]",
+                $"[{UiColors.Muted}]{Markup.Escape(f.Message)}[/]");
+        }
+
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine(
+            $"[{UiColors.Muted}]Summary:[/] " +
+            $"[{UiColors.Error}]{report.ErrorCount} errors[/], " +
+            $"[{UiColors.Warning}]{report.WarningCount} warnings[/], " +
+            $"[{UiColors.Muted}]{report.InfoCount} info[/].");
+
+        return report.HasErrors ? 1 : 0;
+    }
+
+    private static int PrintScanUsage()
+    {
+        UsageFormatter.Print(BuildScanUsage());
+        return 0;
+    }
+
+    private static CommandUsage BuildScanUsage() =>
+        new(
+            Name: "scan",
+            Summary: "Static-check the snippet/template catalog for unsatisfiable requires-contracts and broken placeholders.",
+            Syntax: "washmachine-cli scan [-Json]",
+            Description: "Cross-references every snippet's 'requires:' tokens against every template's snippet placeholders. Flags templates that expose a snippet whose dependency cannot be satisfied (e.g. an evasion snippet requiring uac_bypass in a template that has no UAC_BYPASS placeholder).",
+            WhenToUse: "Run after editing the YAML playbook, especially when you add new snippets, templates, or 'requires:' tokens.",
+            Output: "A findings table (Severity, Code, Scope, Target, Message). Exit code is 1 when any error is reported.",
+            OptionGroups:
+            [
+                new UsageOptionGroup(
+                    "Output",
+                    "Choose between styled or machine-readable output.",
+                    [
+                        new UsageOption("-Json", "Emit JSON instead of the styled table."),
+                    ]),
+            ],
+            Sections:
+            [
+                new UsageSection(
+                    "Finding codes",
+                    Notes:
+                    [
+                        new UsageNote("E001", "Snippet declares an unknown requires token that is not mapped to a section template."),
+                        new UsageNote("E002", "Template placeholder references a snippet section that does not exist in the catalog."),
+                        new UsageNote("E003", "Template exposes a snippet that requires a capability whose section template is not also exposed by the same template (e.g. evasion needing uac_bypass)."),
+                        new UsageNote("W001", "Snippet declares an unknown requires token (will be ignored at compile time, reserved for future use)."),
+                        new UsageNote("I001", "Section's default item id is not the conventional 'None' stub."),
+                    ]),
+            ],
+            Examples:
+            [
+                new UsageExample("washmachine-cli scan", "Run the catalog scanner and print a styled findings table.", "Any shell"),
+                new UsageExample("washmachine-cli scan -Json", "Emit findings as JSON for CI consumption.", "Any shell"),
+            ],
+            Related:
+            [
+                new UsageNote("show templates", "Inspect template ids before chasing E002/E003."),
+                new UsageNote("show modules", "Inspect snippet sections before chasing E001/W001."),
+            ]);
+
+    // ═══════════════════════════════════════════════════════════════════════
     //  show
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -2953,7 +3100,7 @@ public static partial class Program
 
     private static int PrintUnknownCommand(string command)
     {
-        var validCommands = new[] { "encode", "analyze", "backdoor", "strip", "show", "provision", "test", "help" };
+        var validCommands = new[] { "encode", "analyze", "backdoor", "strip", "show", "provision", "test", "scan", "help" };
 
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[{UiColors.Error}]Error:[/] [{UiColors.Value}]Unknown command '{Markup.Escape(command)}'[/]");

