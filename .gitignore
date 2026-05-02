@@ -51,6 +51,7 @@ mono_crash.*
 # Compiled temp binaries produced by the tool at runtime
 **/temp/cpp/
 **/logging/
+!/Logging/
 
 # Test artifacts
 test_results.json

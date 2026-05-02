@@ -27,7 +27,7 @@ public sealed partial class BackdooringPage : Page
         Instance = this;
 
         _paths = new AppPaths();
-        var logger = new Logging.ConsoleLogger();
+        var logger = new Logging.DiagnosticsLogger();
         _backdoorService = new PeBackdoorService(_paths, logger);
         _analyzerService = new PeAnalyzerService(logger);
 
@@ -485,7 +485,7 @@ public sealed partial class BackdooringPage : Page
             hardBlocks.Add("Only Entry Point Hijack and DllMain Hook carriers are currently implemented. Function Backdoor and TLS carriers are not available yet.");
         }
 
-        if (SelectedCarrierInvoke == CarrierInvoke.DllMain && _analysisResult?.IsDll == false)
+        if (SelectedCarrierInvoke == CarrierInvoke.DllMain && !_analysisResult.IsDll)
         {
             hardBlocks.Add("DllMain Hook carrier is only applicable to DLL targets. Use Entry Point Hijack for EXE files.");
         }
