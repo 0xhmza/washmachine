@@ -22,12 +22,23 @@ public sealed class RichEditBoxLogger : IAppLogger
 
     private void AppendCore(string line)
     {
-        var doc = _box.Document;
-        doc.GetText(Microsoft.UI.Text.TextGetOptions.None, out var existing);
-        // Move caret to end and type text so existing RTF formatting is preserved.
-        doc.Selection.StartPosition = existing.Length;
-        doc.Selection.EndPosition   = existing.Length;
-        doc.Selection.TypeText(line + "\r\n");
+        // TypeText() is blocked on IsReadOnly boxes — temporarily allow writes.
+        _box.IsReadOnly = false;
+        try
+        {
+            var doc = _box.Document;
+            doc.GetText(Microsoft.UI.Text.TextGetOptions.None, out var current);
+            var len = current.TrimEnd('\0').Length;
+            var range = doc.GetRange(len, len);
+            range.SetText(Microsoft.UI.Text.TextSetOptions.None, line + "\r\n");
+            // Scroll to bottom
+            _box.Document.Selection.StartPosition = int.MaxValue;
+            _box.Document.Selection.EndPosition   = int.MaxValue;
+        }
+        finally
+        {
+            _box.IsReadOnly = true;
+        }
     }
 
     public void Info(string message)  => Append($"[INFO]  {message}");
