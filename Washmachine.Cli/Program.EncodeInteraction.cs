@@ -185,7 +185,10 @@ public static partial class Program
         var context = await CreateEncodeSessionContextAsync();
 
         if (args.Length == 0)
+        {
+            if (!_isRepl) { PrintEncodeUsage(); return 1; }
             return await RunEncodeInteractiveSessionAsync(context, new EncodeSessionState(), announceFallback: false);
+        }
 
         var parse = ParseEncodeOneLiner(context, args);
         if (parse.FatalMessage is not null)

@@ -1463,7 +1463,10 @@ public static partial class Program
     private static async Task<int> RunBackdoorAsync(string[] args)
     {
         if (args.Length == 0)
+        {
+            if (!_isRepl) { PrintBackdoorUsage(); return 1; }
             return await RunBackdoorInteractiveSessionAsync();
+        }
 
         string? peFile = null;
         string? shellcodeFile = null;
@@ -1565,24 +1568,44 @@ public static partial class Program
             "section-ext" or "sectionext" or "extend" => InjectionMethod.SectionExtension,
             "text-pad" or "textpad" or "padding" => InjectionMethod.TextSectionPadding,
             "tls-callback" or "tls" or "tlscallback" => InjectionMethod.TlsCallback,
-            _ => InjectionMethod.CodeCave
+            null => InjectionMethod.CodeCave,
+            _ => (InjectionMethod?)null
         };
+
+        if (injectionMethod is null)
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] Unknown injection method [white]{Markup.Escape(method!)}[/]. Valid methods: code-cave, new-section, section-ext, text-pad, tls-callback.");
+            return 1;
+        }
 
         var encryptionMethod = encryption switch
         {
+            null or "none" => PayloadEncryption.None,
             "xor" => PayloadEncryption.Xor,
             "xor2" => PayloadEncryption.Xor2,
             "rc4" => PayloadEncryption.Rc4,
-            _ => PayloadEncryption.None
+            _ => (PayloadEncryption?)null
         };
+
+        if (encryptionMethod is null)
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] Unknown encryption mode [white]{Markup.Escape(encryption!)}[/]. Supported: none.");
+            return 1;
+        }
 
         var carrierInvoke = carrier switch
         {
-            "entry-point" or "entrypoint" or "hijack" => CarrierInvoke.EntryPointHijack,
+            null or "entry-point" or "entrypoint" or "hijack" => CarrierInvoke.EntryPointHijack,
             "function-backdoor" or "function" => CarrierInvoke.EntryFunctionBackdoor,
             "tls" or "tls-callback" => CarrierInvoke.TlsCallback,
-            _ => CarrierInvoke.EntryPointHijack
+            _ => (CarrierInvoke?)null
         };
+
+        if (carrierInvoke is null)
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] Unknown carrier [white]{Markup.Escape(carrier!)}[/]. Supported: entry-point.");
+            return 1;
+        }
 
         if (encryptionMethod != PayloadEncryption.None)
         {
@@ -1591,12 +1614,16 @@ public static partial class Program
             return 1;
         }
 
+        var resolvedInjection = injectionMethod.Value;
+
         if (carrierInvoke != CarrierInvoke.EntryPointHijack)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] Carrier [white]{Markup.Escape(carrier)}[/] is not implemented for the backdoor command.");
+            AnsiConsole.MarkupLine($"[red]Error:[/] Carrier [white]{Markup.Escape(carrier!)}[/] is not implemented for the backdoor command.");
             AnsiConsole.MarkupLine("[grey]Supported carrier: [white]entry-point[/].[/]");
             return 1;
         }
+
+        var resolvedCarrier = carrierInvoke.Value;
 
         if (!preserveEntry)
         {
@@ -1710,9 +1737,9 @@ public static partial class Program
             teeLogger?.FileOnly($"  Digital signature : {(peInfo.HasSignature ? "Present → will strip" : "None")}");
             teeLogger?.FileOnly("");
             teeLogger?.FileOnly("── Injection Plan ─────────────────────────────────────────");
-            teeLogger?.FileOnly($"  Method      : {injectionMethod}");
+            teeLogger?.FileOnly($"  Method      : {resolvedInjection}");
             teeLogger?.FileOnly($"  Encryption  : {encryptionMethod}");
-            teeLogger?.FileOnly($"  Carrier     : {carrierInvoke}");
+            teeLogger?.FileOnly($"  Carrier     : {resolvedCarrier}");
             teeLogger?.FileOnly($"  Remove sig  : {removeSig}");
             teeLogger?.FileOnly($"  Patch GUI   : {patchSubsystem}");
             teeLogger?.FileOnly($"  Patch exit  : {patchExitCalls}");
@@ -1856,7 +1883,7 @@ public static partial class Program
                 PrintCheck(!analysisResult.IsPossiblyPacked, $"Not packed (entropy: {analysisResult.OverallEntropy:F2})");
                 PrintCheck(peInfo.EntryPoint != 0, $"Entry point is valid (0x{peInfo.EntryPoint:X})");
 
-                if (injectionMethod == InjectionMethod.CodeCave)
+                if (resolvedInjection == InjectionMethod.CodeCave)
                 {
                     int stubOverhead = peInfo.Is64Bit ? 66 : 14;
                     int needed = shellcodeBytes.Length + stubOverhead;
@@ -1879,9 +1906,9 @@ public static partial class Program
                     .AddColumn("Property")
                     .AddColumn("Value");
 
-                planTable.AddRow($"[{UiColors.Accent}]Method[/]", $"[white]{injectionMethod}[/]");
+                planTable.AddRow($"[{UiColors.Accent}]Method[/]", $"[white]{resolvedInjection}[/]");
                 planTable.AddRow($"[{UiColors.Accent}]Encryption[/]", $"[white]{encryptionMethod}{(encryptionMethod == PayloadEncryption.Xor ? $" (key=0x{xorKey:X2})" : "")}[/]");
-                planTable.AddRow($"[{UiColors.Accent}]Invoke[/]", $"[white]{carrierInvoke}[/]");
+                planTable.AddRow($"[{UiColors.Accent}]Invoke[/]", $"[white]{resolvedCarrier}[/]");
                 planTable.AddRow($"[{UiColors.Accent}]Remove sig[/]", $"[white]{removeSig}[/]");
                 planTable.AddRow($"[{UiColors.Accent}]Patch GUI[/]", $"[white]{patchSubsystem}[/]");
 
@@ -1914,9 +1941,9 @@ public static partial class Program
                 OutputPath = outputFile ?? Path.Combine(
                     Path.GetDirectoryName(peFile) ?? ".",
                     Path.GetFileNameWithoutExtension(peFile) + ".backdoored" + Path.GetExtension(peFile)),
-                Method = injectionMethod,
-                Encryption = encryptionMethod,
-                CarrierInvoke = carrierInvoke,
+                Method = resolvedInjection,
+                Encryption = encryptionMethod.Value,
+                CarrierInvoke = resolvedCarrier,
                 XorKey = xorKey,
                 NewSectionName = sectionName,
                 RemoveSignature = removeSig,
@@ -2525,7 +2552,10 @@ public static partial class Program
     private static async Task<int> RunStripAsync(string[] args)
     {
         if (args.Length == 0)
+        {
+            if (!_isRepl) { PrintStripUsage(); return 1; }
             return await RunStripInteractiveSessionAsync();
+        }
 
         if (args[0] is "--help" or "-h")
         {
@@ -2538,7 +2568,8 @@ public static partial class Program
         string? sectionName = null;
         bool analyze = false;
         bool noTrim = false;
-        var mode = StripMode.EntryPointToEnd;
+        StripMode? mode = null;
+        string? invalidMode = null;
         uint rangeStart = 0, rangeLen = 0;
 
         // First arg can be positional PE file (does not start with '-')
@@ -2562,14 +2593,16 @@ public static partial class Program
                 case "-Mode" or "--mode" or "-m":
                     if (++i < args.Length)
                     {
-                        mode = args[i].ToLowerInvariant() switch
+                        var modeArg = args[i].ToLowerInvariant();
+                        mode = modeArg switch
                         {
                             "ep" or "entry-point" => StripMode.EntryPointToEnd,
                             "section"             => StripMode.Section,
-                            "all-exec"            => StripMode.AllExecutable,
+                            "all-exec" or "all"   => StripMode.AllExecutable,
                             "range"               => StripMode.RawRange,
-                            _ => mode,
+                            _                     => (StripMode?)null,
                         };
+                        if (mode is null) invalidMode = args[i];
                     }
                     break;
                 case "-Section" or "--section":
@@ -2594,6 +2627,14 @@ public static partial class Program
                     break;
             }
         }
+
+        if (invalidMode is not null)
+        {
+            AnsiConsole.MarkupLine($"[red]Error:[/] Unknown strip mode [white]{Markup.Escape(invalidMode)}[/]. Valid modes: ep, section, all-exec, range.");
+            return 1;
+        }
+
+        var resolvedMode = mode ?? StripMode.EntryPointToEnd;
 
         if (peFile is null)
         {
@@ -2657,7 +2698,7 @@ public static partial class Program
         {
             InputPath = peFile,
             OutputPath = outputFile,
-            Mode = mode,
+            Mode = resolvedMode,
             SectionName = sectionName,
             TrimTrailingZeros = !noTrim,
             RawOffset = rangeStart,
