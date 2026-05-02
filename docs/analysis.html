@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Washmachine — Full Codebase Analysis</title>
+<style>
+  :root {
+    --bg:        #0d1117;
+    --surface:   #111827;
+    --surface2:  #161f30;
+    --border:    #1e2d45;
+    --accent:    #38bdf8;
+    --accent2:   #818cf8;
+    --green:     #22c55e;
+    --yellow:    #f59e0b;
+    --red:       #ef4444;
+    --orange:    #fb923c;
+    --text:      #e2e8f0;
+    --muted:     #64748b;
+    --code-bg:   #0a0f1a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.65;
+    padding: 0;
+  }
+
+  /* Layout */
+  .layout { display: flex; min-height: 100vh; }
+  nav {
+    width: 240px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 2rem 0;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+  nav .logo {
+    padding: 0 1.4rem 1.5rem;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  nav a {
+    display: block;
+    padding: 0.38rem 1.4rem;
+    font-size: 0.82rem;
+    color: var(--muted);
+    text-decoration: none;
+    transition: color 0.15s, background 0.15s;
+    border-left: 2px solid transparent;
+  }
+  nav a:hover { color: var(--text); background: rgba(56,189,248,0.06); border-left-color: var(--accent); }
+  nav .nav-section {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #374151;
+    padding: 1.2rem 1.4rem 0.3rem;
+  }
+  main { flex: 1; max-width: 960px; padding: 3rem 3rem 6rem; }
+
+  /* Typography */
+  h1 { font-size: 2rem; font-weight: 800; color: #fff; margin-bottom: 0.3rem; }
+  h2 {
+    font-size: 1.25rem; font-weight: 700;
+    color: var(--accent);
+    margin: 3rem 0 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+  h3 { font-size: 1rem; font-weight: 700; color: #c7d2fe; margin: 1.8rem 0 0.6rem; }
+  h4 { font-size: 0.9rem; font-weight: 600; color: var(--yellow); margin: 1.2rem 0 0.4rem; }
+  p { margin-bottom: 0.9rem; color: var(--text); font-size: 0.93rem; }
+  ul, ol { padding-left: 1.4rem; margin-bottom: 0.9rem; }
+  li { margin-bottom: 0.35rem; font-size: 0.9rem; }
+  strong { color: #fff; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Hero */
+  .hero {
+    background: linear-gradient(135deg, #0f1f3d 0%, #1a0a2e 100%);
+    border: 1px solid #2a3a5e;
+    border-radius: 14px;
+    padding: 2.5rem;
+    margin-bottom: 2.5rem;
+  }
+  .hero h1 { font-size: 2.2rem; }
+  .hero .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 0.4rem; }
+  .hero .meta { display: flex; gap: 1.5rem; margin-top: 1.5rem; flex-wrap: wrap; }
+  .hero .meta-item { font-size: 0.82rem; color: var(--muted); }
+  .hero .meta-item strong { color: var(--accent); }
+
+  /* Pipeline */
+  .pipeline {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.2rem 1.5rem;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.82rem;
+    color: #94a3b8;
+    margin-bottom: 1.5rem;
+    overflow-x: auto;
+  }
+  .pipeline .hl { color: var(--accent); }
+  .pipeline .op { color: var(--green); }
+  .pipeline .opt { color: var(--muted); }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0 1.5rem; font-size: 0.85rem; }
+  th {
+    background: var(--surface2);
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0.6rem 0.9rem;
+    text-align: left;
+    border-bottom: 2px solid var(--border);
+  }
+  td { padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  tr:last-child td { border-bottom: none; }
+
+  /* Badges */
+  .badge {
+    display: inline-block;
+    padding: 0.18rem 0.55rem;
+    border-radius: 99px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .badge-green  { background: rgba(34,197,94,0.15);  color: var(--green); }
+  .badge-red    { background: rgba(239,68,68,0.15);   color: var(--red); }
+  .badge-yellow { background: rgba(245,158,11,0.15);  color: var(--yellow); }
+  .badge-blue   { background: rgba(56,189,248,0.15);  color: var(--accent); }
+  .badge-purple { background: rgba(129,140,248,0.15); color: var(--accent2); }
+  .badge-gray   { background: rgba(100,116,139,0.15); color: var(--muted); }
+
+  /* Priority rows */
+  .priority-high   td:first-child { border-left: 3px solid var(--red); }
+  .priority-medium td:first-child { border-left: 3px solid var(--yellow); }
+  .priority-low    td:first-child { border-left: 3px solid var(--muted); }
+
+  /* Code */
+  code {
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.8rem;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.1rem 0.45rem;
+    color: #c7d2fe;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.2rem;
+    overflow-x: auto;
+    margin: 0.8rem 0 1.2rem;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.8rem;
+    color: #94a3b8;
+    line-height: 1.6;
+  }
+  pre .kw  { color: var(--accent); }
+  pre .str { color: var(--green); }
+  pre .cmt { color: #374151; }
+
+  /* Cards */
+  .card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.2rem 1.4rem;
+    margin-bottom: 1rem;
+  }
+  .card-title { font-weight: 700; color: #fff; font-size: 0.93rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.5rem; }
+
+  /* Callouts */
+  .callout {
+    border-radius: 8px;
+    padding: 0.9rem 1.2rem;
+    margin: 1rem 0;
+    border-left: 3px solid;
+    font-size: 0.88rem;
+  }
+  .callout-warn  { background: rgba(245,158,11,0.08);  border-color: var(--yellow); }
+  .callout-info  { background: rgba(56,189,248,0.08);  border-color: var(--accent); }
+  .callout-error { background: rgba(239,68,68,0.08);   border-color: var(--red); }
+  .callout-ok    { background: rgba(34,197,94,0.08);   border-color: var(--green); }
+  .callout-title { font-weight: 700; margin-bottom: 0.3rem; }
+
+  /* Stat strip */
+  .stats { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1.5rem 0; }
+  .stat-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem 1.4rem;
+    min-width: 130px;
+  }
+  .stat-box .label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .stat-box .value { font-size: 1.8rem; font-weight: 800; margin-top: 0.15rem; }
+
+  /* Feature item */
+  .feature-item {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.1rem 1.3rem;
+    margin-bottom: 0.8rem;
+    background: var(--surface);
+    display: flex;
+    gap: 1rem;
+  }
+  .feature-num {
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: var(--border);
+    min-width: 32px;
+    padding-top: 0.1rem;
+    font-family: monospace;
+  }
+  .feature-body { flex: 1; }
+  .feature-body .ftitle { font-weight: 700; color: #fff; font-size: 0.95rem; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+  .feature-body p { margin-bottom: 0.3rem; color: #94a3b8; font-size: 0.86rem; }
+  .feature-meta { display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
+
+  /* Arch diagram */
+  .arch {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.5rem;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #64748b;
+    margin: 1rem 0 1.5rem;
+    line-height: 1.9;
+  }
+  .arch .hl  { color: var(--accent); }
+  .arch .hl2 { color: var(--accent2); }
+  .arch .ok  { color: var(--green); }
+  .arch .muted { color: #2a3550; }
+
+  /* Footer */
+  footer {
+    text-align: center;
+    padding: 2rem;
+    color: #1f2937;
+    font-size: 0.78rem;
+    border-top: 1px solid var(--border);
+    margin-top: 4rem;
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<!-- ── Sidebar ──────────────────────────────────────────────── -->
+<nav>
+  <div class="logo">🧺 Washmachine</div>
+  <div class="nav-section">Overview</div>
+  <a href="#overview">What It Is</a>
+  <a href="#architecture">Architecture</a>
+  <a href="#pipeline">Pipeline</a>
+  <div class="nav-section">Current State</div>
+  <a href="#capabilities">Capabilities Map</a>
+  <a href="#stubs">Stubs & Partials</a>
+  <a href="#techdebt">Technical Debt</a>
+  <div class="nav-section">Roadmap</div>
+  <a href="#high">🔴 High Priority</a>
+  <a href="#medium">🟡 Medium Priority</a>
+  <a href="#low">🟢 Low Priority</a>
+  <a href="#summary">Summary Table</a>
+</nav>
+
+<!-- ── Main ─────────────────────────────────────────────────── -->
+<main>
+
+<!-- Hero -->
+<div class="hero">
+  <h1>🧺 Washmachine</h1>
+  <p class="subtitle">Full Codebase Analysis &amp; Feature Roadmap</p>
+  <div class="meta">
+    <div class="meta-item">Generated <strong>2026-05-02 19:52</strong></div>
+    <div class="meta-item">Solution <strong>3 projects</strong></div>
+    <div class="meta-item">YAML snippets <strong>89 items · 10 categories · 6 templates</strong></div>
+    <div class="meta-item">CLI tests <strong>101 passing</strong></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2 id="overview">📌 What It Is</h2>
+
+<p>Washmachine is a <strong>modular, template-driven shellcode evasion framework</strong> built for red teamers and security researchers. From raw shellcode bytes to a fully backdoored PE, the entire offensive pipeline lives in one tool available as both a Metasploit-style CLI and a WinUI 3 desktop app.</p>
+
+<p>The standout feature is the <strong>YAML-based playbook system</strong>. Every C++ template and code snippet is defined in <code>Assets/default.yaml</code> — swappable without touching the codebase or recompiling. When a technique gets flagged by a new signature, update the playbook.</p>
+
+<div class="stats">
+  <div class="stat-box"><div class="label">YAML Snippets</div><div class="value" style="color:var(--accent)">89</div></div>
+  <div class="stat-box"><div class="label">Snippet Categories</div><div class="value" style="color:var(--accent2)">10</div></div>
+  <div class="stat-box"><div class="label">Templates</div><div class="value" style="color:var(--green)">6</div></div>
+  <div class="stat-box"><div class="label">Injection Methods</div><div class="value" style="color:var(--yellow)">5</div></div>
+  <div class="stat-box"><div class="label">CLI Tests</div><div class="value" style="color:var(--green)">101</div></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2 id="architecture">🏗️ Architecture</h2>
+
+<p>A clean <strong>three-project solution</strong>. All business logic lives in the platform-neutral Core, shared by both UIs.</p>
+
+<div class="arch">
+washmachine.sln<br>
+├── <span class="hl">Washmachine.Core</span>        <span class="muted">(class library, net8.0)</span>          <span class="ok">← headless business logic</span><br>
+│   ├── Logging/             <span class="muted">IAppLogger, ConsoleLogger, TeeLogger</span><br>
+│   ├── Models/              <span class="muted">PeBackdoorModels, PeAnalysisModels, CodeSnippetModels…</span><br>
+│   ├── Services/            <span class="muted">CompilerService, PeBackdoorService, PeStripService,</span><br>
+│   │                        <span class="muted">PeAnalyzerService, Bin2ShellRunner, RequirementProvisioner…</span><br>
+│   └── Testing/             <span class="muted">TestHarness.cs (integration smoke tests)</span><br>
+│<br>
+├── <span class="hl2">Washmachine.Cli</span>         <span class="muted">(console app, net8.0)</span>           <span class="ok">← inline + REPL modes</span><br>
+│   ├── Program.cs           <span class="muted">2 500+ lines — main dispatcher, all commands</span><br>
+│   ├── Program.EncodeInteraction.cs<br>
+│   ├── Program.Show.cs<br>
+│   ├── Program.SessionUi.cs<br>
+│   └── Program.OperationSessions.cs<br>
+│<br>
+└── <span class="hl">washmachine</span>             <span class="muted">(WinExe, net8.0-windows, WinUI 3)</span>  <span class="ok">← desktop app</span><br>
+    ├── Views/               <span class="muted">MainPage, CompilePage, BackdooringPage, PackingPage…</span><br>
+    ├── Controllers/         <span class="muted">MainFormCoordinator.cs</span><br>
+    └── Services/            <span class="muted">GUI-only: CliExecutor, ClipboardService, UiDataFactory…</span>
+</div>
+
+<div class="callout callout-ok">
+  <div class="callout-title">✓ Good design decisions</div>
+  The Core/CLI/GUI separation is clean. Both UIs share identical service instances.
+  The YAML catalog decouples technique management from code — a new snippet is one YAML block, no recompilation.
+  The REPL (Metasploit-style) + inline (PowerShell-style) dual CLI modes are fully working and tested.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2 id="pipeline">⚙️ The Full Pipeline</h2>
+
+<div class="pipeline">
+<span class="hl">[Input]</span>  .bin file  │  raw hex  │  remote URL  │  .exe → Strip → .bin<br>
+   │<br>
+   ▼<br>
+<span class="hl">[SGN]</span>    Shikata Ga Nai preprocessing  <span class="opt">(optional, auto-provisioned)</span><br>
+   │<br>
+   ▼<br>
+<span class="hl">[Encode]</span> Bin2Shell  →  10 encoders  ×  10+ envelopes  <span class="opt">(auto-provisioned)</span><br>
+   │<br>
+   ▼<br>
+<span class="hl">[Build]</span>  YAML Template Engine  →  C++ source  →  auto-detected compiler<br>
+         6 templates  ×  89 snippets  (anti-debug, evasion, UAC, injection…)<br>
+   │<br>
+   ▼<span class="opt">  (optional)</span><br>
+<span class="hl">[Backdoor]</span> Inject .bin payload into existing PE<br>
+         5 methods: code-cave │ new-section │ section-ext │ text-pad │ tls-callback<br>
+   │<br>
+   ▼<span class="opt">  (optional — placeholder only)</span><br>
+<span class="hl">[Pack]</span>   Packing stage  <span class="opt">— shown in flowchart, PackingPage.xaml exists, not yet implemented</span><br>
+   │<br>
+   ▼<span class="opt">  (optional)</span><br>
+<span class="hl">[Finalize]</span>  Clone icon/metadata from donor .exe  +  NOP-pad inflation<br>
+   │<br>
+   ▼<br>
+<span class="op">[Payload]</span>  Final .exe / .bin
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2 id="capabilities">📊 Capabilities Map</h2>
+
+<table>
+  <thead><tr><th>Feature</th><th>CLI</th><th>GUI</th><th>Quality</th></tr></thead>
+  <tbody>
+    <tr><td>Encode — Bin2Shell → template → compile</td><td><span class="badge badge-green">✓ Full</span></td><td><span class="badge badge-green">✓ Full</span></td><td><span class="badge badge-blue">Good</span></td></tr>
+    <tr><td>PE Analyze — headers, sections, imports, caves</td><td><span class="badge badge-green">✓ Full</span></td><td><span class="badge badge-green">✓ Full</span></td><td><span class="badge badge-blue">Good</span></td></tr>
+    <tr><td>PE Strip — ep / section / all-exec / range</td><td><span class="badge badge-green">✓ Full</span></td><td><span class="badge badge-red">✗ Missing</span></td><td><span class="badge badge-blue">Good</span></td></tr>
+    <tr><td>PE Backdoor — 5 injection methods (EXE + DLL)</td><td><span class="badge badge-green">✓ Full</span></td><td><span class="badge badge-yellow">3 methods</span></td><td><span class="badge badge-blue">Good</span></td></tr>
+    <tr><td>PE Backdoor — encryption (N/A — handled by encode stage)</td><td><span class="badge badge-blue">Encode stage</span></td><td><span class="badge badge-blue">Encode stage</span></td><td><span class="badge badge-blue">By design</span></td></tr>
+    <tr><td>PE Backdoor — carriers beyond entry-point</td><td><span class="badge badge-red">✗ entry-point only</span></td><td><span class="badge badge-red">✗ entry-point only</span></td><td><span class="badge badge-red">Stub</span></td></tr>
+    <tr><td>PE Backdoor — DLL support (dll-main carrier)</td><td><span class="badge badge-green">✓ Implemented</span></td><td><span class="badge badge-green">✓ Implemented</span></td><td><span class="badge badge-blue">Good</span></td></tr>
+    <tr><td>Recipe import / export</td><td><span class="badge badge-red">✗ Missing</span></td><td><span class="badge badge-green">✓ Full</span></td><td><span class="badge badge-yellow">CLI gap</span></td></tr>
+    <tr><td>Packing stage</td><td><span class="badge badge-red">✗ Missing</span></td><td><span class="badge badge-red">✗ Placeholder only</span></td><td><span class="badge badge-red">Not built</span></td></tr>
+    <tr><td>Session logging to disk</td><td><span class="badge badge-green">✓ Full</span></td><td><span class="badge badge-green">✓ Full</span></td><td><span class="badge badge-blue">Good</span></td></tr>
+    <tr><td>REPL interactive shell</td><td><span class="badge badge-green">✓ Full</span></td><td>N/A</td><td><span class="badge badge-blue">Good</span></td></tr>
+    <tr><td>Auto-provisioning (Bin2Shell, SGN)</td><td><span class="badge badge-green">✓ Full</span></td><td><span class="badge badge-green">✓ Full</span></td><td><span class="badge badge-blue">Good</span></td></tr>
+    <tr><td>Entropy analysis per section</td><td><span class="badge badge-red">✗ Missing</span></td><td><span class="badge badge-red">✗ Missing</span></td><td><span class="badge badge-red">Not built</span></td></tr>
+    <tr><td>PE checksum recalculation after backdoor</td><td><span class="badge badge-red">✗ Missing</span></td><td><span class="badge badge-red">✗ Missing</span></td><td><span class="badge badge-red">Not built</span></td></tr>
+    <tr><td>Timestamp stomping</td><td><span class="badge badge-red">✗ Missing</span></td><td><span class="badge badge-red">✗ Missing</span></td><td><span class="badge badge-red">Not built</span></td></tr>
+    <tr><td>RICH header wiping</td><td><span class="badge badge-red">✗ Missing</span></td><td><span class="badge badge-red">✗ Missing</span></td><td><span class="badge badge-red">Not built</span></td></tr>
+    <tr><td>IAT flagging (suspicious imports)</td><td><span class="badge badge-red">✗ Missing</span></td><td><span class="badge badge-red">✗ Missing</span></td><td><span class="badge badge-red">Not built</span></td></tr>
+    <tr><td>YAML hot-reload in REPL</td><td><span class="badge badge-yellow">Partial</span></td><td><span class="badge badge-red">✗ Missing</span></td><td><span class="badge badge-yellow">TryReload() exists</span></td></tr>
+    <tr><td><code>--version</code> flag</td><td><span class="badge badge-red">✗ Missing</span></td><td><span class="badge badge-red">✗ Missing</span></td><td><span class="badge badge-red">Not built</span></td></tr>
+    <tr><td>Stdin shellcode input (<code>-Shellcode -</code>)</td><td><span class="badge badge-red">✗ Missing</span></td><td>N/A</td><td><span class="badge badge-red">Not built</span></td></tr>
+    <tr><td>Persistent REPL history across sessions</td><td><span class="badge badge-red">✗ Missing</span></td><td>N/A</td><td><span class="badge badge-red">Not built</span></td></tr>
+  </tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2 id="stubs">🔌 Stubs — Defined but Not Wired</h2>
+
+<p>These exist in models/enums/service code but are blocked with "not implemented" errors in the CLI:</p>
+
+<div class="card">
+  <div class="card-title">💊 <code>PayloadEncryption.Xor / Xor2 / Rc4</code> — model only, not a backdoor concern</div>
+  <p>These enum values exist in <code>PeBackdoorModels.cs</code> and were surfaced in the GUI encryption combo. However, payload encoding and encryption is handled at the <strong>Encode stage</strong> (encode → bin2shell). The backdoor command injects the already-prepared flat <code>.bin</code> as-is. The GUI encryption combo has been removed and replaced with an informational note. These enum values may remain for potential future use in other contexts.</p>
+</div>
+
+<div class="card">
+  <div class="card-title">🎯 <code>CarrierInvoke.EntryFunctionBackdoor</code></div>
+  <p>Defined in the enum. Would patch the first <code>JMP</code>/<code>CALL</code> inside the entry function body rather than the entry point header itself — stealthier against heuristics that inspect AddressOfEntryPoint bytes specifically.</p>
+</div>
+
+<div class="card">
+  <div class="card-title">📦 <code>CarrierInvoke.DllMain / DllExport</code></div>
+  <p>Defined for DLL backdooring. <code>PeBackdoorOptions</code> already has a <code>DllExportName</code> field. The CLI hard-rejects DLLs — the model and intent exist but the implementation path was never written.</p>
+</div>
+
+<div class="card">
+  <div class="card-title">📍 <code>PayloadLocation.RdataSection / TextSection</code></div>
+  <p>Enum defined. <code>BackdoorAsync</code> always places payload via the injection method — the location selector is never surfaced in the CLI argument parser.</p>
+</div>
+
+<div class="card">
+  <div class="card-title">🚫 <code>-NoPreserveEntry</code></div>
+  <p>Flag is parsed from the CLI args but immediately returns <code>exit 1</code>. The carrier always resumes the original entry point regardless.</p>
+</div>
+
+<div class="card">
+  <div class="card-title">📦 Packing Stage (<code>PackingPage.xaml</code>)</div>
+  <p>The GUI navigation has a Packing page. The pipeline flowchart shows it between backdoor and finalize. The XAML file exists but the page is empty — no packing logic has been implemented anywhere in Core.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2 id="techdebt">🔧 Technical Debt</h2>
+
+<table>
+  <thead><tr><th>Issue</th><th>Location</th><th>Severity</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Program.cs is 2 500+ lines</strong> — <code>RunBackdoorAsync</code> (~800 lines) and <code>RunStripAsync</code> (~400 lines) should each become their own partial class file. The split started (<code>Program.EncodeInteraction.cs</code>, <code>Program.Show.cs</code>…) but the heaviest commands weren't moved yet.</td>
+      <td><code>Washmachine.Cli/Program.cs</code></td>
+      <td><span class="badge badge-yellow">Medium</span></td>
+    </tr>
+    <tr>
+      <td><strong>No DI container</strong> — every View/Page <code>new()</code>s its own service instances. <code>CompilePage</code>, <code>BackdooringPage</code>, <code>MainPage</code> each create their own <code>PeBackdoorService</code>, <code>CompilerService</code>, etc. This creates duplicate file handles, redundant Bin2Shell runner instances, and makes shared state impossible.</td>
+      <td><code>Views/*.xaml.cs</code></td>
+      <td><span class="badge badge-yellow">Medium</span></td>
+    </tr>
+    <tr>
+      <td><strong>No unit tests for Core services</strong> — <code>TestHarness.cs</code> is an integration/smoke test (runs full encode+compile+execute). There are no unit tests for <code>PeBackdoorService</code>, <code>PeStripService</code>, <code>CompilerService</code>, or the YAML catalog parser.</td>
+      <td><code>Washmachine.Core/Testing/</code></td>
+      <td><span class="badge badge-yellow">Medium</span></td>
+    </tr>
+    <tr>
+      <td><strong>No <code>CancellationToken</code> propagation in <code>BackdoorAsync</code></strong> — the method is <code>async</code> but takes no CT. Long-running injection operations can't be cancelled from the UI or CLI.</td>
+      <td><code>PeBackdoorService.cs:195</code></td>
+      <td><span class="badge badge-blue">Low</span></td>
+    </tr>
+    <tr>
+      <td><strong>Mutable models everywhere</strong> — <code>PeInfo</code>, <code>BackdoorResult</code>, <code>PeSectionInfo</code> all use public setters. Init-only properties would catch mutation bugs at compile time.</td>
+      <td><code>Models/PeBackdoorModels.cs</code></td>
+      <td><span class="badge badge-gray">Minor</span></td>
+    </tr>
+    <tr>
+      <td><strong>Session log dir hardcoded</strong> — logs always go to <code>logging/</code> relative to the CLI binary. No user-configurable base directory. Inconvenient for scripting and multi-user environments.</td>
+      <td><code>AppPaths.cs</code></td>
+      <td><span class="badge badge-gray">Minor</span></td>
+    </tr>
+    <tr>
+      <td><strong>Autocomplete arrays out of sync with actual support</strong> — <code>BackdoorCarrierValues</code> now includes <code>"entry-point"</code> and <code>"dll-main"</code> (updated). As more carriers get implemented, this array needs continued updating.</td>
+      <td><code>Program.cs:28–30</code></td>
+      <td><span class="badge badge-gray">Minor</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2 id="high">🔴 High Priority Features</h2>
+
+<div class="feature-item">
+  <div class="feature-num">01</div>
+  <div class="feature-body">
+    <div class="ftitle">DLL backdooring via <code>dll-main</code> carrier <span class="badge badge-green">✓ Implemented</span></div>
+    <p><strong>Implemented.</strong> The CLI now accepts <code>-Carrier dll-main</code> (and aliases <code>dllmain</code>, <code>dll-entry</code>) which routes to the same entry-point hijack path — for DLLs, this is DllMain. The GUI Backdooring page auto-detects DLL targets, switches the carrier combo to "DllMain Hook", disables the "Patch subsystem to GUI" option (not applicable to DLLs), and shows an explanatory banner. The injection plan table now shows <em>DllMain Hook (entry-point)</em> instead of <em>EntryPointHijack</em> when a DLL target is used. All 5 injection methods work against DLL targets.</p>
+    <div class="feature-meta">
+      <span class="badge badge-green">Done</span><span class="badge badge-blue">Program.cs · BackdooringPage.xaml · PipelinePage.xaml.cs</span>
+    </div>
+  </div>
+</div>
+
+<div class="feature-item">
+  <div class="feature-num" style="background:var(--green)">✓</div>
+  <div class="feature-body">
+    <div class="ftitle">DLL backdooring <span class="badge badge-green">✓ Implemented</span></div>
+    <p><strong>Implemented (see feature 01 above).</strong> <code>-Carrier dll-main</code> is now live in both CLI and GUI. DllExport hooking (hooking a specific named export) remains a future stub.</p>
+    <div class="feature-meta">
+      <span class="badge badge-green">Done</span><span class="badge badge-blue">PeBackdoorService.cs · Program.cs · BackdooringPage.xaml</span>
+    </div>
+  </div>
+</div>
+
+<div class="feature-item">
+  <div class="feature-num">03</div>
+  <div class="feature-body">
+    <div class="ftitle">Entry-function carrier (<code>EntryFunctionBackdoor</code>) <span class="badge badge-red">Stub completion</span></div>
+    <p>Instead of redirecting <code>AddressOfEntryPoint</code> itself, patch the first <code>JMP</code>/<code>CALL</code> instruction inside the entry function body. This is stealthier: many AV heuristics inspect the first bytes at the recorded entry point address specifically. Already defined as <code>CarrierInvoke.EntryFunctionBackdoor</code>.</p>
+    <div class="feature-meta">
+      <span class="badge badge-red">High impact</span><span class="badge badge-yellow">Medium effort</span><span class="badge badge-blue">PeBackdoorService.cs</span>
+    </div>
+  </div>
+</div>
+
+<div class="feature-item">
+  <div class="feature-num">04</div>
+  <div class="feature-body">
+    <div class="ftitle">Entropy analysis in <code>analyze</code> <span class="badge badge-yellow">New feature</span></div>
+    <p>Per-section Shannon entropy is a primary AV/EDR signal. Currently <code>analyze</code> shows section sizes and permissions but not entropy. A high-entropy <code>.text</code> or <code>.data</code> section is often why a loader gets flagged before it even executes. This is a critical planning tool — "my <code>.rsrc</code> entropy is 7.98" — and requires zero dependencies.</p>
+    <pre><span class="kw">analyze</span> -Pe target.exe
+<span class="cmt">Section  RVA        Size     Entropy  Executable</span>
+.text    0x1000     0x8200   <span class="str">7.98 ⚠ HIGH</span>  ✓
+.rdata   0x9000     0x1800   4.21      ✗
+.data    0xb000     0x0400   2.87      ✗</pre>
+    <div class="feature-meta">
+      <span class="badge badge-red">High impact</span><span class="badge badge-green">Low effort</span><span class="badge badge-blue">PeAnalyzerService.cs · RunAnalyzeAsync</span>
+    </div>
+  </div>
+</div>
+
+<div class="feature-item">
+  <div class="feature-num">05</div>
+  <div class="feature-body">
+    <div class="ftitle">Packing stage <span class="badge badge-yellow">New feature</span></div>
+    <p><code>PackingPage.xaml</code> exists as a placeholder in the GUI. The pipeline flowchart shows Packing between Backdoor and Finalize. Adding UPX packing (auto-provisioned the same way Bin2Shell is) would complete the flowchart. Alternatively support a user-provided packer command via a script hook.</p>
+    <div class="feature-meta">
+      <span class="badge badge-red">High impact</span><span class="badge badge-yellow">Medium effort</span><span class="badge badge-blue">RequirementProvisioner.cs · PackingPage.xaml · new CLI flag</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2 id="medium">🟡 Medium Priority Features</h2>
+
+<div class="feature-item">
+  <div class="feature-num">06</div>
+  <div class="feature-body">
+    <div class="ftitle">CLI recipe import / export <span class="badge badge-yellow">CLI gap</span></div>
+    <p>The GUI already has <code>ExportRecipeAsync</code>/<code>ImportRecipeAsync</code> on <code>CompilePage</code>. The CLI has no equivalent. A recipe is a JSON snapshot of the template + snippet selections — essential for repeatable builds.</p>
+    <pre><span class="kw">encode</span> -ExportRecipe recipe.json
+<span class="kw">encode</span> -ImportRecipe recipe.json -Shellcode payload.bin</pre>
+    <div class="feature-meta">
+      <span class="badge badge-yellow">Medium impact</span><span class="badge badge-green">Low effort</span><span class="badge badge-blue">Program.EncodeInteraction.cs</span>
+    </div>
+  </div>
+</div>
+
+<div class="feature-item">
+  <div class="feature-num">07</div>
+  <div class="feature-body">
+    <div class="ftitle">PE checksum recalculation after backdoor <span class="badge badge-yellow">OPSEC</span></div>
+    <p>After backdooring, the <code>Checksum</code> field in the Optional Header is stale. Many integrity checkers and loaders verify it. <code>PeBackdoorService</code> already locates <code>ChecksumFieldFileOffset</code> and can write to it — it just needs the algorithm (implementable in pure C#, equivalent to <code>MapFileAndCheckSum</code>). The field write code path already exists.</p>
+    <div class="feature-meta">
+      <span class="badge badge-yellow">Medium impact</span><span class="badge badge-green">Low effort</span><span class="badge badge-blue">PeBackdoorService.cs</span>
+    </div>
+  </div>
+</div>
+
+<div class="feature-item">
+  <div class="feature-num">08</div>
+  <div class="feature-body">
+    <div class="ftitle">Timestamp stomping <span class="badge badge-yellow">OPSEC</span></div>
+    <p>Clone the <code>TimeDateStamp</code> from the Optional Header of a legitimate donor binary (or zero it). Easy 10-line addition to <code>PeBackdoorService</code>, big OPSEC improvement. Add a <code>-StompTimestamp &lt;donor.exe&gt;</code> flag or make it automatic with <code>-CloneFrom</code>.</p>
+    <div class="feature-meta">
+      <span class="badge badge-yellow">Medium impact</span><span class="badge badge-green">Low effort</span><span class="badge badge-blue">PeBackdoorService.cs</span>
+    </div>
+  </div>
+</div>
+
+<div class="feature-item">
+  <div class="feature-num">09</div>
+  <div class="feature-body">
+    <div class="ftitle">RICH header wiping <span class="badge badge-yellow">OPSEC</span></div>
+    <p>The RICH header (between the DOS stub and PE header) reveals which compiler version and linker produced the original binary. Wiping it (XOR every DWORD with the embedded key, then zero the block) removes a static fingerprint that threat intel platforms use to cluster malware families. The backdoor service already parses the PE header vicinity.</p>
+    <div class="feature-meta">
+      <span class="badge badge-yellow">Medium impact</span><span class="badge badge-green">Low effort</span><span class="badge badge-blue">PeBackdoorService.cs</span>
+    </div>
+  </div>
+</div>
+
+<div class="feature-item">
+  <div class="feature-num">10</div>
+  <div class="feature-body">
+    <div class="ftitle">IAT flagging in <code>analyze</code> <span class="badge badge-yellow">New feature</span></div>
+    <p>Color-code suspicious imports (<code>VirtualAlloc</code>, <code>WriteProcessMemory</code>, <code>CreateRemoteThread</code>, <code>NtQueueApcThread</code>, <code>OpenProcess</code>…) in the <code>analyze</code> output. This helps the user understand why a loader is flagged statically before they test it. The import list is already collected in <code>PeInfo.Imports</code>.</p>
+    <div class="feature-meta">
+      <span class="badge badge-yellow">Medium impact</span><span class="badge badge-green">Low effort</span><span class="badge badge-blue">PeAnalyzerService.cs · RunAnalyzeAsync</span>
+    </div>
+  </div>
+</div>
+
+<div class="feature-item">
+  <div class="feature-num">11</div>
+  <div class="feature-body">
+    <div class="ftitle">Stdin shellcode input (<code>-Shellcode -</code>) <span class="badge badge-yellow">New feature</span></div>
+    <p>Read shellcode bytes from stdin, enabling shell pipelines:</p>
+    <pre>cat payload.bin | washmachine-cli encode -Shellcode - -Template minimal
+washmachine-cli strip -Pe loader.exe -Mode ep | washmachine-cli backdoor -Pe target.exe -Shellcode -</pre>
+    <div class="feature-meta">
+      <span class="badge badge-yellow">Medium impact</span><span class="badge badge-green">Low effort</span><span class="badge badge-blue">Program.cs (arg parsing)</span>
+    </div>
+  </div>
+</div>
+
+<div class="feature-item">
+  <div class="feature-num">12</div>
+  <div class="feature-body">
+    <div class="ftitle">GUI Strip page <span class="badge badge-yellow">GUI gap</span></div>
+    <p>The CLI has a fully working <code>strip</code> command with 4 extraction modes. The GUI has no equivalent despite <code>PeStripService</code> being ready in Core. Add a new page — mirror the structure of <code>BackdooringPage.xaml</code>.</p>
+    <div class="feature-meta">
+      <span class="badge badge-yellow">Medium impact</span><span class="badge badge-yellow">Medium effort</span><span class="badge badge-blue">new StripPage.xaml · MainPage navigation</span>
+    </div>
+  </div>
+</div>
+
+<div class="feature-item">
+  <div class="feature-num">13</div>
+  <div class="feature-body">
+    <div class="ftitle">Batch encode mode <span class="badge badge-yellow">New feature</span></div>
+    <p>Process multiple shellcodes with the same template + snippet configuration in one command — useful when testing a payload against multiple encoder/template combos.</p>
+    <pre><span class="kw">encode</span> -ShellcodeDir .\payloads\ -Template minimal -Encoder 1</pre>
+    <div class="feature-meta">
+      <span class="badge badge-yellow">Medium impact</span><span class="badge badge-yellow">Medium effort</span><span class="badge badge-blue">Program.EncodeInteraction.cs</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2 id="low">🟢 Low Priority / Polish</h2>
+
+<div class="feature-item">
+  <div class="feature-num">14</div>
+  <div class="feature-body">
+    <div class="ftitle"><code>--version</code> flag <span class="badge badge-gray">Polish</span></div>
+    <pre><span class="kw">washmachine-cli</span> --version
+<span class="str">washmachine-cli 1.0.0 (Build: 2026-05-02, .NET 8.0 x64)</span></pre>
+    <div class="feature-meta"><span class="badge badge-gray">Low impact</span><span class="badge badge-green">Trivial effort</span></div>
+  </div>
+</div>
+
+<div class="feature-item">
+  <div class="feature-num">15</div>
+  <div class="feature-body">
+    <div class="ftitle">YAML hot-reload in REPL <span class="badge badge-gray">Polish</span></div>
+    <p><code>TryReload()</code> already exists on <code>YamlCodeSnippetCatalogService</code>. Just needs a <code>reload</code> command wired in the REPL dispatcher to refresh <code>vx_api_snippets.yaml</code> without restarting.</p>
+    <div class="feature-meta"><span class="badge badge-gray">Low impact</span><span class="badge badge-green">Trivial effort</span><span class="badge badge-blue">Program.cs RunReplAsync()</span></div>
+  </div>
+</div>
+
+<div class="feature-item">
+  <div class="feature-num">16</div>
+  <div class="feature-body">
+    <div class="ftitle">Persistent REPL history across sessions <span class="badge badge-gray">Polish</span></div>
+    <p>Save readline history to <code>~/.washmachine_history</code> so arrow-up recalls commands from previous sessions — standard expectation for any REPL.</p>
+    <div class="feature-meta"><span class="badge badge-gray">Low impact</span><span class="badge badge-green">Low effort</span><span class="badge badge-blue">Program.cs ReadLineWithEditor()</span></div>
+  </div>
+</div>
+
+<div class="feature-item">
+  <div class="feature-num">17</div>
+  <div class="feature-body">
+    <div class="ftitle">Split <code>Program.cs</code> further <span class="badge badge-gray">Refactor</span></div>
+    <p>Move <code>RunBackdoorAsync</code> (~800 lines) → <code>Program.BackdoorCommand.cs</code> and <code>RunStripAsync</code> (~400 lines) → <code>Program.StripCommand.cs</code>. The split was started but the heaviest commands weren't moved.</p>
+    <div class="feature-meta"><span class="badge badge-gray">Low impact</span><span class="badge badge-green">Low effort</span></div>
+  </div>
+</div>
+
+<div class="feature-item">
+  <div class="feature-num">18</div>
+  <div class="feature-body">
+    <div class="ftitle">Formal DI container <span class="badge badge-gray">Architecture</span></div>
+    <p>Add <code>Microsoft.Extensions.DependencyInjection</code> to both the CLI startup and the GUI <code>App.xaml.cs</code>. Currently every page instantiates its own service copies — this prevents shared state, makes testing harder, and creates redundant I/O handles.</p>
+    <div class="feature-meta"><span class="badge badge-gray">Low impact</span><span class="badge badge-yellow">Medium effort</span></div>
+  </div>
+</div>
+
+<div class="feature-item">
+  <div class="feature-num">19</div>
+  <div class="feature-body">
+    <div class="ftitle">Output directory control for <code>encode</code> <span class="badge badge-gray">Polish</span></div>
+    <p>Currently all encode output goes to <code>logging/session_&lt;timestamp&gt;/</code> relative to the CLI binary. Add <code>-OutDir &lt;path&gt;</code> to override the base.</p>
+    <div class="feature-meta"><span class="badge badge-gray">Low impact</span><span class="badge badge-green">Low effort</span><span class="badge badge-blue">Program.EncodeInteraction.cs · AppPaths.cs</span></div>
+  </div>
+</div>
+
+<div class="feature-item">
+  <div class="feature-num">20</div>
+  <div class="feature-body">
+    <div class="ftitle">Unit test suite for Core services <span class="badge badge-gray">Quality</span></div>
+    <p>Add an <code>xUnit</code> project targeting <code>PeBackdoorService</code>, <code>PeStripService</code>, <code>YamlCodeSnippetCatalogService</code>, and the YAML parser. Use the existing PE files in <code>Testing/binary/</code> as fixtures. The integration <code>TestHarness</code> is not a substitute for unit tests.</p>
+    <div class="feature-meta"><span class="badge badge-gray">Low impact</span><span class="badge badge-yellow">Medium effort</span></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2 id="summary">📋 Summary Table</h2>
+
+<table>
+  <thead>
+    <tr><th>#</th><th>Feature</th><th>Priority</th><th>Impact</th><th>Effort</th><th>Location</th></tr>
+  </thead>
+  <tbody>
+    <tr class="priority-high"><td>01</td><td>DLL backdooring — dll-main carrier</td><td><span class="badge badge-green">✓ Done</span></td><td>High</td><td><span class="badge badge-green">Low</span></td><td><code>Program.cs · BackdooringPage.xaml</code></td></tr>
+    <tr class="priority-high"><td>02</td><td>DLL backdooring (same as above)</td><td><span class="badge badge-green">✓ Done</span></td><td>High</td><td><span class="badge badge-green">Low</span></td><td><code>PeBackdoorService · Program.cs</code></td></tr>
+    <tr class="priority-high"><td>03</td><td>Entry-function carrier</td><td><span class="badge badge-red">High</span></td><td>High</td><td><span class="badge badge-yellow">Medium</span></td><td><code>PeBackdoorService</code></td></tr>
+    <tr class="priority-high"><td>04</td><td>Entropy analysis in <code>analyze</code></td><td><span class="badge badge-red">High</span></td><td>High</td><td><span class="badge badge-green">Low</span></td><td><code>PeAnalyzerService · RunAnalyzeAsync</code></td></tr>
+    <tr class="priority-high"><td>05</td><td>Packing stage (UPX / custom)</td><td><span class="badge badge-red">High</span></td><td>High</td><td><span class="badge badge-yellow">Medium</span></td><td><code>RequirementProvisioner · PackingPage</code></td></tr>
+    <tr class="priority-medium"><td>06</td><td>CLI recipe import / export</td><td><span class="badge badge-yellow">Medium</span></td><td>Medium</td><td><span class="badge badge-green">Low</span></td><td><code>Program.EncodeInteraction.cs</code></td></tr>
+    <tr class="priority-medium"><td>07</td><td>PE checksum recalculation</td><td><span class="badge badge-yellow">Medium</span></td><td>Medium</td><td><span class="badge badge-green">Low</span></td><td><code>PeBackdoorService</code></td></tr>
+    <tr class="priority-medium"><td>08</td><td>Timestamp stomping</td><td><span class="badge badge-yellow">Medium</span></td><td>Medium</td><td><span class="badge badge-green">Low</span></td><td><code>PeBackdoorService</code></td></tr>
+    <tr class="priority-medium"><td>09</td><td>RICH header wiping</td><td><span class="badge badge-yellow">Medium</span></td><td>Medium</td><td><span class="badge badge-green">Low</span></td><td><code>PeBackdoorService</code></td></tr>
+    <tr class="priority-medium"><td>10</td><td>IAT flagging in <code>analyze</code></td><td><span class="badge badge-yellow">Medium</span></td><td>Medium</td><td><span class="badge badge-green">Low</span></td><td><code>RunAnalyzeAsync</code></td></tr>
+    <tr class="priority-medium"><td>11</td><td>Stdin shellcode input (<code>-Shellcode -</code>)</td><td><span class="badge badge-yellow">Medium</span></td><td>Medium</td><td><span class="badge badge-green">Low</span></td><td><code>Program.cs (arg parsing)</code></td></tr>
+    <tr class="priority-medium"><td>12</td><td>GUI Strip page</td><td><span class="badge badge-yellow">Medium</span></td><td>Medium</td><td><span class="badge badge-yellow">Medium</span></td><td><code>new StripPage.xaml</code></td></tr>
+    <tr class="priority-medium"><td>13</td><td>Batch encode mode</td><td><span class="badge badge-yellow">Medium</span></td><td>Medium</td><td><span class="badge badge-yellow">Medium</span></td><td><code>Program.EncodeInteraction.cs</code></td></tr>
+    <tr class="priority-low"><td>14</td><td><code>--version</code> flag</td><td><span class="badge badge-gray">Low</span></td><td>Low</td><td><span class="badge badge-green">Trivial</span></td><td><code>Program.cs</code></td></tr>
+    <tr class="priority-low"><td>15</td><td>YAML hot-reload in REPL (<code>reload</code>)</td><td><span class="badge badge-gray">Low</span></td><td>Low</td><td><span class="badge badge-green">Trivial</span></td><td><code>RunReplAsync()</code></td></tr>
+    <tr class="priority-low"><td>16</td><td>Persistent REPL history</td><td><span class="badge badge-gray">Low</span></td><td>Low</td><td><span class="badge badge-green">Low</span></td><td><code>ReadLineWithEditor()</code></td></tr>
+    <tr class="priority-low"><td>17</td><td>Split <code>Program.cs</code> further</td><td><span class="badge badge-gray">Low</span></td><td>Low</td><td><span class="badge badge-green">Low</span></td><td><code>Program.cs</code></td></tr>
+    <tr class="priority-low"><td>18</td><td>Formal DI container</td><td><span class="badge badge-gray">Low</span></td><td>Low</td><td><span class="badge badge-yellow">Medium</span></td><td><code>App.xaml.cs · Program.cs</code></td></tr>
+    <tr class="priority-low"><td>19</td><td>Output directory control for <code>encode</code></td><td><span class="badge badge-gray">Low</span></td><td>Low</td><td><span class="badge badge-green">Low</span></td><td><code>AppPaths.cs</code></td></tr>
+    <tr class="priority-low"><td>20</td><td>Unit test suite for Core services</td><td><span class="badge badge-gray">Low</span></td><td>Low</td><td><span class="badge badge-yellow">Medium</span></td><td><code>new Washmachine.Tests project</code></td></tr>
+  </tbody>
+</table>
+
+<footer>
+  Washmachine Codebase Analysis &bull; Generated 2026-05-02 19:52 &bull; 3 projects &bull; 101 CLI tests passing
+</footer>
+
+</main>
+</div>
+</body>
+</html>

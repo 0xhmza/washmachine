@@ -874,7 +874,9 @@ public sealed partial class PipelinePage : Page
             CarrierInvoke.EntryPointHijack      => "entry-point",
             CarrierInvoke.EntryFunctionBackdoor => "function-backdoor",
             CarrierInvoke.TlsCallback           => "tls-callback",
-            _                                   => c.ToString(),
+            CarrierInvoke.DllMain               => "dll-main",
+            CarrierInvoke.DllExport             => "dll-export",
+            _ => c.ToString()
         };
     }
 }

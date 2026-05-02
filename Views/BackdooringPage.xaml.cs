@@ -32,8 +32,6 @@ public sealed partial class BackdooringPage : Page
         _analyzerService = new PeAnalyzerService(logger);
 
         CarrierInvokeCombo.SelectionChanged += BackdoorOptions_Changed;
-        EncryptionCombo.SelectionChanged += BackdoorOptions_Changed;
-        EncryptionCombo.SelectionChanged += EncryptionCombo_SelectionChanged;
         PreserveEntryCheck.Checked += BackdoorOptionToggle_Changed;
         PreserveEntryCheck.Unchecked += BackdoorOptionToggle_Changed;
     }
@@ -63,6 +61,7 @@ public sealed partial class BackdooringPage : Page
         0 => CarrierInvoke.EntryPointHijack,
         1 => CarrierInvoke.EntryFunctionBackdoor,
         2 => CarrierInvoke.TlsCallback,
+        3 => CarrierInvoke.DllMain,
         _ => CarrierInvoke.EntryPointHijack
     };
 
@@ -73,17 +72,11 @@ public sealed partial class BackdooringPage : Page
 
     public bool PatchExit => PatchExitCheck.IsChecked == true;
     public bool DryRun => DryRunCheck.IsChecked == true;
-    public string? XorKey => XorKeyInput?.Text.Trim() is { Length: > 0 } s ? s : null;
+    public string? XorKey => null;
     public string? CustomSectionName => SectionNameInput?.Text.Trim() is { Length: > 0 } s ? s : null;
     public int CaveMinSize => (int)(CaveMinSizeBox?.Value is double v && !double.IsNaN(v) ? v : 64);
 
-    public PayloadEncryption SelectedEncryption=> EncryptionCombo.SelectedIndex switch
-    {
-        1 => PayloadEncryption.Xor,
-        2 => PayloadEncryption.Xor2,
-        3 => PayloadEncryption.Rc4,
-        _ => PayloadEncryption.None
-    };
+    public PayloadEncryption SelectedEncryption => PayloadEncryption.None;
 
     public bool IsInjectionValid { get; private set; } = false;
 
@@ -115,6 +108,7 @@ public sealed partial class BackdooringPage : Page
                 CarrierInvoke.EntryPointHijack => 0,
                 CarrierInvoke.EntryFunctionBackdoor => 1,
                 CarrierInvoke.TlsCallback => 2,
+                CarrierInvoke.DllMain => 3,
                 _ => 0
             };
         }
@@ -126,20 +120,8 @@ public sealed partial class BackdooringPage : Page
         PatchExitCheck.IsChecked = recipe.PatchExit;
         DryRunCheck.IsChecked = recipe.DryRun;
 
-        if (recipe.XorKey != null && XorKeyInput != null) XorKeyInput.Text = recipe.XorKey;
         if (recipe.SectionName != null && SectionNameInput != null) SectionNameInput.Text = recipe.SectionName;
         if (CaveMinSizeBox != null) CaveMinSizeBox.Value = recipe.CaveMinSize;
-
-        if (Enum.TryParse<PayloadEncryption>(recipe.Encryption, out var enc))
-        {
-            EncryptionCombo.SelectedIndex = enc switch
-            {
-                PayloadEncryption.Xor => 1,
-                PayloadEncryption.Xor2 => 2,
-                PayloadEncryption.Rc4 => 3,
-                _ => 0
-            };
-        }
     }
 
     #endregion
@@ -257,6 +239,23 @@ public sealed partial class BackdooringPage : Page
 
         // Icon
         PeTypeIcon.Glyph = _analysisResult.IsDll ? "\uE943" : "\uE8A5";
+
+        // DLL-specific UI updates
+        if (_analysisResult.IsDll)
+        {
+            if (DllInfoBanner != null) DllInfoBanner.Visibility = Visibility.Visible;
+            CarrierInvokeCombo.SelectedIndex = 3; // DllMain Hook
+            PatchSubsystemCheck.IsEnabled = false;
+            PatchSubsystemCheck.IsChecked = false;
+        }
+        else
+        {
+            if (DllInfoBanner != null) DllInfoBanner.Visibility = Visibility.Collapsed;
+            if (CarrierInvokeCombo.SelectedIndex == 3)
+                CarrierInvokeCombo.SelectedIndex = 0; // Reset to entry-point for EXEs
+            PatchSubsystemCheck.IsEnabled = true;
+            PatchSubsystemCheck.IsChecked = true;
+        }
     }
 
     private void UpdateDeepAnalysisSection()
@@ -481,14 +480,14 @@ public sealed partial class BackdooringPage : Page
         var warnings = new List<string>();
         var hardBlocks = new List<string>();
 
-        if (SelectedCarrierInvoke != CarrierInvoke.EntryPointHijack)
+        if (SelectedCarrierInvoke == CarrierInvoke.EntryFunctionBackdoor || SelectedCarrierInvoke == CarrierInvoke.TlsCallback)
         {
-            hardBlocks.Add("Only Entry Point Hijack is currently implemented. Function Backdoor and TLS carriers are not available yet.");
+            hardBlocks.Add("Only Entry Point Hijack and DllMain Hook carriers are currently implemented. Function Backdoor and TLS carriers are not available yet.");
         }
 
-        if (SelectedEncryption != PayloadEncryption.None)
+        if (SelectedCarrierInvoke == CarrierInvoke.DllMain && _analysisResult?.IsDll == false)
         {
-            hardBlocks.Add("Backdoor-stage encryption is not supported. Inject a ready-to-run flat .bin payload here.");
+            hardBlocks.Add("DllMain Hook carrier is only applicable to DLL targets. Use Entry Point Hijack for EXE files.");
         }
 
         if (!PreserveOriginalEntry)
@@ -595,13 +594,6 @@ public sealed partial class BackdooringPage : Page
     private void BackdoorOptionToggle_Changed(object sender, RoutedEventArgs e)
     {
         UpdateInjectionFeasibility();
-    }
-
-    private void EncryptionCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (XorKeyPanel == null) return;
-        var idx = EncryptionCombo.SelectedIndex;
-        XorKeyPanel.Visibility = (idx == 1 || idx == 2) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void ShowInjectionBlocked(string message)

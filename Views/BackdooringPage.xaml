@@ -409,12 +409,24 @@
                             <StackPanel Grid.Column="1" Margin="8,0,0,0">
                                 <TextBlock Text="Carrier Invocation:" Margin="0,0,0,6" />
                                 <ComboBox x:Name="CarrierInvokeCombo" HorizontalAlignment="Stretch" SelectedIndex="0">
-                                    <ComboBoxItem Content="Entry Point Hijack" />
+                                    <ComboBoxItem Content="Entry Point Hijack (EXE)" />
                                     <ComboBoxItem Content="Function Backdoor (JMP patch)" />
                                     <ComboBoxItem Content="TLS Callback" />
+                                    <ComboBoxItem Content="DllMain Hook (DLL)" />
                                 </ComboBox>
                             </StackPanel>
                         </Grid>
+
+                        <!-- DLL info banner (shown when a DLL target is loaded) -->
+                        <Border x:Name="DllInfoBanner" Visibility="Collapsed"
+                                Background="{ThemeResource SystemFillColorSuccessBackgroundBrush}"
+                                CornerRadius="4" Padding="12" Margin="0,4,0,8">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <FontIcon Glyph="&#xE943;" FontSize="16" VerticalAlignment="Center" />
+                                <TextBlock TextWrapping="Wrap" VerticalAlignment="Center"
+                                           Text="Target is a DLL — carrier is auto-set to DllMain Hook. The payload runs when the DLL is loaded (DLL_PROCESS_ATTACH). Patch subsystem is not applicable to DLLs." />
+                            </StackPanel>
+                        </Border>
 
                         <!-- Recommended Method -->
                         <Border x:Name="RecommendedMethodPanel" Visibility="Collapsed"
@@ -430,25 +442,16 @@
                         <Border Style="{StaticResource CardBorder}" Padding="12" Margin="0,0,0,8">
                             <StackPanel>
                                 <TextBlock Text="Options" FontWeight="SemiBold" Margin="0,0,0,8" />
-                                <TextBlock Text="Payload Encryption:" Margin="0,0,0,6" />
-                                <ComboBox x:Name="EncryptionCombo" HorizontalAlignment="Stretch" SelectedIndex="0" Margin="0,0,0,8"
-                                          SelectionChanged="EncryptionCombo_SelectionChanged">
-                                    <ComboBoxItem Content="None (raw shellcode)" />
-                                    <ComboBoxItem Content="XOR (single-byte key)" />
-                                    <ComboBoxItem Content="XOR2 (two-byte rolling key)" />
-                                    <ComboBoxItem Content="RC4" />
-                                </ComboBox>
 
-                                <!-- XOR Key (shown when XOR or XOR2 selected) -->
-                                <Border x:Name="XorKeyPanel" Visibility="Collapsed" Margin="0,0,0,8"
-                                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
-                                        CornerRadius="4" Padding="10,8">
+                                <!-- Encryption info note -->
+                                <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                        CornerRadius="4" Padding="10,8" Margin="0,0,0,12">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <FontIcon Glyph="&#xE8D7;" FontSize="14" VerticalAlignment="Center"
-                                                  Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                                        <TextBlock Text="XOR Key (hex, e.g. 0xAB):" VerticalAlignment="Center" FontSize="12" />
-                                        <TextBox x:Name="XorKeyInput" PlaceholderText="0xDE" MaxLength="6"
-                                                 Width="100" FontFamily="Consolas" FontSize="12" />
+                                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Text="Payload encoding/encryption is handled by the Encode stage. Inject a ready-to-run flat .bin here."
+                                                   FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                     </StackPanel>
                                 </Border>
 
