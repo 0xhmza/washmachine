@@ -1125,6 +1125,21 @@ public sealed class MainFormCoordinator
             templateProvided = false;
         }
 
+        // The generic shellcode section is NOT a template snippet placeholder — it feeds
+        // {{SHELLCODE_SOURCE}} (a system placeholder). Always locate it from the full catalog
+        // so the Generic combo is populated regardless of which template is selected.
+        if (genericSection == null)
+        {
+            foreach (var s in _snippetCatalog.GetAllSections())
+            {
+                if (s != null && IsGenericSection(s))
+                {
+                    genericSection = s;
+                    break;
+                }
+            }
+        }
+
         return sections;
     }
 
