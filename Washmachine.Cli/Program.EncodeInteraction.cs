@@ -743,10 +743,10 @@ public static partial class Program
             string arg = args[i];
             switch (arg)
             {
-                case "--shellcode" or "-s":
+                case "-Shellcode" or "--shellcode" or "-s":
                     if (!TryReadFlagValue(args, ref i, out var fileValue))
                     {
-                        messages.Add(BuildExpectedMessage("PAYLOAD_SOURCE", "(missing)", "missing value after --shellcode", context));
+                        messages.Add(BuildExpectedMessage("PAYLOAD_SOURCE", "(missing)", "missing value after -Shellcode", context));
                         break;
                     }
 
@@ -754,10 +754,10 @@ public static partial class Program
                         messages.Add(BuildExpectedMessage("PAYLOAD_SOURCE", fileValue!, fileError!, context));
                     break;
 
-                case "--shellcode-hex":
+                case "-ShellcodeHex" or "--shellcode-hex":
                     if (!TryReadFlagValue(args, ref i, out var hexValue))
                     {
-                        messages.Add(BuildExpectedMessage("PAYLOAD_SOURCE", "(missing)", "missing value after --shellcode-hex", context));
+                        messages.Add(BuildExpectedMessage("PAYLOAD_SOURCE", "(missing)", "missing value after -ShellcodeHex", context));
                         break;
                     }
 
@@ -765,10 +765,10 @@ public static partial class Program
                         messages.Add(BuildExpectedMessage("PAYLOAD_SOURCE", hexValue!, hexError!, context));
                     break;
 
-                case "--shellcode-url" or "-u":
+                case "-ShellcodeUrl" or "--shellcode-url" or "-u":
                     if (!TryReadFlagValue(args, ref i, out var urlValue))
                     {
-                        messages.Add(BuildExpectedMessage("PAYLOAD_SOURCE", "(missing)", "missing value after --shellcode-url", context));
+                        messages.Add(BuildExpectedMessage("PAYLOAD_SOURCE", "(missing)", "missing value after -ShellcodeUrl", context));
                         break;
                     }
 
@@ -776,87 +776,87 @@ public static partial class Program
                         messages.Add(BuildExpectedMessage("PAYLOAD_SOURCE", urlValue!, urlError!, context));
                     break;
 
-                case "--template" or "-t":
+                case "-Template" or "--template" or "-t":
                     ParseNamedOption(context, state, args, ref i, "TEMPLATE", messages);
                     break;
 
-                case "--encoder" or "-e":
+                case "-Encoder" or "--encoder" or "-e":
                     ParseNamedOption(context, state, args, ref i, "ENCODER", messages);
                     break;
 
-                case "--envelope" or "-v":
+                case "-Envelope" or "--envelope" or "-v":
                     ParseNamedOption(context, state, args, ref i, "ENVELOPE", messages);
                     break;
 
-                case "--shikata-ga-nai" or "--sgn":
+                case "-Sgn" or "-ShikataGaNai" or "--shikata-ga-nai" or "--sgn":
                     if (!TryApplyEncodeOptionValue(context, state, EncodeOptionSpecsByName["SHIKATA_GA_NAI"], bool.TrueString, false, true, out var sgnError))
                         messages.Add(BuildExpectedMessage("SHIKATA_GA_NAI", "true", sgnError!, context));
                     break;
 
-                case "--shikata-enc":
+                case "-SgnCount" or "--shikata-enc":
                     ParseNamedOption(context, state, args, ref i, "SHIKATA_ENCODE_COUNT", messages);
                     break;
 
-                case "--shikata-max":
+                case "-SgnMax" or "--shikata-max":
                     ParseNamedOption(context, state, args, ref i, "SHIKATA_MAX_BYTES", messages);
                     break;
 
-                case "--sgn-placement":
+                case "-SgnPlacement" or "--sgn-placement":
                     ParseNamedOption(context, state, args, ref i, "SHIKATA_PLACEMENT", messages);
                     break;
 
-                case "--clone-from":
+                case "-CloneFrom" or "--clone-from":
                     ParseNamedOption(context, state, args, ref i, "CLONE_FROM", messages);
                     break;
 
-                case "--clone-resources":
+                case "-CloneResources" or "--clone-resources":
                     if (!TryApplyEncodeOptionValue(context, state, EncodeOptionSpecsByName["CLONE_RESOURCES"], "true", false, true, out var cloneResourcesError))
                         messages.Add(BuildExpectedMessage("CLONE_RESOURCES", "true", cloneResourcesError!, context));
                     break;
 
-                case "--no-clone-resources":
+                case "-NoCloneResources" or "--no-clone-resources":
                     if (!TryApplyEncodeOptionValue(context, state, EncodeOptionSpecsByName["CLONE_RESOURCES"], "false", false, true, out var noCloneResourcesError))
                         messages.Add(BuildExpectedMessage("CLONE_RESOURCES", "false", noCloneResourcesError!, context));
                     break;
 
-                case "--clone-icon":
+                case "-CloneIcon" or "--clone-icon":
                     if (!TryApplyEncodeOptionValue(context, state, EncodeOptionSpecsByName["CLONE_ICON"], "true", false, true, out var cloneIconError))
                         messages.Add(BuildExpectedMessage("CLONE_ICON", "true", cloneIconError!, context));
                     break;
 
-                case "--no-clone-icon":
+                case "-NoCloneIcon" or "--no-clone-icon":
                     if (!TryApplyEncodeOptionValue(context, state, EncodeOptionSpecsByName["CLONE_ICON"], "false", false, true, out var noCloneIconError))
                         messages.Add(BuildExpectedMessage("CLONE_ICON", "false", noCloneIconError!, context));
                     break;
 
-                case "--clone-metadata":
+                case "-CloneMetadata" or "--clone-metadata":
                     if (!TryApplyEncodeOptionValue(context, state, EncodeOptionSpecsByName["CLONE_METADATA"], "true", false, true, out var cloneMetadataError))
                         messages.Add(BuildExpectedMessage("CLONE_METADATA", "true", cloneMetadataError!, context));
                     break;
 
-                case "--no-clone-metadata":
+                case "-NoCloneMetadata" or "--no-clone-metadata":
                     if (!TryApplyEncodeOptionValue(context, state, EncodeOptionSpecsByName["CLONE_METADATA"], "false", false, true, out var noCloneMetadataError))
                         messages.Add(BuildExpectedMessage("CLONE_METADATA", "false", noCloneMetadataError!, context));
                     break;
 
-                case "--pad-nops":
+                case "-PadNops" or "--pad-nops":
                     ParseNamedOption(context, state, args, ref i, "PAD_NOPS", messages);
                     break;
 
-                case "--snippet":
+                case "-Snippet" or "--snippet":
                     ParseNamedOption(context, state, args, ref i, "SNIPPETS", messages, appendCollectionValues: true);
                     break;
 
-                case "--text":
+                case "-Text" or "--text":
                     ParseNamedOption(context, state, args, ref i, "TEXT_INPUTS", messages, appendCollectionValues: true);
                     break;
 
-                case "--verbose":
+                case "-Verbose" or "--verbose":
                     if (!TryApplyEncodeOptionValue(context, state, EncodeOptionSpecsByName["VERBOSE"], "true", false, true, out var verboseError))
                         messages.Add(BuildExpectedMessage("VERBOSE", "true", verboseError!, context));
                     break;
 
-                case "--json":
+                case "-Json" or "--json":
                     if (!TryApplyEncodeOptionValue(context, state, EncodeOptionSpecsByName["JSON"], "true", false, true, out var jsonError))
                         messages.Add(BuildExpectedMessage("JSON", "true", jsonError!, context));
                     break;

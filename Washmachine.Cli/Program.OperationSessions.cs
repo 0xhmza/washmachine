@@ -543,37 +543,40 @@ public static partial class Program
 
     private static string[] BuildStripArguments(StripSessionState state)
     {
-        var args = new List<string> { state.PeFile! };
+        var args = new List<string>();
+
+        args.Add("-Pe");
+        args.Add(state.PeFile!);
 
         if (!string.IsNullOrWhiteSpace(state.Output))
         {
-            args.Add("-o");
+            args.Add("-Output");
             args.Add(state.Output);
         }
 
         if (!string.Equals(state.Mode, "ep", StringComparison.OrdinalIgnoreCase))
         {
-            args.Add("-m");
+            args.Add("-Mode");
             args.Add(state.Mode);
         }
 
         if (!string.IsNullOrWhiteSpace(state.Section))
         {
-            args.Add("--section");
+            args.Add("-Section");
             args.Add(state.Section);
         }
 
         if (!string.IsNullOrWhiteSpace(state.Range))
         {
-            args.Add("--range");
+            args.Add("-Range");
             args.Add(state.Range);
         }
 
         if (state.AnalyzeOnly)
-            args.Add("--analyze");
+            args.Add("-Analyze");
 
         if (!state.TrimTrailingZeros)
-            args.Add("--no-trim");
+            args.Add("-NoTrim");
 
         return args.ToArray();
     }
@@ -995,41 +998,41 @@ public static partial class Program
     {
         var args = new List<string>
         {
-            "--pe", state.PeFile!,
-            "--shellcode", state.Shellcode!,
-            "--method", state.Method,
-            "--carrier", state.Carrier,
-            "--encryption", state.Encryption,
-            "--section-name", state.SectionName,
-            "--cave-min-size", state.CaveMinSize.ToString(CultureInfo.InvariantCulture),
+            "-Pe", state.PeFile!,
+            "-Shellcode", state.Shellcode!,
+            "-Method", state.Method,
+            "-Carrier", state.Carrier,
+            "-Encryption", state.Encryption,
+            "-SectionName", state.SectionName,
+            "-CaveMinSize", state.CaveMinSize.ToString(CultureInfo.InvariantCulture),
         };
 
         if (!string.IsNullOrWhiteSpace(state.Output))
         {
-            args.Add("--output");
+            args.Add("-Output");
             args.Add(state.Output);
         }
 
         if (!state.RemoveSignature)
-            args.Add("--no-remove-sig");
+            args.Add("-NoRemoveSig");
         if (!state.PatchSubsystem)
-            args.Add("--no-patch-subsystem");
+            args.Add("-NoPatchSubsystem");
         if (!state.PreserveEntry)
-            args.Add("--no-preserve-entry");
+            args.Add("-NoPreserveEntry");
         if (!state.PatchIat)
-            args.Add("--no-patch-iat");
+            args.Add("-NoPatchIat");
         if (!state.PatchExit)
-            args.Add("--no-patch-exit");
+            args.Add("-NoPatchExit");
         if (state.DryRun)
-            args.Add("--dry-run");
+            args.Add("-DryRun");
         if (state.SessionLog == EncodeTriState.Enabled)
-            args.Add("--session-log");
+            args.Add("-SessionLog");
         else if (state.SessionLog == EncodeTriState.Disabled)
-            args.Add("--no-session-log");
+            args.Add("-NoSessionLog");
         if (state.Verbose)
-            args.Add("--verbose");
+            args.Add("-Verbose");
         if (state.Json)
-            args.Add("--json");
+            args.Add("-Json");
 
         return args.ToArray();
     }
