@@ -162,7 +162,7 @@ public sealed class DonutService
         if (!string.IsNullOrWhiteSpace(options.Method)) { args.Add("-m"); args.Add(options.Method); }
         if (!string.IsNullOrWhiteSpace(options.Params)) { args.Add("-p"); args.Add(options.Params); }
 
-        args.Add(options.InputPath);
+        args.Add("-i"); args.Add(options.InputPath);
         return args;
     }
 
