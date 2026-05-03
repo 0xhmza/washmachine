@@ -835,6 +835,13 @@ public sealed partial class CompilePage : Page
                     _logger.Error("Shellcode file not set or not found.");
                     return (null, false);
                 }
+                // If the source is a PE (.exe), strip it to a temp .bin first
+                if (Path.GetExtension(scFile).Equals(".exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    var stripped = await StripExeShellcodeAsync(scFile, mainPage);
+                    if (stripped == null) return (null, false);
+                    scFile = stripped;
+                }
                 args.AddRange(["-s", scFile]);
                 break;
 
@@ -893,18 +900,20 @@ public sealed partial class CompilePage : Page
         var templateOptions = mainPage.Coordinator.TemplateOptions;
         foreach (var (key, value) in templateOptions.ComboValues)
         {
-            if (!string.IsNullOrEmpty(value))
+            if (!string.IsNullOrEmpty(value) && !value.Equals("None", StringComparison.OrdinalIgnoreCase))
             {
-                args.AddRange(["-Snippet", $"{key}={value}"]);
-                _logger.Debug($"[ui] snippet combo: {key}={value}");
+                var sectionKey = ExtractSnippetSectionKey(key);
+                args.AddRange(["-Snippet", $"{sectionKey}={value}"]);
+                _logger.Debug($"[ui] snippet combo: {sectionKey}={value}");
             }
         }
         foreach (var (key, values) in templateOptions.ListValues)
         {
             if (values is { Count: > 0 })
             {
-                args.AddRange(["-Snippet", $"{key}={string.Join(",", values)}"]);
-                _logger.Debug($"[ui] snippet list: {key}={string.Join(",", values)}");
+                var sectionKey = ExtractSnippetSectionKey(key);
+                args.AddRange(["-Snippet", $"{sectionKey}={string.Join(",", values)}"]);
+                _logger.Debug($"[ui] snippet list: {sectionKey}={string.Join(",", values)}");
             }
         }
         foreach (var (key, value) in templateOptions.TextValues)
@@ -1301,6 +1310,79 @@ public sealed partial class CompilePage : Page
 
         _logger.Warn($"UPX packing failed: {error}");
         return null;
+    }
+
+    /// <summary>
+    /// Strips the user's input .exe shellcode source to a temp .bin using the configured PE strip options.
+    /// </summary>
+    private async Task<string?> StripExeShellcodeAsync(string exePath, MainPage mainPage)
+    {
+        if (!_cli.IsAvailable)
+        {
+            _logger.Error("CLI not available — cannot strip PE shellcode source.");
+            return null;
+        }
+
+        var tempBin = Path.Combine(Path.GetTempPath(), $"wm_strip_{Guid.NewGuid():N}.bin");
+        var args = new List<string> { "strip", "-Pe", exePath, "-Output", tempBin };
+
+        var mode = mainPage.PeStripMode;
+        if (!string.Equals(mode, "ep", StringComparison.OrdinalIgnoreCase))
+            args.AddRange(["-Mode", mode]);
+
+        if (string.Equals(mode, "section", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(mainPage.PeStripSection))
+            args.AddRange(["-Section", mainPage.PeStripSection]);
+
+        if (!mainPage.PeStripTrimTrailingZeros)
+            args.Add("-NoTrim");
+
+        _logger.Info($"Stripping PE shellcode source ({mode})...");
+        var result = await _cli.RunAsync(args, line => _logger.Info(line));
+
+        if (result.Success && File.Exists(tempBin))
+        {
+            var size = new FileInfo(tempBin).Length;
+            _logger.Ok($"Stripped PE → temp .bin ({size:N0} bytes)");
+
+            if (size < 64)
+            {
+                _logger.Warn($"Stripped binary is only {size} bytes — this PE is almost certainly not a shellcode-format " +
+                             "executable. Use raw shellcode (.bin from msfvenom -f raw) instead.");
+            }
+            else if (size > 1 * 1024 * 1024)
+            {
+                _logger.Warn($"Stripped binary is large ({size / 1024:N0} KB). MSVC may fail with " +
+                             "C1060 (out of heap space). Try 'Entry point to end' mode or a smaller source file.");
+            }
+
+            return tempBin;
+        }
+
+        _logger.Error($"PE strip failed (exit {result.ExitCode}).");
+        return null;
+    }
+
+    /// <summary>
+    /// Extracts the snippet section key from a snippet control name.
+    /// Control names follow the format snippetCombo_{SectionKey}_{index} or snippetList_{SectionKey}_{index}.
+    /// </summary>
+    private static string ExtractSnippetSectionKey(string controlName)
+    {
+        const string comboPrefix = "snippetCombo_";
+        const string listPrefix = "snippetList_";
+
+        string? prefix = controlName.StartsWith(comboPrefix, StringComparison.OrdinalIgnoreCase) ? comboPrefix
+                       : controlName.StartsWith(listPrefix, StringComparison.OrdinalIgnoreCase) ? listPrefix
+                       : null;
+        if (prefix == null)
+            return controlName;
+
+        var withoutPrefix = controlName[prefix.Length..];
+        var lastUnderscore = withoutPrefix.LastIndexOf('_');
+        if (lastUnderscore > 0 && withoutPrefix[(lastUnderscore + 1)..].All(char.IsDigit))
+            return withoutPrefix[..lastUnderscore];
+        return withoutPrefix;
     }
 
     private void ShowCompileResult(bool success, string message)

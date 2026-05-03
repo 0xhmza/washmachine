@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -17,10 +18,11 @@ public sealed partial class MainPage : Page, IMainFormView
     private readonly IAppLogger _logger;
     private readonly MainFormCoordinator _coordinator;
     private readonly AppPaths _paths;
+    private readonly CliExecutor _cli = new();
+    private readonly PeStripService _peStripper;
     private ShellcodeSource _currentSource = ShellcodeSource.None;
     private bool _suppressPlaybookEvents;
     private bool _initialized;
-    private readonly CliExecutor _cli = new();
 
     public MainPage()
     {
@@ -31,6 +33,7 @@ public sealed partial class MainPage : Page, IMainFormView
         _logger = new RichEditBoxLogger(statusLogBox);
 
         _paths = new AppPaths();
+        _peStripper = new PeStripService(new ConsoleLogger()); // analysis-only, no UI logging needed
         var clipboard = new ClipboardService();
         var interaction = new UserInteractionService();
         var snippetCatalog = new YamlCodeSnippetCatalogService(_paths);
@@ -318,20 +321,8 @@ public sealed partial class MainPage : Page, IMainFormView
 
     private void GoToBackdooringPage_Click(object sender, RoutedEventArgs e)
     {
-        // Navigate to BackdooringPage
         if (App.ActiveWindow is MainWindow mainWindow)
-        {
-            var navView = mainWindow.Content as NavigationView;
-            if (navView != null)
-            {
-                var item = navView.MenuItems.OfType<NavigationViewItem>()
-                    .FirstOrDefault(i => i.Tag?.ToString() == "BackdooringPage");
-                if (item != null)
-                {
-                    navView.SelectedItem = item;
-                }
-            }
-        }
+            mainWindow.NavigateToBackdooringPage();
     }
 
     private void ShellcodeSourceSelect_Click(object sender, RoutedEventArgs e)
@@ -464,6 +455,7 @@ public sealed partial class MainPage : Page, IMainFormView
         {
             FileByteCountBadge.Visibility = Visibility.Collapsed;
             FileMissingBadge.Visibility   = Visibility.Collapsed;
+            PeStripOptionsPanel.Visibility = Visibility.Collapsed;
             return;
         }
         if (System.IO.File.Exists(path))
@@ -478,6 +470,101 @@ public sealed partial class MainPage : Page, IMainFormView
             FileByteCountBadge.Visibility = Visibility.Collapsed;
             FileMissingBadge.Visibility   = Visibility.Visible;
         }
+
+        bool isExe = path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+        PeStripOptionsPanel.Visibility = isExe ? Visibility.Visible : Visibility.Collapsed;
+        if (isExe) UpdatePeStripModeControls();
+    }
+
+    // ── PE strip properties consumed by CompilePage ──────────────────────────
+
+    public string PeStripMode =>
+        (peStripModeCombo?.SelectedValue as string) ?? "ep";
+
+    public string PeStripSection =>
+        peStripSectionInput?.Text?.Trim() ?? string.Empty;
+
+    public bool PeStripTrimTrailingZeros =>
+        peStripTrimCheck?.IsChecked != false;
+
+    private void PeStripMode_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
+        UpdatePeStripModeControls();
+
+    private void UpdatePeStripModeControls()
+    {
+        if (peStripSectionRow != null)
+            peStripSectionRow.Height = PeStripMode == "section" ? GridLength.Auto : new GridLength(0);
+    }
+
+    private async void AnalyzePe_Click(object sender, RoutedEventArgs e)
+    {
+        var path = shellcodeFileInput.Text.Trim();
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
+        {
+            _logger.Warn("No valid .exe file selected for PE analysis.");
+            return;
+        }
+
+        var analysis = await _peStripper.AnalyzeAsync(path);
+
+        if (!analysis.Success)
+        {
+            await new ContentDialog
+            {
+                Title = "PE Analysis Failed",
+                Content = analysis.Error ?? "Unknown error.",
+                CloseButtonText = "OK",
+                XamlRoot = this.XamlRoot,
+                DefaultButton = ContentDialogButton.Close,
+            }.ShowAsync();
+            return;
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Architecture : {(analysis.Is64Bit ? "x64" : "x86")}");
+        sb.AppendLine($"Entry Point  : 0x{analysis.EntryPoint:X8}");
+        sb.AppendLine($"EP Section   : {analysis.EntryPointSection ?? "unknown"}");
+        sb.AppendLine($"Est. bin size: {analysis.EstimatedBinSize:N0} bytes  (ep mode, after trim)");
+        sb.AppendLine();
+        sb.AppendLine($"{"Section",-12} {"RawAddr",10} {"RawSize",12} {"Exec",6} {"EP",4}");
+        sb.AppendLine($"{"-------",-12} {"-------",10} {"-------",12} {"----",6} {"--",4}");
+        foreach (var s in analysis.Sections)
+        {
+            sb.AppendLine($"{s.Name,-12} 0x{s.RawAddress:X6}  {s.RawSize,10:N0} {(s.IsExecutable ? "yes" : ""),6} {(s.ContainsEntryPoint ? "◄ EP" : ""),4}");
+        }
+
+        if (analysis.EstimatedBinSize < 64)
+        {
+            sb.AppendLine();
+            sb.AppendLine("⚠  Extracted size is very small — this PE is likely not shellcode-compatible.");
+            sb.AppendLine("   Use raw .bin shellcode (msfvenom -f raw) instead.");
+        }
+
+        var contentBlock = new TextBlock
+        {
+            Text = sb.ToString(),
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 12,
+            TextWrapping = TextWrapping.NoWrap,
+        };
+
+        var scrollViewer = new ScrollViewer
+        {
+            Content = contentBlock,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            MaxHeight = 420,
+            MinWidth = 460,
+        };
+
+        await new ContentDialog
+        {
+            Title = $"PE Analysis — {Path.GetFileName(path)}",
+            Content = scrollViewer,
+            CloseButtonText = "Close",
+            XamlRoot = this.XamlRoot,
+            DefaultButton = ContentDialogButton.Close,
+        }.ShowAsync();
     }
 
 }

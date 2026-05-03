@@ -138,9 +138,10 @@
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
                                         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
-                                            <TextBlock Text="Shellcode file (.bin):" VerticalAlignment="Center" />
+                                            <TextBlock Text="Shellcode file (.bin or .exe):" VerticalAlignment="Center" />
                                             <Border x:Name="FileByteCountBadge" Visibility="Collapsed"
                                                     Background="{ThemeResource SystemFillColorSuccessBackgroundBrush}"
                                                     CornerRadius="10" Padding="6,2">
@@ -159,6 +160,41 @@
                                             </Grid.ColumnDefinitions>
                                             <TextBox x:Name="shellcodeFileInput" Margin="0,0,8,0" />
                                             <Button x:Name="browseShellcodeFileButton" Grid.Column="1" Content="Browse" MinWidth="72" Click="BrowseShellcodeFile_Click" />
+                                        </Grid>
+
+                                        <!-- PE strip options — shown only when .exe is selected -->
+                                        <Grid x:Name="PeStripOptionsPanel" Grid.Row="2" Visibility="Collapsed" Margin="0,10,0,0">
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition x:Name="peStripSectionRow" Height="0" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+
+                                            <!-- Mode selector -->
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="Strip mode:" VerticalAlignment="Center" />
+                                                <ComboBox x:Name="peStripModeCombo" MinWidth="180"
+                                                          SelectedValuePath="Tag"
+                                                          SelectionChanged="PeStripMode_SelectionChanged">
+                                                    <ComboBoxItem Content="Entry point to end" Tag="ep" IsSelected="True" />
+                                                    <ComboBoxItem Content="Named section" Tag="section" />
+                                                </ComboBox>
+                                                <CheckBox x:Name="peStripTrimCheck" Content="Trim trailing zeros" IsChecked="True" VerticalAlignment="Center" />
+                                            </StackPanel>
+
+                                            <!-- Section name row (visible only in section mode) -->
+                                            <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+                                                <TextBlock Text="Section name:" VerticalAlignment="Center" Width="110" />
+                                                <TextBox x:Name="peStripSectionInput" PlaceholderText=".text" MinWidth="140" />
+                                            </StackPanel>
+
+                                            <!-- Analyze + warning -->
+                                            <StackPanel Grid.Row="2" Orientation="Vertical" Margin="0,8,0,0" Spacing="6">
+                                                <Button Content="Analyze PE" Click="AnalyzePe_Click" />
+                                                <TextBlock TextWrapping="Wrap" MaxWidth="480" FontSize="11"
+                                                           Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                                           Text="Only use .exe files that are shellcode-format PEs (e.g. produced by donut, pe2shellcode or sRDI). Standard Metasploit/Cobalt Strike EXEs require raw shellcode (.bin) instead." />
+                                            </StackPanel>
                                         </Grid>
                                     </Grid>
 
