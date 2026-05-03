@@ -2389,7 +2389,7 @@ public static partial class Program
             Name: "strip",
             Summary: "Extract flat bytes from a PE so they can be inspected, reused, or re-injected.",
             Syntax: "washmachine-cli strip <pe-file>  or  strip -Pe <file> [options]",
-            Description: "Strip can carve bytes from the entry-point section, a named section, all executable sections, or an explicit raw range.",
+            Description: "Strip can carve bytes from the entry-point section or from a single named section.",
             WhenToUse: "Use it to peel shellcode out of a compiled loader or to carve a known range from a PE.",
             Output: "Writes a .bin file by default, or prints a section-analysis view when -Analyze is used.",
             OptionGroups:

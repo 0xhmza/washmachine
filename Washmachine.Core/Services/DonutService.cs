@@ -1,12 +1,12 @@
 using System.Diagnostics;
-using System.Linq;
 using System.Text;
 using Washmachine.Logging;
 
 namespace Washmachine.Services;
 
 /// <summary>
-/// Options for converting a .NET assembly to position-independent shellcode using donut.
+/// Inputs for converting a .NET assembly to position-independent shellcode using
+/// <see href="https://github.com/TheWover/donut">donut</see>.
 /// </summary>
 public sealed class DonutOptions
 {
@@ -17,20 +17,19 @@ public sealed class DonutOptions
     public string OutputPath { get; init; } = "";
 
     /// <summary>
-    /// Target architecture: 1=x86, 2=x64, 3=x86+x64.
-    /// Defaults to 3 (x86+x64) so the shellcode runs on either.
+    /// Target architecture: 1 = x86, 2 = x64, 3 = x86+x64.
+    /// Defaults to x86+x64 so the resulting shellcode runs on either bitness.
     /// </summary>
     public int Arch { get; init; } = 3;
 
     /// <summary>
-    /// Optional fully-qualified class name to invoke (e.g. "MyNamespace.Program").
-    /// Only required when the assembly has multiple entry points or is a DLL.
+    /// Optional fully-qualified class name to invoke (e.g. <c>"MyNamespace.Program"</c>).
+    /// Required when the assembly has multiple entry points or is a DLL.
     /// </summary>
     public string? Class { get; init; }
 
     /// <summary>
-    /// Optional method name to invoke on the class.
-    /// Defaults to "Main" when not specified.
+    /// Optional method to invoke on <see cref="Class"/>. Defaults to <c>Main</c> when omitted.
     /// </summary>
     public string? Method { get; init; }
 
@@ -40,7 +39,7 @@ public sealed class DonutOptions
     public string? Params { get; init; }
 }
 
-/// <summary>Result of a donut conversion.</summary>
+/// <summary>Outcome of a single <see cref="DonutService.ConvertAsync"/> call.</summary>
 public sealed class DonutResult
 {
     public bool Success { get; set; }
@@ -50,7 +49,8 @@ public sealed class DonutResult
 }
 
 /// <summary>
-/// Wraps the donut.exe CLI to convert .NET assemblies into PIC shellcode .bin files.
+/// Wraps the <c>donut.exe</c> CLI to convert .NET assemblies into PIC shellcode <c>.bin</c> files.
+/// Stateless: a single instance can be reused across calls.
 /// </summary>
 public sealed class DonutService
 {
@@ -63,10 +63,12 @@ public sealed class DonutService
         _logger = logger;
     }
 
+    /// <summary>True when <c>donut.exe</c> exists at the configured path.</summary>
     public bool IsAvailable => File.Exists(_donutExePath);
 
     /// <summary>
-    /// Converts a .NET assembly to PIC shellcode using donut.exe.
+    /// Converts the assembly described by <paramref name="options"/> to PIC shellcode.
+    /// On success, the output file is written and <see cref="DonutResult.OutputPath"/> is populated.
     /// </summary>
     public async Task<DonutResult> ConvertAsync(DonutOptions options, CancellationToken cancellationToken = default)
     {
@@ -74,7 +76,8 @@ public sealed class DonutService
 
         if (!IsAvailable)
         {
-            result.Error = $"donut.exe not found at: {_donutExePath}\nProvision optional tools from the Settings page to download it.";
+            result.Error = $"donut.exe not found at: {_donutExePath}\n" +
+                           "Provision optional tools from the Settings page to download it.";
             return result;
         }
 
@@ -85,7 +88,7 @@ public sealed class DonutService
         }
 
         var argList = BuildArgList(options);
-        _logger.Info($"Running donut: donut.exe {string.Join(" ", argList.Select(a => a.Contains(' ') ? $"\"{a}\"" : a))}");
+        _logger.Info($"Running donut: donut.exe {FormatArgsForLog(argList)}");
 
         var stdOut = new StringBuilder();
         var stdErr = new StringBuilder();
@@ -99,6 +102,8 @@ public sealed class DonutService
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
+                // Donut writes some files relative to its CWD; sit next to donut.exe so
+                // intermediate artifacts land in a predictable place.
                 WorkingDirectory = Path.GetDirectoryName(_donutExePath) ?? Path.GetTempPath(),
             };
             foreach (var arg in argList)
@@ -144,16 +149,36 @@ public sealed class DonutService
         return result;
     }
 
-    private static IReadOnlyList<string> BuildArgList(DonutOptions options)
+    /// <summary>
+    /// Builds the donut argument vector. We pass each token separately (via
+    /// <see cref="ProcessStartInfo.ArgumentList"/>) so paths with spaces don't
+    /// need manual quoting on the call site.
+    /// </summary>
+    private static List<string> BuildArgList(DonutOptions options)
     {
         var args = new List<string> { "-a", options.Arch.ToString(), "-o", options.OutputPath };
 
         if (!string.IsNullOrWhiteSpace(options.Class))  { args.Add("-c"); args.Add(options.Class); }
         if (!string.IsNullOrWhiteSpace(options.Method)) { args.Add("-m"); args.Add(options.Method); }
-        if (!string.IsNullOrWhiteSpace(options.Params))  { args.Add("-p"); args.Add(options.Params); }
+        if (!string.IsNullOrWhiteSpace(options.Params)) { args.Add("-p"); args.Add(options.Params); }
 
         args.Add(options.InputPath);
-
         return args;
+    }
+
+    /// <summary>
+    /// Best-effort reconstruction of how the args would look on a shell command line —
+    /// purely for the log echo, not parsed by anyone.
+    /// </summary>
+    private static string FormatArgsForLog(IEnumerable<string> args)
+    {
+        var sb = new StringBuilder();
+        foreach (var a in args)
+        {
+            if (sb.Length > 0) sb.Append(' ');
+            if (a.Contains(' ')) sb.Append('"').Append(a).Append('"');
+            else                 sb.Append(a);
+        }
+        return sb.ToString();
     }
 }

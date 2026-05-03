@@ -1313,90 +1313,119 @@ public sealed partial class CompilePage : Page
         return null;
     }
 
+    // Heuristic thresholds for warning the user after a strip:
+    //   - Below this size the result is almost certainly not real shellcode (just a stub).
+    //   - Above this size the resulting C array trips MSVC's C1060 "out of heap" error.
+    private const long SuspiciousMinStripSize = 64;
+    private const long LargeStripWarnSize     = 1 * 1024 * 1024;
+
     /// <summary>
-    /// Strips the user's input .exe shellcode source to a temp .bin using the configured PE strip options.
+    /// Resolves the user's input .exe shellcode source to a flat <c>.bin</c> in the temp folder.
+    /// Routes managed (.NET) inputs through donut and native shellcode-format PEs through the
+    /// CLI <c>strip</c> command. Returns the temp file path on success, <c>null</c> on failure.
     /// </summary>
     private async Task<string?> StripExeShellcodeAsync(string exePath, PeSourceOptions peOpts)
     {
         var tempBin = Path.Combine(Path.GetTempPath(), $"wm_strip_{Guid.NewGuid():N}.bin");
 
-        // Managed .NET assembly → convert to shellcode with donut
-        if (peOpts.IsDonutConversion)
+        return peOpts.IsDonutConversion
+            ? await ConvertManagedPeWithDonutAsync(exePath, tempBin, peOpts)
+            : await StripNativePeWithCliAsync(exePath, tempBin, peOpts);
+    }
+
+    /// <summary>Run donut.exe to convert a managed .NET assembly to PIC shellcode.</summary>
+    private async Task<string?> ConvertManagedPeWithDonutAsync(string exePath, string tempBin, PeSourceOptions peOpts)
+    {
+        var donutSvc = new DonutService(_paths.DonutExecutable, _logger);
+        if (!donutSvc.IsAvailable)
         {
-            var donutSvc = new DonutService(_paths.DonutExecutable, _logger);
-            if (!donutSvc.IsAvailable)
-            {
-                _logger.Error("donut.exe not found. Provision optional tools from the Settings page to download Donut.");
-                return null;
-            }
+            _logger.Error("donut.exe not found. Provision optional tools from the Settings page to download Donut.");
+            return null;
+        }
 
-            var opts = new DonutOptions
-            {
-                InputPath  = exePath,
-                OutputPath = tempBin,
-                Arch       = peOpts.DonutArch,
-                Class      = peOpts.DonutClass,
-                Method     = peOpts.DonutMethod,
-                Params     = peOpts.DonutParams,
-            };
+        var opts = new DonutOptions
+        {
+            InputPath  = exePath,
+            OutputPath = tempBin,
+            Arch       = peOpts.DonutArch,
+            Class      = peOpts.DonutClass,
+            Method     = peOpts.DonutMethod,
+            Params     = peOpts.DonutParams,
+        };
 
-            _logger.Info($"Converting .NET assembly to shellcode via donut (arch={opts.Arch})...");
-            var donutResult = await donutSvc.ConvertAsync(opts);
-            if (donutResult.Success && File.Exists(tempBin))
-            {
-                var sz = new FileInfo(tempBin).Length;
-                _logger.Ok($"Donut conversion complete → temp .bin ({sz:N0} bytes)");
-                return tempBin;
-            }
+        _logger.Info($"Converting .NET assembly to shellcode via donut (arch={opts.Arch})...");
+        var donutResult = await donutSvc.ConvertAsync(opts);
 
+        if (!donutResult.Success || !File.Exists(tempBin))
+        {
             _logger.Error($"Donut conversion failed: {donutResult.Error}");
             return null;
         }
 
-        // Native shellcode-format PE → CLI strip
+        var size = new FileInfo(tempBin).Length;
+        _logger.Ok($"Donut conversion complete → temp .bin ({size:N0} bytes)");
+        return tempBin;
+    }
+
+    /// <summary>Shell out to the CLI to strip a native shellcode-format PE down to flat bytes.</summary>
+    private async Task<string?> StripNativePeWithCliAsync(string exePath, string tempBin, PeSourceOptions peOpts)
+    {
         if (!_cli.IsAvailable)
         {
             _logger.Error("CLI not available — cannot strip PE shellcode source.");
             return null;
         }
 
+        var args = BuildStripArgs(exePath, tempBin, peOpts);
+
+        _logger.Info($"Stripping PE shellcode source ({peOpts.PeStripMode})...");
+        var result = await _cli.RunAsync(args, line => _logger.Info(line));
+
+        if (!result.Success || !File.Exists(tempBin))
+        {
+            _logger.Error($"PE strip failed (exit {result.ExitCode}).");
+            return null;
+        }
+
+        var size = new FileInfo(tempBin).Length;
+        _logger.Ok($"Stripped PE → temp .bin ({size:N0} bytes)");
+        WarnIfStripSizeUnusual(size);
+        return tempBin;
+    }
+
+    private static List<string> BuildStripArgs(string exePath, string tempBin, PeSourceOptions peOpts)
+    {
         var args = new List<string> { "strip", "-Pe", exePath, "-Output", tempBin };
 
+        // ep is the CLI default — only spell it out if the user picked something else.
         var mode = peOpts.PeStripMode;
-        if (!string.Equals(mode, "ep", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(mode, PeStripModes.EntryPoint, StringComparison.OrdinalIgnoreCase))
             args.AddRange(["-Mode", mode]);
 
-        if (string.Equals(mode, "section", StringComparison.OrdinalIgnoreCase)
+        if (string.Equals(mode, PeStripModes.Section, StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrWhiteSpace(peOpts.PeStripSection))
             args.AddRange(["-Section", peOpts.PeStripSection]);
 
+        // CLI trims by default; pass -NoTrim only when the user opted out.
         if (!peOpts.PeStripTrimTrailingZeros)
             args.Add("-NoTrim");
 
-        _logger.Info($"Stripping PE shellcode source ({mode})...");
-        var result = await _cli.RunAsync(args, line => _logger.Info(line));
+        return args;
+    }
 
-        if (result.Success && File.Exists(tempBin))
+    /// <summary>Surface a hint when the stripped output is suspiciously tiny or alarmingly large.</summary>
+    private void WarnIfStripSizeUnusual(long size)
+    {
+        if (size < SuspiciousMinStripSize)
         {
-            var size = new FileInfo(tempBin).Length;
-            _logger.Ok($"Stripped PE → temp .bin ({size:N0} bytes)");
-
-            if (size < 64)
-            {
-                _logger.Warn($"Stripped binary is only {size} bytes — this PE is almost certainly not a shellcode-format " +
-                             "executable. Use raw shellcode (.bin from msfvenom -f raw) instead.");
-            }
-            else if (size > 1 * 1024 * 1024)
-            {
-                _logger.Warn($"Stripped binary is large ({size / 1024:N0} KB). MSVC may fail with " +
-                             "C1060 (out of heap space). Try 'Entry point to end' mode or a smaller source file.");
-            }
-
-            return tempBin;
+            _logger.Warn($"Stripped binary is only {size} bytes — this PE is almost certainly not a shellcode-format " +
+                         "executable. Use raw shellcode (.bin from msfvenom -f raw) instead.");
         }
-
-        _logger.Error($"PE strip failed (exit {result.ExitCode}).");
-        return null;
+        else if (size > LargeStripWarnSize)
+        {
+            _logger.Warn($"Stripped binary is large ({size / 1024:N0} KB). MSVC may fail with " +
+                         "C1060 (out of heap space). Try 'Entry point to end' mode or a smaller source file.");
+        }
     }
 
     /// <summary>

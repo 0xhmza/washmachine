@@ -20,9 +20,16 @@ public sealed partial class MainPage : Page, IMainFormView
     private readonly AppPaths _paths;
     private readonly CliExecutor _cli = new();
     private readonly PeStripService _peStripper;
+
     private ShellcodeSource _currentSource = ShellcodeSource.None;
     private bool _suppressPlaybookEvents;
     private bool _initialized;
+
+    /// <summary>True when the currently selected .exe is a managed (.NET) assembly.</summary>
+    private bool _isManaged;
+
+    /// <summary>Cap for managed-PE detection reads — only the PE header is needed.</summary>
+    private const int ManagedDetectionByteCap = 64 * 1024;
 
     public MainPage()
     {
@@ -56,8 +63,13 @@ public sealed partial class MainPage : Page, IMainFormView
         //templateCatalogPath.Text = $"Catalog: {_paths.ActivePlaybookPath}";
         PopulatePlaybookCombo();
         SetShellcodeSource(ShellcodeSource.None, clearInputs: false);
-        shellcodeFileInput.TextChanged += async (s, e) => await UpdateShellcodeFileBadgeAsync(shellcodeFileInput.Text);
+        shellcodeFileInput.TextChanged += ShellcodeFileInput_TextChanged;
         Loaded += MainPage_Loaded;
+    }
+
+    private async void ShellcodeFileInput_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        await UpdateShellcodeFileBadgeAsync(shellcodeFileInput.Text);
     }
 
     public XamlRoot ViewXamlRoot => XamlRoot;
@@ -449,22 +461,44 @@ public sealed partial class MainPage : Page, IMainFormView
         public string Path { get; }
     }
 
-    private bool _isManaged;
-
+    /// <summary>
+    /// Refreshes the size badge and (for .exe inputs) decides whether to show the donut
+    /// or strip options panel. Called whenever the shellcode-file textbox changes.
+    /// </summary>
     private async Task UpdateShellcodeFileBadgeAsync(string? path)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
-            FileByteCountBadge.Visibility = Visibility.Collapsed;
-            FileMissingBadge.Visibility   = Visibility.Collapsed;
-            PeStripOptionsPanel.Visibility = Visibility.Collapsed;
-            DonutOptionsPanel.Visibility   = Visibility.Collapsed;
-            _isManaged = false;
+            ResetShellcodeFileUi();
             return;
         }
+
+        UpdateFileSizeBadge(path);
+
+        if (!path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || !System.IO.File.Exists(path))
+        {
+            HidePeAndDonutPanels();
+            return;
+        }
+
+        _isManaged = await DetectManagedPeAsync(path);
+        ShowPePanelsForExe(_isManaged);
+    }
+
+    /// <summary>Clears every PE/donut-related UI element back to its neutral state.</summary>
+    private void ResetShellcodeFileUi()
+    {
+        FileByteCountBadge.Visibility  = Visibility.Collapsed;
+        FileMissingBadge.Visibility    = Visibility.Collapsed;
+        HidePeAndDonutPanels();
+    }
+
+    /// <summary>Shows or hides the green/red badge based on whether the file exists.</summary>
+    private void UpdateFileSizeBadge(string path)
+    {
         if (System.IO.File.Exists(path))
         {
-            var bytes = new System.IO.FileInfo(path).Length;
+            var bytes                     = new System.IO.FileInfo(path).Length;
             FileByteCountText.Text        = $"{bytes:N0} bytes";
             FileByteCountBadge.Visibility = Visibility.Visible;
             FileMissingBadge.Visibility   = Visibility.Collapsed;
@@ -474,29 +508,18 @@ public sealed partial class MainPage : Page, IMainFormView
             FileByteCountBadge.Visibility = Visibility.Collapsed;
             FileMissingBadge.Visibility   = Visibility.Visible;
         }
+    }
 
-        bool isExe = path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
-        if (!isExe)
-        {
-            PeStripOptionsPanel.Visibility = Visibility.Collapsed;
-            DonutOptionsPanel.Visibility   = Visibility.Collapsed;
-            _isManaged = false;
-            return;
-        }
+    private void HidePeAndDonutPanels()
+    {
+        PeStripOptionsPanel.Visibility = Visibility.Collapsed;
+        DonutOptionsPanel.Visibility   = Visibility.Collapsed;
+        _isManaged                     = false;
+    }
 
-        // Detect managed (.NET) PE asynchronously
-        _isManaged = false;
-        if (System.IO.File.Exists(path))
-        {
-            try
-            {
-                var data = await System.IO.File.ReadAllBytesAsync(path);
-                _isManaged = PeStripService.IsManagedPe(data);
-            }
-            catch { }
-        }
-
-        if (_isManaged)
+    private void ShowPePanelsForExe(bool isManaged)
+    {
+        if (isManaged)
         {
             PeStripOptionsPanel.Visibility = Visibility.Collapsed;
             DonutOptionsPanel.Visibility   = Visibility.Visible;
@@ -509,33 +532,67 @@ public sealed partial class MainPage : Page, IMainFormView
         }
     }
 
-    private void UpdateShellcodeFileBadge(string? path)
+    /// <summary>
+    /// Reads enough of the file to inspect the PE header and reports whether it's a
+    /// managed (.NET) assembly. We cap the read at <see cref="ManagedDetectionByteCap"/>
+    /// because the CLR data-directory entry sits in the optional header — we don't need
+    /// to load multi-megabyte EXEs into memory just to check.
+    /// </summary>
+    private async Task<bool> DetectManagedPeAsync(string path)
     {
-        _ = UpdateShellcodeFileBadgeAsync(path);
+        try
+        {
+            await using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            int toRead         = (int)Math.Min(fs.Length, ManagedDetectionByteCap);
+            var prefix         = new byte[toRead];
+
+            int read = 0;
+            while (read < toRead)
+            {
+                int n = await fs.ReadAsync(prefix.AsMemory(read, toRead - read));
+                if (n <= 0) break;
+                read += n;
+            }
+
+            return PeStripService.IsManagedPe(prefix);
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug($"Managed-PE detection failed for '{path}': {ex.Message}");
+            return false;
+        }
     }
 
     // ── PE / Donut source options — consumed by CompilePage ──────────────────
 
+    /// <summary>
+    /// Snapshot the current state of the PE / donut option panels for the build pipeline.
+    /// Done as a value-object hand-off so <c>CompilePage</c> doesn't reach into MainPage controls.
+    /// </summary>
     public PeSourceOptions GetPeSourceOptions() => new()
     {
-        IsDonutConversion      = _isManaged,
-        DonutArch              = donutArchCombo?.SelectedValue is string tag && int.TryParse(tag, out var arch) ? arch : 2,
-        DonutClass             = string.IsNullOrWhiteSpace(donutClassInput?.Text)   ? null : donutClassInput.Text.Trim(),
-        DonutMethod            = string.IsNullOrWhiteSpace(donutMethodInput?.Text)  ? null : donutMethodInput.Text.Trim(),
-        DonutParams            = string.IsNullOrWhiteSpace(donutParamsInput?.Text)  ? null : donutParamsInput.Text.Trim(),
-        PeStripMode            = (peStripModeCombo?.SelectedValue as string) ?? "ep",
-        PeStripSection         = peStripSectionInput?.Text?.Trim() ?? string.Empty,
+        IsDonutConversion        = _isManaged,
+        DonutArch                = donutArchCombo?.SelectedValue is string tag && int.TryParse(tag, out var arch) ? arch : 2,
+        DonutClass               = NullIfBlank(donutClassInput?.Text),
+        DonutMethod              = NullIfBlank(donutMethodInput?.Text),
+        DonutParams              = NullIfBlank(donutParamsInput?.Text),
+        PeStripMode              = (peStripModeCombo?.SelectedValue as string) ?? PeStripModes.EntryPoint,
+        PeStripSection           = peStripSectionInput?.Text?.Trim() ?? string.Empty,
         PeStripTrimTrailingZeros = peStripTrimCheck?.IsChecked != false,
     };
+
+    private static string? NullIfBlank(string? s) =>
+        string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
     private void PeStripMode_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
         UpdatePeStripModeControls();
 
+    /// <summary>Reveal the section-name row only when the user picked "section" mode.</summary>
     private void UpdatePeStripModeControls()
     {
-        var mode = (peStripModeCombo?.SelectedValue as string) ?? "ep";
+        var mode = (peStripModeCombo?.SelectedValue as string) ?? PeStripModes.EntryPoint;
         if (peStripSectionRow != null)
-            peStripSectionRow.Height = mode == "section" ? GridLength.Auto : new GridLength(0);
+            peStripSectionRow.Height = mode == PeStripModes.Section ? GridLength.Auto : new GridLength(0);
     }
 
     private async void AnalyzePe_Click(object sender, RoutedEventArgs e)
@@ -551,18 +608,50 @@ public sealed partial class MainPage : Page, IMainFormView
 
         if (!analysis.Success)
         {
-            await new ContentDialog
-            {
-                Title = "PE Analysis Failed",
-                Content = analysis.Error ?? "Unknown error.",
-                CloseButtonText = "OK",
-                XamlRoot = this.XamlRoot,
-                DefaultButton = ContentDialogButton.Close,
-            }.ShowAsync();
+            await ShowSimpleDialogAsync("PE Analysis Failed", analysis.Error ?? "Unknown error.");
             return;
         }
 
+        await ShowAnalysisReportDialogAsync(path, analysis);
+    }
+
+    private async Task ShowAnalysisReportDialogAsync(string path, StripAnalysis analysis)
+    {
+        var report = BuildAnalysisReport(analysis);
+
+        var scrollViewer = new ScrollViewer
+        {
+            Content = new TextBlock
+            {
+                Text         = report,
+                FontFamily   = new FontFamily("Consolas"),
+                FontSize     = 12,
+                TextWrapping = TextWrapping.NoWrap,
+            },
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+            MaxHeight = 420,
+            MinWidth  = 460,
+        };
+
+        await new ContentDialog
+        {
+            Title           = $"PE Analysis — {Path.GetFileName(path)}",
+            Content         = scrollViewer,
+            CloseButtonText = "Close",
+            XamlRoot        = XamlRoot,
+            DefaultButton   = ContentDialogButton.Close,
+        }.ShowAsync();
+    }
+
+    /// <summary>
+    /// Renders the analysis result as a fixed-width plain-text report (header summary,
+    /// section table, and a contextual hint at the bottom).
+    /// </summary>
+    private static string BuildAnalysisReport(StripAnalysis analysis)
+    {
         var sb = new StringBuilder();
+
         sb.AppendLine($"Architecture : {(analysis.Is64Bit ? "x64" : "x86")}");
         sb.AppendLine($"Managed .NET : {(analysis.IsManaged ? "YES — use donut conversion" : "no")}");
         sb.AppendLine($"Entry Point  : 0x{analysis.EntryPoint:X8}");
@@ -573,7 +662,9 @@ public sealed partial class MainPage : Page, IMainFormView
         sb.AppendLine($"{"-------",-12} {"-------",10} {"-------",12} {"----",6} {"--",4}");
         foreach (var s in analysis.Sections)
         {
-            sb.AppendLine($"{s.Name,-12} 0x{s.RawAddress:X6}  {s.RawSize,10:N0} {(s.IsExecutable ? "yes" : ""),6} {(s.ContainsEntryPoint ? "◄ EP" : ""),4}");
+            sb.AppendLine(
+                $"{s.Name,-12} 0x{s.RawAddress:X6}  {s.RawSize,10:N0} " +
+                $"{(s.IsExecutable ? "yes" : ""),6} {(s.ContainsEntryPoint ? "◄ EP" : ""),4}");
         }
 
         if (analysis.IsManaged)
@@ -590,32 +681,18 @@ public sealed partial class MainPage : Page, IMainFormView
             sb.AppendLine("   Use raw .bin shellcode (msfvenom -f raw) instead.");
         }
 
-        var contentBlock = new TextBlock
-        {
-            Text = sb.ToString(),
-            FontFamily = new FontFamily("Consolas"),
-            FontSize = 12,
-            TextWrapping = TextWrapping.NoWrap,
-        };
-
-        var scrollViewer = new ScrollViewer
-        {
-            Content = contentBlock,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            MaxHeight = 420,
-            MinWidth = 460,
-        };
-
-        await new ContentDialog
-        {
-            Title = $"PE Analysis — {Path.GetFileName(path)}",
-            Content = scrollViewer,
-            CloseButtonText = "Close",
-            XamlRoot = this.XamlRoot,
-            DefaultButton = ContentDialogButton.Close,
-        }.ShowAsync();
+        return sb.ToString();
     }
+
+    private Task ShowSimpleDialogAsync(string title, string content) =>
+        new ContentDialog
+        {
+            Title           = title,
+            Content         = content,
+            CloseButtonText = "OK",
+            XamlRoot        = XamlRoot,
+            DefaultButton   = ContentDialogButton.Close,
+        }.ShowAsync().AsTask();
 
 }
 

@@ -4,12 +4,35 @@ namespace Washmachine.Services;
 
 /// <summary>
 /// Strips a PE (.exe / .dll) into a flat binary (.bin) by extracting raw executable bytes.
-/// This is useful for analysis and for workflows where the source PE was specifically built
-/// to be flattened, but the output is not automatically guaranteed to be a generic
-/// position-independent backdoor payload.
+/// Useful for analysis and for workflows where the source PE was specifically built to be
+/// flattened — the output is <b>not</b> automatically guaranteed to be a generic position-independent
+/// payload (use a real shellcode generator for that).
 /// </summary>
 public sealed class PeStripService
 {
+    // ── PE format constants ─────────────────────────────────────────────
+    // Refs: Microsoft PE/COFF spec (https://learn.microsoft.com/en-us/windows/win32/debug/pe-format)
+
+    private const ushort DosSignatureMz       = 0x5A4D;     // "MZ"
+    private const uint   PeSignaturePe00      = 0x00004550; // "PE\0\0"
+    private const ushort OptionalMagicPe32    = 0x010B;
+    private const ushort OptionalMagicPe32Plus = 0x020B;
+
+    private const int DosHeaderSize           = 64;
+    private const int LfanewOffset            = 0x3C; // e_lfanew → offset of PE signature
+    private const int CoffHeaderSize          = 24;   // PE sig (4) + COFF header (20)
+    private const int DataDirectoriesPe32Off  = 96;   // offset of DataDirectory[0] inside the optional header
+    private const int DataDirectoriesPe32PlusOff = 112;
+    private const int DataDirectoryEntrySize  = 8;
+    private const int ClrRuntimeHeaderIndex   = 14;   // DataDirectory[14] = COM/CLR runtime header
+    private const int OptionalHeaderMinPe32       = 224; // includes all 16 data-directory entries
+    private const int OptionalHeaderMinPe32Plus   = 240;
+
+    // Section characteristics (IMAGE_SCN_*)
+    private const uint SectionFlagExecutable  = 0x20000000;
+    private const uint SectionFlagReadable    = 0x40000000;
+    private const uint SectionFlagWritable    = 0x80000000;
+
     private readonly IAppLogger _logger;
 
     public PeStripService(IAppLogger logger)
@@ -20,7 +43,8 @@ public sealed class PeStripService
     // ── Public API ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// Strip a PE file into a flat binary.
+    /// Strip a PE file into a flat binary, writing the result to
+    /// <see cref="StripOptions.OutputPath"/> (or a sibling <c>.bin</c> when null).
     /// </summary>
     public async Task<StripResult> StripAsync(StripOptions options)
     {
@@ -36,8 +60,7 @@ public sealed class PeStripService
             var data = await File.ReadAllBytesAsync(options.InputPath);
             result.OriginalSize = data.Length;
 
-            // Validate PE signature
-            if (data.Length < 64 || data[0] != 0x4D || data[1] != 0x5A)
+            if (!HasMzSignature(data))
             {
                 result.Error = "Not a valid PE file (missing MZ signature).";
                 return result;
@@ -50,31 +73,19 @@ public sealed class PeStripService
                 return result;
             }
 
-            result.Is64Bit = pe.Is64Bit;
-            result.EntryPoint = pe.AddressOfEntryPoint;
-            result.ImageBase = pe.ImageBase;
+            result.Is64Bit       = pe.Is64Bit;
+            result.EntryPoint    = pe.AddressOfEntryPoint;
+            result.ImageBase     = pe.ImageBase;
             result.SectionsFound = pe.Sections.Count;
 
             _logger.Info($"PE: {(pe.Is64Bit ? "x64" : "x86")} | EP=0x{pe.AddressOfEntryPoint:X} | {pe.Sections.Count} sections");
 
-            // Determine what to extract
-            byte[] extracted;
-            string description;
-
-            switch (options.Mode)
+            // Pick the extraction strategy based on the requested mode.
+            (byte[] extracted, string description) = options.Mode switch
             {
-                case StripMode.EntryPointToEnd:
-                    (extracted, description) = ExtractFromEntryPoint(data, pe);
-                    break;
-
-                case StripMode.Section:
-                    (extracted, description) = ExtractSection(data, pe, options.SectionName ?? ".text");
-                    break;
-
-                default:
-                    (extracted, description) = ExtractFromEntryPoint(data, pe);
-                    break;
-            }
+                StripMode.Section            => ExtractSection(data, pe, options.SectionName ?? ".text"),
+                StripMode.EntryPointToEnd or _ => ExtractFromEntryPoint(data, pe),
+            };
 
             if (extracted.Length == 0)
             {
@@ -83,26 +94,26 @@ public sealed class PeStripService
             }
 
             result.ExtractedSize = extracted.Length;
-            result.Description = description;
+            result.Description   = description;
 
-            // Trim trailing zero padding if requested
+            // Strip trailing zero padding when requested. Section data is page-aligned
+            // on disk so the tail is almost always zeroed; keeping it bloats the .bin
+            // and confuses downstream encoders.
             if (options.TrimTrailingZeros)
             {
                 int trimmed = TrimTrailing(extracted, 0x00);
                 if (trimmed < extracted.Length)
                 {
-                    int removed = extracted.Length - trimmed;
-                    extracted = extracted[..trimmed];
+                    int removed       = extracted.Length - trimmed;
+                    extracted         = extracted[..trimmed];
                     result.ExtractedSize = extracted.Length;
-                    result.TrimmedBytes = removed;
+                    result.TrimmedBytes  = removed;
                     _logger.Debug($"Trimmed {removed} trailing zero bytes");
                 }
             }
 
-            // Quick sanity checks on extracted bytes
-            result.Warnings = ValidateExtracted(extracted, pe.Is64Bit);
+            result.Warnings = ValidateExtracted(extracted);
 
-            // Write output
             string outputPath = options.OutputPath
                 ?? Path.Combine(
                     Path.GetDirectoryName(options.InputPath) ?? ".",
@@ -110,7 +121,7 @@ public sealed class PeStripService
 
             await File.WriteAllBytesAsync(outputPath, extracted);
             result.OutputPath = outputPath;
-            result.Success = true;
+            result.Success    = true;
 
             _logger.Info($"Wrote {extracted.Length:N0} bytes → {outputPath}");
             return result;
@@ -123,7 +134,8 @@ public sealed class PeStripService
     }
 
     /// <summary>
-    /// Analyze a PE without extracting — returns section info for the user to decide.
+    /// Analyze a PE without writing anything — returns section info, EP location, and an estimated
+    /// flat-binary size so the caller (CLI/GUI) can decide which mode to use.
     /// </summary>
     public async Task<StripAnalysis> AnalyzeAsync(string filePath)
     {
@@ -137,7 +149,7 @@ public sealed class PeStripService
 
         var data = await File.ReadAllBytesAsync(filePath);
 
-        if (data.Length < 64 || data[0] != 0x4D || data[1] != 0x5A)
+        if (!HasMzSignature(data))
         {
             analysis.Error = "Not a valid PE file.";
             return analysis;
@@ -150,63 +162,75 @@ public sealed class PeStripService
             return analysis;
         }
 
-        analysis.Is64Bit = pe.Is64Bit;
+        analysis.Is64Bit    = pe.Is64Bit;
         analysis.EntryPoint = pe.AddressOfEntryPoint;
-        analysis.ImageBase = pe.ImageBase;
-        analysis.IsManaged = pe.IsManaged;
+        analysis.ImageBase  = pe.ImageBase;
+        analysis.IsManaged  = pe.IsManaged;
 
         foreach (var s in pe.Sections)
         {
             analysis.Sections.Add(new StripSectionInfo
             {
-                Name = s.Name,
-                VirtualAddress = s.VirtualAddress,
-                VirtualSize = s.VirtualSize,
-                RawAddress = s.RawAddress,
-                RawSize = s.RawSize,
-                IsExecutable = s.IsExecutable,
-                IsReadable = s.IsReadable,
-                IsWritable = s.IsWritable,
-                ContainsEntryPoint = pe.AddressOfEntryPoint >= s.VirtualAddress
-                    && pe.AddressOfEntryPoint < s.VirtualAddress + s.VirtualSize,
+                Name               = s.Name,
+                VirtualAddress     = s.VirtualAddress,
+                VirtualSize        = s.VirtualSize,
+                RawAddress         = s.RawAddress,
+                RawSize            = s.RawSize,
+                IsExecutable       = s.IsExecutable,
+                IsReadable         = s.IsReadable,
+                IsWritable         = s.IsWritable,
+                ContainsEntryPoint = s.Contains(pe.AddressOfEntryPoint),
             });
         }
 
-        // Estimate flat binary size from EP to end of .text
-        var textSect = pe.Sections.FirstOrDefault(s =>
-            pe.AddressOfEntryPoint >= s.VirtualAddress
-            && pe.AddressOfEntryPoint < s.VirtualAddress + s.VirtualSize);
-
-        if (textSect != null)
+        // Estimate flat-binary size assuming the default "ep → end of section" mode.
+        var epSection = pe.Sections.FirstOrDefault(s => s.Contains(pe.AddressOfEntryPoint));
+        if (epSection != null)
         {
-            uint epOffsetInSection = pe.AddressOfEntryPoint - textSect.VirtualAddress;
-            analysis.EstimatedBinSize = (int)(textSect.RawSize - epOffsetInSection);
-            analysis.EntryPointSection = textSect.Name;
+            uint epOffsetInSection      = pe.AddressOfEntryPoint - epSection.VirtualAddress;
+            analysis.EstimatedBinSize   = (int)(epSection.RawSize - epOffsetInSection);
+            analysis.EntryPointSection  = epSection.Name;
         }
 
         analysis.Success = true;
         return analysis;
     }
 
+    /// <summary>
+    /// Quickly checks whether <paramref name="data"/> represents a managed (.NET) PE
+    /// by inspecting <c>DataDirectory[14]</c> (CLR Runtime Header). Returns <c>false</c>
+    /// for non-PE or malformed input — never throws.
+    /// </summary>
+    public static bool IsManagedPe(byte[] data)
+    {
+        try
+        {
+            using var ms = new MemoryStream(data);
+            using var br = new BinaryReader(ms);
+            return TryReadClrDirectoryRva(br, data.Length, out var rva) && rva != 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     // ── Extraction modes ────────────────────────────────────────────────
 
     /// <summary>
-    /// Default mode: extract from entry point to the end of its containing section.
-    /// This is the most common approach for shellcode — the entry point is the start
-    /// of the payload, and everything after it (in the same section) is part of it.
+    /// Default mode: extract from the entry point to the end of its containing section.
+    /// This is the most common shape for shellcode-format PEs — the entry point is the start
+    /// of the payload and everything after it (within the same section) is part of it.
     /// </summary>
     private (byte[] data, string desc) ExtractFromEntryPoint(byte[] peData, MinimalPe pe)
     {
-        var section = pe.Sections.FirstOrDefault(s =>
-            pe.AddressOfEntryPoint >= s.VirtualAddress
-            && pe.AddressOfEntryPoint < s.VirtualAddress + s.VirtualSize);
-
+        var section = pe.Sections.FirstOrDefault(s => s.Contains(pe.AddressOfEntryPoint));
         if (section == null)
             return (Array.Empty<byte>(), "Entry point does not fall within any section.");
 
         uint epOffsetInSection = pe.AddressOfEntryPoint - section.VirtualAddress;
-        uint fileOffset = section.RawAddress + epOffsetInSection;
-        uint length = section.RawSize - epOffsetInSection;
+        uint fileOffset        = section.RawAddress + epOffsetInSection;
+        uint length            = section.RawSize - epOffsetInSection;
 
         if (fileOffset + length > peData.Length)
             length = (uint)(peData.Length - fileOffset);
@@ -220,8 +244,7 @@ public sealed class PeStripService
     }
 
     /// <summary>
-    /// Extract a specific section by name (default: .text).
-    /// Returns the entire raw section data.
+    /// Extract a single named section verbatim (default name: <c>.text</c>).
     /// </summary>
     private (byte[] data, string desc) ExtractSection(byte[] peData, MinimalPe pe, string sectionName)
     {
@@ -248,19 +271,23 @@ public sealed class PeStripService
 
     // ── Validation ──────────────────────────────────────────────────────
 
-    private static List<string> ValidateExtracted(byte[] data, bool is64Bit)
+    /// <summary>
+    /// Quick sanity checks on extracted bytes — warnings only, never errors.
+    /// Surfaces obvious "you stripped the whole PE" or "this is mostly padding" mistakes.
+    /// </summary>
+    private static List<string> ValidateExtracted(byte[] data)
     {
         var warnings = new List<string>();
 
         if (data.Length < 4)
             warnings.Add("Extracted binary is very small (<4 bytes) — may not be valid shellcode.");
 
-        // Check if it starts with common non-code patterns
+        // MZ at the start almost always means "this is a full PE", not flat code.
         if (data.Length >= 2 && data[0] == 0x4D && data[1] == 0x5A)
             warnings.Add("Extracted data starts with MZ header — you may be extracting the whole PE, not flat code.");
 
-        // Check for high proportion of zeros (might be padding)
-        int zeros = data.Count(b => b == 0x00);
+        // High zero ratio usually means raw section padding leaked in.
+        int zeros      = data.Count(b => b == 0x00);
         double zeroPct = (double)zeros / data.Length;
         if (zeroPct > 0.7)
             warnings.Add($"High zero-byte ratio ({zeroPct:P0}) — extracted data may be mostly padding. Consider --trim.");
@@ -272,164 +299,162 @@ public sealed class PeStripService
     {
         int end = data.Length;
         while (end > 0 && data[end - 1] == value) end--;
-        return Math.Max(end, 1); // keep at least 1 byte
+        return Math.Max(end, 1); // keep at least 1 byte so callers always have something to write
     }
 
-    // ── Public helpers ──────────────────────────────────────────────────
+    // ── PE parsing helpers ──────────────────────────────────────────────
+
+    private static bool HasMzSignature(byte[] data) =>
+        data.Length >= DosHeaderSize && data[0] == 0x4D && data[1] == 0x5A;
 
     /// <summary>
-    /// Quickly checks if a PE byte array is a managed (.NET) assembly
-    /// by inspecting DataDirectory[14] (CLR Runtime Header).
-    /// Returns false for non-PE or malformed input.
+    /// Walks DOS → PE → optional header to locate <c>DataDirectory[14]</c> (CLR runtime header)
+    /// and reads its RVA. Used by both <see cref="IsManagedPe"/> and the full PE parser.
+    /// On any structural problem the method returns <c>false</c> — callers treat that as
+    /// "not managed".
     /// </summary>
-    public static bool IsManagedPe(byte[] data)
+    private static bool TryReadClrDirectoryRva(BinaryReader br, long fileLength, out uint rva)
     {
-        try
-        {
-            using var ms = new MemoryStream(data);
-            using var br = new BinaryReader(ms);
+        rva = 0;
+        var ms = br.BaseStream;
 
-            if (data.Length < 64) return false;
-            ushort magic = br.ReadUInt16();
-            if (magic != 0x5A4D) return false;
+        if (fileLength < DosHeaderSize) return false;
+        ms.Seek(0, SeekOrigin.Begin);
+        if (br.ReadUInt16() != DosSignatureMz) return false;
 
-            ms.Seek(0x3C, SeekOrigin.Begin);
-            uint peOffset = br.ReadUInt32();
-            if (peOffset + 24 > (uint)data.Length) return false;
+        // Read PE-header offset from e_lfanew.
+        ms.Seek(LfanewOffset, SeekOrigin.Begin);
+        uint peOffset = br.ReadUInt32();
+        if (peOffset + CoffHeaderSize > (uint)fileLength) return false;
 
-            ms.Seek(peOffset, SeekOrigin.Begin);
-            if (br.ReadUInt32() != 0x00004550) return false;
+        // PE signature.
+        ms.Seek(peOffset, SeekOrigin.Begin);
+        if (br.ReadUInt32() != PeSignaturePe00) return false;
 
-            // COFF header
-            ms.Seek(peOffset + 20, SeekOrigin.Begin);
-            ushort sizeOfOptionalHeader = br.ReadUInt16();
-            ms.Seek(2, SeekOrigin.Current); // characteristics
+        // Skip over machine + numberOfSections + 4 ints (12 bytes), read sizeOfOptionalHeader,
+        // skip characteristics (2 bytes) → we're now at the start of the optional header.
+        ms.Seek(peOffset + 20, SeekOrigin.Begin);
+        ushort sizeOfOptionalHeader = br.ReadUInt16();
+        ms.Seek(2, SeekOrigin.Current); // characteristics
 
-            long optHeaderStart = ms.Position;
-            ushort optMagic = br.ReadUInt16();
-            bool is64 = optMagic == 0x20B;
+        long optHeaderStart = ms.Position;
+        ushort optMagic     = br.ReadUInt16();
+        bool is64           = optMagic == OptionalMagicPe32Plus;
 
-            long dataDirectoriesBase = optHeaderStart + (is64 ? 112L : 96L);
-            long clrEntryOffset = dataDirectoriesBase + 14 * 8;
-            if (clrEntryOffset + 4 > data.Length) return false;
-            if (sizeOfOptionalHeader < (is64 ? 240 : 224)) return false;
+        long dataDirectoriesBase = optHeaderStart + (is64 ? DataDirectoriesPe32PlusOff : DataDirectoriesPe32Off);
+        long clrEntryOffset      = dataDirectoriesBase + ClrRuntimeHeaderIndex * DataDirectoryEntrySize;
 
-            ms.Seek(clrEntryOffset, SeekOrigin.Begin);
-            return br.ReadUInt32() != 0;
-        }
-        catch
-        {
-            return false;
-        }
+        int requiredOptHeader = is64 ? OptionalHeaderMinPe32Plus : OptionalHeaderMinPe32;
+        if (sizeOfOptionalHeader < requiredOptHeader) return false;
+        if (clrEntryOffset + 4 > fileLength) return false;
+
+        ms.Seek(clrEntryOffset, SeekOrigin.Begin);
+        rva = br.ReadUInt32();
+        return true;
     }
 
-    // ── Minimal PE parser (self-contained, no dependency on PeBackdoorService) ──
-
+    /// <summary>
+    /// Self-contained minimal PE parser — extracts everything the strip pipeline needs without
+    /// pulling in <c>System.Reflection.PortableExecutable</c> or the heavier
+    /// <c>PeBackdoorService</c> path.
+    /// </summary>
     private MinimalPe? ParsePeMinimal(byte[] data)
     {
         try
         {
-            if (data.Length < 64) return null;
+            if (data.Length < DosHeaderSize) return null;
 
             using var ms = new MemoryStream(data);
             using var br = new BinaryReader(ms);
 
-            // DOS header
-            ushort magic = br.ReadUInt16();
-            if (magic != 0x5A4D) return null;
+            if (br.ReadUInt16() != DosSignatureMz) return null;
 
-            ms.Seek(0x3C, SeekOrigin.Begin);
+            ms.Seek(LfanewOffset, SeekOrigin.Begin);
             uint peOffset = br.ReadUInt32();
+            if (peOffset + CoffHeaderSize > data.Length) return null;
 
-            if (peOffset + 24 > data.Length) return null;
             ms.Seek(peOffset, SeekOrigin.Begin);
+            if (br.ReadUInt32() != PeSignaturePe00) return null;
 
-            // PE signature
-            uint peSig = br.ReadUInt32();
-            if (peSig != 0x00004550) return null;
-
-            // COFF file header (20 bytes)
-            ushort machine = br.ReadUInt16();
+            // ── COFF file header (20 bytes) ──
+            ushort machine          = br.ReadUInt16();
             ushort numberOfSections = br.ReadUInt16();
             br.ReadBytes(12); // TimeDateStamp(4), PointerToSymbolTable(4), NumberOfSymbols(4)
             ushort sizeOfOptionalHeader = br.ReadUInt16();
-            ushort characteristics = br.ReadUInt16();
+            br.ReadUInt16(); // characteristics
 
-            // Optional header
+            // ── Optional header ──
             long optHeaderStart = ms.Position;
-            ushort optMagic = br.ReadUInt16();
-            bool is64 = optMagic == 0x20B; // PE32+ = 0x20B, PE32 = 0x10B
+            ushort optMagic     = br.ReadUInt16();
+            bool is64           = optMagic == OptionalMagicPe32Plus; // PE32 = 0x10B, PE32+ = 0x20B
 
-            br.ReadBytes(2); // MajorLinkerVersion, MinorLinkerVersion
-            br.ReadBytes(12); // SizeOfCode(4), SizeOfInitializedData(4), SizeOfUninitializedData(4)
+            br.ReadBytes(2);  // MajorLinkerVersion, MinorLinkerVersion
+            br.ReadBytes(12); // SizeOfCode, SizeOfInitializedData, SizeOfUninitializedData
 
             uint addressOfEntryPoint = br.ReadUInt32();
-            br.ReadBytes(is64 ? 4 : 8); // BaseOfCode(4), [BaseOfData(4) for PE32 only]
+            br.ReadBytes(is64 ? 4 : 8); // BaseOfCode (+ BaseOfData on PE32 only)
 
             ulong imageBase = is64 ? br.ReadUInt64() : br.ReadUInt32();
 
             uint sectionAlignment = br.ReadUInt32();
-            uint fileAlignment = br.ReadUInt32();
+            uint fileAlignment    = br.ReadUInt32();
 
-            // Skip version fields: 6 × UInt16 + 1 × UInt32 = 16 bytes
-            br.ReadBytes(16);
+            br.ReadBytes(16); // 6 × UInt16 version fields + Win32VersionValue (UInt32)
 
-            uint sizeOfImage = br.ReadUInt32();
+            uint sizeOfImage   = br.ReadUInt32();
             uint sizeOfHeaders = br.ReadUInt32();
 
-            // Check for managed (.NET) PE via DataDirectory[14] (CLR Runtime Header).
-            // Data directories start at offset 96 (PE32) or 112 (PE32+) from optHeaderStart.
-            // Entry 14 is at that base + 14*8 = base + 112.
+            // ── Managed-PE flag (DataDirectory[14], CLR runtime header) ──
             bool isManaged = false;
-            long dataDirectoriesBase = optHeaderStart + (is64 ? 112L : 96L);
-            long clrEntryOffset = dataDirectoriesBase + 14 * 8; // 112 bytes into data directories
-            if (clrEntryOffset + 4 <= ms.Length && sizeOfOptionalHeader >= (is64 ? 240 : 224))
+            long dataDirectoriesBase = optHeaderStart + (is64 ? DataDirectoriesPe32PlusOff : DataDirectoriesPe32Off);
+            long clrEntryOffset      = dataDirectoriesBase + ClrRuntimeHeaderIndex * DataDirectoryEntrySize;
+            int  requiredOptHeader   = is64 ? OptionalHeaderMinPe32Plus : OptionalHeaderMinPe32;
+            if (clrEntryOffset + 4 <= ms.Length && sizeOfOptionalHeader >= requiredOptHeader)
             {
                 ms.Seek(clrEntryOffset, SeekOrigin.Begin);
-                uint clrRva = br.ReadUInt32();
-                isManaged = clrRva != 0;
+                isManaged = br.ReadUInt32() != 0;
             }
 
-            // Read section headers
+            // ── Section headers ──
             long sectionHeadersOffset = optHeaderStart + sizeOfOptionalHeader;
             ms.Seek(sectionHeadersOffset, SeekOrigin.Begin);
 
-            var sections = new List<MinimalSection>();
+            var sections = new List<MinimalSection>(numberOfSections);
             for (int i = 0; i < numberOfSections; i++)
             {
-                var nameBytes = br.ReadBytes(8);
-                string name = System.Text.Encoding.ASCII.GetString(nameBytes).TrimEnd('\0');
+                var nameBytes  = br.ReadBytes(8);
+                string name    = System.Text.Encoding.ASCII.GetString(nameBytes).TrimEnd('\0');
 
-                uint virtualSize = br.ReadUInt32();
+                uint virtualSize    = br.ReadUInt32();
                 uint virtualAddress = br.ReadUInt32();
-                uint rawSize = br.ReadUInt32();
-                uint rawAddress = br.ReadUInt32();
-                br.ReadBytes(12); // PointerToRelocations(4), PointerToLinenumbers(4), NumberOfRelocations(2), NumberOfLinenumbers(2)
-                uint chars = br.ReadUInt32();
+                uint rawSize        = br.ReadUInt32();
+                uint rawAddress     = br.ReadUInt32();
+                br.ReadBytes(12); // relocations + linenumbers fields (unused by us)
+                uint chars          = br.ReadUInt32();
 
                 sections.Add(new MinimalSection
                 {
-                    Name = name,
-                    VirtualSize = virtualSize,
-                    VirtualAddress = virtualAddress,
-                    RawSize = rawSize,
-                    RawAddress = rawAddress,
+                    Name            = name,
+                    VirtualSize     = virtualSize,
+                    VirtualAddress  = virtualAddress,
+                    RawSize         = rawSize,
+                    RawAddress      = rawAddress,
                     Characteristics = chars,
                 });
             }
 
             return new MinimalPe
             {
-                Is64Bit = is64,
-                IsManaged = isManaged,
-                Machine = machine,
+                Is64Bit             = is64,
+                IsManaged           = isManaged,
+                Machine             = machine,
                 AddressOfEntryPoint = addressOfEntryPoint,
-                ImageBase = imageBase,
-                SectionAlignment = sectionAlignment,
-                FileAlignment = fileAlignment,
-                SizeOfImage = sizeOfImage,
-                SizeOfHeaders = sizeOfHeaders,
-                Sections = sections,
+                ImageBase           = imageBase,
+                SectionAlignment    = sectionAlignment,
+                FileAlignment       = fileAlignment,
+                SizeOfImage         = sizeOfImage,
+                SizeOfHeaders       = sizeOfHeaders,
+                Sections            = sections,
             };
         }
         catch
@@ -463,9 +488,12 @@ public sealed class PeStripService
         public uint RawAddress;
         public uint Characteristics;
 
-        public bool IsExecutable => (Characteristics & 0x20000000) != 0;
-        public bool IsReadable   => (Characteristics & 0x40000000) != 0;
-        public bool IsWritable   => (Characteristics & 0x80000000) != 0;
+        public bool IsExecutable => (Characteristics & SectionFlagExecutable) != 0;
+        public bool IsReadable   => (Characteristics & SectionFlagReadable)   != 0;
+        public bool IsWritable   => (Characteristics & SectionFlagWritable)   != 0;
+
+        /// <summary>True when the given RVA falls within this section's virtual range.</summary>
+        public bool Contains(uint rva) => rva >= VirtualAddress && rva < VirtualAddress + VirtualSize;
     }
 }
 
@@ -473,19 +501,19 @@ public sealed class PeStripService
 
 public sealed class StripOptions
 {
-    /// <summary>Path to the input PE (.exe/.dll).</summary>
+    /// <summary>Path to the input PE (.exe / .dll).</summary>
     public string InputPath { get; set; } = "";
 
-    /// <summary>Path for the output .bin file.</summary>
+    /// <summary>Path for the output .bin. Falls back to <c>&lt;input&gt;.bin</c> when null.</summary>
     public string? OutputPath { get; set; }
 
     /// <summary>Extraction mode.</summary>
     public StripMode Mode { get; set; } = StripMode.EntryPointToEnd;
 
-    /// <summary>Section name for Section mode (default: .text).</summary>
+    /// <summary>Section name used by <see cref="StripMode.Section"/>. Defaults to <c>.text</c>.</summary>
     public string? SectionName { get; set; }
 
-    /// <summary>Remove trailing zero-byte padding from extracted data.</summary>
+    /// <summary>Remove trailing zero-byte padding from the extracted result.</summary>
     public bool TrimTrailingZeros { get; set; } = true;
 }
 
