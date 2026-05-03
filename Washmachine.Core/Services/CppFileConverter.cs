@@ -319,8 +319,12 @@ public static class CppFileConverter
             // std::string_view, and [[maybe_unused]] used by bin2shell web helpers.
             // Standard Win32 libraries are listed explicitly to support linking against
             // pre-built static libs (.lib) where pragma-driven auto-linking doesn't propagate.
+            // /SUBSYSTEM:WINDOWS + /entry:mainCRTStartup: suppress the console window that
+            // would otherwise appear because the loader templates use int main() as their
+            // entry point. Without these flags MSVC defaults to /SUBSYSTEM:CONSOLE.
+            var subsystem = isDll ? "/DLL" : "/SUBSYSTEM:WINDOWS /entry:mainCRTStartup";
             return $"/nologo /O1 /Gy /DNDEBUG /EHsc /std:c++17 /Fe:{Q(outputExe)} {src}" +
-                   $" /link /OPT:REF /OPT:ICF /INCREMENTAL:NO{(isDll ? " /DLL" : "")}{libArgs}" +
+                   $" /link /OPT:REF /OPT:ICF /INCREMENTAL:NO {subsystem}{libArgs}" +
                    " kernel32.lib user32.lib gdi32.lib advapi32.lib shell32.lib ole32.lib" +
                    " comdlg32.lib ntdll.lib";
         }
