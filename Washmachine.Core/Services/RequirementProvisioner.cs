@@ -123,6 +123,18 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
                     new Uri("https://github.com/EgeBalci/sgn/releases/download/v2.0.1/sgn_windows_386_2.0.1.zip")
                 });
         }
+
+        bool needsDonut = !File.Exists(_paths.DonutExecutable);
+        if (includeOptionalTools && needsDonut)
+        {
+            yield return new RequirementData(
+                "Donut",
+                Path.Combine(_paths.ExecutableDirectory, "Tools", "Donut"),
+                new[]
+                {
+                    new Uri("https://github.com/TheWover/donut/releases/download/v1.1/donut_v1.1.zip")
+                });
+        }
     }
 
     private async Task DownloadToFileAsync(RequirementData requirement, string destinationFile, IProgressReporter? progress, CancellationToken cancellationToken)

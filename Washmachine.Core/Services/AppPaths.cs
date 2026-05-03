@@ -12,6 +12,7 @@ public interface IAppPaths
     string Bin2ShellScript { get; }
     string Bin2ShellAlgos { get; }
     string SgnExecutable { get; }
+    string DonutExecutable { get; }
     bool SetActivePlaybook(string playbookPath);
     IReadOnlyList<string> GetAvailablePlaybookFiles();
     string CreateCompilationSessionDirectory(string? inputName = null, string? outputName = null);
@@ -44,6 +45,7 @@ public sealed class AppPaths : IAppPaths
         Bin2ShellScript = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "main.py");
         Bin2ShellAlgos = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "data", "yaml", "algos.yaml");
         SgnExecutable = Path.Combine(ExecutableDirectory, "Tools", "SGN", "sgn.exe");
+        DonutExecutable = Path.Combine(ExecutableDirectory, "Tools", "Donut", "donut.exe");
     }
 
     public string ExecutableDirectory { get; }
@@ -101,6 +103,7 @@ public sealed class AppPaths : IAppPaths
     public string Bin2ShellScript { get; }
     public string Bin2ShellAlgos { get; }
     public string SgnExecutable { get; }
+    public string DonutExecutable { get; }
 
     public bool SetActivePlaybook(string playbookPath)
     {

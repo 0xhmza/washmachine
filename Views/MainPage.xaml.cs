@@ -56,7 +56,7 @@ public sealed partial class MainPage : Page, IMainFormView
         //templateCatalogPath.Text = $"Catalog: {_paths.ActivePlaybookPath}";
         PopulatePlaybookCombo();
         SetShellcodeSource(ShellcodeSource.None, clearInputs: false);
-        shellcodeFileInput.TextChanged += (s, e) => UpdateShellcodeFileBadge(shellcodeFileInput.Text);
+        shellcodeFileInput.TextChanged += async (s, e) => await UpdateShellcodeFileBadgeAsync(shellcodeFileInput.Text);
         Loaded += MainPage_Loaded;
     }
 
@@ -449,13 +449,17 @@ public sealed partial class MainPage : Page, IMainFormView
         public string Path { get; }
     }
 
-    private void UpdateShellcodeFileBadge(string? path)
+    private bool _isManaged;
+
+    private async Task UpdateShellcodeFileBadgeAsync(string? path)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
             FileByteCountBadge.Visibility = Visibility.Collapsed;
             FileMissingBadge.Visibility   = Visibility.Collapsed;
             PeStripOptionsPanel.Visibility = Visibility.Collapsed;
+            DonutOptionsPanel.Visibility   = Visibility.Collapsed;
+            _isManaged = false;
             return;
         }
         if (System.IO.File.Exists(path))
@@ -472,8 +476,42 @@ public sealed partial class MainPage : Page, IMainFormView
         }
 
         bool isExe = path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
-        PeStripOptionsPanel.Visibility = isExe ? Visibility.Visible : Visibility.Collapsed;
-        if (isExe) UpdatePeStripModeControls();
+        if (!isExe)
+        {
+            PeStripOptionsPanel.Visibility = Visibility.Collapsed;
+            DonutOptionsPanel.Visibility   = Visibility.Collapsed;
+            _isManaged = false;
+            return;
+        }
+
+        // Detect managed (.NET) PE asynchronously
+        _isManaged = false;
+        if (System.IO.File.Exists(path))
+        {
+            try
+            {
+                var data = await System.IO.File.ReadAllBytesAsync(path);
+                _isManaged = PeStripService.IsManagedPe(data);
+            }
+            catch { }
+        }
+
+        if (_isManaged)
+        {
+            PeStripOptionsPanel.Visibility = Visibility.Collapsed;
+            DonutOptionsPanel.Visibility   = Visibility.Visible;
+        }
+        else
+        {
+            PeStripOptionsPanel.Visibility = Visibility.Visible;
+            DonutOptionsPanel.Visibility   = Visibility.Collapsed;
+            UpdatePeStripModeControls();
+        }
+    }
+
+    private void UpdateShellcodeFileBadge(string? path)
+    {
+        _ = UpdateShellcodeFileBadgeAsync(path);
     }
 
     // ── PE strip properties consumed by CompilePage ──────────────────────────
@@ -486,6 +524,22 @@ public sealed partial class MainPage : Page, IMainFormView
 
     public bool PeStripTrimTrailingZeros =>
         peStripTrimCheck?.IsChecked != false;
+
+    // ── Donut properties consumed by CompilePage ─────────────────────────────
+
+    public bool IsDonutConversion => _isManaged;
+
+    public int DonutArch =>
+        donutArchCombo?.SelectedValue is string tag && int.TryParse(tag, out var arch) ? arch : 2;
+
+    public string? DonutClass =>
+        string.IsNullOrWhiteSpace(donutClassInput?.Text) ? null : donutClassInput.Text.Trim();
+
+    public string? DonutMethod =>
+        string.IsNullOrWhiteSpace(donutMethodInput?.Text) ? null : donutMethodInput.Text.Trim();
+
+    public string? DonutParams =>
+        string.IsNullOrWhiteSpace(donutParamsInput?.Text) ? null : donutParamsInput.Text.Trim();
 
     private void PeStripMode_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
         UpdatePeStripModeControls();
@@ -522,6 +576,7 @@ public sealed partial class MainPage : Page, IMainFormView
 
         var sb = new StringBuilder();
         sb.AppendLine($"Architecture : {(analysis.Is64Bit ? "x64" : "x86")}");
+        sb.AppendLine($"Managed .NET : {(analysis.IsManaged ? "YES — use donut conversion" : "no")}");
         sb.AppendLine($"Entry Point  : 0x{analysis.EntryPoint:X8}");
         sb.AppendLine($"EP Section   : {analysis.EntryPointSection ?? "unknown"}");
         sb.AppendLine($"Est. bin size: {analysis.EstimatedBinSize:N0} bytes  (ep mode, after trim)");
@@ -533,7 +588,14 @@ public sealed partial class MainPage : Page, IMainFormView
             sb.AppendLine($"{s.Name,-12} 0x{s.RawAddress:X6}  {s.RawSize,10:N0} {(s.IsExecutable ? "yes" : ""),6} {(s.ContainsEntryPoint ? "◄ EP" : ""),4}");
         }
 
-        if (analysis.EstimatedBinSize < 64)
+        if (analysis.IsManaged)
+        {
+            sb.AppendLine();
+            sb.AppendLine("ℹ  This is a managed .NET assembly.");
+            sb.AppendLine("   Standard PE strip will NOT produce working shellcode.");
+            sb.AppendLine("   Washmachine will automatically use donut to convert it.");
+        }
+        else if (analysis.EstimatedBinSize < 64)
         {
             sb.AppendLine();
             sb.AppendLine("⚠  Extracted size is very small — this PE is likely not shellcode-compatible.");

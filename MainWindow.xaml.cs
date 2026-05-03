@@ -26,6 +26,20 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    public void NavigateToBackdooringPage()
+    {
+        foreach (var item in mainNavigationView.MenuItems)
+        {
+            if (item is NavigationViewItem nvi && nvi.Tag as string == "BackdooringPage")
+            {
+                mainNavigationView.SelectedItem = nvi;
+                if (ContentFrame.CurrentSourcePageType != typeof(BackdooringPage))
+                    ContentFrame.Navigate(typeof(BackdooringPage));
+                break;
+            }
+        }
+    }
+
     public void NavigateToSettingsPage()
     {
         mainNavigationView.SelectedItem = mainNavigationView.SettingsItem;

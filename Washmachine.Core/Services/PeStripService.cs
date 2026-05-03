@@ -166,6 +166,7 @@ public sealed class PeStripService
         analysis.Is64Bit = pe.Is64Bit;
         analysis.EntryPoint = pe.AddressOfEntryPoint;
         analysis.ImageBase = pe.ImageBase;
+        analysis.IsManaged = pe.IsManaged;
 
         foreach (var s in pe.Sections)
         {
@@ -343,6 +344,54 @@ public sealed class PeStripService
         return Math.Max(end, 1); // keep at least 1 byte
     }
 
+    // ── Public helpers ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Quickly checks if a PE byte array is a managed (.NET) assembly
+    /// by inspecting DataDirectory[14] (CLR Runtime Header).
+    /// Returns false for non-PE or malformed input.
+    /// </summary>
+    public static bool IsManagedPe(byte[] data)
+    {
+        try
+        {
+            using var ms = new MemoryStream(data);
+            using var br = new BinaryReader(ms);
+
+            if (data.Length < 64) return false;
+            ushort magic = br.ReadUInt16();
+            if (magic != 0x5A4D) return false;
+
+            ms.Seek(0x3C, SeekOrigin.Begin);
+            uint peOffset = br.ReadUInt32();
+            if (peOffset + 24 > (uint)data.Length) return false;
+
+            ms.Seek(peOffset, SeekOrigin.Begin);
+            if (br.ReadUInt32() != 0x00004550) return false;
+
+            // COFF header
+            ms.Seek(peOffset + 20, SeekOrigin.Begin);
+            ushort sizeOfOptionalHeader = br.ReadUInt16();
+            ms.Seek(2, SeekOrigin.Current); // characteristics
+
+            long optHeaderStart = ms.Position;
+            ushort optMagic = br.ReadUInt16();
+            bool is64 = optMagic == 0x20B;
+
+            long dataDirectoriesBase = optHeaderStart + (is64 ? 112L : 96L);
+            long clrEntryOffset = dataDirectoriesBase + 14 * 8;
+            if (clrEntryOffset + 4 > data.Length) return false;
+            if (sizeOfOptionalHeader < (is64 ? 240 : 224)) return false;
+
+            ms.Seek(clrEntryOffset, SeekOrigin.Begin);
+            return br.ReadUInt32() != 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     // ── Minimal PE parser (self-contained, no dependency on PeBackdoorService) ──
 
     private MinimalPe? ParsePeMinimal(byte[] data)
@@ -397,6 +446,19 @@ public sealed class PeStripService
             uint sizeOfImage = br.ReadUInt32();
             uint sizeOfHeaders = br.ReadUInt32();
 
+            // Check for managed (.NET) PE via DataDirectory[14] (CLR Runtime Header).
+            // Data directories start at offset 96 (PE32) or 112 (PE32+) from optHeaderStart.
+            // Entry 14 is at that base + 14*8 = base + 112.
+            bool isManaged = false;
+            long dataDirectoriesBase = optHeaderStart + (is64 ? 112L : 96L);
+            long clrEntryOffset = dataDirectoriesBase + 14 * 8; // 112 bytes into data directories
+            if (clrEntryOffset + 4 <= ms.Length && sizeOfOptionalHeader >= (is64 ? 240 : 224))
+            {
+                ms.Seek(clrEntryOffset, SeekOrigin.Begin);
+                uint clrRva = br.ReadUInt32();
+                isManaged = clrRva != 0;
+            }
+
             // Read section headers
             long sectionHeadersOffset = optHeaderStart + sizeOfOptionalHeader;
             ms.Seek(sectionHeadersOffset, SeekOrigin.Begin);
@@ -428,6 +490,7 @@ public sealed class PeStripService
             return new MinimalPe
             {
                 Is64Bit = is64,
+                IsManaged = isManaged,
                 Machine = machine,
                 AddressOfEntryPoint = addressOfEntryPoint,
                 ImageBase = imageBase,
@@ -449,6 +512,7 @@ public sealed class PeStripService
     private sealed class MinimalPe
     {
         public bool Is64Bit;
+        public bool IsManaged;
         public ushort Machine;
         public uint AddressOfEntryPoint;
         public ulong ImageBase;
@@ -536,6 +600,7 @@ public sealed class StripAnalysis
     public bool Success { get; set; }
     public string? Error { get; set; }
     public bool Is64Bit { get; set; }
+    public bool IsManaged { get; set; }
     public uint EntryPoint { get; set; }
     public ulong ImageBase { get; set; }
     public string? EntryPointSection { get; set; }

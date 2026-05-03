@@ -334,8 +334,8 @@ public static partial class Program
     {
         if (tokens.Length == 1)
         {
-            WriteStatus(StatusPrefix.Info, "Commands: show options | show <catalog> | set <OPTION> [VALUE] | unset <OPTION> | get <OPTION> | help [OPTION] | reset | run | exit");
-            WriteStatus(StatusPrefix.Info, "Required strip settings are shown in the Required? column of the options view.");
+            PrintStripUsage();
+            WriteStatus(StatusPrefix.Info, "Session commands: show options | show <catalog> | set <OPTION> [VALUE] | unset <OPTION> | get <OPTION> | help [OPTION] | reset | run | exit");
             return;
         }
 

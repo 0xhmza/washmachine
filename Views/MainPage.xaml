@@ -139,6 +139,7 @@
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
                                         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
                                             <TextBlock Text="Shellcode file (.bin or .exe):" VerticalAlignment="Center" />
@@ -195,6 +196,60 @@
                                                            Foreground="{ThemeResource SystemFillColorCautionBrush}"
                                                            Text="Only use .exe files that are shellcode-format PEs (e.g. produced by donut, pe2shellcode or sRDI). Standard Metasploit/Cobalt Strike EXEs require raw shellcode (.bin) instead." />
                                             </StackPanel>
+                                        </Grid>
+
+                                        <!-- Donut options — shown when a managed (.NET) EXE is selected -->
+                                        <Grid x:Name="DonutOptionsPanel" Grid.Row="3" Visibility="Collapsed" Margin="0,10,0,0">
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+
+                                            <!-- Arch + info badge -->
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="Target arch:" VerticalAlignment="Center" />
+                                                <ComboBox x:Name="donutArchCombo" MinWidth="140"
+                                                          SelectedValuePath="Tag">
+                                                    <ComboBoxItem Content="x86" Tag="1" />
+                                                    <ComboBoxItem Content="x64" Tag="2" IsSelected="True" />
+                                                    <ComboBoxItem Content="x86 + x64" Tag="3" />
+                                                </ComboBox>
+                                                <Border Background="{ThemeResource AccentButtonBackground}"
+                                                        CornerRadius="10" Padding="8,2" VerticalAlignment="Center">
+                                                    <TextBlock Text=".NET → shellcode via donut" FontSize="11"
+                                                               Foreground="{ThemeResource AccentButtonForeground}" />
+                                                </Border>
+                                            </StackPanel>
+
+                                            <!-- Optional class / method / params -->
+                                            <Grid Grid.Row="1" Margin="0,8,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Margin="0,0,6,0">
+                                                    <TextBlock Text="Class (optional)" FontSize="11"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <TextBox x:Name="donutClassInput"
+                                                             PlaceholderText="e.g. MyApp.Program"
+                                                             FontSize="12" Margin="0,2,0,0" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" Margin="0,0,6,0">
+                                                    <TextBlock Text="Method (optional)" FontSize="11"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <TextBox x:Name="donutMethodInput"
+                                                             PlaceholderText="e.g. Main"
+                                                             FontSize="12" Margin="0,2,0,0" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Params (optional)" FontSize="11"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <TextBox x:Name="donutParamsInput"
+                                                             PlaceholderText="comma-separated args"
+                                                             FontSize="12" Margin="0,2,0,0" />
+                                                </StackPanel>
+                                            </Grid>
                                         </Grid>
                                     </Grid>
 

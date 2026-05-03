@@ -1317,13 +1317,48 @@ public sealed partial class CompilePage : Page
     /// </summary>
     private async Task<string?> StripExeShellcodeAsync(string exePath, MainPage mainPage)
     {
+        var tempBin = Path.Combine(Path.GetTempPath(), $"wm_strip_{Guid.NewGuid():N}.bin");
+
+        // Managed .NET assembly → convert to shellcode with donut
+        if (mainPage.IsDonutConversion)
+        {
+            var donutSvc = new DonutService(_paths.DonutExecutable, _logger);
+            if (!donutSvc.IsAvailable)
+            {
+                _logger.Error("donut.exe not found. Provision optional tools from the Settings page to download Donut.");
+                return null;
+            }
+
+            var opts = new DonutOptions
+            {
+                InputPath  = exePath,
+                OutputPath = tempBin,
+                Arch       = mainPage.DonutArch,
+                Class      = mainPage.DonutClass,
+                Method     = mainPage.DonutMethod,
+                Params     = mainPage.DonutParams,
+            };
+
+            _logger.Info($"Converting .NET assembly to shellcode via donut (arch={opts.Arch})...");
+            var donutResult = await donutSvc.ConvertAsync(opts);
+            if (donutResult.Success && File.Exists(tempBin))
+            {
+                var sz = new FileInfo(tempBin).Length;
+                _logger.Ok($"Donut conversion complete → temp .bin ({sz:N0} bytes)");
+                return tempBin;
+            }
+
+            _logger.Error($"Donut conversion failed: {donutResult.Error}");
+            return null;
+        }
+
+        // Native shellcode-format PE → CLI strip
         if (!_cli.IsAvailable)
         {
             _logger.Error("CLI not available — cannot strip PE shellcode source.");
             return null;
         }
 
-        var tempBin = Path.Combine(Path.GetTempPath(), $"wm_strip_{Guid.NewGuid():N}.bin");
         var args = new List<string> { "strip", "-Pe", exePath, "-Output", tempBin };
 
         var mode = mainPage.PeStripMode;

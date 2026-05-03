@@ -128,7 +128,7 @@ public sealed class MainFormCoordinator
         string? selected = await SelectFileAsync(
             view,
             "Select Shellcode File",
-            "All files (*.*)|*.*",
+            "Supported files (*.bin;*.exe)|*.bin;*.exe|Binary files (*.bin)|*.bin|PE files (*.exe)|*.exe|All files (*.*)|*.*",
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
 
         if (string.IsNullOrWhiteSpace(selected))
