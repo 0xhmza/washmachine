@@ -659,6 +659,7 @@ static __wash_self_track_init __wash_self_track_init_instance;
             }
 
             encoded = RepairCStringLiteralQuotes(encoded);
+            encoded = SplitLargeCodeBlobText(encoded, logger);
 
             plan.EncodedShellcodeSnippet = encoded.Trim();
             notes.Add("Encoded shellcode prepared.");
@@ -918,6 +919,122 @@ static __wash_self_track_init __wash_self_track_init_instance;
         var reescaped = unescaped.Replace("\"", "\\\"");
 
         return $"\"{reescaped}\"{suffix}";
+    }
+
+    /// <summary>
+    /// Splits a large Bin2Shell <c>const char code_blob_text[]</c> multi-line C string
+    /// literal into individually-declared chunk arrays assembled at static-init time,
+    /// preventing MSVC C1060 (compiler out of heap space) when embedding large payloads.
+    /// </summary>
+    private static string SplitLargeCodeBlobText(string code, IAppLogger logger)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+            return code ?? string.Empty;
+
+        var lines = code.Split('\n');
+
+        int declLine = -1;
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var t = lines[i].TrimStart();
+            if (t.Contains("code_blob_text[]", StringComparison.Ordinal) &&
+                t.Contains("=", StringComparison.Ordinal))
+            {
+                declLine = i;
+                break;
+            }
+        }
+
+        if (declLine < 0) return code;
+
+        // Collect the string content between the outer quotes of each continuation line
+        // until a lone ";" terminator is found.
+        var segments = new List<string>();
+        int terminatorLine = -1;
+        for (int i = declLine + 1; i < lines.Length; i++)
+        {
+            var t = lines[i].TrimEnd('\r').Trim();
+            if (t == ";")
+            {
+                terminatorLine = i;
+                break;
+            }
+            if (t.Length >= 2 && t[0] == '"' && t[t.Length - 1] == '"')
+                segments.Add(t[1..^1]);
+        }
+
+        if (terminatorLine < 0 || segments.Count == 0) return code;
+
+        var totalContent = string.Concat(segments);
+        if (totalContent.Length < 65_000) return code; // small enough — no change needed
+
+        logger.Info($"Splitting code_blob_text ({totalContent.Length:N0} chars) into 16 KB " +
+                    "chunks to avoid MSVC C1060 compiler-heap exhaustion.");
+
+        // Determine indentation from the original declaration line
+        var origLine = lines[declLine];
+        var trimStart = origLine.TrimStart();
+        var pad = origLine.Length > trimStart.Length
+            ? new string(' ', origLine.Length - trimStart.Length)
+            : "    ";
+
+        // Split into 16 K-char chunks; never split in the middle of a backslash escape
+        const int chunkSize = 16_000;
+        var chunks = new List<string>();
+        int offset = 0;
+        while (offset < totalContent.Length)
+        {
+            int end = Math.Min(offset + chunkSize, totalContent.Length);
+            while (end > offset + 1 && end < totalContent.Length && totalContent[end - 1] == '\\')
+                end--;
+            chunks.Add(totalContent.Substring(offset, end - offset));
+            offset = end;
+        }
+
+        // Emit individual static chunk arrays (each is a single string literal ≤ 16 KB,
+        // well within MSVC's per-token heap budget).
+        var sb = new StringBuilder(chunks.Count * (chunkSize + 64));
+        for (int i = 0; i < chunks.Count; i++)
+            sb.AppendLine($"{pad}static const char __wm_chunk{i}[] = \"{chunks[i]}\";");
+
+        // Runtime-assembled buffer in BSS (no file-size cost for zero-init storage)
+        sb.AppendLine($"{pad}static char code_blob_text[{totalContent.Length + 1}];");
+
+        // Pointer + size tables for the generic assembly loop
+        var chunkRefs  = string.Join(", ", Enumerable.Range(0, chunks.Count).Select(i => $"__wm_chunk{i}"));
+        var chunkSizes = string.Join(", ", chunks.Select(c => c.Length.ToString()));
+        sb.AppendLine($"{pad}static const char* const __wm_chunks[] = {{ {chunkRefs} }};");
+        sb.AppendLine($"{pad}static const int __wm_chunk_sizes[] = {{ {chunkSizes} }};");
+
+        // IIFE static initializer: runs before main(), fills code_blob_text
+        sb.AppendLine($"{pad}static bool __wm_init_result = ([](){{");
+        sb.AppendLine($"{pad}    int __p = 0;");
+        sb.AppendLine($"{pad}    for (int __c = 0; __c < {chunks.Count}; ++__c)");
+        sb.AppendLine($"{pad}        for (int __i = 0; __i < __wm_chunk_sizes[__c]; ++__i)");
+        sb.AppendLine($"{pad}            code_blob_text[__p++] = __wm_chunks[__c][__i];");
+        sb.AppendLine($"{pad}    code_blob_text[{totalContent.Length}] = '\\0';");
+        sb.AppendLine($"{pad}    return true;");
+        sb.Append(    $"{pad}}})();");
+
+        // Rebuild source, replacing [declLine .. terminatorLine] with the new block
+        var result = new StringBuilder(code.Length);
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (i == declLine)
+            {
+                result.Append(sb);
+                i = terminatorLine; // for-loop increment makes it terminatorLine + 1
+            }
+            else
+            {
+                result.Append(lines[i]);
+            }
+
+            if (i < lines.Length - 1)
+                result.Append('\n');
+        }
+
+        return result.ToString();
     }
 
     /// <summary>
