@@ -18,7 +18,8 @@ public sealed class DonutOptions
 
     /// <summary>
     /// Target architecture: 1 = x86, 2 = x64, 3 = x86+x64.
-    /// Defaults to x86+x64 so the resulting shellcode runs on either bitness.
+    /// Defaults to x86+x64 — the most-compatible choice — so the resulting shellcode
+    /// runs in either a 32-bit or 64-bit host process.
     /// </summary>
     public int Arch { get; init; } = 3;
 
@@ -51,6 +52,16 @@ public sealed class DonutResult
 /// <summary>
 /// Wraps the <c>donut.exe</c> CLI to convert .NET assemblies into PIC shellcode <c>.bin</c> files.
 /// Stateless: a single instance can be reused across calls.
+///
+/// <para>
+/// <b>Minimal-feature mode.</b> The service deliberately invokes donut with the smallest
+/// flag set that still produces a working payload. Optional features that embed
+/// signature-rich code blobs — AMSI/WLDP bypass, compression, threading, staging URL,
+/// wide-string encoding — are <i>not</i> enabled. The only non-essential flag we set is
+/// <c>-b 1</c> to <i>disable</i> the AMSI/WLDP bypass, since donut's default
+/// (<c>-b 3</c>) injects a sizable bypass stub that both adds detectable patterns and
+/// can crash the loader on hardened/patched hosts.
+/// </para>
 /// </summary>
 public sealed class DonutService
 {
@@ -150,13 +161,33 @@ public sealed class DonutService
     }
 
     /// <summary>
-    /// Builds the donut argument vector. We pass each token separately (via
-    /// <see cref="ProcessStartInfo.ArgumentList"/>) so paths with spaces don't
-    /// need manual quoting on the call site.
+    /// Builds the donut argument vector with the minimum flags needed to produce a
+    /// working PIC shellcode. Each token is passed separately via
+    /// <see cref="ProcessStartInfo.ArgumentList"/> so paths with spaces don't need
+    /// manual quoting on the call site.
+    ///
+    /// <para>Always-on flags:</para>
+    /// <list type="bullet">
+    ///   <item><description><c>-a &lt;arch&gt;</c> — target bitness (caller-provided).</description></item>
+    ///   <item><description><c>-b 1</c> — disable AMSI/WLDP bypass blob (smaller, fewer signatures, more compatible).</description></item>
+    ///   <item><description><c>-i</c> / <c>-o</c> — input assembly and output .bin path.</description></item>
+    /// </list>
+    ///
+    /// <para>
+    /// <c>-c</c>, <c>-m</c>, <c>-p</c> are forwarded only when the caller supplied
+    /// an entry point override. Every other donut feature (compression, threading,
+    /// entropy mode, staging URL, wide-string encoding, runtime pinning, exit option)
+    /// is intentionally left at donut's default to keep the embedded loader minimal.
+    /// </para>
     /// </summary>
     private static List<string> BuildArgList(DonutOptions options)
     {
-        var args = new List<string> { "-a", options.Arch.ToString(), "-o", options.OutputPath };
+        var args = new List<string>
+        {
+            "-a", options.Arch.ToString(),
+            "-b", "1",                      // no AMSI/WLDP bypass — minimal signatures + better target compat
+            "-o", options.OutputPath,
+        };
 
         if (!string.IsNullOrWhiteSpace(options.Class))  { args.Add("-c"); args.Add(options.Class); }
         if (!string.IsNullOrWhiteSpace(options.Method)) { args.Add("-m"); args.Add(options.Method); }

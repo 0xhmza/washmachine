@@ -572,7 +572,7 @@ public sealed partial class MainPage : Page, IMainFormView
     public PeSourceOptions GetPeSourceOptions() => new()
     {
         IsDonutConversion        = _isManaged,
-        DonutArch                = donutArchCombo?.SelectedValue is string tag && int.TryParse(tag, out var arch) ? arch : 2,
+        DonutArch                = donutArchCombo?.SelectedValue is string tag && int.TryParse(tag, out var arch) ? arch : 3,
         DonutClass               = NullIfBlank(donutClassInput?.Text),
         DonutMethod              = NullIfBlank(donutMethodInput?.Text),
         DonutParams              = NullIfBlank(donutParamsInput?.Text),

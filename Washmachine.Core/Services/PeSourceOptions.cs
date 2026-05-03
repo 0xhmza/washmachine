@@ -24,8 +24,11 @@ public sealed record PeSourceOptions
 
     // ── Donut settings (used only when IsDonutConversion is true) ────────
 
-    /// <summary>Donut target architecture: 1 = x86, 2 = x64, 3 = x86+x64.</summary>
-    public int DonutArch { get; init; } = 2;
+    /// <summary>
+    /// Donut target architecture: 1 = x86, 2 = x64, 3 = x86+x64.
+    /// Defaults to <c>3</c> (x86+x64) so the resulting shellcode runs in hosts of either bitness.
+    /// </summary>
+    public int DonutArch { get; init; } = 3;
 
     /// <summary>Optional fully-qualified class name (e.g. <c>"MyApp.Program"</c>).</summary>
     public string? DonutClass { get; init; }
