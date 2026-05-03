@@ -71,19 +71,6 @@ public sealed class PeStripService
                     (extracted, description) = ExtractSection(data, pe, options.SectionName ?? ".text");
                     break;
 
-                case StripMode.AllExecutable:
-                    (extracted, description) = ExtractAllExecutable(data, pe);
-                    break;
-
-                case StripMode.RawRange:
-                    if (options.RawOffset < 0 || options.RawLength <= 0)
-                    {
-                        result.Error = "Raw range mode requires valid --offset and --length.";
-                        return result;
-                    }
-                    (extracted, description) = ExtractRawRange(data, options.RawOffset, options.RawLength);
-                    break;
-
                 default:
                     (extracted, description) = ExtractFromEntryPoint(data, pe);
                     break;
@@ -259,56 +246,6 @@ public sealed class PeStripService
         return (buf, desc);
     }
 
-    /// <summary>
-    /// Extract and concatenate all executable sections in order.
-    /// Useful for PEs where code spans multiple sections.
-    /// </summary>
-    private (byte[] data, string desc) ExtractAllExecutable(byte[] peData, MinimalPe pe)
-    {
-        var execSections = pe.Sections.Where(s => s.IsExecutable).OrderBy(s => s.VirtualAddress).ToList();
-
-        if (execSections.Count == 0)
-            return (Array.Empty<byte>(), "No executable sections found.");
-
-        using var ms = new MemoryStream();
-        var names = new List<string>();
-
-        foreach (var section in execSections)
-        {
-            uint length = section.RawSize;
-            if (section.RawAddress + length > peData.Length)
-                length = (uint)(peData.Length - section.RawAddress);
-
-            ms.Write(peData, (int)section.RawAddress, (int)length);
-            names.Add($"{section.Name}({length:N0}B)");
-        }
-
-        var buf = ms.ToArray();
-        string desc = $"Executable sections: {string.Join(" + ", names)} = {buf.Length:N0} bytes total";
-        _logger.Info(desc);
-        return (buf, desc);
-    }
-
-    /// <summary>
-    /// Extract a raw byte range from the file. For advanced users who know
-    /// exactly what offset and length they need.
-    /// </summary>
-    private (byte[] data, string desc) ExtractRawRange(byte[] peData, long offset, int length)
-    {
-        if (offset + length > peData.Length)
-            length = (int)(peData.Length - offset);
-
-        if (length <= 0)
-            return (Array.Empty<byte>(), $"Raw range 0x{offset:X}+{length} is out of bounds (file is {peData.Length:N0} bytes).");
-
-        var buf = new byte[length];
-        Array.Copy(peData, offset, buf, 0, length);
-
-        string desc = $"Raw range: 0x{offset:X}..0x{offset + length:X} ({length:N0} bytes)";
-        _logger.Info(desc);
-        return (buf, desc);
-    }
-
     // ── Validation ──────────────────────────────────────────────────────
 
     private static List<string> ValidateExtracted(byte[] data, bool is64Bit)
@@ -327,12 +264,6 @@ public sealed class PeStripService
         double zeroPct = (double)zeros / data.Length;
         if (zeroPct > 0.7)
             warnings.Add($"High zero-byte ratio ({zeroPct:P0}) — extracted data may be mostly padding. Consider --trim.");
-
-        // Check for RET at end (common for well-formed shellcode)
-        if (data.Length > 0 && data[^1] != 0xC3 && data[^1] != 0x00)
-        {
-            // Not necessarily wrong, but informational
-        }
 
         return warnings;
     }
@@ -554,12 +485,6 @@ public sealed class StripOptions
     /// <summary>Section name for Section mode (default: .text).</summary>
     public string? SectionName { get; set; }
 
-    /// <summary>Raw file offset for RawRange mode.</summary>
-    public long RawOffset { get; set; }
-
-    /// <summary>Byte count for RawRange mode.</summary>
-    public int RawLength { get; set; }
-
     /// <summary>Remove trailing zero-byte padding from extracted data.</summary>
     public bool TrimTrailingZeros { get; set; } = true;
 }
@@ -571,12 +496,6 @@ public enum StripMode
 
     /// <summary>Extract an entire named section.</summary>
     Section,
-
-    /// <summary>Extract and concatenate all executable sections.</summary>
-    AllExecutable,
-
-    /// <summary>Extract a raw byte range at a specific file offset.</summary>
-    RawRange,
 }
 
 public sealed class StripResult

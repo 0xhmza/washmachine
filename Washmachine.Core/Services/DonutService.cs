@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using Washmachine.Logging;
 
@@ -83,26 +84,29 @@ public sealed class DonutService
             return result;
         }
 
-        var args = BuildArgs(options);
-        _logger.Info($"Running donut: donut.exe {string.Join(" ", args)}");
+        var argList = BuildArgList(options);
+        _logger.Info($"Running donut: donut.exe {string.Join(" ", argList.Select(a => a.Contains(' ') ? $"\"{a}\"" : a))}");
 
         var stdOut = new StringBuilder();
         var stdErr = new StringBuilder();
 
         try
         {
+            var psi = new ProcessStartInfo
+            {
+                FileName = _donutExePath,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                WorkingDirectory = Path.GetDirectoryName(_donutExePath) ?? Path.GetTempPath(),
+            };
+            foreach (var arg in argList)
+                psi.ArgumentList.Add(arg);
+
             using var proc = new Process
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = _donutExePath,
-                    Arguments = string.Join(" ", args),
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true,
-                    WorkingDirectory = Path.GetDirectoryName(_donutExePath) ?? Path.GetTempPath(),
-                },
+                StartInfo = psi,
                 EnableRaisingEvents = true,
             };
 
@@ -140,24 +144,15 @@ public sealed class DonutService
         return result;
     }
 
-    private static List<string> BuildArgs(DonutOptions options)
+    private static IReadOnlyList<string> BuildArgList(DonutOptions options)
     {
-        var args = new List<string>
-        {
-            $"-a {options.Arch}",
-            $"-o \"{options.OutputPath}\"",
-        };
+        var args = new List<string> { "-a", options.Arch.ToString(), "-o", options.OutputPath };
 
-        if (!string.IsNullOrWhiteSpace(options.Class))
-            args.Add($"-c \"{options.Class}\"");
+        if (!string.IsNullOrWhiteSpace(options.Class))  { args.Add("-c"); args.Add(options.Class); }
+        if (!string.IsNullOrWhiteSpace(options.Method)) { args.Add("-m"); args.Add(options.Method); }
+        if (!string.IsNullOrWhiteSpace(options.Params))  { args.Add("-p"); args.Add(options.Params); }
 
-        if (!string.IsNullOrWhiteSpace(options.Method))
-            args.Add($"-m \"{options.Method}\"");
-
-        if (!string.IsNullOrWhiteSpace(options.Params))
-            args.Add($"-p \"{options.Params}\"");
-
-        args.Add($"\"{options.InputPath}\"");
+        args.Add(options.InputPath);
 
         return args;
     }

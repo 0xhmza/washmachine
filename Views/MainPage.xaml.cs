@@ -514,40 +514,28 @@ public sealed partial class MainPage : Page, IMainFormView
         _ = UpdateShellcodeFileBadgeAsync(path);
     }
 
-    // ── PE strip properties consumed by CompilePage ──────────────────────────
+    // ── PE / Donut source options — consumed by CompilePage ──────────────────
 
-    public string PeStripMode =>
-        (peStripModeCombo?.SelectedValue as string) ?? "ep";
-
-    public string PeStripSection =>
-        peStripSectionInput?.Text?.Trim() ?? string.Empty;
-
-    public bool PeStripTrimTrailingZeros =>
-        peStripTrimCheck?.IsChecked != false;
-
-    // ── Donut properties consumed by CompilePage ─────────────────────────────
-
-    public bool IsDonutConversion => _isManaged;
-
-    public int DonutArch =>
-        donutArchCombo?.SelectedValue is string tag && int.TryParse(tag, out var arch) ? arch : 2;
-
-    public string? DonutClass =>
-        string.IsNullOrWhiteSpace(donutClassInput?.Text) ? null : donutClassInput.Text.Trim();
-
-    public string? DonutMethod =>
-        string.IsNullOrWhiteSpace(donutMethodInput?.Text) ? null : donutMethodInput.Text.Trim();
-
-    public string? DonutParams =>
-        string.IsNullOrWhiteSpace(donutParamsInput?.Text) ? null : donutParamsInput.Text.Trim();
+    public PeSourceOptions GetPeSourceOptions() => new()
+    {
+        IsDonutConversion      = _isManaged,
+        DonutArch              = donutArchCombo?.SelectedValue is string tag && int.TryParse(tag, out var arch) ? arch : 2,
+        DonutClass             = string.IsNullOrWhiteSpace(donutClassInput?.Text)   ? null : donutClassInput.Text.Trim(),
+        DonutMethod            = string.IsNullOrWhiteSpace(donutMethodInput?.Text)  ? null : donutMethodInput.Text.Trim(),
+        DonutParams            = string.IsNullOrWhiteSpace(donutParamsInput?.Text)  ? null : donutParamsInput.Text.Trim(),
+        PeStripMode            = (peStripModeCombo?.SelectedValue as string) ?? "ep",
+        PeStripSection         = peStripSectionInput?.Text?.Trim() ?? string.Empty,
+        PeStripTrimTrailingZeros = peStripTrimCheck?.IsChecked != false,
+    };
 
     private void PeStripMode_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
         UpdatePeStripModeControls();
 
     private void UpdatePeStripModeControls()
     {
+        var mode = (peStripModeCombo?.SelectedValue as string) ?? "ep";
         if (peStripSectionRow != null)
-            peStripSectionRow.Height = PeStripMode == "section" ? GridLength.Auto : new GridLength(0);
+            peStripSectionRow.Height = mode == "section" ? GridLength.Auto : new GridLength(0);
     }
 
     private async void AnalyzePe_Click(object sender, RoutedEventArgs e)

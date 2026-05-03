@@ -835,10 +835,11 @@ public sealed partial class CompilePage : Page
                     _logger.Error("Shellcode file not set or not found.");
                     return (null, false);
                 }
-                // If the source is a PE (.exe), strip it to a temp .bin first
+                // If the source is a PE (.exe), strip/convert it to a temp .bin first
                 if (Path.GetExtension(scFile).Equals(".exe", StringComparison.OrdinalIgnoreCase))
                 {
-                    var stripped = await StripExeShellcodeAsync(scFile, mainPage);
+                    var peOpts = mainPage.GetPeSourceOptions();
+                    var stripped = await StripExeShellcodeAsync(scFile, peOpts);
                     if (stripped == null) return (null, false);
                     scFile = stripped;
                 }
@@ -1315,12 +1316,12 @@ public sealed partial class CompilePage : Page
     /// <summary>
     /// Strips the user's input .exe shellcode source to a temp .bin using the configured PE strip options.
     /// </summary>
-    private async Task<string?> StripExeShellcodeAsync(string exePath, MainPage mainPage)
+    private async Task<string?> StripExeShellcodeAsync(string exePath, PeSourceOptions peOpts)
     {
         var tempBin = Path.Combine(Path.GetTempPath(), $"wm_strip_{Guid.NewGuid():N}.bin");
 
         // Managed .NET assembly → convert to shellcode with donut
-        if (mainPage.IsDonutConversion)
+        if (peOpts.IsDonutConversion)
         {
             var donutSvc = new DonutService(_paths.DonutExecutable, _logger);
             if (!donutSvc.IsAvailable)
@@ -1333,10 +1334,10 @@ public sealed partial class CompilePage : Page
             {
                 InputPath  = exePath,
                 OutputPath = tempBin,
-                Arch       = mainPage.DonutArch,
-                Class      = mainPage.DonutClass,
-                Method     = mainPage.DonutMethod,
-                Params     = mainPage.DonutParams,
+                Arch       = peOpts.DonutArch,
+                Class      = peOpts.DonutClass,
+                Method     = peOpts.DonutMethod,
+                Params     = peOpts.DonutParams,
             };
 
             _logger.Info($"Converting .NET assembly to shellcode via donut (arch={opts.Arch})...");
@@ -1361,15 +1362,15 @@ public sealed partial class CompilePage : Page
 
         var args = new List<string> { "strip", "-Pe", exePath, "-Output", tempBin };
 
-        var mode = mainPage.PeStripMode;
+        var mode = peOpts.PeStripMode;
         if (!string.Equals(mode, "ep", StringComparison.OrdinalIgnoreCase))
             args.AddRange(["-Mode", mode]);
 
         if (string.Equals(mode, "section", StringComparison.OrdinalIgnoreCase)
-            && !string.IsNullOrWhiteSpace(mainPage.PeStripSection))
-            args.AddRange(["-Section", mainPage.PeStripSection]);
+            && !string.IsNullOrWhiteSpace(peOpts.PeStripSection))
+            args.AddRange(["-Section", peOpts.PeStripSection]);
 
-        if (!mainPage.PeStripTrimTrailingZeros)
+        if (!peOpts.PeStripTrimTrailingZeros)
             args.Add("-NoTrim");
 
         _logger.Info($"Stripping PE shellcode source ({mode})...");

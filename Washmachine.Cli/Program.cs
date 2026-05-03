@@ -27,7 +27,7 @@ public static partial class Program
     private static readonly string[] BackdoorMethodValues = { "code-cave", "new-section", "section-ext", "text-pad", "tls-callback" };
     private static readonly string[] BackdoorEncryptionValues = { "none" };
     private static readonly string[] BackdoorCarrierValues = { "entry-point", "dll-main" };
-    private static readonly string[] StripModeValues = { "ep", "entry-point", "section", "all-exec", "range" };
+    private static readonly string[] StripModeValues = { "ep", "entry-point", "section" };
     private static readonly Dictionary<string, string[]> CommandOptionCompletions = new(StringComparer.OrdinalIgnoreCase)
     {
         ["encode"] = new[]
@@ -60,7 +60,7 @@ public static partial class Program
         ["strip"] = new[]
         {
             "-Pe", "--pe", "-Output", "--output", "-o", "-Mode", "--mode", "-m",
-            "-Section", "--section", "-Range", "--range", "-Analyze", "--analyze",
+            "-Section", "--section", "-Analyze", "--analyze",
             "-NoTrim", "--no-trim"
         },
         ["show"] = ShowTargets,
@@ -2399,9 +2399,8 @@ public static partial class Program
                     "Choose what part of the PE to extract.",
                     [
                         new UsageOption("<pe-file>  or  -Pe <file>", "PE file to strip."),
-                        new UsageOption("-m, -Mode <mode>", "Extraction mode.", "ep", "ep | section | all-exec | range"),
+                        new UsageOption("-m, -Mode <mode>", "Extraction mode.", "ep", "ep | section"),
                         new UsageOption("-Section <name>", "Section name used when -Mode section is selected."),
-                        new UsageOption("-Range <start:len>", "Raw file range used when -Mode range is selected. Hex values are accepted."),
                     ]),
                 new UsageOptionGroup(
                     "Output and inspection",
@@ -2420,23 +2419,12 @@ public static partial class Program
                     [
                         new UsageNote("ep", "Extract from the PE entry point to the end of the containing section."),
                         new UsageNote("section", "Extract the full raw contents of one named section."),
-                        new UsageNote("all-exec", "Concatenate every executable section in raw file order."),
-                        new UsageNote("range", "Extract an explicit raw byte range using start:length."),
-                    ]),
-                new UsageSection(
-                    "Range format",
-                    Bullets:
-                    [
-                        "Decimal and hex are both accepted. Example: -Range 1024:512 or -Range 0x400:0x200.",
-                        "Run analyze first when you want to confirm offsets and section names before stripping.",
                     ]),
             ],
             Examples:
             [
                 new UsageExample("washmachine-cli strip .\\loader.exe", "Extract from the entry point to the end of the containing section.", "PowerShell / pwsh"),
                 new UsageExample("washmachine-cli strip ./loader.exe -m section -Section .text", "Dump one named section.", "Bash / Zsh"),
-                new UsageExample("washmachine-cli strip loader.exe -m all-exec -o payload.bin", "Combine all executable sections into one flat payload.", "Any shell"),
-                new UsageExample("washmachine-cli strip loader.exe -m range -Range 0x400:0x200", "Extract a raw offset range using hex.", "Any shell"),
                 new UsageExample("washmachine-cli strip loader.exe -Analyze", "Preview section layout without writing a .bin.", "Any shell"),
             ],
             Related:
@@ -2575,7 +2563,6 @@ public static partial class Program
         bool noTrim = false;
         StripMode? mode = null;
         string? invalidMode = null;
-        uint rangeStart = 0, rangeLen = 0;
 
         // First arg can be positional PE file (does not start with '-')
         int startIndex = 0;
@@ -2603,8 +2590,6 @@ public static partial class Program
                         {
                             "ep" or "entry-point" => StripMode.EntryPointToEnd,
                             "section"             => StripMode.Section,
-                            "all-exec" or "all"   => StripMode.AllExecutable,
-                            "range"               => StripMode.RawRange,
                             _                     => (StripMode?)null,
                         };
                         if (mode is null) invalidMode = args[i];
@@ -2619,23 +2604,12 @@ public static partial class Program
                 case "-NoTrim" or "--no-trim":
                     noTrim = true;
                     break;
-                case "-Range" or "--range":
-                    if (++i < args.Length)
-                    {
-                        var parts = args[i].Split(':');
-                        if (parts.Length == 2)
-                        {
-                            rangeStart = Convert.ToUInt32(parts[0], parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16 : 10);
-                            rangeLen = Convert.ToUInt32(parts[1], parts[1].StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16 : 10);
-                        }
-                    }
-                    break;
             }
         }
 
         if (invalidMode is not null)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] Unknown strip mode [white]{Markup.Escape(invalidMode)}[/]. Valid modes: ep, section, all-exec, range.");
+            AnsiConsole.MarkupLine($"[red]Error:[/] Unknown strip mode [white]{Markup.Escape(invalidMode)}[/]. Valid modes: ep, section.");
             return 1;
         }
 
@@ -2706,8 +2680,6 @@ public static partial class Program
             Mode = resolvedMode,
             SectionName = sectionName,
             TrimTrailingZeros = !noTrim,
-            RawOffset = rangeStart,
-            RawLength = (int)rangeLen,
         };
 
         try
