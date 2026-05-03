@@ -22,7 +22,7 @@ public static class StartupChecks
     public static async Task<StartupResult> RunAsync(IAppPaths paths, IAppLogger logger)
     {
         var live = new LoadingScreen();
-        live.AddStep("provision", "Ensuring external requirements (Bin2Shell)");
+        live.AddStep("provision", "Ensuring external requirements (Bin2Shell, SGN, Donut)");
         live.AddStep("compiler", "Locating a C/C++ compiler");
         live.Render();
 
@@ -30,7 +30,7 @@ public static class StartupChecks
         bool provisioned;
         try
         {
-            live.Update("provision", StepState.Running, "Checking Bin2Shell toolchain…");
+            live.Update("provision", StepState.Running, "Checking Bin2Shell, SGN, Donut toolchains…");
             var provisioner = new RequirementProvisioner(paths, logger);
             var reporter = new LoadingScreenProgressReporter(live, "provision");
             await provisioner.EnsureRequirementsAsync(reporter);

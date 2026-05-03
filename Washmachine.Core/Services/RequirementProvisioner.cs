@@ -219,8 +219,16 @@ public sealed class RequirementProvisioner : IRequirementProvisioner
             Directory.CreateDirectory(extractRoot);
             ZipFile.ExtractToDirectory(zipFile, extractRoot, true);
 
-            string sourceDirectory = Directory.EnumerateDirectories(extractRoot, "*", SearchOption.TopDirectoryOnly).FirstOrDefault()
-                                   ?? extractRoot;
+            // Only unwrap one level when the zip has a single root directory and
+            // no files at the top level (e.g. GitHub archive zips like "tool-main/").
+            // For flat releases (files + subdirs at root, like donut_v1.1.zip),
+            // use extractRoot directly so that the binary lands at the right path.
+            var topLevelDirs  = Directory.EnumerateDirectories(extractRoot, "*", SearchOption.TopDirectoryOnly).ToList();
+            var topLevelFiles = Directory.EnumerateFiles(extractRoot,      "*", SearchOption.TopDirectoryOnly).ToList();
+
+            string sourceDirectory = topLevelDirs.Count == 1 && topLevelFiles.Count == 0
+                ? topLevelDirs[0]
+                : extractRoot;
 
             string targetDirectory = requirement.TargetDirectory;
             string? targetParent = Path.GetDirectoryName(targetDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));

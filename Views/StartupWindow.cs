@@ -143,7 +143,7 @@ public sealed class StartupWindow
     public async Task<StartupOutcome> RunAsync()
     {
         // ── 1) Provision ─────────────────────────────────────────
-        _provisionRow.SetRunning("Checking Bin2Shell + SGN toolchains…");
+        _provisionRow.SetRunning("Checking Bin2Shell, SGN, Donut toolchains…");
         bool provisioned;
         try
         {

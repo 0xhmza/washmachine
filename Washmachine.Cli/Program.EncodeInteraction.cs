@@ -963,7 +963,7 @@ public static partial class Program
         var provisioner = new RequirementProvisioner(context.Paths, logger);
         await provisioner.EnsureRequirementsAsync(
             new ConsoleProgressReporter(),
-            includeOptionalTools: state.ShikataGaNai);
+            includeOptionalTools: true);
 
         var runner = new Bin2ShellRunner(context.Paths);
         var toolLocator = new CompilerToolLocator(logger);
