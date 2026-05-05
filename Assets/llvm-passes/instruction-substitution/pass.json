@@ -1,0 +1,5 @@
+{
+  "id": "instruction-substitution",
+  "name": "Instruction Substitution",
+  "description": "Replaces standard arithmetic instructions with semantically equivalent but less recognizable sequences."
+}

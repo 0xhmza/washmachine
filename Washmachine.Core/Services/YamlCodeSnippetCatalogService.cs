@@ -79,27 +79,10 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
         if (string.IsNullOrWhiteSpace(key))
             return false;
 
-        if (TryGetSectionByTemplate(key, out section) || TryGetSectionByHeader(key, out section))
-            return true;
-
-        string keyNorm = SnippetKeyNormalizer.Normalize(key);
-        var sections = _catalog.Value.Snippets.Sections;
-
-        // Score potential matches so we can pick the closest template/header name.
-        var candidate = sections
-            .Select(s => (Section: s, Score: MatchScore(keyNorm, s)))
-            .Where(x => x.Score >= 0)
-            .OrderBy(x => x.Score)
-            .ThenBy(x => x.Section.Display, StringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault();
-
-        if (candidate.Section != null)
-        {
-            section = candidate.Section;
-            return true;
-        }
-
-        return false;
+        // Exact match only (case-insensitive). Fuzzy MatchScore / SharesKeyword resolution
+        // was deleted in P0-4 — it silently rescued typos in YAML template/header fields
+        // and could pick the wrong section. If a caller's key doesn't match, fix the catalog.
+        return TryGetSectionByTemplate(key, out section) || TryGetSectionByHeader(key, out section);
     }
 
     public IReadOnlyList<CodeTemplateDefinition> GetTemplates()
@@ -136,13 +119,21 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
 
     private CatalogBundle LoadCatalog()
     {
+        string path = _paths.ActivePlaybookFullPath;
         string content = LoadCatalogContent();
         if (string.IsNullOrWhiteSpace(content))
-            throw new InvalidOperationException("Snippet catalog is empty or invalid.");
+            throw new InvalidOperationException($"Snippet catalog '{path}' is empty.");
 
-        var dto = TryParseYaml(content) ?? TryParseJson(content);
-        if (dto?.Sections == null || dto.Sections.Count == 0)
-            throw new InvalidOperationException("Snippet catalog is empty or invalid.");
+        SnippetCatalogDto? dto = ParseCatalog(content, path);
+        if (dto == null)
+            throw new InvalidOperationException(
+                $"Snippet catalog '{path}' could not be parsed as YAML or JSON.");
+
+        if (dto.Sections == null || dto.Sections.Count == 0)
+            throw new InvalidOperationException(
+                $"Snippet catalog '{path}' contains no sections.");
+
+        ValidateCatalogShape(dto, path);
 
         var sections = dto.Sections
             .Select(section =>
@@ -231,35 +222,145 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
         }
     }
 
-    private static SnippetCatalogDto? TryParseYaml(string content)
+    private static SnippetCatalogDto? ParseCatalog(string content, string path)
     {
+        // Try YAML first (the canonical format). On a YAML parse error, capture the
+        // line/column so the user can find the bad line — but fall through to JSON
+        // before raising, since some catalogs (e.g. exported from tools) may be JSON.
+        Exception? yamlError = null;
         try
         {
             return YamlDeserializer.Deserialize<SnippetCatalogDto>(content);
         }
-        catch (YamlException)
+        catch (YamlException ex)
         {
-            return null;
+            yamlError = ex;
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
-            return null;
+            yamlError = ex;
         }
-    }
 
-    private static SnippetCatalogDto? TryParseJson(string content)
-    {
         try
         {
             return JsonSerializer.Deserialize<SnippetCatalogDto>(content, JsonOptions);
         }
         catch (JsonException)
         {
-            return null;
+            // Not JSON either — surface the YAML error since YAML is the canonical format.
         }
         catch (NotSupportedException)
         {
-            return null;
+        }
+
+        if (yamlError is YamlException yamlEx)
+        {
+            var start = yamlEx.Start;
+            throw new InvalidOperationException(
+                $"YAML parse error in '{path}' at line {start.Line}, column {start.Column}: {yamlEx.Message}",
+                yamlEx);
+        }
+
+        if (yamlError != null)
+            throw new InvalidOperationException(
+                $"YAML parse error in '{path}': {yamlError.Message}", yamlError);
+
+        return null;
+    }
+
+    /// <summary>
+    /// Walks the parsed DTO and raises an <see cref="InvalidOperationException"/> with
+    /// section/item context for any structural issue: missing ids, duplicate templates,
+    /// unknown <c>requires:</c> tokens, snippet placeholders pointing at sections that
+    /// don't exist, etc. The exception message is operator-actionable, not a stack trace.
+    /// </summary>
+    private static void ValidateCatalogShape(SnippetCatalogDto dto, string path)
+    {
+        var errors = new List<string>();
+
+        // ── Sections: every section needs at least a header or a template, ids must be
+        //    unique within a section, and the template name (if present) must be unique
+        //    across sections so TryGetByTemplate is unambiguous.
+        var seenTemplates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (section, sIdx) in dto.Sections!.Select((s, i) => (s, i)))
+        {
+            string label = !string.IsNullOrWhiteSpace(section.Template)
+                ? $"section[{sIdx}] template='{section.Template}'"
+                : !string.IsNullOrWhiteSpace(section.Header)
+                    ? $"section[{sIdx}] header='{section.Header}'"
+                    : $"section[{sIdx}]";
+
+            if (string.IsNullOrWhiteSpace(section.Header) && string.IsNullOrWhiteSpace(section.Template))
+                errors.Add($"{label}: must declare either 'header' or 'template'.");
+
+            if (!string.IsNullOrWhiteSpace(section.Template))
+            {
+                if (!seenTemplates.Add(section.Template!.Trim()))
+                    errors.Add($"{label}: template '{section.Template}' is already used by another section.");
+            }
+
+            var seenItemIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (item, iIdx) in (section.Items ?? new()).Select((it, i) => (it, i)))
+            {
+                string itemLabel = $"{label} item[{iIdx}]";
+
+                if (string.IsNullOrWhiteSpace(item.Id))
+                    errors.Add($"{itemLabel}: 'id' is required.");
+                else if (!seenItemIds.Add(item.Id!.Trim()))
+                    errors.Add($"{itemLabel}: id '{item.Id}' duplicates an earlier item in the same section.");
+
+                if (item.Requires != null)
+                {
+                    foreach (var token in item.Requires)
+                    {
+                        if (string.IsNullOrWhiteSpace(token))
+                            continue;
+                        if (!KnownRequiresTokens.Map.ContainsKey(token.Trim()))
+                            errors.Add(
+                                $"{itemLabel}: requires '{token}' is not a known capability token. " +
+                                $"Add it to KnownRequiresTokens.Map or remove it from the catalog.");
+                    }
+                }
+            }
+        }
+
+        // ── Templates: ids unique, snippet-kind placeholders must reference an existing section template.
+        var seenTemplateIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (templ, tIdx) in (dto.Templates ?? new()).Select((t, i) => (t, i)))
+        {
+            string label = !string.IsNullOrWhiteSpace(templ.Id)
+                ? $"template[{tIdx}] id='{templ.Id}'"
+                : $"template[{tIdx}]";
+
+            if (string.IsNullOrWhiteSpace(templ.Id))
+                errors.Add($"{label}: 'id' is required.");
+            else if (!seenTemplateIds.Add(templ.Id!.Trim()))
+                errors.Add($"{label}: id duplicates an earlier template.");
+
+            foreach (var (ph, pIdx) in (templ.Placeholders ?? new()).Select((p, i) => (p, i)))
+            {
+                string phLabel = $"{label} placeholder[{pIdx}]";
+                if (string.IsNullOrWhiteSpace(ph.Name))
+                    errors.Add($"{phLabel}: 'name' is required.");
+
+                bool isSnippetKind = string.Equals(ph.Kind, "snippet", StringComparison.OrdinalIgnoreCase);
+                if (isSnippetKind)
+                {
+                    if (string.IsNullOrWhiteSpace(ph.SnippetTemplate))
+                        errors.Add($"{phLabel}: snippet-kind placeholder must declare 'snippetTemplate'.");
+                    else if (!seenTemplates.Contains(ph.SnippetTemplate!.Trim()))
+                        errors.Add(
+                            $"{phLabel}: snippetTemplate '{ph.SnippetTemplate}' does not match any " +
+                            $"section's 'template' field. Fix the spelling in the catalog.");
+                }
+            }
+        }
+
+        if (errors.Count > 0)
+        {
+            var msg = $"Snippet catalog '{path}' has {errors.Count} validation error(s):" +
+                      Environment.NewLine + "  - " + string.Join(Environment.NewLine + "  - ", errors);
+            throw new InvalidOperationException(msg);
         }
     }
 
@@ -360,63 +461,4 @@ public sealed class YamlCodeSnippetCatalogService : ICodeSnippetCatalogService
             _ => SnippetInputPlacement.AfterSelector
         };
 
-    private static int MatchScore(string keyNorm, CodeSnippetSection section)
-    {
-        string headerNorm = SnippetKeyNormalizer.Normalize(section.Header);
-        string templateNorm = SnippetKeyNormalizer.Normalize(section.Template);
-
-        if (SnippetKeyNormalizer.Equalish(keyNorm, templateNorm) ||
-            SnippetKeyNormalizer.Equalish(keyNorm, headerNorm))
-            return 0;
-
-        if (templateNorm.Contains(keyNorm, StringComparison.OrdinalIgnoreCase) ||
-            headerNorm.Contains(keyNorm, StringComparison.OrdinalIgnoreCase) ||
-            keyNorm.Contains(templateNorm, StringComparison.OrdinalIgnoreCase) ||
-            keyNorm.Contains(headerNorm, StringComparison.OrdinalIgnoreCase))
-        {
-            return 1;
-        }
-
-        int sharedPrefix = LongestCommonPrefix(keyNorm, templateNorm);
-        sharedPrefix = Math.Max(sharedPrefix, LongestCommonPrefix(keyNorm, headerNorm));
-        if (sharedPrefix >= Math.Min(keyNorm.Length, templateNorm.Length) - 1 ||
-            sharedPrefix >= Math.Min(keyNorm.Length, headerNorm.Length) - 1)
-        {
-            return 2;
-        }
-
-        if (SharesKeyword(keyNorm, templateNorm, headerNorm))
-            return 3;
-
-        return -1;
-    }
-
-    private static int LongestCommonPrefix(string a, string b)
-    {
-        int len = Math.Min(a.Length, b.Length);
-        int i = 0;
-        for (; i < len; i++)
-        {
-            if (a[i] != b[i])
-                break;
-        }
-
-        return i;
-    }
-
-    private static bool SharesKeyword(string keyNorm, string templateNorm, string headerNorm)
-    {
-        string[] keywords = { "injection", "shellcode", "guard", "uac", "debug", "generic", "payload" };
-        foreach (var keyword in keywords)
-        {
-            if (keyNorm.Contains(keyword, StringComparison.OrdinalIgnoreCase) &&
-                (templateNorm.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
-                 headerNorm.Contains(keyword, StringComparison.OrdinalIgnoreCase)))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }

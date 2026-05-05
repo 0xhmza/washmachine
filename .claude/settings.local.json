@@ -4,9 +4,9 @@
       "Bash(python3:*)",
       "Bash(dotnet --list-runtimes)",
       "Bash(dotnet build)",
-	  "Bash",
-	  "Read",
-	  "Edit",
+      "Bash",
+      "Read",
+      "Edit",
       "Write",
       "WebFetch",
       "Grep",
@@ -17,7 +17,9 @@
       "NotebookEdit",
       "TodoRead",
       "TodoWrite",
-      "WebSearch"
+      "WebSearch",
+      "Read(//c/Users/hamza/.claude/plans/**)",
+      "Bash(mkdir -p \"C:/Users/hamza/.claude/plans/\")"
     ]
   }
 }

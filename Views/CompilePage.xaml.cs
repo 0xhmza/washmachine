@@ -72,6 +72,7 @@ public sealed partial class CompilePage : Page
             await RefreshCompilers();
             _compilersDetected = true;
         }
+        LoadLlvmPasses();
         UpdateConfigurationSummary();
     }
 
@@ -116,6 +117,67 @@ public sealed partial class CompilePage : Page
             CompilerStatus.Foreground = App.ThemeBrush("DraculaRedBrush");
             DownloadCompilerPanel.Visibility = Visibility.Visible;
         }
+    }
+
+    // ─── LLVM pass loading and backend selection ─────────────────────────────
+
+    private void LoadLlvmPasses()
+    {
+        try
+        {
+            var registry = new LlvmPassRegistry(_paths, _logger);
+            var passes = registry.GetAllPasses();
+
+            LlvmPassCheckboxes.Children.Clear();
+            foreach (var pass in passes)
+            {
+                var status = pass.IsBuilt ? "ready" : "not built";
+                var cb = new CheckBox
+                {
+                    Content = $"{pass.Name}  ({status})",
+                    Tag = pass.Id,
+                    IsEnabled = pass.IsBuilt,
+                };
+                ToolTipService.SetToolTip(cb, pass.Description);
+                LlvmPassCheckboxes.Children.Add(cb);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"Could not load LLVM passes: {ex.Message}");
+        }
+    }
+
+    private void CompilationBackendCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CompilationBackendCombo.SelectedItem is ComboBoxItem item &&
+            item.Tag is string tag &&
+            tag.Equals("LlvmObfuscated", StringComparison.OrdinalIgnoreCase))
+        {
+            LlvmPassesPanel.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            LlvmPassesPanel.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private string GetSelectedCompilationBackend()
+    {
+        if (CompilationBackendCombo.SelectedItem is ComboBoxItem item && item.Tag is string tag)
+            return tag;
+        return "Deterministic";
+    }
+
+    private List<string> GetSelectedLlvmPassIds()
+    {
+        var ids = new List<string>();
+        foreach (var child in LlvmPassCheckboxes.Children)
+        {
+            if (child is CheckBox cb && cb.IsChecked == true && cb.Tag is string id)
+                ids.Add(id);
+        }
+        return ids;
     }
 
     private void UpdateConfigurationSummary()
@@ -945,6 +1007,15 @@ public sealed partial class CompilePage : Page
         // Verbose output
         if (VerboseBuildCheck.IsChecked == true)
             args.Add("-Verbose");
+
+        // Compilation backend
+        var backend = GetSelectedCompilationBackend();
+        if (!string.IsNullOrEmpty(backend) && !backend.Equals("Deterministic", StringComparison.OrdinalIgnoreCase))
+        {
+            args.AddRange(["-Backend", backend]);
+            foreach (var passId in GetSelectedLlvmPassIds())
+                args.AddRange(["-LlvmPass", passId]);
+        }
 
         // JSON output for machine-readable result
         args.Add("-Json");

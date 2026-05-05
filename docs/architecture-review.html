@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Washmachine — Architectural Review</title>
+<style>
+:root {
+    --primary: #7c3aed;
+    --primary-dark: #5b21b6;
+    --primary-light: #a78bfa;
+    --gold: #d4a843;
+    --gold-light: #f0d078;
+    --bg: #ffffff;
+    --surface: #f8f7fc;
+    --surface-alt: #f1eef9;
+    --text: #0f0a1a;
+    --text-soft: #4a4458;
+    --text-muted: #6b6580;
+    --border: #e2ddf0;
+    --code-bg: #13091f;
+    --code-text: #e2ddf0;
+    --hero-start: #1a0533;
+    --hero-mid: #2d1b69;
+    --hero-end: #4a2080;
+    --danger: #c53030;
+    --warn: #b8922e;
+    --ok: #2f855a;
+    --shadow: 0 2px 8px rgba(26, 5, 51, 0.08);
+    --shadow-hover: 0 12px 32px rgba(26, 5, 51, 0.15);
+    --radius: 0.75rem;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    line-height: 1.7;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Layout */
+.container { max-width: 1100px; margin: 0 auto; padding: 0 2rem; }
+
+/* Hero */
+.hero {
+    background: linear-gradient(135deg, var(--hero-start), var(--hero-mid), var(--hero-end));
+    color: #fff;
+    padding: 5rem 0 4rem;
+    border-bottom: 4px solid var(--gold);
+}
+.hero .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 0.78rem;
+    color: var(--gold-light);
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+}
+.hero h1 {
+    font-size: 2.6rem;
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 0.75rem;
+    background: linear-gradient(90deg, #fff, var(--gold-light));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.hero .lead {
+    font-size: 1.15rem;
+    color: rgba(255,255,255,0.85);
+    max-width: 720px;
+}
+.hero .meta {
+    margin-top: 1.5rem;
+    color: rgba(255,255,255,0.7);
+    font-size: 0.9rem;
+}
+.hero .meta span { margin-right: 1.5rem; }
+
+/* TOC */
+.toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem 1.75rem;
+    margin: 3rem 0;
+    box-shadow: var(--shadow);
+}
+.toc h2 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    margin-bottom: 0.75rem;
+    font-weight: 700;
+}
+.toc ol {
+    list-style: none;
+    counter-reset: toc;
+    padding-left: 0;
+}
+.toc ol li {
+    counter-increment: toc;
+    padding: 0.3rem 0;
+}
+.toc ol li::before {
+    content: counter(toc, decimal-leading-zero) " · ";
+    color: var(--primary);
+    font-weight: 600;
+    margin-right: 0.5rem;
+}
+.toc a {
+    color: var(--text);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+}
+.toc a:hover { color: var(--primary); border-bottom-color: var(--primary-light); }
+
+/* Sections */
+section { padding: 2.5rem 0; }
+section + section { border-top: 1px dashed var(--border); }
+
+h2.section-title {
+    font-size: 1.7rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+}
+h2.section-title .num {
+    color: var(--primary);
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+}
+h3 {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 2rem 0 0.75rem;
+}
+h4 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--primary-dark);
+    margin: 1.25rem 0 0.5rem;
+}
+
+p { margin: 0.75rem 0; color: var(--text-soft); }
+ul, ol { margin: 0.75rem 0 1rem 1.5rem; color: var(--text-soft); }
+li { margin: 0.4rem 0; }
+li > ul { margin-top: 0.4rem; margin-bottom: 0; }
+
+strong { color: var(--text); }
+em { color: var(--text-soft); }
+
+/* Inline code */
+code {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+    font-size: 0.88em;
+    background: var(--surface-alt);
+    color: var(--primary-dark);
+    padding: 0.12em 0.4em;
+    border-radius: 0.3em;
+    border: 1px solid var(--border);
+}
+
+/* Code blocks */
+pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 1.25rem 1.5rem;
+    border-radius: var(--radius);
+    overflow-x: auto;
+    margin: 1rem 0;
+    font-size: 0.85rem;
+    line-height: 1.55;
+    box-shadow: var(--shadow);
+}
+pre code {
+    background: none;
+    color: inherit;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+}
+
+/* Callouts */
+.callout {
+    border-left: 4px solid var(--primary);
+    background: var(--surface);
+    padding: 1rem 1.25rem;
+    margin: 1.25rem 0;
+    border-radius: 0 var(--radius) var(--radius) 0;
+}
+.callout.danger  { border-color: var(--danger);  background: #fdf3f3; }
+.callout.warn    { border-color: var(--warn);    background: #fdf8eb; }
+.callout.ok      { border-color: var(--ok);      background: #f0faf4; }
+.callout strong:first-child {
+    display: block;
+    margin-bottom: 0.25rem;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+.callout.danger strong:first-child { color: var(--danger); }
+.callout.warn   strong:first-child { color: var(--warn); }
+.callout.ok     strong:first-child { color: var(--ok); }
+.callout p { margin: 0.25rem 0; color: var(--text); }
+
+/* Issue cards */
+.issue {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem 1.5rem;
+    margin: 1.25rem 0;
+    box-shadow: var(--shadow);
+}
+.issue h4 {
+    margin-top: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+.issue h4 .tag {
+    display: inline-block;
+    background: var(--primary);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 0.18em 0.55em;
+    border-radius: 0.3em;
+}
+
+/* Plan items */
+.plan-item {
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--primary);
+    background: var(--bg);
+    padding: 1.25rem 1.5rem;
+    margin: 1rem 0;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    box-shadow: var(--shadow);
+    position: relative;
+}
+.plan-item.p0 { border-left-color: var(--danger); }
+.plan-item.p1 { border-left-color: var(--warn); }
+.plan-item.p2 { border-left-color: var(--primary); }
+.plan-item.p3 { border-left-color: var(--text-muted); }
+.plan-item.done {
+    background: #f0faf4;
+    border-left-color: var(--ok) !important;
+}
+.plan-item.done::after {
+    content: "✓ DONE";
+    position: absolute;
+    top: 1.1rem;
+    right: 1.25rem;
+    background: var(--ok);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    padding: 0.25em 0.6em;
+    border-radius: 0.3em;
+}
+.plan-item.in-progress {
+    background: #fdf8eb;
+    border-left-color: var(--warn) !important;
+}
+.plan-item.in-progress::after {
+    content: "▶ IN PROGRESS";
+    position: absolute;
+    top: 1.1rem;
+    right: 1.25rem;
+    background: var(--warn);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    padding: 0.25em 0.6em;
+    border-radius: 0.3em;
+}
+.plan-item h4 { margin-top: 0; padding-right: 6rem; }
+.plan-meta {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+}
+.plan-meta .priority {
+    display: inline-block;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 0.15em 0.55em;
+    border-radius: 0.25em;
+    color: #fff;
+    margin-right: 0.6rem;
+    font-size: 0.7rem;
+}
+.plan-item.p0 .priority { background: var(--danger); }
+.plan-item.p1 .priority { background: var(--warn); }
+.plan-item.p2 .priority { background: var(--primary); }
+.plan-item.p3 .priority { background: var(--text-muted); }
+.completion-summary {
+    background: linear-gradient(135deg, #f0faf4, #fdf8eb);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem 1.5rem;
+    margin: 1.5rem 0;
+}
+.completion-summary h4 {
+    margin: 0 0 0.5rem;
+    color: var(--ok);
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+.completion-summary ul { margin: 0.5rem 0 0 1.25rem; }
+.completion-summary li { color: var(--text); }
+.completion-summary code { background: rgba(255,255,255,0.6); }
+
+/* Tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.25rem 0;
+    font-size: 0.92rem;
+    background: var(--bg);
+    box-shadow: var(--shadow);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+th, td {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-soft);
+}
+th {
+    background: var(--surface-alt);
+    color: var(--text);
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: var(--surface); }
+
+/* Footer */
+footer {
+    margin-top: 4rem;
+    padding: 2.5rem 0;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.88rem;
+}
+footer .container > p { color: var(--text-muted); }
+
+/* Responsive */
+@media (max-width: 700px) {
+    .hero h1 { font-size: 2rem; }
+    .hero .lead { font-size: 1rem; }
+    .container { padding: 0 1.25rem; }
+    section { padding: 2rem 0; }
+}
+</style>
+</head>
+<body>
+
+<header class="hero">
+    <div class="container">
+        <div class="eyebrow">Architectural Review</div>
+        <h1>Washmachine — Critique &amp; Refactoring Plan</h1>
+        <p class="lead">A professional architect's read on the current core architecture and methodology, with concrete failure modes and a sequenced engineering plan to address them.</p>
+        <div class="meta">
+            <span><strong>Scope:</strong> Washmachine.Core, Washmachine.Cli, GUI</span>
+            <span><strong>Reviewer:</strong> Architecture lead</span>
+        </div>
+    </div>
+</header>
+
+<main class="container">
+
+<nav class="toc" aria-label="Table of contents">
+    <h2>Contents</h2>
+    <ol>
+        <li><a href="#summary">Executive summary</a></li>
+        <li><a href="#today">Architecture today</a></li>
+        <li><a href="#strengths">What's right (preserve these)</a></li>
+        <li><a href="#critique">How things can break</a></li>
+        <li><a href="#plan">Refactoring plan</a></li>
+        <li><a href="#sequencing">Sequencing</a></li>
+        <li><a href="#two-things">The two things to change tomorrow</a></li>
+    </ol>
+</nav>
+
+<!-- ──────────────────────────────────────────────── -->
+<section id="summary">
+<h2 class="section-title"><span class="num">01</span>Executive summary</h2>
+
+<p>The three-project layout (<strong>Core / Cli / GUI</strong>) and the YAML-driven snippet catalog are the two strongest decisions in this codebase. They give a clean abstraction boundary and a way to evolve evasion content without recompiling.</p>
+
+<p>The weak spots cluster in <strong>four risk areas</strong>:</p>
+
+<div class="issue">
+<h4><span class="tag">Risk 1</span> Stringly-typed contract between UI and Core</h4>
+<p><code>UiData</code> is three string→string dictionaries with heuristic key resolution. The pipeline assumes XAML control names will stay stable forever and assumes no benign control will accidentally match a heuristic.</p>
+</div>
+
+<div class="issue">
+<h4><span class="tag">Risk 2</span> God-class hotspots</h4>
+<p><code>CompilerService</code> (3,083 LOC), <code>MainFormCoordinator</code> (1,707), <code>PeBackdoorService</code> (1,656), <code>Cli/Program.cs</code> (3,150). All mix orchestration, parsing, validation, rendering, repair, logging, and reporting.</p>
+</div>
+
+<div class="issue">
+<h4><span class="tag">Risk 3</span> Fragile post-hoc text-repair pipeline</h4>
+<p>Multiple regex patches (<code>PatchBin2ShellPayloadLambda</code>, <code>RepairCStringLiteralQuotes</code>, <code>PatchCapturelessLambdas</code>, <code>WrapFetchWithHexDecode</code>, <code>SplitLargeCodeBlobText</code>, <code>InjectWebPayloadPreamble</code>) all exist to fix the <em>output</em> of an external tool you also control (bin2shell). Each is a stand-in for a missing contract.</p>
+</div>
+
+<div class="issue">
+<h4><span class="tag">Risk 4</span> Supply chain is too trusting</h4>
+<p><code>RequirementProvisioner</code> downloads bin2shell from GitHub <code>main</code>/<code>master</code> archive zips — no checksum, no signature, no version pinning. The whole offensive payload generator depends on whatever HEAD ships today.</p>
+</div>
+
+<div class="callout warn">
+<strong>Bottom line</strong>
+<p>The architecture is at the point where it works because the original author remembers all the implicit invariants. The next person — or the same person in three months — will start tripping on them. The plan below is sequenced to <em>make those invariants explicit before adding more features</em>.</p>
+</div>
+</section>
+
+<!-- ──────────────────────────────────────────────── -->
+<section id="today">
+<h2 class="section-title"><span class="num">02</span>Architecture today (as it really is)</h2>
+
+<pre><code>┌─────────────────────────┐    ┌─────────────────────────┐
+│ WinUI XAML pages        │    │ Cli/Program.cs (3150 LOC│
+│  + visual tree          │    │  partials, ad-hoc DI)   │
+└──────────┬──────────────┘    └────────────┬────────────┘
+           │ UiDataFactory                  │ builds UiData
+           │ (walks tree by control name)   │ from argv strings
+           ▼                                ▼
+        UiData = Dictionary&lt;string,string&gt; × 3
+                              │
+                              ▼
+        MainFormCoordinator (GUI)    ← 1707-LOC bridge, also normalizes inputs
+                              │
+                              ▼
+        CompilerService.CompileAsync
+        ├── ValidateEnvironment
+        ├── TryDiscoverCompilerAsync (CompilerToolLocator)
+        ├── ResolveTemplate             ← fuzzy match on YAML catalog
+        ├── DetermineShellcodeSource
+        ├── ApplyShellcodeAsync
+        │   ├── ApplyShikataGaNaiAsync  ← spawns sgn.exe
+        │   └── Bin2ShellRunner.RunAsync ← spawns py main.py
+        │       └── (5+ regex repair passes on its stdout)
+        ├── ApplyFeatureSelections      ← reads UiData heuristically
+        ├── ValidateSnippetRequires
+        ├── RenderTemplate              ← {{TOKEN}} + $param$ substitution
+        ├── PersistSourceAsync
+        ├── CppFileConverter.ConvertAsync ← spawns cl/g++/clang
+        └── SaveSession*  / GenerateSessionReport</code></pre>
+
+<p>The <strong>trust boundary</strong> issue: external tools (bin2shell, SGN, donut, MinGW, the C++ toolchain) are treated as in-process libraries even though they are out-of-process executables fetched from the public internet. There is no formal contract for what they emit. Every breakage manifests as a regex patch in C#.</p>
+</section>
+
+<!-- ──────────────────────────────────────────────── -->
+<section id="strengths">
+<h2 class="section-title"><span class="num">03</span>What's right (preserve these)</h2>
+
+<ul>
+    <li><strong>Core/Cli/GUI split.</strong> Real, enforced (Core has no WinUI). Keep this.</li>
+    <li><strong>Interface-driven services</strong> (<code>IAppPaths</code>, <code>ICompilerService</code>, <code>IBin2ShellRunner</code>, <code>ICompilerToolLocator</code>, <code>ICodeSnippetCatalogService</code>, <code>IRequirementProvisioner</code>, <code>IProgressReporter</code>). Constructor injection is consistent and defensive.</li>
+    <li><strong>YAML catalog as the unit of evolution.</strong> Decoupling techniques from the build is genuinely good.</li>
+    <li><strong>Session directories</strong> (<code>logging/session_&lt;ts&gt;_&lt;slug&gt;/{input,source,build}</code> + <code>report.txt</code>/<code>session.log</code>) — excellent forensic posture for a security tool.</li>
+    <li><strong>The <code>requires:</code> dependency contract</strong> between snippets (e.g. <code>requires: [uac_bypass]</code>) plus <code>ValidateSnippetRequires</code> — this is the right shape. It just needs more entries in <code>RequiresTokenToSectionTemplate</code>.</li>
+    <li><strong><code>CppCompilationPlan</code> as an explicit IR</strong> between input resolution and rendering.</li>
+</ul>
+</section>
+
+<!-- ──────────────────────────────────────────────── -->
+<section id="critique">
+<h2 class="section-title"><span class="num">04</span>Critique — how things can break</h2>
+
+<h3>4.1 The UiData contract is implicit, fuzzy, and lossy</h3>
+<p><code>UiData.TextBoxes/ComboBoxes/ListBoxes</code> are <code>Dictionary&lt;string, string&gt;</code>. Keys come from XAML <code>x:Name</code> (GUI) or argv (CLI). Several services then do <strong>heuristic lookup</strong>:</p>
+<ul>
+    <li><code>CompilerService.TryGetEncoderIndex</code> iterates <strong>all</strong> combo entries and matches any key containing <code>"bin2"</code> + (<code>"enc"</code> or <code>"codec"</code>).</li>
+    <li><code>EncoderKeys</code> / <code>EnvelopeKeys</code> / <code>AntiEmulationSelectionKeys</code> / <code>ShikataMaxBytesKeys</code> etc. are arrays of 4–11 alias strings each (<code>CompilerService.cs:366-436</code>).</li>
+    <li><code>YamlCodeSnippetCatalogService.MatchScore</code> does prefix and keyword-overlap matching to find a section by template key.</li>
+</ul>
+<div class="callout danger">
+<strong>How it breaks</strong>
+<p>Adding a benign XAML control whose name happens to contain <code>bin2…enc…</code> quietly hijacks encoder selection. Renaming a control silently zeros out encoder selection — the build still succeeds but produces a misconfigured loader. A typo in a YAML <code>template:</code> field is "rescued" by <code>MatchScore</code> and lands on whatever sorts first.</p>
+</div>
+
+<h3>4.2 CompilerService is doing nine jobs</h3>
+<p><code>CompilerService.cs</code> mixes:</p>
+<ol>
+    <li>Validation of environment.</li>
+    <li>Compiler discovery (delegated, but error-handled here).</li>
+    <li>Snippet/template selection from the catalog (with fuzzy resolve).</li>
+    <li>Shellcode source resolution (file/raw/url/web/generic).</li>
+    <li>SGN orchestration (<code>ApplyShikataGaNaiAsync</code>, <code>RunSgnProcessAsync</code>).</li>
+    <li>Bin2Shell orchestration + post-hoc repair of its output (5+ regex passes).</li>
+    <li>Token substitution (<code>{{TOKEN}}</code>, <code>$param$</code>).</li>
+    <li>Template rendering, including a regex-based <code>InjectWebPayloadPreamble</code> that finds <code>main(</code> to splice in <code>#include</code>s.</li>
+    <li>Session log/report generation.</li>
+</ol>
+<p>Plus 130+ lines of <strong>C++ runtime code embedded as a C# string literal</strong> (<code>SharedPreamble</code>, <code>ProcessLookupHelper</code>) that defines <code>wash_track</code>, <code>wash_demand_elevation_or_shutdown</code>, <code>_wash_veh</code>, etc. That C++ is loader behavior — it has nothing to do with the C# build orchestrator and shouldn't live in it.</p>
+
+<h3>4.3 The bin2shell-output repair pipeline is load-bearing wallpaper</h3>
+<p>These exist purely because bin2shell's emitted C++ doesn't compile cleanly:</p>
+<ul>
+    <li><code>PatchBin2ShellPayloadLambda</code> — fixes capture-default lambdas at file scope.</li>
+    <li><code>PatchCapturelessLambdas</code> — the inverse repair when the snippet lands in a function body.</li>
+    <li><code>RepairCStringLiteralQuotes</code> — fixes base91 quotes on multi-line string literals.</li>
+    <li><code>RepairStringLine</code> — per-line continuation of the above.</li>
+    <li><code>SplitLargeCodeBlobText</code> — splits oversize literals.</li>
+    <li><code>WrapFetchWithHexDecode</code> — wraps the fetch call.</li>
+    <li><code>InjectWebPayloadPreamble</code> — locates <code>main(</code> via regex and splices includes.</li>
+    <li><code>Bin2ShellWebOutputParser.RepairCppEscapeSequences</code> — repairs <code>\r \n \0</code> mis-escaped through Python.</li>
+</ul>
+<div class="callout danger">
+<strong>How it breaks</strong>
+<p>Every one of these is a silent fixup that depends on the exact shape of bin2shell's stdout. The day bin2shell changes its emitter (it's <em>your own</em> repo at <code>0xhmza/bin2shell</code>, fetched from <code>main</code> HEAD), one or more of these pattern-matches stops firing and the C++ either fails to compile or, worse, compiles into a subtly broken loader.</p>
+</div>
+
+<h3>4.4 Silent error swallowing</h3>
+<p>Multiple sites swallow exceptions with <code>catch { }</code>:</p>
+<ul>
+    <li><code>AppPaths.ActivePlaybookFullPath</code> — falls back to default on any read error.</li>
+    <li><code>RequirementProvisioner.CleanupStaleDirectories</code>, <code>ClearDirectoryContents</code>, <code>TryDelete*</code>, <code>DeleteDirectoryWithRetry</code> — every cleanup is best-effort and silent.</li>
+    <li><code>CppFileConverter.SourceContainsDllMain</code> and <code>DetectRequiredLibraries</code> — read errors ignored. A missing winhttp link will only surface as a linker error.</li>
+    <li><code>CompilerToolLocator</code> and <code>CompilerService.TryDiscoverCompilerAsync</code> — discovery exceptions become a soft <code>null</code> and a warn note.</li>
+    <li><code>YamlCodeSnippetCatalogService.TryParseYaml/Json</code> — swallow <code>YamlException</code>/<code>JsonException</code> and try the other format. A genuine YAML syntax error produces "Snippet catalog is empty or invalid" with no line number.</li>
+</ul>
+<p>These aren't all wrong individually — but as a pattern they make root-cause debugging painful, because the user reaches the failure several layers downstream from the cause.</p>
+
+<h3>4.5 Provisioner can leave a half-installed tool on disk</h3>
+<p><code>RequirementProvisioner.MoveDirectoryRobust</code> has three strategies. Strategy 3 (<code>ClearDirectoryContents</code> then <code>CopyDirectoryContents</code>) wipes the target <em>first</em> and then copies. If <code>CopyDirectoryContents</code> throws midway, the target is left empty/partial. There's no rollback when only a subset of files copied. A failed install reports success on <code>_logger.Ok(...)</code> based only on the last operation completing without throwing.</p>
+
+<h3>4.6 Supply chain assumptions</h3>
+<p><code>RequirementProvisioner.GetMissingRequirements</code>:</p>
+<ul>
+    <li><strong>Bin2Shell</strong>: <code>github.com/0xhmza/bin2shell/archive/refs/heads/main.zip</code> — moving HEAD, no checksum.</li>
+    <li><strong>SGN</strong>: pinned to <code>v2.0.1</code> — fine.</li>
+    <li><strong>Donut</strong>: pinned to <code>v1.1</code> — fine.</li>
+</ul>
+<div class="callout danger">
+<strong>The largest single foot-gun</strong>
+<p>A malicious PR/force-push to <code>0xhmza/bin2shell</code> ships into every user's machine on next provision. For a tool whose entire purpose is generating offensive payloads, this is the wrong default. There's also no SHA-256 verification, no Authenticode check on the binaries, and no version pinning for one of the three downloads.</p>
+</div>
+
+<h3>4.7 Cancellation isn't fully honored</h3>
+<ul>
+    <li><code>RunSgnProcessAsync</code> (<code>CompilerService:803</code>) — <code>await process.WaitForExitAsync(cancellationToken)</code>. If the token fires, the <em>wait</em> is cancelled; the SGN process keeps running. Same pattern in <code>Bin2ShellRunner.RunAsync</code>.</li>
+    <li><code>CppFileConverter.ConvertAsync</code> actually calls <code>TryKill(proc)</code> on <code>OperationCanceledException</code>. The good pattern is implemented in one of three places.</li>
+</ul>
+
+<h3>4.8 Two parallel placeholder systems with thin documentation</h3>
+<ul>
+    <li>Template-level: <code>{{TOKEN}}</code> resolved by <code>ApplyTemplateContent</code>.</li>
+    <li>Snippet-level: <code>$param$</code> resolved by <code>SubstituteAndCollect</code>.</li>
+    <li>Plus ad-hoc tokens: <code>$guardrail_param$</code>, <code>__GUARDRAIL_PARAM__</code>, <code>$psname$</code> substituted manually in their respective <code>Apply*Selection</code> methods.</li>
+</ul>
+<p>Three different placeholder dialects. None are formally documented in a schema file.</p>
+
+<h3>4.9 No DI container, no schema validation, almost no unit tests</h3>
+<ul>
+    <li><strong>DI</strong>: services are wired up by hand in <code>TestHarness</code>, in <code>Cli/Program.cs</code>, and in <code>App.xaml.cs</code>. Adding a service means three call sites change.</li>
+    <li><strong>Schema</strong>: <code>default.yaml</code> is 2,895 lines with no JSON Schema, no <code>$schema</code> reference, no validator step in CI, no contract test that every section's <code>requires:</code> token resolves.</li>
+    <li><strong>Tests</strong>: <code>TestHarness</code> is end-to-end smoke (compile + run the EXE). There are no unit tests on <code>BuildPlaceholderValues</code>, <code>SubstituteTokens</code>, <code>ValidateNoUnresolvedTokens</code>, <code>Bin2ShellWebOutputParser</code>, the regex repair passes, or <code>CompilerToolLocator</code>.</li>
+</ul>
+
+<h3>4.10 Process orchestration is duplicated four times</h3>
+<p><code>CppFileConverter.ConvertAsync</code>, <code>Bin2ShellRunner.RunAsync</code>, <code>CompilerService.RunSgnProcessAsync</code>, <code>DonutService.ConvertAsync</code>, and <code>MingwDownloader</code> each implement their own <code>ProcessStartInfo</code> + redirect stdout/stderr + <code>WaitForExitAsync</code> + cancellation handling — with <strong>different</strong> behaviors on cancellation, output buffering, and exit-code interpretation. A common <code>ExternalProcessRunner</code> would unify them and let cancellation, timeout, and stderr-on-failure be solved once.</p>
+</section>
+
+<!-- ──────────────────────────────────────────────── -->
+<section id="plan">
+<h2 class="section-title"><span class="num">05</span>Refactoring plan</h2>
+<p>Each step is independently shippable and unblocks the next. Branch each item; PR each individually.</p>
+
+<div class="completion-summary">
+<h4>Progress (live)</h4>
+<ul>
+<li><strong>P0-3 (extract C++ runtime):</strong> ✓ done. <code>SharedPreamble</code> and <code>ProcessLookupHelper</code> moved to <code>Assets/runtime/wash_runtime.h</code> + <code>wash_proc_lookup.h</code>; <code>CompilerService.cs</code> shrank from 3,083 → 2,796 lines (–287). Loaded lazily via <code>IAppPaths</code>.</li>
+<li><strong>P0-4 (YAML schema + exact-match resolver):</strong> ✓ done. Published <code>Assets/playbook.schema.json</code>, swapped <code>TryParseYaml/Json</code> swallowing for line/column-aware error reporting, added <code>ValidateCatalogShape</code> with section/item context, deleted <code>MatchScore</code>/<code>SharesKeyword</code> fuzzy resolution, moved <code>requires:</code> token map to <code>KnownRequiresTokens</code> and validate at load.</li>
+<li><strong>P0-1 (typed UiData contract):</strong> ▶ in progress.</li>
+</ul>
+</div>
+
+<h3>P0 — Foundations (do first; everything depends on these)</h3>
+
+<div class="plan-item p0 in-progress">
+<h4>P0-1 · Lock down the UiData contract</h4>
+<div class="plan-meta"><span class="priority">P0</span> Effort: 2–3 days · Risk: medium (touches GUI, CLI, Core)</div>
+<ul>
+    <li>Replace <code>UiData</code> (three loose dictionaries) with a typed input record: <code>CompilationRequest</code> with explicit fields for shellcode source, encoding, SGN, template id, and a <code>IReadOnlyDictionary&lt;string, string&gt; SnippetParams</code> keyed by <strong>scoped key</strong> (<code>{sectionTemplate}_{itemId}_{inputId}</code>).</li>
+    <li>Move all heuristic key resolution (<code>EncoderKeys[]</code>, <code>TryGetEncoderIndex</code>, <code>GetAntiEmulationSelection</code>, etc.) into a single <code>UiDataAdapter</code> in the GUI layer that converts visual tree → typed request. The adapter is the <strong>only</strong> place control naming knowledge lives.</li>
+    <li>The CLI builds <code>CompilationRequest</code> from argv directly without going through dictionaries.</li>
+    <li><strong>Acceptance:</strong> removing every <code>bin2…enc…</code> substring scan and the <code>*Keys</code> arrays from <code>CompilerService.cs</code>.</li>
+</ul>
+</div>
+
+<div class="plan-item p0">
+<h4>P0-2 · Carve CompilerService into composable stages</h4>
+<div class="plan-meta"><span class="priority">P0</span> Effort: 4–5 days · Risk: medium · Strict refactor — no behavior change</div>
+<p>Split into:</p>
+<ul>
+    <li><code>ICompilationPipeline</code> (façade) — orchestrates stages.</li>
+    <li><code>IShellcodeSourceResolver</code> — file/raw/url/web/generic.</li>
+    <li><code>IShellcodeEncodingPipeline</code> — SGN, then Bin2Shell, then post-process. Returns a typed <code>EncodedShellcode</code> (bytes/text + metadata), not a fragment of C++.</li>
+    <li><code>ICppCodeGenerator</code> — owns <code>CppCompilationPlan</code> building, snippet substitution, template rendering. Pure, testable.</li>
+    <li><code>ISessionRecorder</code> — owns the entire <code>logging/session_*/</code> tree. Subscribes to pipeline events.</li>
+    <li><code>ICppBuilder</code> — wraps <code>CppFileConverter</code>.</li>
+    <li><code>CompilerService</code> becomes a 100-line orchestrator that wires these together.</li>
+</ul>
+</div>
+
+<div class="plan-item p0 done">
+<h4>P0-3 · Move the embedded C++ runtime out of C#</h4>
+<div class="plan-meta"><span class="priority">P0</span> Effort: 1 day · Risk: low</div>
+<ul>
+    <li>Extract <code>SharedPreamble</code> and <code>ProcessLookupHelper</code> from <code>CompilerService.cs</code> (lines 26-330) into <code>Assets/runtime/wash_runtime.h</code>.</li>
+    <li>Ship as a real <code>.h</code> next to <code>default.yaml</code>. Reference from templates as <code>#include "wash_runtime.h"</code> and resolve at render time via <code>IAppPaths</code>.</li>
+    <li><strong>Benefit:</strong> syntax highlighting, clang-tidy, separate diff history, can be unit-tested with a real C++ compile.</li>
+</ul>
+</div>
+
+<div class="plan-item p0 done">
+<h4>P0-4 · Define a YAML schema and validate at load</h4>
+<div class="plan-meta"><span class="priority">P0</span> Effort: 2 days · Risk: low</div>
+<ul>
+    <li>Publish <code>Assets/playbook.schema.json</code> (JSON Schema for the YAML structure: sections/items/inputs/templates/placeholders/requires).</li>
+    <li><code>YamlCodeSnippetCatalogService</code> validates against it on load. Failures must include line/column, not just "empty or invalid".</li>
+    <li>Add a contract test: every <code>requires:</code> token in the shipped catalog must resolve via <code>RequiresTokenToSectionTemplate</code>. Today only <code>uac_bypass</code> is wired — the others are silent no-ops.</li>
+    <li>Replace <code>MatchScore</code>/<code>SharesKeyword</code> fuzzy resolution with <strong>exact</strong> template/header lookup. If the catalog uses inconsistent names, fix the catalog.</li>
+</ul>
+</div>
+
+<h3>P1 — De-risk the integrations</h3>
+
+<div class="plan-item p1">
+<h4>P1-1 · Single ExternalProcessRunner abstraction</h4>
+<div class="plan-meta"><span class="priority">P1</span> Effort: 2 days · Risk: low</div>
+<ul>
+    <li>Build <code>IProcessRunner.RunAsync(spec, ct) → ProcessOutcome { ExitCode, Stdout, Stderr, Duration }</code>.</li>
+    <li>Spec encodes timeout, env, stdin, working dir, expected exit codes, and cancellation behavior (kill-tree on cancel — currently only <code>CppFileConverter</code> does this).</li>
+    <li>Migrate <code>Bin2ShellRunner</code>, <code>CompilerService.RunSgnProcessAsync</code>, <code>DonutService</code>, <code>CppFileConverter</code> to it.</li>
+    <li>One bug fix lands four times for free.</li>
+</ul>
+</div>
+
+<div class="plan-item p1">
+<h4>P1-2 · Replace bin2shell stdout repair with a stable wire format</h4>
+<div class="plan-meta"><span class="priority">P1</span> Effort: 3–4 days, including a coordinated change in <code>0xhmza/bin2shell</code> · Risk: medium</div>
+<p>The repair regex pile is paying interest on a missing contract. Fix the contract:</p>
+<ul>
+    <li>Define a JSON or YAML output schema in bin2shell — already partly done (<code>cpp_includes</code>, <code>cpp_declarations</code>, etc.).</li>
+    <li>Have bin2shell emit raw payload bytes (base64) + structured C++ fragments <strong>already free of escape damage and lambda-capture errors</strong>. The Python escape repair (<code>RepairCppEscapeSequences</code>) is a sign that bin2shell is using a non-raw Python string for what should be a raw block.</li>
+    <li>Once the upstream emits clean output: delete <code>PatchBin2ShellPayloadLambda</code>, <code>RepairCStringLiteralQuotes</code>, <code>RepairStringLine</code>, <code>SplitLargeCodeBlobText</code>, <code>PatchCapturelessLambdas</code>, <code>WrapFetchWithHexDecode</code>. Keep one parser; assert on shape; no fixups.</li>
+    <li>If you can't change bin2shell, at minimum: pin its version (replace <code>main.zip</code> with a tagged release zip) and add a contract test that runs bin2shell with a fixed input and asserts on the parser output.</li>
+</ul>
+</div>
+
+<div class="plan-item p1">
+<h4>P1-3 · Pin and verify external downloads</h4>
+<div class="plan-meta"><span class="priority">P1</span> Effort: 1 day · Risk: low</div>
+<p>In <code>RequirementProvisioner</code>:</p>
+<ul>
+    <li>Replace <code>bin2shell/main.zip</code> with a tagged release URL.</li>
+    <li>Add <code>Sha256</code> to <code>RequirementData</code>. Verify after download, fail loudly if it doesn't match.</li>
+    <li>Verify Authenticode signature on <code>sgn.exe</code> and <code>donut.exe</code> where signed; for unsigned binaries, hash-pin.</li>
+    <li>Replace strategy-3 of <code>MoveDirectoryRobust</code> (in-place clear-then-copy) with: copy to a sibling <code>target.new</code>, then atomic rename <code>target → target.old</code>, <code>target.new → target</code>, then delete <code>target.old</code>. No window where the install is half-wiped.</li>
+</ul>
+</div>
+
+<div class="plan-item p1">
+<h4>P1-4 · Honor cancellation in all process runners</h4>
+<div class="plan-meta"><span class="priority">P1</span> Effort: 0.5 day · Risk: low</div>
+<p>Falls out of P1-1 — all spawners use <code>IProcessRunner</code> and all kill on cancel.</p>
+</div>
+
+<h3>P2 — Quality of life and longevity</h3>
+
+<div class="plan-item p2">
+<h4>P2-1 · Introduce a DI container</h4>
+<div class="plan-meta"><span class="priority">P2</span> Effort: 1 day · Risk: low</div>
+<p>Use <code>Microsoft.Extensions.DependencyInjection</code>. One composition root in <code>Cli/Program.cs</code>, one in <code>App.xaml.cs</code>, one in <code>TestHarness</code>. Adding a service stops touching three files.</p>
+</div>
+
+<div class="plan-item p2">
+<h4>P2-2 · Real unit-test surface</h4>
+<div class="plan-meta"><span class="priority">P2</span> Effort: 4 days · Risk: low</div>
+<p><code>Washmachine.Core.Tests</code> (xUnit). First-cut targets:</p>
+<ul>
+    <li><code>CppCodeGenerator</code> token substitution (table-driven).</li>
+    <li><code>Bin2ShellWebOutputParser</code> against captured fixtures from a pinned bin2shell version.</li>
+    <li><code>CompilerToolLocator</code> discovery on a faked filesystem.</li>
+    <li><code>RequirementProvisioner.MoveDirectoryRobust</code> — strategies 1 and 2 happy/locked paths.</li>
+    <li><code>ValidateSnippetRequires</code> — every shipped snippet's requirements resolve.</li>
+    <li><code>ResolveShikataGaNaiOptions</code>, <code>ResolveTemplate</code> — input parsing edge cases.</li>
+</ul>
+<p>Keep <code>TestHarness</code> as an integration suite, separate from unit.</p>
+</div>
+
+<div class="plan-item p2">
+<h4>P2-3 · Structured errors over string notes</h4>
+<div class="plan-meta"><span class="priority">P2</span> Effort: 2 days · Risk: low</div>
+<p><code>CompilerResult</code> carries <code>Notes : List&lt;string&gt;</code> — fine for humans, useless for callers. Add <code>IReadOnlyList&lt;CompilationDiagnostic&gt;</code> with <code>{ Severity, Code, Message, Source, Line? }</code>. CLI/GUI render diagnostics; humans still see the same text; programmatic callers can react.</p>
+</div>
+
+<div class="plan-item p2">
+<h4>P2-4 · Slim MainFormCoordinator</h4>
+<div class="plan-meta"><span class="priority">P2</span> Effort: 3 days · Risk: medium</div>
+<p>Once <code>UiDataAdapter</code> (P0-1) exists and <code>CompilationPipeline</code> (P0-2) is in place, <code>MainFormCoordinator</code> shrinks dramatically. Split remaining responsibilities by page (<code>MainPageController</code>, <code>WebPayloadController</code>, <code>BackdoorPageController</code>, <code>SettingsController</code>). Aim for each to be &lt;300 LOC.</p>
+</div>
+
+<div class="plan-item p2">
+<h4>P2-5 · Schema-validate the CLI argument surface</h4>
+<div class="plan-meta"><span class="priority">P2</span> Effort: 1 day · Risk: low</div>
+<p>The CLI's allowed-options dictionary (<code>CommandOptionCompletions</code>) is the only place the arg shape is described. Use <code>System.CommandLine</code> or a similar parser so each <code>RunEncodeAsync</code> etc. has a typed parsed-args object instead of string scans.</p>
+</div>
+
+<h3>P3 — Optional / nice-to-have</h3>
+
+<div class="plan-item p3">
+<h4>P3-1 · C++ source linting in CI</h4>
+<div class="plan-meta"><span class="priority">P3</span></div>
+<p>Render every template × default snippets combination and run <code>clang-format</code> / <code>clang-tidy</code> on the output. Catches malformed snippet text in the catalog before it ships to a user.</p>
+</div>
+
+<div class="plan-item p3">
+<h4>P3-2 · Catalog editor mode</h4>
+<div class="plan-meta"><span class="priority">P3</span></div>
+<p>A <code>washmachine-cli playbook validate</code> and <code>playbook lint</code> (already partially echoed by <code>scan</code>) — make it a first-class command.</p>
+</div>
+
+<div class="plan-item p3">
+<h4>P3-3 · Telemetry-by-session.json</h4>
+<div class="plan-meta"><span class="priority">P3</span></div>
+<p>Emit a structured <code>session.json</code> (alongside <code>report.txt</code>) so red-team workflows can grep across past runs.</p>
+</div>
+
+<div class="plan-item p3">
+<h4>P3-4 · Sandboxed test harness</h4>
+<div class="plan-meta"><span class="priority">P3</span></div>
+<p>Phase 3 today executes the produced EXE on the dev machine. Move that under a Windows Sandbox / WDAGUtilityAccount profile so smoke tests can't accidentally fire a real loader against the developer.</p>
+</div>
+</section>
+
+<!-- ──────────────────────────────────────────────── -->
+<section id="sequencing">
+<h2 class="section-title"><span class="num">06</span>Sequencing — what to hand to an engineer</h2>
+
+<table>
+<thead>
+<tr><th>Sprint</th><th>Goal</th><th>Deliverables</th></tr>
+</thead>
+<tbody>
+<tr><td>1</td><td>Stabilize the contracts</td><td>P0-1 (typed UiData), P0-3 (extract C++ runtime), P0-4 (YAML schema + exact-match resolver)</td></tr>
+<tr><td>2</td><td>Decompose the giant</td><td>P0-2 (split CompilerService into stages)</td></tr>
+<tr><td>3</td><td>De-risk integrations</td><td>P1-1 (ProcessRunner), P1-3 (download pinning + atomic install), P1-4 (cancellation)</td></tr>
+<tr><td>4</td><td>Stop fighting bin2shell output</td><td>P1-2 (stable wire format, delete repair regex pile)</td></tr>
+<tr><td>5</td><td>Make it testable &amp; maintainable</td><td>P2-1 (DI), P2-2 (unit tests), P2-3 (diagnostics), P2-4 (split coordinator)</td></tr>
+</tbody>
+</table>
+
+<div class="callout warn">
+<strong>Discipline</strong>
+<p>Each sprint is a working release. Don't merge a half-finished P0-2.</p>
+</div>
+</section>
+
+<!-- ──────────────────────────────────────────────── -->
+<section id="two-things">
+<h2 class="section-title"><span class="num">07</span>The two things to change tomorrow</h2>
+
+<p>If only two items get done:</p>
+
+<div class="callout ok">
+<strong>1 · P0-3 — extract the embedded C++ runtime</strong>
+<p>Get the embedded C++ runtime out of <code>CompilerService.cs</code> into a real <code>.h</code>. It's a one-day fix that immediately makes the loader auditable.</p>
+</div>
+
+<div class="callout ok">
+<strong>2 · P1-3 — pin and verify downloads</strong>
+<p>Pin bin2shell to a tag and add SHA-256 verification on every download. One day, removes the largest single "could ship a malicious payload" foot-gun.</p>
+</div>
+
+<p>Everything else builds on those.</p>
+</section>
+
+</main>
+
+<footer>
+    <div class="container">
+        <p>Washmachine — Architectural Review · prepared for the engineering team</p>
+    </div>
+</footer>
+
+</body>
+</html>

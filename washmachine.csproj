@@ -74,10 +74,21 @@
     <ProjectReference Include="Washmachine.Core\Washmachine.Core.csproj" />
   </ItemGroup>
 
-  <!-- Copy Assets (YAML catalogs) to publish output so AppPaths can locate them -->
+  <!-- Copy Assets (YAML catalogs + C++ runtime headers + JSON schema) to publish output so AppPaths can locate them -->
   <ItemGroup>
     <Content Include="Assets\*.yaml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Assets\*.yml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\runtime\*.h" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\llvm-passes\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Bundled LLVM tools for LlvmPipelineService -->
+  <ItemGroup>
+    <Content Include="Tools\LLVM\**\*"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest"
+             Condition="Exists('Tools\LLVM')" />
   </ItemGroup>
 
   <!-- Ensure the PRI resource index is copied to publish output (required for XAML at runtime) -->

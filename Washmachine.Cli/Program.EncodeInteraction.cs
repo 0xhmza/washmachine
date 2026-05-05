@@ -175,6 +175,22 @@ public static partial class Program
             Details: "When true, the encode pipeline prints JSON instead of the styled success/failure report.",
             Expected: "true | false",
             Example: "true"),
+        new(
+            "COMPILATION_BACKEND",
+            Required: false,
+            DefaultValue: "Deterministic",
+            Description: "Compilation backend selection.",
+            Details: "Deterministic uses the standard toolchain (cl.exe / g++). LlvmObfuscated uses bundled clang++ with IR-level obfuscation passes.",
+            Expected: "Deterministic | LlvmObfuscated",
+            Example: "LlvmObfuscated"),
+        new(
+            "LLVM_PASSES",
+            Required: false,
+            DefaultValue: null,
+            Description: "LLVM IR obfuscation pass IDs (only when backend=LlvmObfuscated).",
+            Details: "Comma-separated list of pass IDs to apply. Each pass.dll must be built first from Assets/llvm-passes/<id>/CMakeLists.txt.",
+            Expected: "control-flow-flattening | instruction-substitution | string-obfuscation | bogus-control-flow",
+            Example: "control-flow-flattening,instruction-substitution"),
     ];
 
     private static readonly IReadOnlyDictionary<string, EncodeOptionSpec> EncodeOptionSpecsByName =
@@ -880,6 +896,31 @@ public static partial class Program
                         messages.Add(BuildExpectedMessage("JSON", "true", jsonError!, context));
                     break;
 
+                case "-Backend" or "--backend":
+                    if (!TryReadFlagValue(args, ref i, out var backendValue))
+                    {
+                        messages.Add("Missing value after -Backend. Expected: Deterministic | LlvmObfuscated");
+                        break;
+                    }
+                    if (!backendValue!.Equals("Deterministic", StringComparison.OrdinalIgnoreCase) &&
+                        !backendValue.Equals("LlvmObfuscated", StringComparison.OrdinalIgnoreCase))
+                    {
+                        messages.Add($"Invalid -Backend value '{backendValue}'. Expected: Deterministic | LlvmObfuscated");
+                        break;
+                    }
+                    state.CompilationBackend = backendValue;
+                    break;
+
+                case "-LlvmPass" or "--llvm-pass":
+                    if (!TryReadFlagValue(args, ref i, out var passValue))
+                    {
+                        messages.Add("Missing value after -LlvmPass. Expected: a pass ID such as 'control-flow-flattening'.");
+                        break;
+                    }
+                    if (!string.IsNullOrWhiteSpace(passValue) && !state.LlvmPasses.Contains(passValue!, StringComparer.OrdinalIgnoreCase))
+                        state.LlvmPasses.Add(passValue!);
+                    break;
+
                 default:
                     return new EncodeParseOutcome(state, messages, Array.Empty<EncodeOptionSpec>(), $"Unknown option: {arg}", RequiresInteractiveFallback: false);
             }
@@ -1000,6 +1041,7 @@ public static partial class Program
         var comboBoxes = new Dictionary<string, string>
         {
             [UiDataKeys.Template] = state.Template,
+            [UiDataKeys.CompilationBackend] = state.CompilationBackend,
         };
 
         var encodingCatalogService = new ShellcodeEncodingCatalogService(runner, context.Paths);
@@ -1019,6 +1061,11 @@ public static partial class Program
         }
 
         var listBoxes = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        // LLVM obfuscation passes
+        if (state.LlvmPasses.Count > 0)
+            listBoxes[UiDataKeys.LlvmObfuscationPasses] = state.LlvmPasses.ToList();
+
         foreach (var kv in state.Snippets)
         {
             if (kv.Key.StartsWith("snippetCombo_", StringComparison.OrdinalIgnoreCase))
@@ -1799,6 +1846,8 @@ public static partial class Program
             "PAD_NOPS" => state.PadNops?.ToString(CultureInfo.InvariantCulture) ?? "(not set)",
             "VERBOSE" => state.Verbose ? "true" : "false",
             "JSON" => state.Json ? "true" : "false",
+            "COMPILATION_BACKEND" => state.CompilationBackend,
+            "LLVM_PASSES" => state.LlvmPasses.Count == 0 ? "(none)" : string.Join(", ", state.LlvmPasses),
             _ => "(not set)",
         };
     }
@@ -2957,6 +3006,8 @@ public static partial class Program
         public long? PadNops { get; set; }
         public bool Verbose { get; set; }
         public bool Json { get; set; }
+        public string CompilationBackend { get; set; } = "Deterministic";
+        public List<string> LlvmPasses { get; set; } = [];
 
         public EncodeSessionState Clone()
         {
@@ -2980,6 +3031,8 @@ public static partial class Program
                 PadNops = PadNops,
                 Verbose = Verbose,
                 Json = Json,
+                CompilationBackend = CompilationBackend,
+                LlvmPasses = LlvmPasses.ToList(),
             };
         }
     }

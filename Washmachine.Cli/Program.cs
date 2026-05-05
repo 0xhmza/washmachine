@@ -43,7 +43,8 @@ public static partial class Program
             "-NoCloneIcon", "--no-clone-icon", "-CloneMetadata", "--clone-metadata",
             "-NoCloneMetadata", "--no-clone-metadata", "-PadNops", "--pad-nops",
             "-Snippet", "--snippet", "-Text", "--text", "-Verbose", "--verbose",
-            "-Json", "--json"
+            "-Json", "--json",
+            "-Backend", "--backend", "-LlvmPass", "--llvm-pass"
         },
         ["analyze"] = new[] { "-Pe", "--pe", "-Json", "--json" },
         ["backdoor"] = new[]

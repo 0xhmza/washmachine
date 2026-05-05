@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://washmachine.dev/schemas/playbook.schema.json",
+  "title": "Washmachine Playbook",
+  "description": "Schema for default.yaml and any other playbook file under Assets/. Loaded by Washmachine.Core/Services/YamlCodeSnippetCatalogService.cs. The runtime validator (ValidateCatalogShape) enforces the same shape — keep both in sync. Editors with a YAML extension that supports JSON Schema (e.g. VS Code yaml-language-server) can use this for autocomplete and inline error reporting.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sections"],
+  "properties": {
+    "sections": {
+      "type": "array",
+      "description": "Snippet sections. Each section corresponds to one selectable category in the GUI/CLI.",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/section" }
+    },
+    "templates": {
+      "type": "array",
+      "description": "C++ loader templates. Each defines an entry-point and a set of placeholders. At least one is required for the playbook to be useful.",
+      "items": { "$ref": "#/$defs/template" }
+    }
+  },
+  "$defs": {
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "anyOf": [
+        { "required": ["header"] },
+        { "required": ["template"] }
+      ],
+      "properties": {
+        "header": {
+          "type": "string",
+          "description": "Display label for the category. Must be unique across sections.",
+          "minLength": 1
+        },
+        "template": {
+          "type": "string",
+          "description": "Stable identifier referenced by template placeholders (kind: snippet, snippetTemplate). Must be unique across sections — exact case-insensitive match is enforced.",
+          "minLength": 1
+        },
+        "display": {
+          "type": "string",
+          "description": "Optional friendlier UI label. Defaults to header when omitted."
+        },
+        "allowMultiple": {
+          "type": "boolean",
+          "description": "Whether the GUI lets the operator pick more than one item from this section (e.g. anti-debug supports multiple checks)."
+        },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/item" }
+        },
+        "inputs": {
+          "type": "array",
+          "description": "Section-level inputs that apply to every item (rare).",
+          "items": { "$ref": "#/$defs/input" }
+        }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable id, unique within the section. Used by snippet selection and as part of the scoped input key.",
+          "pattern": "^[A-Za-z0-9_]+$",
+          "minLength": 1
+        },
+        "display": {
+          "type": "string",
+          "description": "UI label for the item. Defaults to id when omitted."
+        },
+        "default": {
+          "type": "boolean",
+          "description": "Selected by default when the GUI first renders this section."
+        },
+        "snippet": {
+          "type": "string",
+          "description": "C++ source fragment substituted into the placeholder. May contain $token$ inputs that match this item's inputs[].id."
+        },
+        "includes": {
+          "type": "string",
+          "description": "Optional #include lines collected and deduplicated across all selected items."
+        },
+        "implementation": {
+          "type": "string",
+          "description": "Optional out-of-line C++ function bodies emitted before main()."
+        },
+        "inputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/input" }
+        },
+        "requires": {
+          "type": "array",
+          "description": "Capability tokens that must also be selected for this item to compile. Each token must match an entry in KnownRequiresTokens.Map (Washmachine.Core/Models/KnownRequiresTokens.cs). Unknown tokens are a hard error at catalog load — currently only 'uac_bypass' is wired.",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]+$",
+          "minLength": 1
+        },
+        "label": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["textbox"],
+          "description": "Currently only 'textbox' is recognized; other values fall through to TextBox."
+        },
+        "placement": {
+          "type": "string",
+          "enum": ["before", "after"],
+          "description": "Where the input sits relative to the snippet selector."
+        },
+        "required": { "type": "boolean" },
+        "width": { "type": "integer", "minimum": 1 },
+        "placeholder": { "type": "string" },
+        "infoAction": { "type": "string" },
+        "infoButtonLabel": { "type": "string" },
+        "defaultValue": { "type": "string" }
+      }
+    },
+    "template": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "minLength": 1,
+          "description": "Stable identifier. Unique across templates."
+        },
+        "display": { "type": "string" },
+        "description": { "type": "string" },
+        "preamble": {
+          "type": "string",
+          "description": "Optional template-specific C++ preamble appended to the shared {{PREAMBLE}} block."
+        },
+        "content": {
+          "type": "string",
+          "description": "C++ source with {{TOKEN}} placeholders. Standard system tokens: PREAMBLE, SNIPPET_INCLUDES, SNIPPET_IMPLEMENTATIONS, PROCESS_LOOKUP_HELPER, SHELLCODE_SOURCE, SHELLCODE_URL, GUARDRAILS, ANTI_DEBUGGING, UAC_BYPASS, PROCESS_INJECTION, SHELLCODE_EXECUTION."
+        },
+        "placeholders": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/placeholder" }
+        }
+      }
+    },
+    "placeholder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The {{NAME}} token to substitute in template.content.",
+          "pattern": "^[A-Z0-9_]+$",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["system", "snippet"],
+          "default": "system",
+          "description": "system: filled by CompilerService from the request. snippet: filled by user selection from the section identified by snippetTemplate."
+        },
+        "snippetTemplate": {
+          "type": "string",
+          "description": "When kind=snippet, the template name of the section to draw items from. Must match a section's 'template' field exactly (case-insensitive)."
+        }
+      }
+    }
+  }
+}

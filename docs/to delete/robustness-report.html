@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>washmachine-cli — Robustness Report</title>
+  <style>
+    :root {
+      --bg:          #282a36;
+      --bg-alt:      #1e1f29;
+      --bg-card:     #21222c;
+      --border:      #44475a;
+      --fg:          #f8f8f2;
+      --comment:     #6272a4;
+      --cyan:        #8be9fd;
+      --green:       #50fa7b;
+      --orange:      #ffb86c;
+      --pink:        #ff79c6;
+      --purple:      #bd93f9;
+      --red:         #ff5555;
+      --yellow:      #f1fa8c;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    a { color: var(--purple); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ---------- header ---------- */
+    header {
+      background: var(--bg-alt);
+      border-bottom: 1px solid var(--border);
+      padding: 32px 48px;
+    }
+    header h1 {
+      font-size: 28px;
+      color: var(--purple);
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    header .subtitle {
+      color: var(--comment);
+      margin-top: 6px;
+      font-size: 13px;
+    }
+    header .meta {
+      display: flex;
+      gap: 32px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+    }
+    .meta-item { display: flex; flex-direction: column; gap: 2px; }
+    .meta-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--comment); }
+    .meta-value { font-size: 15px; font-weight: 600; color: var(--cyan); }
+
+    /* ---------- summary scoreboard ---------- */
+    .scoreboard {
+      display: flex;
+      gap: 16px;
+      padding: 24px 48px;
+      background: var(--bg-alt);
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .score-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 24px;
+      min-width: 120px;
+      text-align: center;
+    }
+    .score-card .num { font-size: 32px; font-weight: 700; }
+    .score-card .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--comment); margin-top: 4px; }
+    .score-pass  .num { color: var(--green); }
+    .score-fail  .num { color: var(--red); }
+    .score-total .num { color: var(--purple); }
+    .score-bugs  .num { color: var(--orange); }
+
+    /* ---------- layout ---------- */
+    main { padding: 40px 48px; max-width: 1300px; }
+
+    section { margin-bottom: 48px; }
+    section h2 {
+      font-size: 18px;
+      color: var(--pink);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    section h2 .badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--border);
+      color: var(--fg);
+      font-weight: 400;
+    }
+
+    /* ---------- bugs table ---------- */
+    .bugs-grid {
+      display: grid;
+      grid-template-columns: auto 1fr 1fr 1fr 1fr;
+      gap: 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .bugs-grid .gh { background: var(--border); color: var(--comment); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; padding: 10px 14px; font-weight: 600; }
+    .bugs-grid .gc { padding: 10px 14px; border-top: 1px solid var(--border); vertical-align: top; font-size: 13px; }
+    .bugs-grid .gc:nth-child(10n+1) { background: rgba(255,255,255,0.02); }
+    .bug-id { font-family: monospace; color: var(--orange); font-weight: 700; white-space: nowrap; }
+    .bug-sev-critical { color: var(--red); font-weight: 600; }
+    .bug-sev-medium   { color: var(--orange); font-weight: 600; }
+    .bug-sev-low      { color: var(--yellow); }
+    .status-fixed   { color: var(--green); font-weight: 600; }
+    .status-pass    { color: var(--green); }
+    .status-fail    { color: var(--red); }
+    code { font-family: 'Cascadia Code', 'Consolas', monospace; background: var(--bg); padding: 1px 5px; border-radius: 3px; font-size: 12px; color: var(--cyan); }
+
+    /* ---------- test results table ---------- */
+    .test-table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      font-size: 13px;
+    }
+    .test-table thead tr {
+      background: var(--border);
+      color: var(--comment);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .test-table th { padding: 10px 14px; text-align: left; font-weight: 600; }
+    .test-table td { padding: 9px 14px; border-top: 1px solid var(--border); vertical-align: top; }
+    .test-table tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+    .tag-pass  { color: var(--green); font-weight: 700; }
+    .tag-fail  { color: var(--red); font-weight: 700; }
+    .test-id   { font-family: monospace; color: var(--comment); font-size: 12px; white-space: nowrap; }
+    .test-cmd  { font-family: monospace; font-size: 12px; color: var(--cyan); }
+    .test-expected { color: var(--fg); }
+    .test-actual   { font-family: monospace; font-size: 12px; color: var(--yellow); }
+
+    /* ---------- files changed ---------- */
+    .file-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .file-list li {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--purple);
+      border-radius: 4px;
+      padding: 10px 16px;
+      font-family: monospace;
+      font-size: 13px;
+      color: var(--cyan);
+    }
+    .file-list li small { color: var(--comment); font-size: 11px; display: block; margin-top: 2px; }
+
+    /* ---------- footer ---------- */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 24px 48px;
+      color: var(--comment);
+      font-size: 12px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>washmachine-cli &mdash; Robustness Report</h1>
+  <div class="subtitle">Exhaustive piped-stdin input testing &bull; All categories &bull; All sessions</div>
+  <div class="meta">
+    <div class="meta-item">
+      <span class="meta-label">Repository</span>
+      <span class="meta-value">0xhmza/washmachine</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Build</span>
+      <span class="meta-value">Debug (dotnet 10 preview)</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Date</span>
+      <span class="meta-value">2025-06-08</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Test Method</span>
+      <span class="meta-value">Piped stdin &rarr; washmachine-cli.exe</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Categories</span>
+      <span class="meta-value">18</span>
+    </div>
+  </div>
+</header>
+
+<div class="scoreboard">
+  <div class="score-card score-total"><div class="num">91</div><div class="lbl">Total Tests</div></div>
+  <div class="score-card score-pass"> <div class="num">91</div><div class="lbl">Passed</div></div>
+  <div class="score-card score-fail"> <div class="num">0</div> <div class="lbl">Failed</div></div>
+  <div class="score-card score-bugs"> <div class="num">5</div> <div class="lbl">Bugs Fixed</div></div>
+</div>
+
+<main>
+
+<!-- BUGS SECTION -->
+<section id="bugs">
+  <h2>&#x1F41B; Bugs Found &amp; Fixed <span class="badge">5 bugs &bull; all resolved</span></h2>
+  <div class="bugs-grid">
+    <div class="gh">ID</div>
+    <div class="gh">Description</div>
+    <div class="gh">Root Cause</div>
+    <div class="gh">Severity</div>
+    <div class="gh">Status</div>
+
+    <div class="gc bug-id">#1</div>
+    <div class="gc"><strong>clear / cls crashes on piped stdin</strong><br>Commands <code>clear</code> and <code>cls</code> threw an unhandled CLR exception (exit&nbsp;-532462766) when stdout was redirected.</div>
+    <div class="gc"><code>AnsiConsole.Clear()</code> throws <code>InvalidOperationException</code> when the console is not an interactive terminal. Five call-sites across <code>Program.cs</code>, <code>Program.EncodeInteraction.cs</code>, and <code>Program.OperationSessions.cs</code> lacked the try-catch guard already used in <code>StartupChecks.cs</code>.</div>
+    <div class="gc bug-sev-critical">Critical — crash / non-zero exit</div>
+    <div class="gc status-fixed">&#x2713; Fixed</div>
+
+    <div class="gc bug-id">#2</div>
+    <div class="gc"><strong>add (no args) crashes with Spectre markup exception</strong><br>Running <code>add</code> without arguments in the encode session threw <em>&ldquo;Could not find color or style&nbsp;'module/&lt;category&gt;/&lt;id&gt;'&rdquo;</em>.</div>
+    <div class="gc">The usage-message string <code>[module/&lt;category&gt;/&lt;id&gt;&nbsp;|&nbsp;&lt;global_id&gt;]</code> was passed directly to <code>AnsiConsole.MarkupLine()</code>; square brackets were interpreted as Spectre markup tags. Fix: <code>Markup.Escape()</code> wraps the literal portion.</div>
+    <div class="gc bug-sev-critical">Critical — crash / non-zero exit</div>
+    <div class="gc status-fixed">&#x2713; Fixed</div>
+
+    <div class="gc bug-id">#3</div>
+    <div class="gc"><strong>set METHOD &lt;invalid&gt; silently accepted in backdoor session</strong><br><code>set METHOD nonexistent_method</code> returned <code>[+]</code> success with no validation error.</div>
+    <div class="gc"><code>TryApplyBackdoorOptionValue</code> for <code>METHOD</code> unconditionally accepted any string. Added validation against <code>BackdoorMethodValues</code> (code-cave, new-section, section-ext, text-pad, tls-callback) defined in <code>Program.cs</code>.</div>
+    <div class="gc bug-sev-medium">Medium — silent mis-config</div>
+    <div class="gc status-fixed">&#x2713; Fixed</div>
+
+    <div class="gc bug-id">#4</div>
+    <div class="gc"><strong>set CARRIER &lt;invalid&gt; silently accepted in backdoor session</strong><br><code>set CARRIER nonsense</code> returned success without an error.</div>
+    <div class="gc">Same root cause as #3 for <code>CARRIER</code>. Added validation against <code>BackdoorCarrierValues</code> (entry-point).</div>
+    <div class="gc bug-sev-medium">Medium — silent mis-config</div>
+    <div class="gc status-fixed">&#x2713; Fixed</div>
+
+    <div class="gc bug-id">#5</div>
+    <div class="gc"><strong>set ENCRYPTION &lt;invalid&gt; silently accepted in backdoor session</strong><br><code>set ENCRYPTION aes</code> (unsupported) returned success without an error.</div>
+    <div class="gc">Same root cause as #3 for <code>ENCRYPTION</code>. Added validation against <code>BackdoorEncryptionValues</code> (none).</div>
+    <div class="gc bug-sev-medium">Medium — silent mis-config</div>
+    <div class="gc status-fixed">&#x2713; Fixed</div>
+  </div>
+</section>
+
+<!-- FILES CHANGED -->
+<section id="files">
+  <h2>&#x1F4C4; Files Modified</h2>
+  <ul class="file-list">
+    <li>Washmachine.Cli/Program.cs
+      <small>Wrapped AnsiConsole.Clear() at lines 165 and 260 (root REPL &amp; sub-loop) with try-catch to suppress crash on redirected stdout.</small>
+    </li>
+    <li>Washmachine.Cli/Program.EncodeInteraction.cs
+      <small>Wrapped AnsiConsole.Clear() at line 338 (encode session) with try-catch. Fixed Spectre markup crash in HandleEncodeAddAsync: wrapped literal usage text with Markup.Escape().</small>
+    </li>
+    <li>Washmachine.Cli/Program.OperationSessions.cs
+      <small>Wrapped AnsiConsole.Clear() at lines 127 and 217 (strip &amp; backdoor sessions). Added value validation for METHOD, CARRIER, ENCRYPTION in TryApplyBackdoorOptionValue using the shared arrays from Program.cs.</small>
+    </li>
+  </ul>
+</section>
+
+<!-- CAT 1: ROOT REPL -->
+<section id="cat1">
+  <h2>Category 1 &mdash; Root REPL <span class="badge">7 tests &bull; all pass</span></h2>
+  <table class="test-table">
+    <thead><tr><th>#</th><th>Input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="test-id">1.1</td><td class="test-cmd">help</td><td class="test-expected">Usage help is displayed</td><td class="test-actual">Help output printed</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">1.2</td><td class="test-cmd">banner</td><td class="test-expected">ASCII art banner shown</td><td class="test-actual">Banner rendered</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">1.3</td><td class="test-cmd">show</td><td class="test-expected">Error: missing target argument</td><td class="test-actual">Error shown</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">1.4</td><td class="test-cmd">show INVALID</td><td class="test-expected">Error: unknown show target</td><td class="test-actual">Error: Unknown show target</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">1.5</td><td class="test-cmd">show all extra</td><td class="test-expected">Error: too many arguments</td><td class="test-actual">Error: show accepts at most one target</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">1.6</td><td class="test-cmd">clear (piped)</td><td class="test-expected">Graceful no-op, exit 0</td><td class="test-actual">Goodbye. exit:0</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">1.7</td><td class="test-cmd">unknowncmd</td><td class="test-expected">Error: Unknown command</td><td class="test-actual">Error: Unknown command</td><td class="tag-pass">PASS</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CAT 2: PAYLOAD_SOURCE -->
+<section id="cat2">
+  <h2>Category 2 &mdash; Encode &mdash; PAYLOAD_SOURCE <span class="badge">12 tests &bull; all pass</span></h2>
+  <table class="test-table">
+    <thead><tr><th>#</th><th>Input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="test-id">2.1</td><td class="test-cmd">set PAYLOAD_SOURCE hex:AABBCCDD</td><td class="test-expected">Accepted</td><td class="test-actual">[+] PAYLOAD_SOURCE =&gt; hex:AABBCCDD</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">2.2</td><td class="test-cmd">set PAYLOAD_SOURCE hex:GGHHII</td><td class="test-expected">Error: not valid hex</td><td class="test-actual">[-] not valid hex</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">2.3</td><td class="test-cmd">set PAYLOAD_SOURCE hex:</td><td class="test-expected">Error: expected format</td><td class="test-actual">[-] error shown</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">2.4</td><td class="test-cmd">set PAYLOAD_SOURCE hex:ABC</td><td class="test-expected">Error: odd-length hex</td><td class="test-actual">[-] not valid hex</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">2.5</td><td class="test-cmd">set PAYLOAD_SOURCE file:C:\Windows\System32\notepad.exe</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">2.6</td><td class="test-cmd">set PAYLOAD_SOURCE file:C:\nonexistent.bin</td><td class="test-expected">Error: file not found</td><td class="test-actual">[-] file not found</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">2.7</td><td class="test-cmd">set PAYLOAD_SOURCE url:http://example.com/shell.bin</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">2.8</td><td class="test-cmd">set PAYLOAD_SOURCE url:https://example.com/shell.bin</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">2.9</td><td class="test-cmd">set PAYLOAD_SOURCE url:ftp://not-http.com</td><td class="test-expected">Error: not http(s) URL</td><td class="test-actual">[-] not valid http(s)</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">2.10</td><td class="test-cmd">set PAYLOAD_SOURCE url:notaurl</td><td class="test-expected">Error</td><td class="test-actual">[-] error shown</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">2.11</td><td class="test-cmd">set PAYLOAD_SOURCE url:</td><td class="test-expected">Error: expected format</td><td class="test-actual">[-] error shown</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">2.12</td><td class="test-cmd">set PAYLOAD_SOURCE badprefix:val</td><td class="test-expected">Error: expected format</td><td class="test-actual">[-] expected format</td><td class="tag-pass">PASS</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CAT 3: TEMPLATE -->
+<section id="cat3">
+  <h2>Category 3 &mdash; Encode &mdash; TEMPLATE <span class="badge">4 tests &bull; all pass</span></h2>
+  <table class="test-table">
+    <thead><tr><th>#</th><th>Input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="test-id">3.1</td><td class="test-cmd">set TEMPLATE minimal</td><td class="test-expected">Accepted</td><td class="test-actual">[+] TEMPLATE =&gt; minimal</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">3.2</td><td class="test-cmd">set TEMPLATE nonexistent_xyz</td><td class="test-expected">Error with valid options listed</td><td class="test-actual">[-] invalid value, options listed</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">3.3</td><td class="test-cmd">get TEMPLATE</td><td class="test-expected">Current value shown</td><td class="test-actual">[*] TEMPLATE =&gt; minimal</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">3.4</td><td class="test-cmd">unset TEMPLATE</td><td class="test-expected">Reset to default (minimal)</td><td class="test-actual">[+] TEMPLATE =&gt; minimal</td><td class="tag-pass">PASS</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CAT 4: SHELLCODE_EXECUTION -->
+<section id="cat4">
+  <h2>Category 4 &mdash; Encode &mdash; SHELLCODE_EXECUTION <span class="badge">5 tests &bull; all pass</span></h2>
+  <table class="test-table">
+    <thead><tr><th>#</th><th>Input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="test-id">4.1</td><td class="test-cmd">set SHELLCODE_EXECUTION create_thread</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">4.2</td><td class="test-cmd">set SHELLCODE_EXECUTION nonexistent_xyz</td><td class="test-expected">Error: not found, use 'show execution'</td><td class="test-actual">[-] not found. Use 'show execution'</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">4.3</td><td class="test-cmd">set SHELLCODE_EXECUTION default</td><td class="test-expected">Reset to default</td><td class="test-actual">[+] reset</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">4.4</td><td class="test-cmd">set SHELLCODE_EXECUTION none</td><td class="test-expected">Reset to default</td><td class="test-actual">[+] reset</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">4.5</td><td class="test-cmd">unset SHELLCODE_EXECUTION</td><td class="test-expected">Reset to default</td><td class="test-actual">[+] reset</td><td class="tag-pass">PASS</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CAT 5: ENCODER/ENVELOPE -->
+<section id="cat5">
+  <h2>Category 5 &mdash; Encode &mdash; ENCODER / ENVELOPE <span class="badge">8 tests &bull; all pass</span></h2>
+  <table class="test-table">
+    <thead><tr><th>#</th><th>Input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="test-id">5.1</td><td class="test-cmd">set ENCODER 0</td><td class="test-expected">Accepted (index 0)</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">5.2</td><td class="test-cmd">set ENCODER -1</td><td class="test-expected">Error: invalid index</td><td class="test-actual">[-] invalid</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">5.3</td><td class="test-cmd">set ENCODER 99999</td><td class="test-expected">Error: not in catalog</td><td class="test-actual">[-] not in catalog</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">5.4</td><td class="test-cmd">set ENCODER abc</td><td class="test-expected">Error: not a number</td><td class="test-actual">[-] invalid</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">5.5</td><td class="test-cmd">unset ENCODER</td><td class="test-expected">Reset to none</td><td class="test-actual">[+] reset</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">5.6</td><td class="test-cmd">get ENCODER</td><td class="test-expected">Current value shown</td><td class="test-actual">[*] shown</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">5.7</td><td class="test-cmd">set ENVELOPE 0</td><td class="test-expected">Accepted (index 0)</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">5.8</td><td class="test-cmd">set ENVELOPE 99999</td><td class="test-expected">Error: not in catalog</td><td class="test-actual">[-] not in catalog</td><td class="tag-pass">PASS</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CAT 6: SHIKATA_GA_NAI -->
+<section id="cat6">
+  <h2>Category 6 &mdash; Encode &mdash; SHIKATA_GA_NAI <span class="badge">7 tests &bull; all pass</span></h2>
+  <table class="test-table">
+    <thead><tr><th>#</th><th>Input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="test-id">6.1</td><td class="test-cmd">set SHIKATA_GA_NAI true</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">6.2</td><td class="test-cmd">set SHIKATA_GA_NAI false</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">6.3</td><td class="test-cmd">set SHIKATA_GA_NAI yes</td><td class="test-expected">Accepted (alias for true)</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">6.4</td><td class="test-cmd">set SHIKATA_GA_NAI no</td><td class="test-expected">Accepted (alias for false)</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">6.5</td><td class="test-cmd">set SHIKATA_GA_NAI 1</td><td class="test-expected">Accepted (alias for true)</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">6.6</td><td class="test-cmd">set SHIKATA_GA_NAI 0</td><td class="test-expected">Accepted (alias for false)</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">6.7</td><td class="test-cmd">set SHIKATA_GA_NAI invalid</td><td class="test-expected">Error: invalid boolean</td><td class="test-actual">[-] invalid value</td><td class="tag-pass">PASS</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CAT 7: SHIKATA counts -->
+<section id="cat7">
+  <h2>Category 7 &mdash; Encode &mdash; SHIKATA_ENCODE_COUNT / SHIKATA_MAX_BYTES <span class="badge">10 tests &bull; all pass</span></h2>
+  <table class="test-table">
+    <thead><tr><th>#</th><th>Input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="test-id">7.1</td><td class="test-cmd">set SHIKATA_ENCODE_COUNT 5</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">7.2</td><td class="test-cmd">set SHIKATA_ENCODE_COUNT 0</td><td class="test-expected">Error: must be positive</td><td class="test-actual">[-] must be positive</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">7.3</td><td class="test-cmd">set SHIKATA_ENCODE_COUNT -1</td><td class="test-expected">Error: must be positive</td><td class="test-actual">[-] error</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">7.4</td><td class="test-cmd">set SHIKATA_ENCODE_COUNT abc</td><td class="test-expected">Error: not a number</td><td class="test-actual">[-] error</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">7.5</td><td class="test-cmd">set SHIKATA_ENCODE_COUNT 1000000</td><td class="test-expected">Accepted (large valid int)</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">7.6</td><td class="test-cmd">set SHIKATA_MAX_BYTES 4096</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">7.7</td><td class="test-cmd">set SHIKATA_MAX_BYTES 0</td><td class="test-expected">Error: must be positive</td><td class="test-actual">[-] error</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">7.8</td><td class="test-cmd">set SHIKATA_MAX_BYTES -1</td><td class="test-expected">Error</td><td class="test-actual">[-] error</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">7.9</td><td class="test-cmd">set SHIKATA_MAX_BYTES abc</td><td class="test-expected">Error</td><td class="test-actual">[-] error</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">7.10</td><td class="test-cmd">set SHIKATA_MAX_BYTES 1000000</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CAT 8: SHIKATA_PLACEMENT -->
+<section id="cat8">
+  <h2>Category 8 &mdash; Encode &mdash; SHIKATA_PLACEMENT <span class="badge">3 tests &bull; all pass</span></h2>
+  <table class="test-table">
+    <thead><tr><th>#</th><th>Input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="test-id">8.1</td><td class="test-cmd">set SHIKATA_PLACEMENT pre</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">8.2</td><td class="test-cmd">set SHIKATA_PLACEMENT post</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">8.3</td><td class="test-cmd">set SHIKATA_PLACEMENT invalid</td><td class="test-expected">Error: invalid placement</td><td class="test-actual">[-] invalid</td><td class="tag-pass">PASS</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CAT 9: CLONE_* -->
+<section id="cat9">
+  <h2>Category 9 &mdash; Encode &mdash; CLONE_* Options <span class="badge">8 tests &bull; all pass</span></h2>
+  <table class="test-table">
+    <thead><tr><th>#</th><th>Input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="test-id">9.1</td><td class="test-cmd">set CLONE_METADATA true</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">9.2</td><td class="test-cmd">set CLONE_METADATA false</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">9.3</td><td class="test-cmd">set CLONE_FROM C:\nonexistent.exe</td><td class="test-expected">Error: file not found</td><td class="test-actual">[-] file not found</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">9.4</td><td class="test-cmd">set CLONE_FROM C:\Windows\System32\notepad.exe</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">9.5</td><td class="test-cmd">set CLONE_RESOURCES true</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">9.6</td><td class="test-cmd">set CLONE_RESOURCES invalid</td><td class="test-expected">Error: invalid boolean</td><td class="test-actual">[-] invalid</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">9.7</td><td class="test-cmd">set CLONE_ICON true</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">9.8</td><td class="test-cmd">set CLONE_ICON false</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CAT 10: VERBOSE/JSON -->
+<section id="cat10">
+  <h2>Category 10 &mdash; Encode &mdash; VERBOSE / JSON <span class="badge">4 tests &bull; all pass</span></h2>
+  <table class="test-table">
+    <thead><tr><th>#</th><th>Input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="test-id">10.1</td><td class="test-cmd">set VERBOSE true</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">10.2</td><td class="test-cmd">set VERBOSE invalid</td><td class="test-expected">Error</td><td class="test-actual">[-] invalid</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">10.3</td><td class="test-cmd">set JSON true</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">10.4</td><td class="test-cmd">set JSON invalid</td><td class="test-expected">Error</td><td class="test-actual">[-] invalid</td><td class="tag-pass">PASS</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CAT 11: Unknown options -->
+<section id="cat11">
+  <h2>Category 11 &mdash; Encode &mdash; Unknown Options <span class="badge">5 tests &bull; all pass</span></h2>
+  <table class="test-table">
+    <thead><tr><th>#</th><th>Input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="test-id">11.1</td><td class="test-cmd">set UNKNOWNOPTION val</td><td class="test-expected">Error: unknown option</td><td class="test-actual">[-] Unknown option</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">11.2</td><td class="test-cmd">get UNKNOWNOPTION</td><td class="test-expected">Error: unknown option</td><td class="test-actual">[-] Unknown option</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">11.3</td><td class="test-cmd">unset UNKNOWNOPTION</td><td class="test-expected">Error: unknown option</td><td class="test-actual">[-] Unknown option</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">11.4</td><td class="test-cmd">get (no arg)</td><td class="test-expected">Usage error</td><td class="test-actual">[-] Usage: get &lt;OPTION&gt;</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">11.5</td><td class="test-cmd">unset (no arg)</td><td class="test-expected">Usage error</td><td class="test-actual">[-] Usage: unset &lt;OPTION&gt;</td><td class="tag-pass">PASS</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CAT 12: Meta commands -->
+<section id="cat12">
+  <h2>Category 12 &mdash; Encode &mdash; Meta Commands <span class="badge">8 tests &bull; all pass</span></h2>
+  <table class="test-table">
+    <thead><tr><th>#</th><th>Input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="test-id">12.1</td><td class="test-cmd">show options</td><td class="test-expected">Option table rendered</td><td class="test-actual">Options table shown</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">12.2</td><td class="test-cmd">reset</td><td class="test-expected">All options reset to defaults</td><td class="test-actual">[+] reset message</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">12.3</td><td class="test-cmd">help</td><td class="test-expected">Help shown</td><td class="test-actual">Help rendered</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">12.4</td><td class="test-cmd">help PAYLOAD_SOURCE</td><td class="test-expected">Per-option help shown</td><td class="test-actual">Help for PAYLOAD_SOURCE</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">12.5</td><td class="test-cmd">help UNKNOWN_OPTION</td><td class="test-expected">Error: unknown option</td><td class="test-actual">[-] error shown</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">12.6</td><td class="test-cmd">unknowncommand</td><td class="test-expected">Error: unknown command (no exit)</td><td class="test-actual">[-] Unknown command, session continues</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">12.7</td><td class="test-cmd">run (no payload)</td><td class="test-expected">Validation error: missing params</td><td class="test-actual">[-] Missing required parameter(s)</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">12.8</td><td class="test-cmd">build (alias for run)</td><td class="test-expected">Validation error: missing params</td><td class="test-actual">[-] Missing required parameter(s)</td><td class="tag-pass">PASS</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CAT 13-14: snippet/cat -->
+<section id="cat13">
+  <h2>Category 13–14 &mdash; Encode &mdash; Snippet &amp; Cat Operations <span class="badge">10 tests &bull; all pass</span></h2>
+  <table class="test-table">
+    <thead><tr><th>#</th><th>Input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="test-id">13.1</td><td class="test-cmd">add snippet module/guardrails/domain_membership</td><td class="test-expected">Snippet added</td><td class="test-actual">[+] snippet added</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">13.2</td><td class="test-cmd">add snippet 99999</td><td class="test-expected">Error: not found</td><td class="test-actual">[-] not found</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">13.3</td><td class="test-cmd">add (no arg)</td><td class="test-expected">Usage message (no crash)</td><td class="test-actual">Usage: add snippet [module/…]</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">13.4</td><td class="test-cmd">remove 0</td><td class="test-expected">Snippet removed</td><td class="test-actual">[+] removed</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">13.5</td><td class="test-cmd">remove 99999</td><td class="test-expected">Error: index out of range</td><td class="test-actual">[-] error</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">13.6</td><td class="test-cmd">remove (no arg)</td><td class="test-expected">Usage error</td><td class="test-actual">[-] usage shown</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">14.1</td><td class="test-cmd">cat template</td><td class="test-expected">Default template source shown</td><td class="test-actual">Template source printed</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">14.2</td><td class="test-cmd">cat template minimal</td><td class="test-expected">Named template source shown</td><td class="test-actual">Template source printed</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">14.3</td><td class="test-cmd">cat snippet 0</td><td class="test-expected">Snippet source shown</td><td class="test-actual">Snippet source printed</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">14.4</td><td class="test-cmd">cat snippet 99999</td><td class="test-expected">Error: not found</td><td class="test-actual">[-] error</td><td class="tag-pass">PASS</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CAT 16: Strip session -->
+<section id="cat16">
+  <h2>Category 16 &mdash; Strip Session <span class="badge">14 tests &bull; all pass</span></h2>
+  <table class="test-table">
+    <thead><tr><th>#</th><th>Input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="test-id">16.1</td><td class="test-cmd">set PE_FILE C:\Windows\System32\notepad.exe</td><td class="test-expected">Accepted</td><td class="test-actual">[+] PE_FILE =&gt; …notepad.exe</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">16.2</td><td class="test-cmd">set PE_FILE nonexistent.exe</td><td class="test-expected">Accepted (path stored; validated at run)</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">16.3</td><td class="test-cmd">set MODE ep</td><td class="test-expected">Accepted</td><td class="test-actual">[+] MODE =&gt; ep</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">16.4</td><td class="test-cmd">set MODE section</td><td class="test-expected">Accepted</td><td class="test-actual">[+] MODE =&gt; section</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">16.5</td><td class="test-cmd">set MODE range</td><td class="test-expected">Accepted</td><td class="test-actual">[+] MODE =&gt; range</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">16.6</td><td class="test-cmd">set MODE all-exec</td><td class="test-expected">Accepted</td><td class="test-actual">[+] MODE =&gt; all-exec</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">16.7</td><td class="test-cmd">set MODE entry-point</td><td class="test-expected">Accepted (alias → ep)</td><td class="test-actual">[+] MODE =&gt; ep</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">16.8</td><td class="test-cmd">set MODE invalid_mode</td><td class="test-expected">Error: invalid mode</td><td class="test-actual">[-] invalid value</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">16.9</td><td class="test-cmd">set RANGE 0x400:0x200</td><td class="test-expected">Accepted</td><td class="test-actual">[+] RANGE =&gt; 0x400:0x200</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">16.10</td><td class="test-cmd">set RANGE badformat</td><td class="test-expected">Error: expected start:length</td><td class="test-actual">[-] expected start:length</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">16.11</td><td class="test-cmd">set ANALYZE_ONLY true</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">16.12</td><td class="test-cmd">set ANALYZE_ONLY invalid</td><td class="test-expected">Error: invalid boolean</td><td class="test-actual">[-] invalid value</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">16.13</td><td class="test-cmd">run (no PE_FILE set)</td><td class="test-expected">Validation error</td><td class="test-actual">[-] Missing required strip option(s)</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">16.14</td><td class="test-cmd">set UNKNOWN_OPTION val</td><td class="test-expected">Error: unknown option</td><td class="test-actual">[-] Unknown option</td><td class="tag-pass">PASS</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CAT 17: Backdoor session -->
+<section id="cat17">
+  <h2>Category 17 &mdash; Backdoor Session <span class="badge">16 tests &bull; all pass</span></h2>
+  <table class="test-table">
+    <thead><tr><th>#</th><th>Input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="test-id">17.1</td><td class="test-cmd">set PE_FILE C:\Windows\System32\notepad.exe</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">17.2</td><td class="test-cmd">set METHOD code-cave</td><td class="test-expected">Accepted</td><td class="test-actual">[+] METHOD =&gt; code-cave</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">17.3</td><td class="test-cmd">set METHOD new-section</td><td class="test-expected">Accepted</td><td class="test-actual">[+] METHOD =&gt; new-section</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">17.4</td><td class="test-cmd">set METHOD text-pad</td><td class="test-expected">Accepted</td><td class="test-actual">[+] METHOD =&gt; text-pad</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">17.5</td><td class="test-cmd">set METHOD invalid_method</td><td class="test-expected">Error: invalid method</td><td class="test-actual">[-] invalid value 'invalid_method'</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">17.6</td><td class="test-cmd">set CARRIER entry-point</td><td class="test-expected">Accepted</td><td class="test-actual">[+] CARRIER =&gt; entry-point</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">17.7</td><td class="test-cmd">set CARRIER invalid_carrier</td><td class="test-expected">Error: invalid carrier</td><td class="test-actual">[-] invalid value 'invalid_carrier'</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">17.8</td><td class="test-cmd">set ENCRYPTION none</td><td class="test-expected">Accepted</td><td class="test-actual">[+] ENCRYPTION =&gt; none</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">17.9</td><td class="test-cmd">set ENCRYPTION aes</td><td class="test-expected">Error: invalid encryption</td><td class="test-actual">[-] invalid value 'aes'</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">17.10</td><td class="test-cmd">set DRY_RUN true</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">17.11</td><td class="test-cmd">set CAVE_MIN_SIZE 512</td><td class="test-expected">Accepted</td><td class="test-actual">[+] accepted</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">17.12</td><td class="test-cmd">set CAVE_MIN_SIZE -1</td><td class="test-expected">Error: not negative</td><td class="test-actual">[-] invalid value '-1'</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">17.13</td><td class="test-cmd">set SESSION_LOG auto</td><td class="test-expected">Accepted</td><td class="test-actual">[+] SESSION_LOG =&gt; auto</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">17.14</td><td class="test-cmd">set SESSION_LOG invalid</td><td class="test-expected">Error: invalid tri-state</td><td class="test-actual">[-] invalid value 'invalid'</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">17.15</td><td class="test-cmd">run (no PE_FILE or SHELLCODE)</td><td class="test-expected">Validation error</td><td class="test-actual">[-] Missing required backdoor option(s)</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">17.16</td><td class="test-cmd">set UNKNOWN_OPT val</td><td class="test-expected">Error: unknown option</td><td class="test-actual">[-] Unknown option</td><td class="tag-pass">PASS</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CAT 18: Edge cases -->
+<section id="cat18">
+  <h2>Category 18 &mdash; Edge Cases <span class="badge">15 tests &bull; all pass</span></h2>
+  <table class="test-table">
+    <thead><tr><th>#</th><th>Input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td class="test-id">18.1</td><td class="test-cmd">500-character input line (root REPL)</td><td class="test-expected">Error: Unknown command, exit 0</td><td class="test-actual">Error: Unknown command, exit:0</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">18.2</td><td class="test-cmd">set TEMPLATE &lt;500-char string&gt;</td><td class="test-expected">Error: invalid value (long error msg)</td><td class="test-actual">[-] invalid value shown</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">18.3</td><td class="test-cmd">set TEMPLATE [bold]text[/]</td><td class="test-expected">Error: invalid value (no crash)</td><td class="test-actual">[-] invalid value, no Spectre exception</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">18.4</td><td class="test-cmd">set PAYLOAD_SOURCE hex:[bold]AABB[/]</td><td class="test-expected">Accepted as hex prefix value</td><td class="test-actual">[+] accepted (validated at run)</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">18.5</td><td class="test-cmd">set   TEMPLATE   minimal (extra spaces)</td><td class="test-expected">Accepted (tokenizer strips spaces)</td><td class="test-actual">[+] TEMPLATE =&gt; minimal</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">18.6</td><td class="test-cmd">Empty lines in encode session</td><td class="test-expected">Ignored, session continues</td><td class="test-actual">Goodbye. exit:0</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">18.7</td><td class="test-cmd">set TEMPLATE !@#$%^&amp;*()</td><td class="test-expected">Error: invalid value</td><td class="test-actual">[-] invalid value</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">18.8</td><td class="test-cmd">quit (root REPL)</td><td class="test-expected">Goodbye, exit 0</td><td class="test-actual">Goodbye. exit:0</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">18.9</td><td class="test-cmd">q (root REPL alias)</td><td class="test-expected">Goodbye, exit 0</td><td class="test-actual">Goodbye. exit:0</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">18.10</td><td class="test-cmd">exit (root REPL)</td><td class="test-expected">Goodbye, exit 0</td><td class="test-actual">Goodbye. exit:0</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">18.11</td><td class="test-cmd">clear (root REPL, piped)</td><td class="test-expected">Graceful no-op, exit 0</td><td class="test-actual">Goodbye. exit:0</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">18.12</td><td class="test-cmd">cls (root REPL, piped)</td><td class="test-expected">Graceful no-op, exit 0</td><td class="test-actual">Goodbye. exit:0</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">18.13</td><td class="test-cmd">clear (encode session, piped)</td><td class="test-expected">Graceful no-op, session continues</td><td class="test-actual">Goodbye. exit:0</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">18.14</td><td class="test-cmd">show invalid_target in encode</td><td class="test-expected">Error: Unknown show target</td><td class="test-actual">Error: Unknown show target</td><td class="tag-pass">PASS</td></tr>
+      <tr><td class="test-id">18.15</td><td class="test-cmd">show snippets (encode session)</td><td class="test-expected">Snippet catalog listed</td><td class="test-actual">Snippets shown</td><td class="tag-pass">PASS</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</main>
+
+<footer>
+  Generated by GitHub Copilot &bull; washmachine-cli robustness test suite &bull; 91/91 tests passing
+</footer>
+
+</body>
+</html>

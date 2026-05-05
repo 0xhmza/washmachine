@@ -1,0 +1,5 @@
+{
+  "id": "control-flow-flattening",
+  "name": "Control-Flow Flattening",
+  "description": "Flattens function control-flow graphs into a switch-dispatch loop, destroying structural analysis."
+}

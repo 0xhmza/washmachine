@@ -13,6 +13,28 @@ public interface IAppPaths
     string Bin2ShellAlgos { get; }
     string SgnExecutable { get; }
     string DonutExecutable { get; }
+
+    /// <summary>Directory holding versionable C++ runtime headers (wash_runtime.h, wash_proc_lookup.h).</summary>
+    string RuntimeAssetsDirectory { get; }
+
+    /// <summary>Path to the shared loader runtime header inlined as the {{PREAMBLE}} block.</summary>
+    string RuntimeHeaderFile { get; }
+
+    /// <summary>Path to the GetProcessOrThreadId helper inlined as {{PROCESS_LOOKUP_HELPER}}.</summary>
+    string ProcessLookupHeaderFile { get; }
+
+    /// <summary>Directory containing the bundled LLVM binaries (clang++.exe, clang-cl.exe, etc.).</summary>
+    string LlvmBinDirectory { get; }
+
+    /// <summary>Path to the bundled clang++ executable used for LLVM obfuscation builds.</summary>
+    string LlvmClangPlusPlus { get; }
+
+    /// <summary>Path to the bundled clang-cl executable (MSVC-compatible LLVM driver).</summary>
+    string LlvmClangCl { get; }
+
+    /// <summary>Directory containing the LLVM pass stubs (Assets/llvm-passes/).</summary>
+    string LlvmPassesDirectory { get; }
+
     bool SetActivePlaybook(string playbookPath);
     IReadOnlyList<string> GetAvailablePlaybookFiles();
     string CreateCompilationSessionDirectory(string? inputName = null, string? outputName = null);
@@ -46,6 +68,15 @@ public sealed class AppPaths : IAppPaths
         Bin2ShellAlgos = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "data", "yaml", "algos.yaml");
         SgnExecutable = Path.Combine(ExecutableDirectory, "Tools", "SGN", "sgn.exe");
         DonutExecutable = Path.Combine(ExecutableDirectory, "Tools", "Donut", "donut.exe");
+
+        RuntimeAssetsDirectory = Path.Combine(AssetsDirectory, "runtime");
+        RuntimeHeaderFile = Path.Combine(RuntimeAssetsDirectory, "wash_runtime.h");
+        ProcessLookupHeaderFile = Path.Combine(RuntimeAssetsDirectory, "wash_proc_lookup.h");
+
+        LlvmBinDirectory = Path.Combine(ExecutableDirectory, "Tools", "LLVM", "bin");
+        LlvmClangPlusPlus = Path.Combine(LlvmBinDirectory, "clang++.exe");
+        LlvmClangCl = Path.Combine(LlvmBinDirectory, "clang-cl.exe");
+        LlvmPassesDirectory = Path.Combine(AssetsDirectory, "llvm-passes");
     }
 
     public string ExecutableDirectory { get; }
@@ -104,6 +135,13 @@ public sealed class AppPaths : IAppPaths
     public string Bin2ShellAlgos { get; }
     public string SgnExecutable { get; }
     public string DonutExecutable { get; }
+    public string RuntimeAssetsDirectory { get; }
+    public string RuntimeHeaderFile { get; }
+    public string ProcessLookupHeaderFile { get; }
+    public string LlvmBinDirectory { get; }
+    public string LlvmClangPlusPlus { get; }
+    public string LlvmClangCl { get; }
+    public string LlvmPassesDirectory { get; }
 
     public bool SetActivePlaybook(string playbookPath)
     {
@@ -202,6 +240,12 @@ public sealed class AppPaths : IAppPaths
 
         if (!File.Exists(ActivePlaybookFullPath))
             errors.Add($"Snippet catalog missing: '{ActivePlaybookPath}'.");
+
+        if (!File.Exists(RuntimeHeaderFile))
+            errors.Add($"Runtime header missing: '{Path.GetRelativePath(ExecutableDirectory, RuntimeHeaderFile)}'.");
+
+        if (!File.Exists(ProcessLookupHeaderFile))
+            errors.Add($"Process-lookup header missing: '{Path.GetRelativePath(ExecutableDirectory, ProcessLookupHeaderFile)}'.");
 
         return errors;
     }

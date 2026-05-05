@@ -1,0 +1,5 @@
+{
+  "id": "string-obfuscation",
+  "name": "String Obfuscation",
+  "description": "Encrypts string literals in IR and inserts decryption stubs that run at load time."
+}

