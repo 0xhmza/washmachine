@@ -14,7 +14,9 @@ public static partial class Program
         string Description,
         string Details,
         string Expected,
-        string Example);
+        string Example,
+        string? WhenToChange = null,
+        string? DependsOn = null);
 
     private sealed record SessionOptionRow(
         int Id,
@@ -206,8 +208,52 @@ public static partial class Program
             return false;
         }
 
-        error = $"Unknown option '{input}'.";
+        // No partial match — try fuzzy similarity.
+        var suggestions = SuggestSimilarNames(normalized, specs.Select(s => s.Name), 3);
+        if (suggestions.Count > 0)
+            error = $"Unknown option '{input}'. Did you mean: {string.Join(", ", suggestions)}? Type 'show options' for the full list.";
+        else
+            error = $"Unknown option '{input}'. Type 'show options' to list available options.";
         return false;
+    }
+
+    /// <summary>
+    /// Build a "Unknown command — did you mean X" message for session shells.
+    /// Uses the shared session-command vocabulary (set, unset, show, build, etc.).
+    /// </summary>
+    private static string SuggestSessionCommand(string typed)
+    {
+        var suggestions = SuggestSimilarNames(typed, SharedSessionCommands, 3);
+        if (suggestions.Count > 0)
+            return $"Unknown command: {typed}. Did you mean: {string.Join(", ", suggestions)}? Type 'help' to list commands.";
+        return $"Unknown command: {typed}. Type 'help' for available commands.";
+    }
+
+    /// <summary>
+    /// Render the long-form help for one option (title, required/default/current,
+    /// details, expected, example, when to change, depends on) using consistent
+    /// status-prefixed lines.
+    /// </summary>
+    private static void PrintOptionHelpDetail(SessionOptionSpec spec, string currentValue)
+    {
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"  [bold {UiColors.Header}]{Markup.Escape(spec.Name)}[/] [{UiColors.Muted}]—[/] [{UiColors.Value}]{Markup.Escape(spec.Description)}[/]");
+
+        string requiredText = spec.Required ? "yes" : "no";
+        string defaultText = string.IsNullOrWhiteSpace(spec.DefaultValue) ? "(none)" : spec.DefaultValue!;
+        AnsiConsole.MarkupLine(
+            $"  [{UiColors.Label}]Required:[/] [{(spec.Required ? UiColors.Error : UiColors.Muted)}]{requiredText}[/]   " +
+            $"[{UiColors.Label}]Default:[/] [{UiColors.Value}]{Markup.Escape(defaultText)}[/]   " +
+            $"[{UiColors.Label}]Current:[/] [{UiColors.Value}]{Markup.Escape(currentValue)}[/]");
+        AnsiConsole.MarkupLine($"  [{UiColors.Label}]Details:[/]    [{UiColors.Value}]{Markup.Escape(spec.Details)}[/]");
+        AnsiConsole.MarkupLine($"  [{UiColors.Label}]Expected:[/]   [{UiColors.Value}]{Markup.Escape(spec.Expected)}[/]");
+        AnsiConsole.MarkupLine($"  [{UiColors.Label}]Example:[/]    [{UiColors.Accent}]set {Markup.Escape(spec.Name)} {Markup.Escape(spec.Example)}[/]");
+
+        if (!string.IsNullOrWhiteSpace(spec.WhenToChange))
+            AnsiConsole.MarkupLine($"  [{UiColors.Label}]When to change:[/] [{UiColors.Value}]{Markup.Escape(spec.WhenToChange!)}[/]");
+        if (!string.IsNullOrWhiteSpace(spec.DependsOn))
+            AnsiConsole.MarkupLine($"  [{UiColors.Label}]Depends on:[/]     [{UiColors.Value}]{Markup.Escape(spec.DependsOn!)}[/]");
+        AnsiConsole.WriteLine();
     }
 
     private static string NormalizeSessionOptionName(string value)

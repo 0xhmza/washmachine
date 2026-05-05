@@ -163,25 +163,44 @@ public static class Banner
     private static void RenderTipLines()
     {
         var s = UiColors.ActiveScheme;
-        var fact = FunnyFacts[Random.Shared.Next(FunnyFacts.Length)];
 
         AnsiConsole.MarkupLine(
             $"  [{s.Muted}]{Markup.Escape(Tagline)}[/]");
         AnsiConsole.MarkupLine(
             $"  [{s.Muted}]by[/] [{s.Link} link={AuthorUrl}]{Author}[/]");
         AnsiConsole.WriteLine();
+
+        // Quickstart — most useful entry points
         AnsiConsole.MarkupLine(
-            $"  [{s.Muted}]Type[/] [{s.Accent}]help[/] [{s.Muted}]for commands,[/] " +
-            $"[{s.Accent}]help <command>[/] [{s.Muted}]for details[/]");
+            $"  [{s.Muted}]Quickstart:[/] " +
+            $"[{s.Accent}]help[/] [{s.Muted}](commands)[/]  ·  " +
+            $"[{s.Accent}]help <cmd>[/] [{s.Muted}](details)[/]  ·  " +
+            $"[{s.Accent}]show all[/] [{s.Muted}](catalog)[/]");
+
+        // Modes — explain how the CLI behaves at a glance
+        AnsiConsole.MarkupLine(
+            $"  [{s.Muted}]Modes:[/] " +
+            $"[{s.Accent}]<cmd> [[flags]][/] [{s.Muted}]→ one-liner   ·   bare[/] " +
+            $"[{s.Accent}]<cmd>[/] [{s.Muted}]→ interactive session[/]");
+
+        // Key bindings — essential editor controls
         AnsiConsole.MarkupLine(
             $"  [{s.Muted}]Keys:[/] [{s.Accent}]↑/↓[/] history  " +
             $"[{s.Accent}]←/→[/] move  [{s.Accent}]Home/End[/] jump  [{s.Accent}]Tab[/] complete");
+
+        // Theme switcher
         AnsiConsole.MarkupLine(
             $"  [{s.Muted}]Theme:[/] [{s.Accent}]scheme[/] [{s.Muted}]lists color schemes,[/] " +
             $"[{s.Accent}]scheme <name>[/] [{s.Muted}]switches theme[/]");
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"  [{s.Muted}]💡 {Markup.Escape(fact)}[/]");
-        AnsiConsole.WriteLine();
+
+        // Random fun fact (suppressible via WASHMACHINE_NO_FUN=1)
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WASHMACHINE_NO_FUN")))
+        {
+            var fact = FunnyFacts[Random.Shared.Next(FunnyFacts.Length)];
+            AnsiConsole.MarkupLine($"  [{s.Muted}]💡 {Markup.Escape(fact)}[/]");
+            AnsiConsole.WriteLine();
+        }
     }
 
     private static int SafeConsoleWidth()

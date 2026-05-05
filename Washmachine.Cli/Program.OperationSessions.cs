@@ -14,13 +14,24 @@ public static partial class Program
 
     private static readonly SessionOptionSpec[] StripOptionSpecs =
     [
-        new("PE_FILE", true, null, "Target PE file to strip.", "Path to the PE file that will be analyzed or carved.", "Existing PE file path", @".\loader.exe"),
-        new("MODE", false, "ep", "Extraction strategy.", "Choose entry-point carve, a named section, every executable section, or an explicit raw range.", "ep | section | all-exec | range", "ep"),
-        new("SECTION", false, null, "Section name when MODE=section.", "Only used when you want to dump one named PE section.", "Existing section name", ".text"),
-        new("RANGE", false, null, "Raw byte range when MODE=range.", "Express the range as start:length. Decimal and hex are both accepted.", "start:length", "0x400:0x200"),
-        new("OUTPUT", false, "<input>.bin", "Destination .bin path.", "When unset, strip writes next to the input PE with a .bin extension.", "Writable file path", @".\payload.bin"),
-        new("ANALYZE_ONLY", false, "false", "Analyze section layout without extracting.", "When true, strip prints the section view and entry-point context instead of writing a file.", "true | false", "true"),
-        new("TRIM_TRAILING_ZEROS", false, "true", "Trim null padding from the extracted result.", "Set false to preserve trailing null bytes in the extracted output.", "true | false", "true"),
+        new("PE_FILE", true, null, "Target PE file to strip.", "Path to the PE file that will be analyzed or carved.", "Existing PE file path", @".\loader.exe",
+            WhenToChange: "Always — this names the file you want to extract bytes from.",
+            DependsOn: "Used by every other option in this session."),
+        new("MODE", false, "ep", "Extraction strategy.", "Choose entry-point carve, a named section, every executable section, or an explicit raw range.", "ep | section | all-exec | range", "ep",
+            WhenToChange: "Pick 'section' to dump a named section, 'range' for raw byte coordinates from analyze, 'all-exec' to concatenate every executable section.",
+            DependsOn: "MODE=section requires SECTION; MODE=range requires RANGE."),
+        new("SECTION", false, null, "Section name when MODE=section.", "Only used when you want to dump one named PE section.", "Existing section name", ".text",
+            WhenToChange: "Set when MODE=section. Type 'set SECTION' alone to list section names from the loaded PE.",
+            DependsOn: "MODE=section."),
+        new("RANGE", false, null, "Raw byte range when MODE=range.", "Express the range as start:length. Decimal and hex are both accepted.", "start:length", "0x400:0x200",
+            WhenToChange: "Set when MODE=range. Use 'analyze <pe>' first to find the right offsets.",
+            DependsOn: "MODE=range."),
+        new("OUTPUT", false, "<input>.bin", "Destination .bin path.", "When unset, strip writes next to the input PE with a .bin extension.", "Writable file path", @".\payload.bin",
+            WhenToChange: "Override only if you want the output somewhere other than next to the input PE."),
+        new("ANALYZE_ONLY", false, "false", "Analyze section layout without extracting.", "When true, strip prints the section view and entry-point context instead of writing a file.", "true | false", "true",
+            WhenToChange: "Set true for a fast preview of section layout without producing a .bin."),
+        new("TRIM_TRAILING_ZEROS", false, "true", "Trim null padding from the extracted result.", "Set false to preserve trailing null bytes in the extracted output.", "true | false", "true",
+            WhenToChange: "Set false when downstream tooling expects the original section size including padding."),
     ];
 
     private static readonly IReadOnlyDictionary<string, SessionOptionSpec> StripOptionSpecsByName =
@@ -28,23 +39,52 @@ public static partial class Program
 
     private static readonly SessionOptionSpec[] BackdoorOptionSpecs =
     [
-        new("PE_FILE", true, null, "Target PE file to patch.", "Existing EXE or DLL that will receive the prepared payload.", "Existing PE file path", @".\app.exe"),
-        new("SHELLCODE", true, null, "Prepared flat .bin payload to inject.", "Backdoor expects a ready-to-run binary payload, not raw framework modules.", "Existing .bin file path", @".\payload.bin"),
-        new("OUTPUT", false, "<input>.backdoored.exe", "Destination path for the patched PE.", "When unset, backdoor writes next to the target PE using a .backdoored suffix.", "Writable file path", @".\patched.exe"),
-        new("METHOD", false, "code-cave", "Injection method.", "Choose how the payload is placed into the target PE.", "code-cave | new-section | section-ext | text-pad | tls-callback", "code-cave"),
-        new("CARRIER", false, "entry-point", "Payload invocation strategy.", "Current implementation supports entry-point only.", "entry-point", "entry-point"),
-        new("ENCRYPTION", false, "none", "Payload transform mode.", "Current implementation supports none only for the backdoor command.", "none", "none"),
-        new("SECTION_NAME", false, ".extra", "Section name for section-creating methods.", "Used when the selected method creates or extends section data.", "PE section name", ".extra"),
-        new("REMOVE_SIGNATURE", false, "true", "Remove Authenticode signature before patching.", "Set false to keep the existing signature block untouched.", "true | false", "true"),
-        new("PATCH_SUBSYSTEM", false, "true", "Patch the output subsystem to GUI when needed.", "Set false to preserve the original subsystem.", "true | false", "true"),
-        new("PRESERVE_ENTRY", false, "true", "Resume the original entry point after payload execution.", "Current carrier implementation requires true.", "true | false", "true"),
-        new("PATCH_IAT", false, "true", "Patch imports as needed for the carrier.", "Set false to skip IAT patching during the backdoor pass.", "true | false", "true"),
-        new("PATCH_EXIT", false, "true", "Patch exit behavior after the payload runs.", "Set false to leave exit handling untouched.", "true | false", "true"),
-        new("CAVE_MIN_SIZE", false, "0", "Minimum code cave size when METHOD=code-cave.", "Raise this when you want to reject tiny caves during planning.", "Non-negative integer", "512"),
-        new("DRY_RUN", false, "false", "Analyze feasibility without writing output.", "When true, backdoor prints the plan and exits before patching.", "true | false", "true"),
-        new("SESSION_LOG", false, "auto", "Per-run session logging override.", "auto respects saved settings, true forces logging on, false forces it off.", "auto | true | false", "auto"),
-        new("VERBOSE", false, "false", "Show detailed backdoor logs.", "Enables verbose CLI logging during analysis and patching.", "true | false", "true"),
-        new("JSON", false, "false", "Emit machine-friendly JSON instead of the styled report.", "Useful for scripts or automation.", "true | false", "true"),
+        new("PE_FILE", true, null, "Target PE file to patch.", "Existing EXE or DLL that will receive the prepared payload.", "Existing PE file path", @".\app.exe",
+            WhenToChange: "Always — this names the host PE that will carry the payload.",
+            DependsOn: "Used by every other option in this session."),
+        new("SHELLCODE", true, null, "Prepared flat .bin payload to inject.", "Backdoor expects a ready-to-run binary payload, not raw framework modules.", "Existing .bin file path", @".\payload.bin",
+            WhenToChange: "Always. Build the .bin with 'encode' first if you only have raw shellcode or a hex blob.",
+            DependsOn: "Required by all methods."),
+        new("OUTPUT", false, "<input>.backdoored.exe", "Destination path for the patched PE.", "When unset, backdoor writes next to the target PE using a .backdoored suffix.", "Writable file path", @".\patched.exe",
+            WhenToChange: "Override when you want the patched binary stored somewhere specific."),
+        new("METHOD", false, "code-cave", "Injection method.", "Choose how the payload is placed into the target PE.", "code-cave | new-section | section-ext | text-pad | tls-callback", "code-cave",
+            WhenToChange: "code-cave is stealthier but limited by available slack space. new-section is roomier but structurally obvious. tls-callback enables pre-main execution on x64.",
+            DependsOn: "code-cave honors CAVE_MIN_SIZE; new-section / section-ext use SECTION_NAME."),
+        new("CARRIER", false, "entry-point", "Payload invocation strategy.", "entry-point hooks the EXE/DLL entry point and resumes after the payload runs.", "entry-point | dll-main", "entry-point",
+            WhenToChange: "Pick dll-main only when the target is a DLL — both modes patch the entry point but the DLL path leaves the subsystem unchanged."),
+        new("ENCRYPTION", false, "none", "Payload transform mode.", "Encryption is performed in the encode pipeline, not here.", "none", "none",
+            WhenToChange: "Use the encode command's encoder/envelope/SGN options to transform bytes; backdoor accepts the result as-is."),
+        new("SECTION_NAME", false, ".extra", "Section name for section-creating methods.", "Used when the selected method creates or extends section data.", "PE section name", ".extra",
+            WhenToChange: "Rename when you want the new section to look like a known one (e.g. .rsrc, .reloc).",
+            DependsOn: "METHOD=new-section or METHOD=section-ext."),
+        new("REMOVE_SIGNATURE", false, "true", "Remove Authenticode signature before patching.", "Set false to keep the existing signature block untouched (will fail signature checks regardless of patching).", "true | false", "true",
+            WhenToChange: "Default is correct for almost every case; only set false if downstream tooling needs the broken signature retained."),
+        new("PATCH_SUBSYSTEM", false, "true", "Patch the output subsystem to GUI when needed.", "Set false to preserve the original subsystem (SUBSYSTEM_WINDOWS_CUI / GUI).", "true | false", "true",
+            WhenToChange: "Set false when you want the patched binary to keep its original console behavior.",
+            DependsOn: "Ignored for DLL targets."),
+        new("PRESERVE_ENTRY", false, "true", "Resume the original entry point after payload execution.", "The current carrier implementation always requires true.", "true | false", "true",
+            WhenToChange: "Leave true. Provided for forward compatibility with future carriers."),
+        new("PATCH_IAT", false, "true", "Patch imports as needed for the carrier.", "Set false to skip IAT patching during the backdoor pass.", "true | false", "true",
+            WhenToChange: "Set false only if you've already arranged the imports the carrier needs."),
+        new("PATCH_EXIT", false, "true", "Patch exit behavior after the payload runs.", "Set false to leave exit handling untouched.", "true | false", "true",
+            WhenToChange: "Set false when the payload is responsible for its own exit / continuation."),
+        new("CAVE_MIN_SIZE", false, "0", "Minimum code cave size when METHOD=code-cave.", "Raise this when you want to reject tiny caves during planning.", "Non-negative integer", "512",
+            WhenToChange: "Raise to filter out caves that are too small for the payload + thunks; 0 accepts any cave large enough to fit the payload.",
+            DependsOn: "METHOD=code-cave."),
+        new("DRY_RUN", false, "false", "Analyze feasibility without writing output.", "When true, backdoor prints the plan and exits before patching.", "true | false", "true",
+            WhenToChange: "Set true to validate that the chosen method has enough room before committing to a patched file."),
+        new("SESSION_LOG", false, "auto", "Per-run session logging override.", "auto respects saved settings, true forces logging on, false forces it off.", "auto | true | false", "auto",
+            WhenToChange: "Force on when you want a per-run log even if logging is globally disabled."),
+        new("VERBOSE", false, "false", "Show detailed backdoor logs.", "Enables verbose CLI logging during analysis and patching.", "true | false", "true",
+            WhenToChange: "Useful for diagnosing why a method was rejected or which cave was selected."),
+        new("JSON", false, "false", "Emit machine-friendly JSON instead of the styled report.", "Useful for scripts or automation.", "true | false", "true",
+            WhenToChange: "Set true when piping into another tool. The GUI sets this automatically."),
+        new("MODE", false, "normal", "Backdoor execution mode.", "normal: implant + host run together. silence: host runs normally; implant runs silently when any argument is detected. dropper: host drops and runs the implant EXE from an embedded .dpl section on first launch.", "normal | silence | dropper", "silence",
+            WhenToChange: "Pick 'silence' for behind-the-scenes execution, 'dropper' to embed and run a separate implant EXE.",
+            DependsOn: "MODE=dropper requires IMPLANT_FILE."),
+        new("IMPLANT_FILE", false, null, "Standalone implant EXE to embed (Dropper mode only).", "Dropper mode reads this pre-compiled implant, XOR-encrypts it, and appends it to the host PE. Required when MODE=dropper.", "Existing .exe file path", @".\implant.exe",
+            WhenToChange: "Set when MODE=dropper. The file you point to is what the host drops at runtime.",
+            DependsOn: "MODE=dropper."),
     ];
 
     private static readonly IReadOnlyDictionary<string, SessionOptionSpec> BackdoorOptionSpecsByName =
@@ -80,6 +120,8 @@ public static partial class Program
         public EncodeTriState SessionLog { get; set; } = EncodeTriState.Auto;
         public bool Verbose { get; set; }
         public bool Json { get; set; }
+        public string BackdoorMode { get; set; } = "normal";
+        public string? ImplantFile { get; set; }
     }
 
     private sealed record SessionValidationResult(IReadOnlyList<SessionOptionSpec> MissingRequired, IReadOnlyList<string> Invalid);
@@ -88,6 +130,8 @@ public static partial class Program
     {
         var state = new StripSessionState();
         RenderStripOptions(state);
+        PrintStripMissingHint(state);
+        WriteStatus(StatusPrefix.Info, "Type 'help' for session commands, 'help <OPTION>' for one option, 'show options' to reprint the table.");
 
         while (true)
         {
@@ -113,10 +157,16 @@ public static partial class Program
                 continue;
 
             var command = tokens[0].ToLowerInvariant();
+            if (IsHelpToken(command))
+            {
+                await HandleStripHelpAsync(state, tokens);
+                continue;
+            }
             switch (command)
             {
                 case "show" when tokens.Length >= 2 && tokens[1].Equals("options", StringComparison.OrdinalIgnoreCase):
                     RenderStripOptions(state);
+                    PrintStripMissingHint(state);
                     break;
 
                 case "show":
@@ -139,10 +189,6 @@ public static partial class Program
                     HandleStripGet(state, tokens);
                     break;
 
-                case "help":
-                    await HandleStripHelpAsync(state, tokens);
-                    break;
-
                 case "reset":
                     state = new StripSessionState();
                     WriteStatus(StatusPrefix.Success, "All strip options reset to defaults.");
@@ -157,7 +203,9 @@ public static partial class Program
                         break;
                     }
 
+                    WriteStatus(StatusPrefix.Info, "Final configuration:");
                     RenderStripOptions(state);
+                    WriteStatus(StatusPrefix.Info, "All required options valid. Running strip...");
                     await RunStripAsync(BuildStripArguments(state));
                     break;
                 }
@@ -166,7 +214,7 @@ public static partial class Program
                     return 0;
 
                 default:
-                    WriteStatus(StatusPrefix.Failure, $"Unknown command: {tokens[0]}. Type 'help' for available commands.");
+                    WriteStatus(StatusPrefix.Failure, SuggestSessionCommand(tokens[0]));
                     break;
             }
         }
@@ -178,6 +226,8 @@ public static partial class Program
     {
         var state = new BackdoorSessionState();
         RenderBackdoorOptions(state);
+        PrintBackdoorMissingHint(state);
+        WriteStatus(StatusPrefix.Info, "Type 'help' for session commands, 'help <OPTION>' for one option, 'show options' to reprint the table.");
 
         while (true)
         {
@@ -203,10 +253,16 @@ public static partial class Program
                 continue;
 
             var command = tokens[0].ToLowerInvariant();
+            if (IsHelpToken(command))
+            {
+                await HandleBackdoorHelpAsync(state, tokens);
+                continue;
+            }
             switch (command)
             {
                 case "show" when tokens.Length >= 2 && tokens[1].Equals("options", StringComparison.OrdinalIgnoreCase):
                     RenderBackdoorOptions(state);
+                    PrintBackdoorMissingHint(state);
                     break;
 
                 case "show":
@@ -229,10 +285,6 @@ public static partial class Program
                     HandleBackdoorGet(state, tokens);
                     break;
 
-                case "help":
-                    await HandleBackdoorHelpAsync(state, tokens);
-                    break;
-
                 case "reset":
                     state = new BackdoorSessionState();
                     WriteStatus(StatusPrefix.Success, "All backdoor options reset to defaults.");
@@ -247,7 +299,9 @@ public static partial class Program
                         break;
                     }
 
+                    WriteStatus(StatusPrefix.Info, "Final configuration:");
                     RenderBackdoorOptions(state);
+                    WriteStatus(StatusPrefix.Info, "All required options valid. Running backdoor...");
                     await RunBackdoorAsync(BuildBackdoorArguments(state));
                     break;
                 }
@@ -256,7 +310,7 @@ public static partial class Program
                     return 0;
 
                 default:
-                    WriteStatus(StatusPrefix.Failure, $"Unknown command: {tokens[0]}. Type 'help' for available commands.");
+                    WriteStatus(StatusPrefix.Failure, SuggestSessionCommand(tokens[0]));
                     break;
             }
         }
@@ -266,9 +320,18 @@ public static partial class Program
 
     private static async Task HandleStripSetAsync(StripSessionState state, string[] tokens)
     {
+        tokens = NormalizeSetTokens(tokens, out _);
+
         if (tokens.Length < 2)
         {
-            WriteStatus(StatusPrefix.Failure, "Usage: set <OPTION> [VALUE].");
+            WriteStatus(StatusPrefix.Failure, "Usage: set <OPTION> <VALUE>   (also accepted: set <OPTION>=<VALUE>)");
+            return;
+        }
+
+        // Help shortcut: 'set OPT --help' / 'set OPT -h' route to per-option help.
+        if (tokens.Length >= 3 && IsHelpToken(tokens[2]))
+        {
+            await HandleStripHelpAsync(state, new[] { "help", tokens[1] });
             return;
         }
 
@@ -293,6 +356,7 @@ public static partial class Program
         }
 
         WriteStatus(StatusPrefix.Success, $"{spec!.Name} => {GetStripOptionValue(state, spec)}");
+        PrintStripMissingHint(state, suppressIfNoneMissing: false);
     }
 
     private static void HandleStripUnset(StripSessionState state, string[] tokens)
@@ -335,7 +399,7 @@ public static partial class Program
         if (tokens.Length == 1)
         {
             PrintStripUsage();
-            WriteStatus(StatusPrefix.Info, "Session commands: show options | show <catalog> | set <OPTION> [VALUE] | unset <OPTION> | get <OPTION> | help [OPTION] | reset | run | exit");
+            PrintSessionCommandList();
             return;
         }
 
@@ -345,9 +409,35 @@ public static partial class Program
             return;
         }
 
-        WriteStatus(StatusPrefix.Info, $"{spec!.Name}: {spec.Details}");
-        WriteStatus(StatusPrefix.Info, $"Expected: {spec.Expected}. Example: {spec.Example}");
-        await Task.CompletedTask;
+        PrintOptionHelpDetail(spec!, GetStripOptionValue(state, spec!));
+        await ShowStripOptionValuesAsync(state, spec!);
+    }
+
+    /// <summary>
+    /// Print a "next required field" hint based on the current strip state.
+    /// When everything required is set, prints a "ready to build" hint instead
+    /// (unless <paramref name="suppressIfNoneMissing"/> is true).
+    /// </summary>
+    private static void PrintStripMissingHint(StripSessionState state, bool suppressIfNoneMissing = true)
+    {
+        var validation = ValidateStripState(state);
+        if (validation.MissingRequired.Count == 0 && validation.Invalid.Count == 0)
+        {
+            if (!suppressIfNoneMissing)
+                WriteStatus(StatusPrefix.Info, "All required options set. Type 'run' to extract or 'show options' to review.");
+            return;
+        }
+
+        if (validation.MissingRequired.Count > 0)
+        {
+            var names = string.Join(", ", validation.MissingRequired.Select(s => s.Name));
+            WriteStatus(StatusPrefix.Warning,
+                $"{validation.MissingRequired.Count} required option(s) not set: {names}. " +
+                $"Type 'help {validation.MissingRequired[0].Name}' for details.");
+        }
+
+        foreach (var invalid in validation.Invalid)
+            WriteStatus(StatusPrefix.Failure, invalid);
     }
 
     private static async Task ShowStripOptionValuesAsync(StripSessionState state, SessionOptionSpec spec)
@@ -609,9 +699,18 @@ public static partial class Program
 
     private static async Task HandleBackdoorSetAsync(BackdoorSessionState state, string[] tokens)
     {
+        tokens = NormalizeSetTokens(tokens, out _);
+
         if (tokens.Length < 2)
         {
-            WriteStatus(StatusPrefix.Failure, "Usage: set <OPTION> [VALUE].");
+            WriteStatus(StatusPrefix.Failure, "Usage: set <OPTION> <VALUE>   (also accepted: set <OPTION>=<VALUE>)");
+            return;
+        }
+
+        // Help shortcut: 'set OPT --help' / 'set OPT -h' route to per-option help.
+        if (tokens.Length >= 3 && IsHelpToken(tokens[2]))
+        {
+            await HandleBackdoorHelpAsync(state, new[] { "help", tokens[1] });
             return;
         }
 
@@ -636,6 +735,7 @@ public static partial class Program
         }
 
         WriteStatus(StatusPrefix.Success, $"{spec!.Name} => {GetBackdoorOptionValue(state, spec)}");
+        PrintBackdoorMissingHint(state, suppressIfNoneMissing: false);
     }
 
     private static void HandleBackdoorUnset(BackdoorSessionState state, string[] tokens)
@@ -677,8 +777,8 @@ public static partial class Program
     {
         if (tokens.Length == 1)
         {
-            WriteStatus(StatusPrefix.Info, "Commands: show options | show <catalog> | set <OPTION> [VALUE] | unset <OPTION> | get <OPTION> | help [OPTION] | reset | run | exit");
-            WriteStatus(StatusPrefix.Info, "Required backdoor settings are shown in the Required? column of the options view.");
+            PrintBackdoorUsage();
+            PrintSessionCommandList();
             return;
         }
 
@@ -688,9 +788,57 @@ public static partial class Program
             return;
         }
 
-        WriteStatus(StatusPrefix.Info, $"{spec!.Name}: {spec.Details}");
-        WriteStatus(StatusPrefix.Info, $"Expected: {spec.Expected}. Example: {spec.Example}");
-        await Task.CompletedTask;
+        PrintOptionHelpDetail(spec!, GetBackdoorOptionValue(state, spec!));
+        await ShowBackdoorOptionValuesAsync(spec!);
+    }
+
+    /// <summary>Print a "next required field" hint based on current backdoor state.</summary>
+    private static void PrintBackdoorMissingHint(BackdoorSessionState state, bool suppressIfNoneMissing = true)
+    {
+        var validation = ValidateBackdoorState(state);
+        if (validation.MissingRequired.Count == 0 && validation.Invalid.Count == 0)
+        {
+            if (!suppressIfNoneMissing)
+                WriteStatus(StatusPrefix.Info, "All required options set. Type 'run' to patch or 'show options' to review.");
+            return;
+        }
+
+        if (validation.MissingRequired.Count > 0)
+        {
+            var names = string.Join(", ", validation.MissingRequired.Select(s => s.Name));
+            WriteStatus(StatusPrefix.Warning,
+                $"{validation.MissingRequired.Count} required option(s) not set: {names}. " +
+                $"Type 'help {validation.MissingRequired[0].Name}' for details.");
+        }
+
+        foreach (var invalid in validation.Invalid)
+            WriteStatus(StatusPrefix.Failure, invalid);
+    }
+
+    /// <summary>One-line cheat-sheet of the session's command grammar.</summary>
+    private static void PrintSessionCommandList()
+    {
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"  [bold {UiColors.Header}]SESSION COMMANDS[/]");
+        AnsiConsole.MarkupLine($"  [{UiColors.Rule}]{new string('─', 16)}[/]");
+        var lines = new (string cmd, string desc)[]
+        {
+            ("show options",            "Reprint the options table with current values."),
+            ("show <catalog>",          "Browse catalogs (templates, modules, encoders, etc.)."),
+            ("set <OPTION> <VALUE>",    "Set a parameter; also accepts: set <OPTION>=<VALUE>"),
+            ("set <OPTION>",            "Show accepted values / current state for one parameter."),
+            ("unset <OPTION>",          "Clear a parameter (revert to default if any)."),
+            ("get <OPTION>",            "Print the current value of one parameter."),
+            ("help",                    "Show full command help and the session grammar."),
+            ("help <OPTION>",           "Detailed help for one parameter (also: set <OPTION> -h)."),
+            ("reset",                   "Clear all user-set values; restore defaults."),
+            ("run / build",             "Validate required fields and execute."),
+            ("exit / quit",             "Leave the session."),
+        };
+        int width = lines.Max(l => l.cmd.Length);
+        foreach (var (cmd, desc) in lines)
+            AnsiConsole.MarkupLine($"  [{UiColors.Accent}]{Markup.Escape(cmd.PadRight(width))}[/]   [{UiColors.Value}]{Markup.Escape(desc)}[/]");
+        AnsiConsole.WriteLine();
     }
 
     private static async Task ShowBackdoorOptionValuesAsync(SessionOptionSpec spec)
@@ -844,6 +992,20 @@ public static partial class Program
                 return TryAssignBoolean(rawValue, value => state.Verbose = value, out error);
             case "JSON":
                 return TryAssignBoolean(rawValue, value => state.Json = value, out error);
+            case "MODE":
+            {
+                string normalized = rawValue.Trim().ToLowerInvariant();
+                if (!BackdoorModeValues.Contains(normalized))
+                {
+                    error = $"invalid value '{rawValue}'";
+                    return false;
+                }
+                state.BackdoorMode = normalized;
+                return true;
+            }
+            case "IMPLANT_FILE":
+                state.ImplantFile = rawValue;
+                return true;
         }
 
         error = $"unsupported option '{spec.Name}'";
@@ -918,6 +1080,12 @@ public static partial class Program
             case "JSON":
                 state.Json = false;
                 break;
+            case "MODE":
+                state.BackdoorMode = "normal";
+                break;
+            case "IMPLANT_FILE":
+                state.ImplantFile = null;
+                break;
         }
     }
 
@@ -942,6 +1110,8 @@ public static partial class Program
             "SESSION_LOG" => GetTriStateDisplay(state.SessionLog),
             "VERBOSE" => state.Verbose ? "true" : "false",
             "JSON" => state.Json ? "true" : "false",
+            "MODE" => state.BackdoorMode,
+            "IMPLANT_FILE" => string.IsNullOrWhiteSpace(state.ImplantFile) ? "(not set)" : state.ImplantFile,
             _ => "(not set)",
         };
     }
@@ -991,6 +1161,17 @@ public static partial class Program
         if (state.CaveMinSize < 0)
             invalid.Add($"CAVE_MIN_SIZE: invalid value '{state.CaveMinSize}'.");
 
+        if (!BackdoorModeValues.Contains(state.BackdoorMode))
+            invalid.Add($"MODE: invalid value '{state.BackdoorMode}'. Valid: {string.Join(", ", BackdoorModeValues)}.");
+
+        if (state.BackdoorMode == "dropper")
+        {
+            if (string.IsNullOrWhiteSpace(state.ImplantFile))
+                missing.Add(BackdoorOptionSpecsByName["IMPLANT_FILE"]);
+            else if (!File.Exists(state.ImplantFile))
+                invalid.Add($"IMPLANT_FILE: file not found '{state.ImplantFile}'.");
+        }
+
         return new SessionValidationResult(missing, invalid);
     }
 
@@ -1033,6 +1214,15 @@ public static partial class Program
             args.Add("-Verbose");
         if (state.Json)
             args.Add("-Json");
+
+        args.Add("-Mode");
+        args.Add(state.BackdoorMode);
+
+        if (!string.IsNullOrWhiteSpace(state.ImplantFile))
+        {
+            args.Add("-Implant");
+            args.Add(state.ImplantFile);
+        }
 
         return args.ToArray();
     }
@@ -1104,6 +1294,7 @@ public static partial class Program
             "METHOD" => ["code-cave", "new-section", "section-ext", "text-pad", "tls-callback"],
             "CARRIER" => ["entry-point"],
             "ENCRYPTION" => ["none"],
+            "MODE" => ["normal", "silence", "dropper"],
             "REMOVE_SIGNATURE" or "PATCH_SUBSYSTEM" or "PRESERVE_ENTRY" or "PATCH_IAT" or "PATCH_EXIT" or "DRY_RUN" or "VERBOSE" or "JSON" => ["true", "false"],
             "SESSION_LOG" => ["auto", "true", "false"],
             _ => Array.Empty<string>(),

@@ -27,6 +27,7 @@ public static partial class Program
     private static readonly string[] BackdoorMethodValues = { "code-cave", "new-section", "section-ext", "text-pad", "tls-callback" };
     private static readonly string[] BackdoorEncryptionValues = { "none" };
     private static readonly string[] BackdoorCarrierValues = { "entry-point", "dll-main" };
+    private static readonly string[] BackdoorModeValues = { "normal", "silence", "dropper" };
     private static readonly string[] StripModeValues = { "ep", "entry-point", "section" };
     private static readonly Dictionary<string, string[]> CommandOptionCompletions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -55,7 +56,8 @@ public static partial class Program
             "-NoPatchIat", "--no-patch-iat", "-NoPatchExit", "--no-patch-exit",
             "-CaveMinSize", "--cave-min-size", "-DryRun", "--dry-run",
             "-SessionLog", "--session-log", "-NoSessionLog", "--no-session-log",
-            "-Verbose", "--verbose", "-Json", "--json"
+            "-Verbose", "--verbose", "-Json", "--json",
+            "-Mode", "--mode", "-Implant", "--implant"
         },
         ["strip"] = new[]
         {
@@ -96,6 +98,15 @@ public static partial class Program
 
     private static void ApplySchemeFromEnvironment()
     {
+        // NO_COLOR (https://no-color.org) — strip all ANSI styling so plain-text
+        // consumers (CI, log files, accessibility tools) receive clean output.
+        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NO_COLOR")))
+        {
+            AnsiConsole.Profile.Capabilities.ColorSystem = ColorSystem.NoColors;
+            AnsiConsole.Profile.Capabilities.Ansi = false;
+            return;   // do not apply a color scheme on top of a no-color profile
+        }
+
         var env = Environment.GetEnvironmentVariable("WASHMACHINE_SCHEME");
         if (!string.IsNullOrWhiteSpace(env))
         {
@@ -108,11 +119,15 @@ public static partial class Program
     {
         bool jsonMode = args.Any(a => a == "--json");
 
+        // Top-level help / version requests, before command dispatch.
+        if (IsHelpToken(args[0])) return HandleHelp(args.Skip(1).ToArray());
+        if (IsVersionToken(args[0])) { Console.WriteLine(Ui.Banner.AppVersion); return 0; }
+
         var command = args[0].ToLowerInvariant();
         var cmdArgs = args.Skip(1).ToArray();
 
-        // Check if the command's first arg is a help flag
-        bool wantsHelp = cmdArgs.Length > 0 && cmdArgs[0] is "help" or "--help" or "-h";
+        // Help requested as the first argument to a command (e.g. encode --help).
+        bool wantsHelp = ArgsStartWithHelp(cmdArgs);
 
         return command switch
         {
@@ -125,7 +140,6 @@ public static partial class Program
             "provision" => wantsHelp ? PrintProvisionUsage() : await RunProvisionAsync(cmdArgs),
             "test"      => wantsHelp ? PrintTestUsage() : await TestHarness.RunAsync(cmdArgs),
             "scan"      => wantsHelp ? PrintScanUsage() : RunScan(cmdArgs),
-            "help" or "--help" or "-h" => HandleHelp(cmdArgs),
             _ => PrintUnknownCommand(command),
         };
     }
@@ -134,7 +148,8 @@ public static partial class Program
     private static int HandleHelp(string[] args)
     {
         if (args.Length == 0) return PrintUsage();
-        return args[0].ToLowerInvariant() switch
+        var topic = args[0].ToLowerInvariant();
+        return topic switch
         {
             "encode"    => PrintEncodeUsage(),
             "analyze"   => PrintAnalyzeUsage(),
@@ -144,8 +159,25 @@ public static partial class Program
             "provision" => PrintProvisionUsage(),
             "test"      => PrintTestUsage(),
             "scan"      => PrintScanUsage(),
-            _ => PrintUsage(),
+            _ => HandleHelpUnknown(args[0]),
         };
+    }
+
+    private static int HandleHelpUnknown(string topic)
+    {
+        var validTopics = new[] { "encode", "analyze", "backdoor", "strip", "show", "list", "provision", "test", "scan" };
+        var suggestions = SuggestSimilarNames(topic, validTopics, 3);
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"[{UiColors.Error}]Unknown help topic '{Markup.Escape(topic)}'.[/]");
+        if (suggestions.Count > 0)
+        {
+            AnsiConsole.MarkupLine($"[{UiColors.Muted}]Did you mean:[/] " +
+                string.Join(", ", suggestions.Select(s => $"[{UiColors.Accent}]{Markup.Escape(s)}[/]")));
+        }
+        AnsiConsole.MarkupLine($"[{UiColors.Muted}]Run[/] [{UiColors.Accent}]help[/] [{UiColors.Muted}]on its own to see all commands.[/]");
+        AnsiConsole.WriteLine();
+        return PrintUsage();
     }
 
     /// <summary>Interactive read-eval-print loop.</summary>
@@ -184,9 +216,15 @@ public static partial class Program
                 case "banner":
                     ShowBanner();
                     continue;
-                case "help" or "?" or "--help":
-                    PrintUsage();
+                case "version" or "--version" or "-v":
+                    AnsiConsole.MarkupLine($"[{UiColors.Accent}]washmachine-cli[/] [{UiColors.Value}]v{Ui.Banner.AppVersion}[/]");
                     continue;
+            }
+
+            if (IsHelpToken(line))
+            {
+                PrintUsage();
+                continue;
             }
 
             // `scheme` command — before generic dispatch so it also runs without tokens.
@@ -207,7 +245,7 @@ public static partial class Program
             }
             catch (Exception ex)
             {
-                AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
+                WriteStatus(StatusPrefix.Failure, ex.Message);
             }
         }
 
@@ -275,13 +313,13 @@ public static partial class Program
             if (string.IsNullOrEmpty(cmd)) continue;
             if (cmd.ToLowerInvariant() is "back" or "exit" or ".." or "q") break;
             if (cmd.ToLowerInvariant() is "clear" or "cls") { try { AnsiConsole.Clear(); } catch { /* non-interactive */ } continue; }
-            if (cmd.ToLowerInvariant() is "help" or "?") { helpFunc?.Invoke(); continue; }
+            if (IsHelpToken(cmd)) { helpFunc?.Invoke(); continue; }
 
             var tokens = TokenizeLine(cmd);
             if (tokens.Length == 0) continue;
 
             try { await handler(tokens); }
-            catch (Exception ex) { AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}"); }
+            catch (Exception ex) { WriteStatus(StatusPrefix.Failure, ex.Message); }
         }
         return 0;
     }
@@ -783,7 +821,7 @@ public static partial class Program
         if (args.Length == 0)
             return await RunSubMode("analyze", RunAnalyzeAsync, PrintAnalyzeUsage);
 
-        if (args[0] is "help" or "--help" or "-h")
+        if (IsHelpToken(args[0]))
         {
             PrintAnalyzeUsage();
             return 0;
@@ -815,13 +853,13 @@ public static partial class Program
 
         if (peFile is null)
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] No PE file specified. Use [white]-Pe <file>[/] or provide a positional argument.");
+            WriteStatus(StatusPrefix.Failure, "No PE file specified. Pass a path positionally or use '-Pe <file>'. Example: analyze .\\target.exe");
             return 1;
         }
 
         if (!File.Exists(peFile))
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {Markup.Escape(peFile)}");
+            WriteStatus(StatusPrefix.Failure, $"PE file not found: '{peFile}'. Check the path or run 'analyze --help' for usage.");
             return 1;
         }
         var logger = new ConsoleLogger();
@@ -1489,6 +1527,8 @@ public static partial class Program
         bool jsonOutput = false;
         int minCaveSize = 0;
         bool? sessionLogOverride = null; // null = use AppSettings, true/false = CLI override
+        string backdoorMode = "normal";
+        string? implantFile = null;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -1536,11 +1576,32 @@ public static partial class Program
                     sessionLogOverride = false; break;
                 case "-SessionLog" or "--session-log":
                     sessionLogOverride = true; break;
+                case "-Mode" or "--mode" when i + 1 < args.Length:
+                    backdoorMode = args[++i].ToLowerInvariant(); break;
+                case "-Implant" or "--implant" when i + 1 < args.Length:
+                    implantFile = args[++i]; break;
                 default:
                     if (args[i].StartsWith("-"))
                     {
-                        AnsiConsole.MarkupLine($"[red]Error:[/] Unknown option: {Markup.Escape(args[i])}");
-                        PrintBackdoorUsage();
+                        if (IsHelpToken(args[i]))
+                        {
+                            PrintBackdoorUsage();
+                            return 0;
+                        }
+                        var allBackdoorFlags = new[]
+                        {
+                            "-Pe", "-Shellcode", "-Output", "-Method", "-Encryption", "-XorKey",
+                            "-SectionName", "-NoRemoveSig", "-NoPatchSubsystem", "-Carrier",
+                            "-NoPreserveEntry", "-NoPatchIat", "-NoPatchExit", "-CaveMinSize",
+                            "-DryRun", "-Verbose", "-Json", "-NoSessionLog", "-SessionLog",
+                            "-Mode", "-Implant",
+                        };
+                        var suggestions = SuggestSimilarNames(args[i].TrimStart('-'),
+                            allBackdoorFlags.Select(f => f.TrimStart('-')), 3);
+                        var hint = suggestions.Count > 0
+                            ? $" Did you mean: {string.Join(", ", suggestions.Select(s => "-" + s))}?"
+                            : " Run 'backdoor --help' for the full flag list.";
+                        WriteStatus(StatusPrefix.Failure, $"Unknown option: '{args[i]}'.{hint}");
                         return 1;
                     }
                     break;
@@ -1549,18 +1610,23 @@ public static partial class Program
 
         if (peFile == null || shellcodeFile == null)
         {
-            PrintBackdoorUsage();
+            var missing = new List<string>();
+            if (peFile == null) missing.Add("-Pe <file>");
+            if (shellcodeFile == null) missing.Add("-Shellcode <file>");
+            WriteStatus(StatusPrefix.Failure,
+                $"Missing required parameter(s): {string.Join(", ", missing)}. " +
+                "Run 'backdoor' with no flags for the interactive session, or 'backdoor --help' for usage.");
             return 1;
         }
 
         if (!File.Exists(peFile))
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] Target PE not found: {Markup.Escape(peFile)}");
+            WriteStatus(StatusPrefix.Failure, $"Target PE not found: '{peFile}'. Check the path passed to -Pe.");
             return 1;
         }
         if (!File.Exists(shellcodeFile))
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] Shellcode file not found: {Markup.Escape(shellcodeFile)}");
+            WriteStatus(StatusPrefix.Failure, $"Shellcode file not found: '{shellcodeFile}'. Check the path passed to -Shellcode.");
             return 1;
         }
 
@@ -1577,7 +1643,7 @@ public static partial class Program
 
         if (injectionMethod is null)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] Unknown injection method [white]{Markup.Escape(method!)}[/]. Valid methods: code-cave, new-section, section-ext, text-pad, tls-callback.");
+            WriteStatus(StatusPrefix.Failure, $"Unknown injection method '{method}'. Expected: code-cave | new-section | section-ext | text-pad | tls-callback. Example: -Method code-cave");
             return 1;
         }
 
@@ -1592,7 +1658,7 @@ public static partial class Program
 
         if (encryptionMethod is null)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] Unknown encryption mode [white]{Markup.Escape(encryption!)}[/]. Supported: none.");
+            WriteStatus(StatusPrefix.Failure, $"Unknown encryption mode '{encryption}'. Expected: none. Use the encode pipeline (encoder/envelope/SGN) for payload transforms.");
             return 1;
         }
 
@@ -1607,7 +1673,7 @@ public static partial class Program
 
         if (carrierInvoke is null)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] Unknown carrier [white]{Markup.Escape(carrier!)}[/]. Supported: entry-point, dll-main.");
+            WriteStatus(StatusPrefix.Failure, $"Unknown carrier '{carrier}'. Expected: entry-point | dll-main. Example: -Carrier entry-point");
             return 1;
         }
 
@@ -1637,6 +1703,30 @@ public static partial class Program
             AnsiConsole.MarkupLine("[grey]The current carrier always resumes the original entry point after launching the payload.[/]");
             return 1;
         }
+
+        if (!BackdoorModeValues.Contains(backdoorMode))
+        {
+            WriteStatus(StatusPrefix.Failure, $"Unknown backdoor mode '{backdoorMode}'. Expected: normal | silence | dropper. Example: -Mode normal");
+            return 1;
+        }
+        if (backdoorMode == "dropper" && string.IsNullOrWhiteSpace(implantFile))
+        {
+            WriteStatus(StatusPrefix.Failure, "Dropper mode requires -Implant <path> (the standalone implant EXE to embed). Example: -Mode dropper -Implant .\\implant.exe");
+            return 1;
+        }
+        if (backdoorMode == "dropper" && implantFile != null && !File.Exists(implantFile))
+        {
+            WriteStatus(StatusPrefix.Failure, $"Implant file not found: '{implantFile}'. Check the path passed to -Implant.");
+            return 1;
+        }
+
+        var backdoorModeEnum = backdoorMode switch
+        {
+            "normal"  => BackdoorMode.Normal,
+            "silence" => BackdoorMode.Silence,
+            "dropper" => BackdoorMode.Dropper,
+            _         => BackdoorMode.Normal,
+        };
 
         var consoleLogger = new ConsoleLogger();
         if (verbose) consoleLogger.VerboseEnabled = true;
@@ -1956,6 +2046,8 @@ public static partial class Program
                 PatchIat = patchIat,
                 PatchExitCalls = patchExitCalls,
                 MinCaveSize = minCaveSize,
+                Mode = backdoorModeEnum,
+                ImplantPath = implantFile,
             };
 
             var result = jsonOutput
@@ -2251,6 +2343,7 @@ public static partial class Program
             ],
             Examples:
             [
+                new UsageExample("washmachine-cli encode", "Drop into the interactive encode session (no flags).", "Any shell"),
                 new UsageExample("washmachine-cli encode -s .\\payload.bin -t minimal", "Compile a minimal loader from a local file.", "PowerShell / pwsh"),
                 new UsageExample("washmachine-cli encode -s ./payload.bin -e 1 -v 1", "Add a Bin2Shell encoder and envelope to a file-based build.", "Bash / Zsh"),
                 new UsageExample("washmachine-cli encode -ShellcodeHex \"FC4883E4F0...\" -Snippet antidebugging=IsDebuggerPresentCheck", "Build directly from inline hex and override one snippet.", "Any shell"),
@@ -2334,17 +2427,34 @@ public static partial class Program
                         new UsageOption("-DryRun", "Analyze feasibility and planned changes without writing an output file."),
                     ]),
                 new UsageOptionGroup(
+                    "Execution mode and implant",
+                    "How the payload is invoked at runtime, and where the optional dropped implant lives.",
+                    [
+                        new UsageOption("-Mode <mode>", "Backdoor execution mode.", "normal", "normal | silence | dropper"),
+                        new UsageOption("-Implant <file>", "Standalone implant EXE to embed when -Mode dropper is selected. Required for dropper mode."),
+                    ]),
+                new UsageOptionGroup(
+                    "Encryption and placement",
+                    "Optional payload encryption and section-placement details. Most users do not change these.",
+                    [
+                        new UsageOption("-Encryption <mode>", "Payload transform mode applied by the backdoor command. Encoding lives in the encode pipeline.", "none", "none"),
+                        new UsageOption("-XorKey <bytes>", "Key bytes when -Encryption uses an XOR variant in future builds. Currently unused for -Encryption none."),
+                        new UsageOption("-CaveMinSize <bytes>", "Minimum code-cave size when scanning for code-cave placement.", "0"),
+                    ]),
+                new UsageOptionGroup(
                     "Behavior, compatibility, and logging",
                     "These flags shape the patching pass and reporting.",
                     [
                         new UsageOption("-Carrier <mode>", "Payload invocation strategy. Use entry-point for EXE targets, dll-main for DLL targets (both hook the entry point).", "entry-point", "entry-point | dll-main"),
                         new UsageOption("-NoRemoveSig", "Keep the Authenticode signature instead of removing it."),
                         new UsageOption("-NoPatchSubsystem", "Leave the subsystem unchanged instead of patching to GUI."),
+                        new UsageOption("-NoPreserveEntry", "Do not resume the original entry point after payload execution."),
+                        new UsageOption("-NoPatchIat", "Skip IAT patching during the carrier pass."),
                         new UsageOption("-NoPatchExit", "Do not rewrite exit behavior after the payload runs."),
                         new UsageOption("-SessionLog", "Force per-run session logging on, regardless of saved app settings."),
                         new UsageOption("-NoSessionLog", "Force per-run session logging off, regardless of saved app settings."),
                         new UsageOption("-Verbose", "Show detailed discovery and patching logs."),
-                        new UsageOption("-Json", "Emit machine-friendly JSON instead of the styled report."),
+                        new UsageOption("-Json", "Emit machine-friendly JSON (single line) instead of the styled report. Used by the GUI."),
                     ]),
             ],
             Sections:
@@ -2371,10 +2481,12 @@ public static partial class Program
             ],
             Examples:
             [
+                new UsageExample("washmachine-cli backdoor", "Drop into the interactive backdoor session (no flags).", "Any shell"),
                 new UsageExample("washmachine-cli backdoor -Pe .\\app.exe -s .\\payload.bin", "Patch a PE with the default code-cave strategy.", "PowerShell / pwsh"),
                 new UsageExample("washmachine-cli backdoor -Pe .\\target.dll -s .\\payload.bin -Carrier dll-main -m new-section", "Backdoor a DLL by hooking its DllMain entry.", "PowerShell / pwsh"),
                 new UsageExample("washmachine-cli backdoor -Pe ./target.exe -s ./payload.bin -m new-section -o ./patched.exe", "Use a new section when you want predictable capacity.", "Bash / Zsh"),
                 new UsageExample("washmachine-cli backdoor -Pe target.exe -s payload.bin -m text-pad -DryRun -Verbose", "Check whether text padding is viable before writing output.", "Any shell"),
+                new UsageExample("washmachine-cli backdoor -Pe host.exe -s payload.bin -Mode dropper -Implant implant.exe", "Embed a separate implant EXE that the host drops on first launch.", "Any shell"),
                 new UsageExample("washmachine-cli backdoor -Pe target.exe -s payload.bin -m tls-callback", "Attempt TLS callback placement on a compatible target.", "Any shell"),
             ],
             Related:
@@ -2418,14 +2530,23 @@ public static partial class Program
                     Notes:
                     [
                         new UsageNote("ep", "Extract from the PE entry point to the end of the containing section."),
-                        new UsageNote("section", "Extract the full raw contents of one named section."),
+                        new UsageNote("section", "Extract the full raw contents of one named section (use -Section .text, .rdata, etc.)."),
+                    ]),
+                new UsageSection(
+                    "Tip",
+                    Bullets:
+                    [
+                        "Run 'analyze <pe>' first if you don't yet know which section or offsets to target.",
+                        "Inside the interactive session, type 'set SECTION' alone to list section names from the loaded PE.",
                     ]),
             ],
             Examples:
             [
+                new UsageExample("washmachine-cli strip", "Drop into the interactive strip session (no flags).", "Any shell"),
                 new UsageExample("washmachine-cli strip .\\loader.exe", "Extract from the entry point to the end of the containing section.", "PowerShell / pwsh"),
                 new UsageExample("washmachine-cli strip ./loader.exe -m section -Section .text", "Dump one named section.", "Bash / Zsh"),
                 new UsageExample("washmachine-cli strip loader.exe -Analyze", "Preview section layout without writing a .bin.", "Any shell"),
+                new UsageExample("washmachine-cli strip target.exe -o stage1.bin -NoTrim", "Extract to a specific output file and keep trailing null padding.", "Any shell"),
             ],
             Related:
             [
@@ -2550,7 +2671,7 @@ public static partial class Program
             return await RunStripInteractiveSessionAsync();
         }
 
-        if (args[0] is "--help" or "-h")
+        if (IsHelpToken(args[0]))
         {
             PrintStripUsage();
             return 0;
@@ -2609,7 +2730,7 @@ public static partial class Program
 
         if (invalidMode is not null)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] Unknown strip mode [white]{Markup.Escape(invalidMode)}[/]. Valid modes: ep, section.");
+            WriteStatus(StatusPrefix.Failure, $"Unknown strip mode '{invalidMode}'. Expected: ep | section. Example: -Mode section -Section .text");
             return 1;
         }
 
@@ -2617,13 +2738,13 @@ public static partial class Program
 
         if (peFile is null)
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] No PE file specified. Use [white]-Pe <file>[/] or provide a positional argument.");
+            WriteStatus(StatusPrefix.Failure, "No PE file specified. Pass a path positionally or use '-Pe <file>'. Example: strip .\\loader.exe");
             return 1;
         }
 
         if (!File.Exists(peFile))
         {
-            AnsiConsole.MarkupLine($"[red]File not found:[/] [white]{Markup.Escape(peFile)}[/]");
+            WriteStatus(StatusPrefix.Failure, $"PE file not found: '{peFile}'. Check the path or run 'strip --help' for usage.");
             return 1;
         }
 
@@ -2712,7 +2833,7 @@ public static partial class Program
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Strip failed:[/] [white]{Markup.Escape(ex.Message)}[/]");
+            WriteStatus(StatusPrefix.Failure, $"Strip failed: {ex.Message}");
             return 1;
         }
     }
@@ -2729,15 +2850,23 @@ public static partial class Program
 
     private static int RunScan(string[] args)
     {
+        // Allow scan --help / scan -h / etc.
+        if (args.Length > 0 && IsHelpToken(args[0]))
+        {
+            PrintScanUsage();
+            return 0;
+        }
+
         bool jsonMode = args.Any(a => string.Equals(a, "--json", StringComparison.OrdinalIgnoreCase)
                                    || string.Equals(a, "-Json", StringComparison.Ordinal));
 
         var unknown = args.FirstOrDefault(a =>
             !string.Equals(a, "--json", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(a, "-Json", StringComparison.Ordinal));
+            !string.Equals(a, "-Json", StringComparison.Ordinal) &&
+            !IsHelpToken(a));
         if (unknown != null)
         {
-            AnsiConsole.MarkupLine($"[{UiColors.Error}]Error:[/] Unknown option for scan: {Markup.Escape(unknown)}");
+            WriteStatus(StatusPrefix.Failure, $"Unknown option for scan: '{unknown}'. Only -Json is accepted. Run 'scan --help' for usage.");
             return 1;
         }
 
@@ -2752,7 +2881,7 @@ public static partial class Program
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[{UiColors.Error}]scan failed:[/] {Markup.Escape(ex.Message)}");
+            WriteStatus(StatusPrefix.Failure, $"scan failed: {ex.Message}");
             return 1;
         }
 
@@ -2778,7 +2907,7 @@ public static partial class Program
 
         if (report.Findings.Count == 0)
         {
-            AnsiConsole.MarkupLine($"[{UiColors.Success}][[+]][/] Catalog scan clean — no conflicts detected.");
+            WriteStatus(StatusPrefix.Success, "Catalog scan clean — no conflicts detected.");
             return 0;
         }
 
@@ -2878,16 +3007,24 @@ public static partial class Program
 
     private static async Task<int> RunProvisionAsync(string[] args)
     {
+        // Allow provision --help / provision -h / etc.
+        if (args.Length > 0 && IsHelpToken(args[0]))
+        {
+            PrintProvisionUsage();
+            return 0;
+        }
+
         var logger = new ConsoleLogger();
         var paths = new AppPaths();
         var provisioner = new RequirementProvisioner(paths, logger);
         bool coreOnly = args.Any(a => string.Equals(a, "--core-only", StringComparison.OrdinalIgnoreCase)
                                     || string.Equals(a, "-CoreOnly", StringComparison.Ordinal));
         var unknownProvisionArg = args.FirstOrDefault(a => !string.Equals(a, "--core-only", StringComparison.OrdinalIgnoreCase)
-                                                         && !string.Equals(a, "-CoreOnly", StringComparison.Ordinal));
+                                                         && !string.Equals(a, "-CoreOnly", StringComparison.Ordinal)
+                                                         && !IsHelpToken(a));
         if (unknownProvisionArg != null)
         {
-            AnsiConsole.MarkupLine($"[{UiColors.Error}]Error:[/] Unknown option for provision: {Markup.Escape(unknownProvisionArg)}");
+            WriteStatus(StatusPrefix.Failure, $"Unknown option for provision: '{unknownProvisionArg}'. Accepted: -CoreOnly. Run 'provision --help' for usage.");
             return 1;
         }
 
@@ -3027,26 +3164,56 @@ public static partial class Program
 
         // Overview
         UsageFormatter.PrintSectionHeader("Overview");
-        AnsiConsole.MarkupLine($"  [{UiColors.Value}]Command guide for washmachine-cli.[/]");
+        AnsiConsole.MarkupLine($"  [{UiColors.Value}]Command guide for washmachine-cli v{Ui.Banner.AppVersion}.[/]");
         AnsiConsole.MarkupLine($"  [{UiColors.Label}]Usage[/]   [{UiColors.Accent}]washmachine-cli <command> [[options]][/]");
-        AnsiConsole.MarkupLine($"  [{UiColors.Muted}]Run[/] [{UiColors.Accent}]help <command>[/] [{UiColors.Muted}]for details on any command.[/]");
+        AnsiConsole.MarkupLine($"  [{UiColors.Muted}]Run[/] [{UiColors.Accent}]help <command>[/] [{UiColors.Muted}]or[/] [{UiColors.Accent}]<command> --help[/] [{UiColors.Muted}]for details on any command.[/]");
 
-        // Command index
+        // Modes — explains one-liner vs interactive at a glance
+        UsageFormatter.PrintSectionHeader("Modes");
+        var modeNotes = new (string label, string desc)[]
+        {
+            ("One-liner",   "Provide a command and all flags on the command line. The CLI runs once and exits."),
+            ("Interactive", "Run a bare command (e.g. 'backdoor') with no required flags to drop into a Metasploit-style configuration session."),
+            ("REPL",        "Launch washmachine-cli with no arguments to enter the persistent shell with banner, history, and tab completion."),
+            ("Help / version", "Help: 'help', '--help', '-h', '-?'. Version: '--version', '-V', 'version'."),
+        };
+        int modeLabelWidth = modeNotes.Max(n => n.label.Length);
+        foreach (var (label, desc) in modeNotes)
+            AnsiConsole.MarkupLine($"  [{UiColors.Label}]{Markup.Escape(label.PadRight(modeLabelWidth))}[/]   [{UiColors.Value}]{Markup.Escape(desc)}[/]");
+
+        // Command index — with one-line example each
         UsageFormatter.PrintSectionHeader("Commands");
         foreach (var cmd in commands)
         {
             string name = cmd.Name.PadRight(nameWidth);
             AnsiConsole.MarkupLine($"  [{UiColors.Accent}]{Markup.Escape(name)}[/]   [{UiColors.Value}]{Markup.Escape(cmd.Summary)}[/]");
+            if (cmd.Examples is { Length: > 0 })
+                AnsiConsole.MarkupLine($"  [{UiColors.Muted}]{new string(' ', nameWidth)}     e.g.  {Markup.Escape(cmd.Examples[0].Command)}[/]");
         }
+
+        // REPL-only chrome commands
+        UsageFormatter.PrintSectionHeader("REPL-only commands");
+        var replCommands = new (string name, string desc)[]
+        {
+            ("scheme",  "List or switch the active color scheme (e.g. 'scheme dracula')."),
+            ("banner",  "Reprint the welcome chrome and info grid."),
+            ("clear",   "Clear the screen (also: 'cls')."),
+            ("version", "Print the CLI version."),
+            ("exit",    "Leave the REPL (also: 'quit', 'q')."),
+        };
+        int replLabelWidth = replCommands.Max(c => c.name.Length);
+        foreach (var (name, desc) in replCommands)
+            AnsiConsole.MarkupLine($"  [{UiColors.Accent}]{Markup.Escape(name.PadRight(replLabelWidth))}[/]   [{UiColors.Value}]{Markup.Escape(desc)}[/]");
 
         // Getting started
         UsageFormatter.PrintSectionHeader("Getting started");
         foreach (var bullet in new[]
         {
-            "Run provision once if you want Bin2Shell available before your first encode.",
-            "Use show templates, show modules, and show encoders to discover valid IDs on this machine.",
-            "Use help <command> when you want details for one command without leaving the terminal flow.",
-            "A safe common flow is: analyze target -> choose a method -> backdoor, or encode -> strip -> backdoor.",
+            "Run 'provision' once if you want Bin2Shell available before your first encode.",
+            "Use 'show templates', 'show modules', and 'show encoders' to discover valid IDs on this machine.",
+            "Use 'help <command>' when you want details for one command without leaving the terminal flow.",
+            "Common flow: 'analyze target' to recon, then 'backdoor' to patch — or 'encode' → 'strip' → 'backdoor'.",
+            "Inside a session, type 'show options' for the parameter table and 'help <OPTION>' for details on any field.",
         })
             AnsiConsole.MarkupLine($"  [{UiColors.Value}]· {Markup.Escape(bullet)}[/]");
 
@@ -3057,6 +3224,7 @@ public static partial class Program
             ("Windows PowerShell / pwsh", @"Use .\payload.bin or C:\path\payload.bin, and quote paths with spaces."),
             ("Bash / Zsh",                @"Use ./payload.bin or /path/payload.bin, and quote paths with spaces."),
             ("Shared",                    "Flags and command names stay the same across shells; only path style and quoting change."),
+            ("Env",                       "WASHMACHINE_SCHEME selects the color scheme. Set NO_COLOR to any non-empty value to disable all ANSI styling (https://no-color.org)."),
         };
         int shellLabelWidth = shellNotes.Max(n => n.Item1.Length);
         foreach (var (label, desc) in shellNotes)
@@ -3075,20 +3243,15 @@ public static partial class Program
         var validCommands = new[] { "encode", "analyze", "backdoor", "strip", "show", "provision", "test", "scan", "help" };
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[{UiColors.Error}]Error:[/] [{UiColors.Value}]Unknown command '{Markup.Escape(command)}'[/]");
+        WriteStatus(StatusPrefix.Failure, $"Unknown command: '{command}'");
         AnsiConsole.WriteLine();
 
-        var suggestions = validCommands
-            .Where(c => c.Contains(command, StringComparison.OrdinalIgnoreCase)
-                     || command.Contains(c, StringComparison.OrdinalIgnoreCase)
-                     || LevenshteinDistance(c, command) <= 3)
-            .ToArray();
-
-        if (suggestions.Length > 0)
+        var suggestions = SuggestSimilarNames(command, validCommands, 3);
+        if (suggestions.Count > 0)
         {
             AnsiConsole.MarkupLine($"[{UiColors.Muted}]Did you mean:[/]");
             foreach (var s in suggestions)
-                AnsiConsole.MarkupLine($"  [{UiColors.Accent}]{s}[/]");
+                AnsiConsole.MarkupLine($"  [{UiColors.Accent}]{Markup.Escape(s)}[/]");
             AnsiConsole.WriteLine();
         }
 
@@ -3097,7 +3260,7 @@ public static partial class Program
             AnsiConsole.MarkupLine($"  [{UiColors.Accent}]{c}[/]");
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[{UiColors.Muted}]Run[/] [{UiColors.Accent}]help[/] [{UiColors.Muted}]for usage information.[/]");
+        AnsiConsole.MarkupLine($"[{UiColors.Muted}]Run[/] [{UiColors.Accent}]help[/] [{UiColors.Muted}]for usage information, or[/] [{UiColors.Accent}]help <command>[/] [{UiColors.Muted}]for one command.[/]");
         return 1;
     }
 

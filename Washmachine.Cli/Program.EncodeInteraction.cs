@@ -296,6 +296,8 @@ public static partial class Program
         if (!string.IsNullOrWhiteSpace(context.EncodingCatalogWarning))
             WriteStatus(StatusPrefix.Warning, context.EncodingCatalogWarning);
 
+        WriteStatus(StatusPrefix.Info, "Type 'help' for session commands, 'help <OPTION>' for one option, 'show options' to reprint the table.");
+
         while (true)
         {
             AnsiConsole.WriteLine();
@@ -325,6 +327,11 @@ public static partial class Program
                 continue;
 
             var command = tokens[0].ToLowerInvariant();
+            if (IsHelpToken(command))
+            {
+                HandleEncodeHelp(context, tokens);
+                continue;
+            }
             try
             {
                 switch (command)
@@ -406,7 +413,7 @@ public static partial class Program
                         return 0;
 
                     default:
-                        WriteStatus(StatusPrefix.Failure, $"Unknown command: {tokens[0]}. Type 'help' for available commands.");
+                        WriteStatus(StatusPrefix.Failure, SuggestSessionCommand(tokens[0]));
                         break;
                 }
             }
@@ -425,9 +432,18 @@ public static partial class Program
 
     private static async Task HandleEncodeSetAsync(EncodeSessionContext context, EncodeSessionState state, string[] tokens)
     {
+        tokens = NormalizeSetTokens(tokens, out _);
+
         if (tokens.Length < 2)
         {
-            WriteStatus(StatusPrefix.Failure, "Usage: set <OPTION> [VALUE].");
+            WriteStatus(StatusPrefix.Failure, "Usage: set <OPTION> <VALUE>   (also accepted: set <OPTION>=<VALUE>)");
+            return;
+        }
+
+        // Help shortcut: 'set OPT --help' / 'set OPT -h' route to per-option help.
+        if (tokens.Length >= 3 && IsHelpToken(tokens[2]))
+        {
+            HandleEncodeHelp(context, new[] { "help", tokens[1] });
             return;
         }
 
@@ -2866,6 +2882,7 @@ public static partial class Program
             StatusPrefix.Failure => "[-]",
             StatusPrefix.Info => "[*]",
             StatusPrefix.Warning => "[!]",
+            StatusPrefix.Prompt => "[?]",
             _ => "[?]",
         };
 
@@ -2881,6 +2898,7 @@ public static partial class Program
             StatusPrefix.Failure => "red",
             StatusPrefix.Info => "cyan1",
             StatusPrefix.Warning => "yellow",
+            StatusPrefix.Prompt => "white bold",
             _ => "white",
         };
 
@@ -2997,6 +3015,7 @@ public static partial class Program
         Failure,
         Info,
         Warning,
+        Prompt,
     }
 
     private readonly record struct TableBorderStyle(
