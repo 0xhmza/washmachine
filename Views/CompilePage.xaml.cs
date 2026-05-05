@@ -150,6 +150,8 @@ public sealed partial class CompilePage : Page
 
     private void CompilationBackendCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (LlvmPassesPanel is null) return; // not yet initialized during InitializeComponent
+
         if (CompilationBackendCombo.SelectedItem is ComboBoxItem item &&
             item.Tag is string tag &&
             tag.Equals("LlvmObfuscated", StringComparison.OrdinalIgnoreCase))
