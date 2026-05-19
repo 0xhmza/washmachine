@@ -7,8 +7,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Title="Washmachine - Loader Builder"
-    >
+    Title="Washmachine - Loader Builder">
 
     <Grid>
         <NavigationView x:Name="mainNavigationView"
@@ -21,61 +20,457 @@
                         IsDoubleTapEnabled="False"
                         SelectionChanged="NavView_SelectionChanged">
 
-        <NavigationView.PaneHeader>
-            <StackPanel Orientation="Horizontal" Margin="-100,70,0,20" HorizontalAlignment="Center" >
-                <FontIcon Glyph="&#xE943;" FontSize="20" VerticalAlignment="Center" />
-                <StackPanel Margin="20,0,0,0">
-                    <TextBlock Text="Washmachine" FontSize="16" FontWeight="SemiBold" />
-                    <TextBlock Text="Loader Builder" FontSize="12"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                </StackPanel>
-            </StackPanel>
-        </NavigationView.PaneHeader>
+            <NavigationView.PaneHeader>
+                <Grid Margin="4,8,12,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Width="32" Height="32" CornerRadius="6"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="Center"
+                            Margin="12,0,12,0">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="{StaticResource AccColor}" Offset="0" />
+                                <GradientStop Color="{StaticResource AccDimColor}" Offset="1" />
+                            </LinearGradientBrush>
+                        </Border.Background>
+                        <TextBlock Text="W"
+                                   FontFamily="{StaticResource DisplayFontFamily}"
+                                   FontSize="16"
+                                   FontWeight="Bold"
+                                   Foreground="#003A5D"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="washmachine"
+                                   FontFamily="{StaticResource SansFontFamily}"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource N10Brush}" />
+                        <TextBlock Text="loader builder"
+                                   FontFamily="{StaticResource MonoFontFamily}"
+                                   FontSize="11"
+                                   Foreground="{StaticResource N7Brush}" />
+                    </StackPanel>
+                </Grid>
+            </NavigationView.PaneHeader>
 
+            <NavigationView.MenuItems>
+                <NavigationViewItemHeader Content="Build" />
+                <NavigationViewItem Content="Source" Tag="MainPage">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE7C3;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Compile" Tag="CompilePage">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE943;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Backdoor" Tag="BackdooringPage">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE72E;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Pack" Tag="PackingPage">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE7B8;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Finalize" Tag="FinalizePage">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE73E;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
 
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem Content="Pipeline" Tag="PipelinePage">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE9D9;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="History" Tag="PayloadHistoryPage">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE81C;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.FooterMenuItems>
 
-        <NavigationView.MenuItems>
-            <NavigationViewItem Content="Payload" Tag="MainPage">
-                <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE943;" />
-                </NavigationViewItem.Icon>
-            </NavigationViewItem>
-            <NavigationViewItem Content="Backdooring" Tag="BackdooringPage">
-                <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE72E;" />
-                </NavigationViewItem.Icon>
-            </NavigationViewItem>
-            <NavigationViewItem Content="Packing" Tag="PackingPage">
-                <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE7B8;" />
-                </NavigationViewItem.Icon>
-            </NavigationViewItem>
-            <NavigationViewItem Content="Finalize" Tag="FinalizePage">
-                <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE73E;" />
-                </NavigationViewItem.Icon>
-            </NavigationViewItem>
-            <NavigationViewItem Content="Compile" Tag="CompilePage">
-                <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE90F;" />
-                </NavigationViewItem.Icon>
-            </NavigationViewItem>
-        </NavigationView.MenuItems>
+            <!-- Content area: title bar + pipeline rail + frame + status bar -->
+            <Grid Background="{StaticResource N1Brush}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="44" />
+                    <RowDefinition Height="60" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="28" />
+                </Grid.RowDefinitions>
 
-        <NavigationView.FooterMenuItems>
-            <NavigationViewItem Content="Pipeline" Tag="PipelinePage">
-                <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE9D9;" />
-                </NavigationViewItem.Icon>
-            </NavigationViewItem>
-            <NavigationViewItem Content="History" Tag="PayloadHistoryPage">
-                <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE81C;" />
-                </NavigationViewItem.Icon>
-            </NavigationViewItem>
-        </NavigationView.FooterMenuItems>
+                <!-- Title bar / breadcrumb / quick shortcuts -->
+                <Border Grid.Row="0"
+                        Background="{StaticResource N1Brush}"
+                        BorderBrush="{StaticResource N4Brush}"
+                        BorderThickness="0,0,0,1">
+                    <Grid Padding="20,0,16,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
 
-            <Frame x:Name="ContentFrame" />
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
+                            <TextBlock x:Name="CrumbRoot"
+                                       Text="build"
+                                       FontFamily="{StaticResource SansFontFamily}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource N8Brush}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Text="›"
+                                       FontFamily="{StaticResource SansFontFamily}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource N6Brush}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock x:Name="CrumbCurrent"
+                                       Text="source"
+                                       FontFamily="{StaticResource SansFontFamily}"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource N10Brush}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    Spacing="14"
+                                    VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <TextBlock Text="search"
+                                           FontFamily="{StaticResource SansFontFamily}"
+                                           FontSize="12"
+                                           Foreground="{StaticResource N8Brush}"
+                                           VerticalAlignment="Center" />
+                                <Border Style="{StaticResource KbdBorder}">
+                                    <TextBlock Text="Ctrl K" Style="{StaticResource KbdText}" />
+                                </Border>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <TextBlock Text="build"
+                                           FontFamily="{StaticResource SansFontFamily}"
+                                           FontSize="12"
+                                           Foreground="{StaticResource N8Brush}"
+                                           VerticalAlignment="Center" />
+                                <Border Style="{StaticResource KbdBorder}">
+                                    <TextBlock Text="Ctrl B" Style="{StaticResource KbdText}" />
+                                </Border>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <TextBlock Text="stop"
+                                           FontFamily="{StaticResource SansFontFamily}"
+                                           FontSize="12"
+                                           Foreground="{StaticResource N8Brush}"
+                                           VerticalAlignment="Center" />
+                                <Border Style="{StaticResource KbdBorder}">
+                                    <TextBlock Text="Esc" Style="{StaticResource KbdText}" />
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Pipeline rail (8-stage spine) -->
+                <Border Grid.Row="1"
+                        Background="{StaticResource N1Brush}"
+                        BorderBrush="{StaticResource N4Brush}"
+                        BorderThickness="0,0,0,1">
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Disabled"
+                                  HorizontalScrollMode="Auto"
+                                  VerticalScrollMode="Disabled">
+                        <StackPanel x:Name="PipelineRail"
+                                    Orientation="Horizontal"
+                                    Padding="16,8,16,8"
+                                    Spacing="0"
+                                    VerticalAlignment="Center">
+                            <!-- Stages populated below; "active" is highlighted via name -->
+                            <Grid x:Name="PipeSrc" Tag="src" Padding="10,4" Background="Transparent">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="01"
+                                                   FontFamily="{StaticResource MonoFontFamily}"
+                                                   FontSize="11"
+                                                   Foreground="{StaticResource N7Brush}" />
+                                        <TextBlock Text="source"
+                                                   FontFamily="{StaticResource SansFontFamily}"
+                                                   FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{StaticResource N9Brush}" />
+                                    </StackPanel>
+                                    <TextBlock Text="bin · 327 B"
+                                               FontFamily="{StaticResource MonoFontFamily}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource N7Brush}"
+                                               Margin="0,1,0,0" />
+                                </StackPanel>
+                            </Grid>
+                            <Border Width="20" Height="1" Background="{StaticResource N5Brush}" VerticalAlignment="Center" Margin="2,0,2,0" />
+
+                            <Grid x:Name="PipeSgn" Tag="sgn" Padding="10,4" Background="Transparent">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="02"
+                                                   FontFamily="{StaticResource MonoFontFamily}"
+                                                   FontSize="11"
+                                                   Foreground="{StaticResource N7Brush}" />
+                                        <TextBlock Text="SGN"
+                                                   FontFamily="{StaticResource SansFontFamily}"
+                                                   FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{StaticResource N9Brush}" />
+                                    </StackPanel>
+                                    <TextBlock Text="optional"
+                                               FontFamily="{StaticResource MonoFontFamily}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource N7Brush}"
+                                               Margin="0,1,0,0" />
+                                </StackPanel>
+                            </Grid>
+                            <Border Width="20" Height="1" Background="{StaticResource N5Brush}" VerticalAlignment="Center" Margin="2,0,2,0" />
+
+                            <Grid x:Name="PipeEnc" Tag="enc" Padding="10,4" Background="Transparent">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="03"
+                                                   FontFamily="{StaticResource MonoFontFamily}"
+                                                   FontSize="11"
+                                                   Foreground="{StaticResource N7Brush}" />
+                                        <TextBlock Text="encode"
+                                                   FontFamily="{StaticResource SansFontFamily}"
+                                                   FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{StaticResource N9Brush}" />
+                                    </StackPanel>
+                                    <TextBlock Text="XOR · b64"
+                                               FontFamily="{StaticResource MonoFontFamily}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource N7Brush}"
+                                               Margin="0,1,0,0" />
+                                </StackPanel>
+                            </Grid>
+                            <Border Width="20" Height="1" Background="{StaticResource N5Brush}" VerticalAlignment="Center" Margin="2,0,2,0" />
+
+                            <Grid x:Name="PipeTpl" Tag="tpl" Padding="10,4" Background="Transparent">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="04"
+                                                   FontFamily="{StaticResource MonoFontFamily}"
+                                                   FontSize="11"
+                                                   Foreground="{StaticResource N7Brush}" />
+                                        <TextBlock Text="template"
+                                                   FontFamily="{StaticResource SansFontFamily}"
+                                                   FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{StaticResource N9Brush}" />
+                                    </StackPanel>
+                                    <TextBlock Text="full-loader"
+                                               FontFamily="{StaticResource MonoFontFamily}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource N7Brush}"
+                                               Margin="0,1,0,0" />
+                                </StackPanel>
+                            </Grid>
+                            <Border Width="20" Height="1" Background="{StaticResource N5Brush}" VerticalAlignment="Center" Margin="2,0,2,0" />
+
+                            <Grid x:Name="PipeCmp" Tag="cmp" Padding="10,4" Background="Transparent">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="05"
+                                                   FontFamily="{StaticResource MonoFontFamily}"
+                                                   FontSize="11"
+                                                   Foreground="{StaticResource N7Brush}" />
+                                        <TextBlock Text="compile"
+                                                   FontFamily="{StaticResource SansFontFamily}"
+                                                   FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{StaticResource N9Brush}" />
+                                    </StackPanel>
+                                    <TextBlock Text="cl.exe"
+                                               FontFamily="{StaticResource MonoFontFamily}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource N7Brush}"
+                                               Margin="0,1,0,0" />
+                                </StackPanel>
+                            </Grid>
+                            <Border Width="20" Height="1" Background="{StaticResource N5Brush}" VerticalAlignment="Center" Margin="2,0,2,0"
+                                    BorderBrush="{StaticResource N5Brush}" BorderThickness="0,0,0,1" Opacity="0.6" />
+
+                            <Grid x:Name="PipeBd" Tag="bd" Padding="10,4" Background="Transparent" Opacity="0.7">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="06"
+                                                   FontFamily="{StaticResource MonoFontFamily}"
+                                                   FontSize="11"
+                                                   Foreground="{StaticResource N7Brush}" />
+                                        <TextBlock Text="backdoor"
+                                                   FontFamily="{StaticResource SansFontFamily}"
+                                                   FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{StaticResource N9Brush}" />
+                                    </StackPanel>
+                                    <TextBlock Text="optional"
+                                               FontFamily="{StaticResource MonoFontFamily}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource N7Brush}"
+                                               Margin="0,1,0,0" />
+                                </StackPanel>
+                            </Grid>
+                            <Border Width="20" Height="1" Background="{StaticResource N5Brush}" VerticalAlignment="Center" Margin="2,0,2,0" Opacity="0.6" />
+
+                            <Grid x:Name="PipePk" Tag="pk" Padding="10,4" Background="Transparent" Opacity="0.7">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="07"
+                                                   FontFamily="{StaticResource MonoFontFamily}"
+                                                   FontSize="11"
+                                                   Foreground="{StaticResource N7Brush}" />
+                                        <TextBlock Text="pack"
+                                                   FontFamily="{StaticResource SansFontFamily}"
+                                                   FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{StaticResource N9Brush}" />
+                                    </StackPanel>
+                                    <TextBlock Text="optional"
+                                               FontFamily="{StaticResource MonoFontFamily}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource N7Brush}"
+                                               Margin="0,1,0,0" />
+                                </StackPanel>
+                            </Grid>
+                            <Border Width="20" Height="1" Background="{StaticResource N5Brush}" VerticalAlignment="Center" Margin="2,0,2,0" Opacity="0.6" />
+
+                            <Grid x:Name="PipeFn" Tag="fn" Padding="10,4" Background="Transparent">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="08"
+                                                   FontFamily="{StaticResource MonoFontFamily}"
+                                                   FontSize="11"
+                                                   Foreground="{StaticResource N7Brush}" />
+                                        <TextBlock Text="finalize"
+                                                   FontFamily="{StaticResource SansFontFamily}"
+                                                   FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{StaticResource N9Brush}" />
+                                    </StackPanel>
+                                    <TextBlock Text="output"
+                                               FontFamily="{StaticResource MonoFontFamily}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource N7Brush}"
+                                               Margin="0,1,0,0" />
+                                </StackPanel>
+                            </Grid>
+
+                            <Border Width="24" />
+
+                            <Button x:Name="RunBuildButton"
+                                    Style="{StaticResource AccentButtonStyle}"
+                                    Padding="14,6,14,6"
+                                    VerticalAlignment="Center"
+                                    Click="RunBuildButton_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE768;" FontSize="11" />
+                                    <TextBlock Text="Build" FontWeight="SemiBold" />
+                                    <Border Background="#003A5D"
+                                            CornerRadius="3"
+                                            Padding="4,0,4,0"
+                                            Opacity="0.4"
+                                            VerticalAlignment="Center">
+                                        <TextBlock Text="Ctrl B"
+                                                   FontFamily="{StaticResource MonoFontFamily}"
+                                                   FontSize="10"
+                                                   Foreground="#003A5D" />
+                                    </Border>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+
+                <!-- Page content -->
+                <Frame x:Name="ContentFrame"
+                       Grid.Row="2"
+                       Background="{StaticResource N1Brush}" />
+
+                <!-- Status bar -->
+                <Border Grid.Row="3"
+                        Background="{StaticResource N1Brush}"
+                        BorderBrush="{StaticResource N4Brush}"
+                        BorderThickness="0,1,0,0">
+                    <StackPanel Orientation="Horizontal"
+                                Padding="14,0,14,0"
+                                Spacing="18"
+                                VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Ellipse Width="8" Height="8" Fill="{StaticResource OkBrush}" />
+                            <TextBlock Text="ready"
+                                       FontFamily="{StaticResource SansFontFamily}"
+                                       FontSize="11"
+                                       Foreground="{StaticResource N8Brush}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="session"
+                                       FontFamily="{StaticResource SansFontFamily}"
+                                       FontSize="11"
+                                       Foreground="{StaticResource N7Brush}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock x:Name="StatusSession"
+                                       Text="session_20260519_001a"
+                                       FontFamily="{StaticResource MonoFontFamily}"
+                                       FontSize="11"
+                                       Foreground="{StaticResource N9Brush}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="sha"
+                                       FontFamily="{StaticResource SansFontFamily}"
+                                       FontSize="11"
+                                       Foreground="{StaticResource N7Brush}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock x:Name="StatusSha"
+                                       Text="—"
+                                       FontFamily="{StaticResource MonoFontFamily}"
+                                       FontSize="11"
+                                       Foreground="{StaticResource N9Brush}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                        <Border Width="20" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock x:Name="StatusKey1Label"
+                                       Text="src"
+                                       FontFamily="{StaticResource SansFontFamily}"
+                                       FontSize="11"
+                                       Foreground="{StaticResource N7Brush}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock x:Name="StatusKey1Value"
+                                       Text="(none)"
+                                       FontFamily="{StaticResource MonoFontFamily}"
+                                       FontSize="11"
+                                       Foreground="{StaticResource N9Brush}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                        <Border Width="10" />
+                        <Border Background="Transparent" />
+                        <TextBlock Text=""
+                                   Grid.Column="1"
+                                   HorizontalAlignment="Right"
+                                   FontFamily="{StaticResource SansFontFamily}"
+                                   FontSize="11"
+                                   Foreground="{StaticResource N7Brush}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </Grid>
         </NavigationView>
     </Grid>
 </Window>

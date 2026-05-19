@@ -6,133 +6,160 @@
       mc:Ignorable="d"
       NavigationCacheMode="Enabled">
 
-    <Grid Background="Transparent">
+    <Grid Background="{StaticResource N1Brush}">
         <ScrollViewer VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled"
-                      Padding="0,32,0,0">
+                      HorizontalScrollBarVisibility="Disabled">
             <StackPanel Margin="{StaticResource PageMargin}"
-                        Orientation="Vertical"
-                        Width="{StaticResource ContentMaxWidth}"
-                        HorizontalAlignment="Center">
+                        Spacing="22"
+                        MaxWidth="1280"
+                        HorizontalAlignment="Stretch">
 
-                <!-- Page header -->
-                <StackPanel Margin="0,0,0,16">
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                        <FontIcon Glyph="&#xE80F;" FontSize="11" Margin="0,2,4,0" VerticalAlignment="Center"
-                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock Text="Pipeline" Margin="2,0,0,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
-                        <TextBlock Text=" › " Margin="0,0,5,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
-                        <TextBlock Text="Payload History" FontSize="12" VerticalAlignment="Center" />
+                <!-- Header row with search + filter -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Bottom">
+                        <TextBlock Text="History" Style="{StaticResource PageTitleText}" />
+                        <TextBlock Text="Every build leaves a session — source, log, manifest, and the artifact itself."
+                                   Style="{StaticResource PageSubtitleText}"
+                                   VerticalAlignment="Bottom"
+                                   Margin="0,0,0,8" />
                     </StackPanel>
-
-                    <StackPanel Margin="0,20,0,10" Orientation="Horizontal" VerticalAlignment="Center">
-                        <FontIcon Glyph="&#xE81C;" FontSize="30" Margin="0,2,12,0" />
-                        <StackPanel>
-                            <TextBlock Text="Generated Payload History" Style="{StaticResource PageTitleText}" />
-                            <TextBlock Text="All web payload generations with full payload and Bin2Shell details."
-                                       Style="{StaticResource PageSubtitleText}"
-                                       Margin="0,4,0,0" />
-                        </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom" Margin="0,0,0,6">
+                        <Button Content="Refresh" Click="Refresh_Click" />
+                        <Button x:Name="DeleteButton" Content="Delete" Click="Delete_Click" IsEnabled="False" />
+                        <Button x:Name="ClearButton" Content="Clear all" Click="Clear_Click" />
                     </StackPanel>
-                </StackPanel>
+                </Grid>
 
-
-                <!-- History entries section -->
-                <Expander x:Name="HistoryExpander"
-                          HorizontalAlignment="Stretch"
-                          HorizontalContentAlignment="Stretch"
-                          IsExpanded="True"
-                          Margin="0,0,0,4">
-                    <Expander.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <FontIcon Glyph="&#xE81C;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="History Entries" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Expander.Header>
-                    <StackPanel Spacing="8" Margin="0,8,0,4">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
+                <!-- Summary card with stats -->
+                <Border Style="{StaticResource FlatCardBorder}">
+                    <Grid ColumnSpacing="36">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="SESSIONS" Style="{StaticResource SectionLabelText}" />
+                            <TextBlock x:Name="StatHistoryCount"
+                                       Text="0"
+                                       FontFamily="{StaticResource MonoFontFamily}"
+                                       FontSize="22"
+                                       FontWeight="Medium"
+                                       Foreground="{StaticResource N10Brush}" />
                             <TextBlock x:Name="StatusText"
-                                       Style="{StaticResource SectionSubtitleText}"
-                                       VerticalAlignment="Center"
-                                       TextWrapping="Wrap" />
-                            <Button Grid.Column="1"
-                                    Content="Refresh"
-                                    Click="Refresh_Click"
-                                    MinWidth="90"
-                                    Margin="0,0,6,0" />
-                            <Button x:Name="DeleteButton"
-                                    Grid.Column="2"
-                                    Content="Delete"
-                                    Click="Delete_Click"
-                                    MinWidth="80"
-                                    Margin="0,0,6,0"
-                                    IsEnabled="False" />
-                            <Button x:Name="ClearButton"
-                                    Grid.Column="3"
-                                    Content="Clear All"
-                                    Click="Clear_Click"
-                                    MinWidth="90" />
-                        </Grid>
-
-                        <TextBlock x:Name="EmptyStateText"
-                                   Text="No generated payload history yet."
-                                   Style="{StaticResource SectionSubtitleText}"
-                                   Visibility="Collapsed" />
-
-                        <ListView x:Name="HistoryList"
-                                  SelectionChanged="HistoryList_SelectionChanged"
-                                  MaxHeight="400">
-                            <ListView.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Padding="8,6" Margin="0,0,0,4"
-                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                            BorderThickness="1"
-                                            CornerRadius="6">
-                                        <StackPanel Spacing="2">
-                                            <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                            <TextBlock Text="{Binding DisplaySubtitle}"
-                                                       Style="{StaticResource SectionSubtitleText}"
-                                                       TextWrapping="Wrap" />
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ListView.ItemTemplate>
-                        </ListView>
-                    </StackPanel>
-                </Expander>
-
-                <Border Margin="0,0,0,15"/>
-                <!-- Entry Details section -->
-                <Expander x:Name="DetailsExpander"
-                          HorizontalAlignment="Stretch"
-                          HorizontalContentAlignment="Stretch"
-                          IsExpanded="True"
-                          Margin="0,0,0,4">
-                    <Expander.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <FontIcon Glyph="&#xE946;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Entry Details" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
+                                       Text="no sessions yet"
+                                       Style="{StaticResource MonoTinyText}" />
                         </StackPanel>
-                    </Expander.Header>
-                    <StackPanel Spacing="10" Margin="0,8,0,4">
+                        <StackPanel Grid.Column="1" Spacing="4">
+                            <TextBlock Text="LAST BUILD" Style="{StaticResource SectionLabelText}" />
+                            <TextBlock x:Name="StatLastBuild"
+                                       Text="—"
+                                       FontFamily="{StaticResource MonoFontFamily}"
+                                       FontSize="22"
+                                       FontWeight="Medium"
+                                       Foreground="{StaticResource N10Brush}" />
+                            <TextBlock Text="most recent run" Style="{StaticResource MonoTinyText}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Spacing="4">
+                            <TextBlock Text="TOTAL SIZE" Style="{StaticResource SectionLabelText}" />
+                            <TextBlock x:Name="StatTotalSize"
+                                       Text="—"
+                                       FontFamily="{StaticResource MonoFontFamily}"
+                                       FontSize="22"
+                                       FontWeight="Medium"
+                                       Foreground="{StaticResource N10Brush}" />
+                            <TextBlock Text="across all artifacts" Style="{StaticResource MonoTinyText}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="3" Spacing="4">
+                            <TextBlock Text="STATUS" Style="{StaticResource SectionLabelText}" />
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Ellipse Width="8" Height="8" Fill="{StaticResource OkBrush}" VerticalAlignment="Center" />
+                                <TextBlock Text="ready"
+                                           FontFamily="{StaticResource MonoFontFamily}"
+                                           FontSize="14"
+                                           Foreground="{StaticResource N10Brush}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Text="history index synced" Style="{StaticResource MonoTinyText}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Two-column layout: sessions list + selected entry details -->
+                <Grid ColumnSpacing="22">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="420" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- LEFT: sessions list -->
+                    <StackPanel x:Name="HistoryExpander" Spacing="10">
+                        <TextBlock Text="SESSIONS" Style="{StaticResource SectionLabelText}" />
+                        <Border Style="{StaticResource ListCardBorder}">
+                            <StackPanel>
+                                <Grid Background="{StaticResource N1Brush}" Padding="14,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="WHEN · SESSION" Style="{StaticResource SectionLabelText}" />
+                                    <TextBlock Grid.Column="1" Text="STATUS" Style="{StaticResource SectionLabelText}" />
+                                </Grid>
+                                <Border Height="1" Background="{StaticResource N4Brush}" />
+                                <TextBlock x:Name="EmptyStateText"
+                                           Text="No generated payload history yet."
+                                           Style="{StaticResource SectionSubtitleText}"
+                                           Margin="14,14,14,14"
+                                           Visibility="Collapsed" />
+                                <ListView x:Name="HistoryList"
+                                          SelectionChanged="HistoryList_SelectionChanged"
+                                          MaxHeight="560"
+                                          Background="Transparent"
+                                          BorderThickness="0">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Padding="12,10"
+                                                    BorderBrush="{StaticResource N3Brush}"
+                                                    BorderThickness="0,0,0,1">
+                                                <StackPanel Spacing="4">
+                                                    <TextBlock Text="{Binding DisplayTitle}"
+                                                               FontFamily="{StaticResource MonoFontFamily}"
+                                                               FontSize="12"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{StaticResource N10Brush}"
+                                                               TextWrapping="Wrap" />
+                                                    <TextBlock Text="{Binding DisplaySubtitle}"
+                                                               FontFamily="{StaticResource MonoFontFamily}"
+                                                               FontSize="11"
+                                                               Foreground="{StaticResource N7Brush}"
+                                                               TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- RIGHT: details -->
+                    <StackPanel Grid.Column="1" x:Name="DetailsExpander" Spacing="10">
+                        <TextBlock Text="DETAILS" Style="{StaticResource SectionLabelText}" />
                         <TextBlock x:Name="NoSelectionText"
                                    Text="Select an entry to view full details."
                                    Style="{StaticResource SectionSubtitleText}" />
 
-                        <StackPanel x:Name="DetailsHost"
-                                    Spacing="10"
-                                    Visibility="Collapsed">
+                        <StackPanel x:Name="DetailsHost" Spacing="14" Visibility="Collapsed">
                             <Border Style="{StaticResource CardBorder}">
-                                <StackPanel Margin="12" Spacing="8">
+                                <StackPanel Spacing="10">
                                     <TextBlock Text="Summary" Style="{StaticResource SectionTitleText}" />
-
-                                    <Grid>
+                                    <Grid ColumnSpacing="14" RowSpacing="6">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="180" />
                                             <ColumnDefinition Width="*" />
@@ -151,125 +178,104 @@
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
 
-                                        <TextBlock Text="Generated at" Grid.Row="0" Style="{StaticResource SectionSubtitleText}" />
-                                        <TextBlock x:Name="GeneratedAtValue" Grid.Row="0" Grid.Column="1" TextWrapping="Wrap" />
+                                        <TextBlock Text="generated at" Grid.Row="0" Style="{StaticResource MonoTinyText}" />
+                                        <TextBlock x:Name="GeneratedAtValue" Grid.Row="0" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" TextWrapping="Wrap" />
 
-                                        <TextBlock Text="Payload URL" Grid.Row="1" Style="{StaticResource SectionSubtitleText}" />
-                                        <TextBlock x:Name="PayloadUrlValue" Grid.Row="1" Grid.Column="1" TextWrapping="Wrap" />
+                                        <TextBlock Text="payload URL" Grid.Row="1" Style="{StaticResource MonoTinyText}" />
+                                        <TextBlock x:Name="PayloadUrlValue" Grid.Row="1" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource AccBrush}" TextWrapping="Wrap" />
 
-                                        <TextBlock Text="Source file" Grid.Row="2" Style="{StaticResource SectionSubtitleText}" />
-                                        <TextBlock x:Name="SourcePathValue" Grid.Row="2" Grid.Column="1" TextWrapping="Wrap" />
+                                        <TextBlock Text="source file" Grid.Row="2" Style="{StaticResource MonoTinyText}" />
+                                        <TextBlock x:Name="SourcePathValue" Grid.Row="2" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" TextWrapping="Wrap" />
 
-                                        <TextBlock Text="Source size" Grid.Row="3" Style="{StaticResource SectionSubtitleText}" />
-                                        <TextBlock x:Name="SourceSizeValue" Grid.Row="3" Grid.Column="1" TextWrapping="Wrap" />
+                                        <TextBlock Text="source size" Grid.Row="3" Style="{StaticResource MonoTinyText}" />
+                                        <TextBlock x:Name="SourceSizeValue" Grid.Row="3" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" TextWrapping="Wrap" />
 
-                                        <TextBlock Text="Source SHA-256" Grid.Row="4" Style="{StaticResource SectionSubtitleText}" />
-                                        <TextBlock x:Name="SourceHashValue" Grid.Row="4" Grid.Column="1" TextWrapping="Wrap" />
+                                        <TextBlock Text="source sha256" Grid.Row="4" Style="{StaticResource MonoTinyText}" />
+                                        <TextBlock x:Name="SourceHashValue" Grid.Row="4" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" TextWrapping="Wrap" />
 
-                                        <TextBlock Text="Encoder" Grid.Row="5" Style="{StaticResource SectionSubtitleText}" />
-                                        <TextBlock x:Name="EncoderValue" Grid.Row="5" Grid.Column="1" TextWrapping="Wrap" />
+                                        <TextBlock Text="encoder" Grid.Row="5" Style="{StaticResource MonoTinyText}" />
+                                        <TextBlock x:Name="EncoderValue" Grid.Row="5" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" TextWrapping="Wrap" />
 
-                                        <TextBlock Text="Envelope" Grid.Row="6" Style="{StaticResource SectionSubtitleText}" />
-                                        <TextBlock x:Name="EnvelopeValue" Grid.Row="6" Grid.Column="1" TextWrapping="Wrap" />
+                                        <TextBlock Text="envelope" Grid.Row="6" Style="{StaticResource MonoTinyText}" />
+                                        <TextBlock x:Name="EnvelopeValue" Grid.Row="6" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" TextWrapping="Wrap" />
 
-                                        <TextBlock Text="Web helper" Grid.Row="7" Style="{StaticResource SectionSubtitleText}" />
-                                        <TextBlock x:Name="WebHelperValue" Grid.Row="7" Grid.Column="1" TextWrapping="Wrap" />
+                                        <TextBlock Text="web helper" Grid.Row="7" Style="{StaticResource MonoTinyText}" />
+                                        <TextBlock x:Name="WebHelperValue" Grid.Row="7" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" TextWrapping="Wrap" />
 
-                                        <TextBlock Text="Payload length" Grid.Row="8" Style="{StaticResource SectionSubtitleText}" />
-                                        <TextBlock x:Name="PayloadBytesValue" Grid.Row="8" Grid.Column="1" TextWrapping="Wrap" />
+                                        <TextBlock Text="payload length" Grid.Row="8" Style="{StaticResource MonoTinyText}" />
+                                        <TextBlock x:Name="PayloadBytesValue" Grid.Row="8" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" TextWrapping="Wrap" />
 
-                                        <TextBlock Text="Payload checksum" Grid.Row="9" Style="{StaticResource SectionSubtitleText}" />
-                                        <TextBlock x:Name="PayloadChecksumValue" Grid.Row="9" Grid.Column="1" TextWrapping="Wrap" />
+                                        <TextBlock Text="payload checksum" Grid.Row="9" Style="{StaticResource MonoTinyText}" />
+                                        <TextBlock x:Name="PayloadChecksumValue" Grid.Row="9" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" TextWrapping="Wrap" />
 
-                                        <TextBlock Text="History file" Grid.Row="10" Style="{StaticResource SectionSubtitleText}" />
-                                        <TextBlock x:Name="HistoryPathValue" Grid.Row="10" Grid.Column="1" TextWrapping="Wrap" />
+                                        <TextBlock Text="history file" Grid.Row="10" Style="{StaticResource MonoTinyText}" />
+                                        <TextBlock x:Name="HistoryPathValue" Grid.Row="10" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N7Brush}" TextWrapping="Wrap" />
                                     </Grid>
                                 </StackPanel>
                             </Border>
 
-                            <Expander Header="Bin2Shell command line" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander Header="Bin2Shell command line" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
                                 <TextBox x:Name="CommandLineTextBox"
-                                         FontFamily="Cascadia Mono, Consolas, Courier New"
+                                         FontFamily="{StaticResource MonoFontFamily}"
                                          IsReadOnly="True"
                                          TextWrapping="Wrap"
                                          AcceptsReturn="True"
                                          MinHeight="80" />
                             </Expander>
 
-                            <Expander Header="Payload bytes/text" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander Header="Payload bytes/text" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
                                 <TextBox x:Name="PayloadTextBox"
-                                         FontFamily="Cascadia Mono, Consolas, Courier New"
+                                         FontFamily="{StaticResource MonoFontFamily}"
                                          IsReadOnly="True"
                                          TextWrapping="Wrap"
                                          AcceptsReturn="True"
                                          MinHeight="120" />
                             </Expander>
 
-                            <Expander Header="C++ includes (cpp_includes)" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander Header="C++ includes (cpp_includes)" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
                                 <TextBox x:Name="CppIncludesTextBox"
-                                         FontFamily="Cascadia Mono, Consolas, Courier New"
-                                         IsReadOnly="True"
-                                         TextWrapping="Wrap"
-                                         AcceptsReturn="True"
-                                         MinHeight="100" />
+                                         FontFamily="{StaticResource MonoFontFamily}"
+                                         IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="100" />
                             </Expander>
 
-                            <Expander Header="C++ declarations (cpp_declarations)" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander Header="C++ declarations (cpp_declarations)" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
                                 <TextBox x:Name="CppDeclarationsTextBox"
-                                         FontFamily="Cascadia Mono, Consolas, Courier New"
-                                         IsReadOnly="True"
-                                         TextWrapping="Wrap"
-                                         AcceptsReturn="True"
-                                         MinHeight="100" />
+                                         FontFamily="{StaticResource MonoFontFamily}"
+                                         IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="100" />
                             </Expander>
 
-                            <Expander Header="C++ web fetch helper (cpp_web_fetch)" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander Header="C++ web fetch helper (cpp_web_fetch)" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
                                 <TextBox x:Name="CppWebFetchTextBox"
-                                         FontFamily="Cascadia Mono, Consolas, Courier New"
-                                         IsReadOnly="True"
-                                         TextWrapping="Wrap"
-                                         AcceptsReturn="True"
-                                         MinHeight="100" />
+                                         FontFamily="{StaticResource MonoFontFamily}"
+                                         IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="100" />
                             </Expander>
 
-                            <Expander Header="C++ payload init (cpp_payload_init)" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander Header="C++ payload init (cpp_payload_init)" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
                                 <TextBox x:Name="CppPayloadInitTextBox"
-                                         FontFamily="Cascadia Mono, Consolas, Courier New"
-                                         IsReadOnly="True"
-                                         TextWrapping="Wrap"
-                                         AcceptsReturn="True"
-                                         MinHeight="100" />
+                                         FontFamily="{StaticResource MonoFontFamily}"
+                                         IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="100" />
                             </Expander>
 
-                            <Expander Header="C++ decode stage (cpp_decode)" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander Header="C++ decode stage (cpp_decode)" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
                                 <TextBox x:Name="CppDecodeTextBox"
-                                         FontFamily="Cascadia Mono, Consolas, Courier New"
-                                         IsReadOnly="True"
-                                         TextWrapping="Wrap"
-                                         AcceptsReturn="True"
-                                         MinHeight="100" />
+                                         FontFamily="{StaticResource MonoFontFamily}"
+                                         IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="100" />
                             </Expander>
 
-                            <Expander Header="Compiled preamble block" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander Header="Compiled preamble block" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
                                 <TextBox x:Name="CppPreambleTextBox"
-                                         FontFamily="Cascadia Mono, Consolas, Courier New"
-                                         IsReadOnly="True"
-                                         TextWrapping="Wrap"
-                                         AcceptsReturn="True"
-                                         MinHeight="100" />
+                                         FontFamily="{StaticResource MonoFontFamily}"
+                                         IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="100" />
                             </Expander>
 
-                            <Expander Header="Compiled body block" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <Expander Header="Compiled body block" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
                                 <TextBox x:Name="CppBodyTextBox"
-                                         FontFamily="Cascadia Mono, Consolas, Courier New"
-                                         IsReadOnly="True"
-                                         TextWrapping="Wrap"
-                                         AcceptsReturn="True"
-                                         MinHeight="100" />
+                                         FontFamily="{StaticResource MonoFontFamily}"
+                                         IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="100" />
                             </Expander>
                         </StackPanel>
                     </StackPanel>
-                </Expander>
+                </Grid>
 
             </StackPanel>
         </ScrollViewer>

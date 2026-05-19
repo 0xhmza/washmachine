@@ -7,396 +7,369 @@
       mc:Ignorable="d"
       NavigationCacheMode="Required">
 
-    <Grid x:Name="Root" Background="Transparent">
-        <ScrollViewer VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled"
-                      Padding="0,32,0,0">
-            <StackPanel Margin="{StaticResource PageMargin}"
-                        Orientation="Vertical"
-                        Width="{StaticResource ContentMaxWidth}"
-                        HorizontalAlignment="Center">
+    <Grid x:Name="Root" Background="{StaticResource N1Brush}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="540" />
+        </Grid.ColumnDefinitions>
 
-                <!-- Page header -->
-                <StackPanel Margin="0,0,0,16">
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                        <FontIcon Glyph="&#xE80F;" FontSize="11" Margin="0,2,4,0" VerticalAlignment="Center"
-                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock Text="Pipeline" Margin="2,0,0,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
-                        <TextBlock Text=" › " Margin="0,0,5,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
-                        <TextBlock Text="Compile" FontSize="12" VerticalAlignment="Center" />
-                    </StackPanel>
-                    <StackPanel Margin="0,20,0,20" Orientation="Horizontal" VerticalAlignment="Center">
-                        <FontIcon Glyph="&#xE90F;" FontSize="30" Margin="0,2,12,0" />
-                        <StackPanel>
-                            <TextBlock Text="Build Pipeline" Style="{StaticResource PageTitleText}" />
-                            <TextBlock Text="Compile, backdoor, and pack your configured payload."
-                                       Style="{StaticResource PageSubtitleText}"
-                                       Margin="0,4,0,0" />
-                        </StackPanel>
-                    </StackPanel>
+        <!-- LEFT: configuration -->
+        <ScrollViewer Grid.Column="0"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="{StaticResource PageMargin}"
+                        Spacing="22"
+                        MaxWidth="{StaticResource ContentMaxWidth}"
+                        HorizontalAlignment="Stretch">
+
+                <!-- Header -->
+                <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Bottom">
+                    <TextBlock Text="Compile" Style="{StaticResource PageTitleText}" />
+                    <TextBlock Text="Render template → invoke compiler → produce binary."
+                               Style="{StaticResource PageSubtitleText}"
+                               VerticalAlignment="Bottom"
+                               Margin="0,0,0,8" />
                 </StackPanel>
 
-                <Border Margin="10,10,10,15"/>
+                <!-- Pipeline configuration summary -->
+                <StackPanel Spacing="12">
+                    <TextBlock Text="PIPELINE CONFIGURATION" Style="{StaticResource SectionLabelText}" />
 
-                <!-- Pipeline Configuration Summary -->
-                <Expander IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
-                    <Expander.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <FontIcon Glyph="&#xE946;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Pipeline Configuration" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Expander.Header>
-                    <StackPanel Spacing="12" Margin="0,12,0,4">
-
-                        <!-- Payload Summary -->
-                        <Border Style="{StaticResource CardBorder}">
-                            <Grid Margin="16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon Glyph="&#xE943;" FontSize="18" Margin="0,0,12,0" VerticalAlignment="Center"
-                                          Foreground="{ThemeResource AccentFillColorDefaultBrush}" />
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="1. Payload" FontWeight="SemiBold" />
-                                    <Grid Margin="0,8,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="100" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition />
-                                            <RowDefinition />
-                                            <RowDefinition />
-                                            <RowDefinition />
-                                        </Grid.RowDefinitions>
-                                        <TextBlock Text="Shellcode:" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                        <TextBlock x:Name="SummaryShellcode" Text="Not configured" Grid.Column="1" />
-                                        <TextBlock Text="Template:" Grid.Row="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                        <TextBlock x:Name="SummaryTemplate" Text="Not selected" Grid.Row="1" Grid.Column="1" />
-                                        <TextBlock Text="Encoder:" Grid.Row="2" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                        <TextBlock x:Name="SummaryEncoder" Text="None" Grid.Row="2" Grid.Column="1" />
-                                        <TextBlock Text="Envelope:" Grid.Row="3" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                        <TextBlock x:Name="SummaryEnvelope" Text="None" Grid.Row="3" Grid.Column="1" />
-                                    </Grid>
-                                </StackPanel>
-                                <HyperlinkButton Grid.Column="2" Content="Edit" VerticalAlignment="Top" Click="GoToPayload_Click" />
-                            </Grid>
-                        </Border>
-
-                        <!-- Backdooring Summary -->
-                        <Border x:Name="BackdoorSummaryCard" Style="{StaticResource CardBorder}" Opacity="0.5">
-                            <Grid Margin="16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon Glyph="&#xE8AC;" FontSize="18" Margin="0,0,12,0" VerticalAlignment="Center"
-                                          Foreground="{ThemeResource AccentFillColorDefaultBrush}" />
-                                <StackPanel Grid.Column="1">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <TextBlock Text="2. Backdooring" FontWeight="SemiBold" />
-                                        <Border x:Name="BackdoorStatusBadge" 
-                                                Background="{ThemeResource SystemFillColorCautionBackgroundBrush}"
-                                                CornerRadius="2" Padding="6,2">
-                                            <TextBlock x:Name="BackdoorStatusText" Text="Disabled" FontSize="11" />
-                                        </Border>
-                                    </StackPanel>
-                                    <Grid x:Name="BackdoorDetails" Margin="0,8,0,0" Visibility="Collapsed">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="100" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition />
-                                            <RowDefinition />
-                                            <RowDefinition />
-                                        </Grid.RowDefinitions>
-                                        <TextBlock Text="Target:" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                        <TextBlock x:Name="SummaryTargetPe" Text="Not selected" Grid.Column="1" />
-                                        <TextBlock Text="Method:" Grid.Row="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                        <TextBlock x:Name="SummaryInjectionMethod" Text="New Section" Grid.Row="1" Grid.Column="1" />
-                                        <TextBlock Text="Carrier:" Grid.Row="2" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                        <TextBlock x:Name="SummaryCarrier" Text="Entry Point Hijack" Grid.Row="2" Grid.Column="1" />
-                                    </Grid>
-                                    <TextBlock x:Name="BackdoorDisabledText" 
-                                               Text="Backdooring is disabled. Output will be a standalone loader."
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                               FontSize="12"
-                                               Margin="0,4,0,0" />
-                                </StackPanel>
-                                <HyperlinkButton Grid.Column="2" Content="Edit" VerticalAlignment="Top" Click="GoToBackdooring_Click" />
-                            </Grid>
-                        </Border>
-
-                        <!-- Packing Summary -->
-                        <Border x:Name="PackingSummaryCard" Style="{StaticResource CardBorder}" Opacity="0.5">
-                            <Grid Margin="16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon Glyph="&#xE7B8;" FontSize="18" Margin="0,0,12,0" VerticalAlignment="Center"
-                                          Foreground="{ThemeResource AccentFillColorDefaultBrush}" />
-                                <StackPanel Grid.Column="1">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <TextBlock Text="3. Packing" FontWeight="SemiBold" />
-                                        <Border x:Name="PackingStatusBadge" 
-                                                Background="{ThemeResource SystemFillColorCautionBackgroundBrush}"
-                                                CornerRadius="2" Padding="6,2">
-                                            <TextBlock x:Name="PackingStatusText" Text="Disabled" FontSize="11" />
-                                        </Border>
-                                    </StackPanel>
-                                    <Grid x:Name="PackingDetails" Margin="0,8,0,0" Visibility="Collapsed">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="100" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition />
-                                            <RowDefinition />
-                                        </Grid.RowDefinitions>
-                                        <TextBlock Text="Packer:" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                        <TextBlock x:Name="SummaryPacker" Text="UPX" Grid.Column="1" />
-                                        <TextBlock Text="Level:" Grid.Row="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                        <TextBlock x:Name="SummaryPackLevel" Text="Best" Grid.Row="1" Grid.Column="1" />
-                                    </Grid>
-                                    <TextBlock x:Name="PackingDisabledText" 
-                                               Text="Packing is disabled. Output will not be compressed."
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                               FontSize="12"
-                                               Margin="0,4,0,0" />
-                                </StackPanel>
-                                <HyperlinkButton Grid.Column="2" Content="Edit" VerticalAlignment="Top" Click="GoToPacking_Click" />
-                            </Grid>
-                        </Border>
-
-                    </StackPanel>
-                </Expander>
-
-                
-
-                <Border Margin="0,0,0,0"/>
-
-                <!-- Compiler Selection -->
-                <Expander IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
-                    <Expander.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <FontIcon Glyph="&#xE74E;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Compiler" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Expander.Header>
-                    <StackPanel Margin="0,12,0,4">
-                        <TextBlock Text="Select compiler toolchain:"
-                                   Style="{StaticResource SectionSubtitleText}"
-                                   Margin="0,0,0,8" />
-
+                    <Border Style="{StaticResource CardBorder}">
                         <Grid>
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <ComboBox x:Name="CompilerCombo" Margin="0,0,8,0" HorizontalAlignment="Stretch" />
-                            <Button x:Name="RefreshCompilerButton" Grid.Column="1" Content="Detect" MinWidth="90"
-                                    Click="RefreshCompiler_Click" />
+                            <FontIcon Glyph="&#xE943;" FontSize="16" Margin="0,2,12,0" VerticalAlignment="Top"
+                                      Foreground="{StaticResource AccBrush}" />
+                            <StackPanel Grid.Column="1" Spacing="8">
+                                <TextBlock Text="1 · Payload" Style="{StaticResource SectionTitleText}" />
+                                <Grid ColumnSpacing="14" RowSpacing="4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition />
+                                        <RowDefinition />
+                                        <RowDefinition />
+                                        <RowDefinition />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="Shellcode" Style="{StaticResource MonoTinyText}" />
+                                    <TextBlock x:Name="SummaryShellcode" Text="not configured" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" />
+                                    <TextBlock Text="Template" Grid.Row="1" Style="{StaticResource MonoTinyText}" />
+                                    <TextBlock x:Name="SummaryTemplate" Text="not selected" Grid.Row="1" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" />
+                                    <TextBlock Text="Encoder" Grid.Row="2" Style="{StaticResource MonoTinyText}" />
+                                    <TextBlock x:Name="SummaryEncoder" Text="none" Grid.Row="2" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" />
+                                    <TextBlock Text="Envelope" Grid.Row="3" Style="{StaticResource MonoTinyText}" />
+                                    <TextBlock x:Name="SummaryEnvelope" Text="none" Grid.Row="3" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" />
+                                </Grid>
+                            </StackPanel>
+                            <HyperlinkButton Grid.Column="2" Content="Edit" VerticalAlignment="Top" Click="GoToPayload_Click" />
                         </Grid>
+                    </Border>
 
-                        <TextBlock x:Name="CompilerStatus" Margin="0,8,0,0"
-                                   Style="{StaticResource SectionSubtitleText}" />
-
-                        <!-- Download Compiler -->
-                        <Border x:Name="DownloadCompilerPanel" 
-                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                CornerRadius="4"
-                                Padding="12"
-                                Margin="0,12,0,0"
-                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                BorderThickness="1"
-                                Visibility="Collapsed">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="No Compiler Found" FontWeight="SemiBold" />
-                                    <TextBlock Text="Download a portable MinGW-w64 compiler from GitHub."
-                                               Style="{StaticResource CaptionTextBlockStyle}"
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                </StackPanel>
-                                <Button x:Name="DownloadCompilerButton" 
-                                        Content="Download Compiler" 
-                                        Grid.Column="1"
-                                        Click="DownloadCompiler_Click" />
-                            </Grid>
-                        </Border>
-                    </StackPanel>
-                </Expander>
-
-
-                <Border Margin="0,0,0,0"/>
-
-                <!-- Compilation Mode -->
-                <Expander x:Name="LlvmModeExpander" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
-                    <Expander.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <FontIcon Glyph="&#xE9D3;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Compilation Mode" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Expander.Header>
-                    <StackPanel Margin="0,12,0,4" Spacing="12">
-                        <TextBlock Text="Select backend:"
-                                   Style="{StaticResource SectionSubtitleText}" />
-                        <ComboBox x:Name="CompilationBackendCombo"
-                                  HorizontalAlignment="Stretch"
-                                  SelectionChanged="CompilationBackendCombo_SelectionChanged">
-                            <ComboBoxItem Content="Deterministic (standard toolchain)" Tag="Deterministic" IsSelected="True" />
-                            <ComboBoxItem Content="LLVM Obfuscated (bundled clang++ + IR passes)" Tag="LlvmObfuscated" />
-                        </ComboBox>
-
-                        <StackPanel x:Name="LlvmPassesPanel" Visibility="Collapsed" Spacing="8">
-                            <TextBlock Text="Obfuscation passes:"
-                                       Style="{StaticResource SectionSubtitleText}" />
-                            <TextBlock x:Name="LlvmPassesNote"
-                                       Text="Passes marked (not built) are stubs — compile pass.dll from Assets/llvm-passes/&lt;id&gt;/CMakeLists.txt to activate them."
-                                       Style="{StaticResource CaptionTextBlockStyle}"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                       TextWrapping="Wrap" />
-                            <StackPanel x:Name="LlvmPassCheckboxes" Spacing="4" />
-                        </StackPanel>
-                    </StackPanel>
-                </Expander>
-
-                <Border Margin="0,0,0,0"/>
-                <!-- Output Options -->
-                <Expander IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
-                    <Expander.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <FontIcon Glyph="&#xE8B7;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Output Options" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Expander.Header>
-                    <StackPanel Margin="0,12,0,4">
-                        <Grid Margin="0,0,0,12">
+                    <Border x:Name="BackdoorSummaryCard" Style="{StaticResource CardBorder}" Opacity="0.6">
+                        <Grid>
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBox x:Name="OutputPath" PlaceholderText="Output directory (optional)" Margin="0,0,8,0" />
-                            <Button x:Name="BrowseOutput" Grid.Column="1" Content="Browse" MinWidth="90"
-                                    Click="BrowseOutput_Click" />
+                            <FontIcon Glyph="&#xE72E;" FontSize="16" Margin="0,2,12,0" VerticalAlignment="Top"
+                                      Foreground="{StaticResource AccBrush}" />
+                            <StackPanel Grid.Column="1" Spacing="6">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="2 · Backdooring" Style="{StaticResource SectionTitleText}" />
+                                    <Border x:Name="BackdoorStatusBadge" Style="{StaticResource ChipWarnBorder}">
+                                        <TextBlock x:Name="BackdoorStatusText" Text="disabled" Style="{StaticResource ChipText}" Foreground="{StaticResource WarnBrush}" />
+                                    </Border>
+                                </StackPanel>
+                                <Grid x:Name="BackdoorDetails" Margin="0,4,0,0" Visibility="Collapsed" ColumnSpacing="14" RowSpacing="4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition />
+                                        <RowDefinition />
+                                        <RowDefinition />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="Target" Style="{StaticResource MonoTinyText}" />
+                                    <TextBlock x:Name="SummaryTargetPe" Text="not selected" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" />
+                                    <TextBlock Text="Method" Grid.Row="1" Style="{StaticResource MonoTinyText}" />
+                                    <TextBlock x:Name="SummaryInjectionMethod" Text="new section" Grid.Row="1" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" />
+                                    <TextBlock Text="Carrier" Grid.Row="2" Style="{StaticResource MonoTinyText}" />
+                                    <TextBlock x:Name="SummaryCarrier" Text="entry point hijack" Grid.Row="2" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" />
+                                </Grid>
+                                <TextBlock x:Name="BackdoorDisabledText"
+                                           Text="Backdooring is disabled. Output will be a standalone loader."
+                                           Style="{StaticResource SectionSubtitleText}" />
+                            </StackPanel>
+                            <HyperlinkButton Grid.Column="2" Content="Edit" VerticalAlignment="Top" Click="GoToBackdooring_Click" />
                         </Grid>
+                    </Border>
 
-                        <CheckBox x:Name="OpenFolderAfterCompile" Content="Open output folder after compilation" IsChecked="True" />
-                        <CheckBox x:Name="GenerateDebugInfo" Content="Generate debug information (PDB)" IsChecked="False" Margin="0,4,0,0" />
-                        <CheckBox x:Name="StripToBinCheck" Content="Also strip compiled loader to flat .bin (shellcode-ready for injection)" IsChecked="False" Margin="0,4,0,0"
-                                  ToolTipService.ToolTip="Runs the strip pipeline step after compilation to produce a position-independent .bin alongside the .exe" />
-                        <CheckBox x:Name="VerboseBuildCheck" Content="Verbose build output" IsChecked="False" Margin="0,4,0,0" />
-                    </StackPanel>
-                </Expander>
+                    <Border x:Name="PackingSummaryCard" Style="{StaticResource CardBorder}" Opacity="0.6">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="&#xE7B8;" FontSize="16" Margin="0,2,12,0" VerticalAlignment="Top"
+                                      Foreground="{StaticResource AccBrush}" />
+                            <StackPanel Grid.Column="1" Spacing="6">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="3 · Packing" Style="{StaticResource SectionTitleText}" />
+                                    <Border x:Name="PackingStatusBadge" Style="{StaticResource ChipWarnBorder}">
+                                        <TextBlock x:Name="PackingStatusText" Text="disabled" Style="{StaticResource ChipText}" Foreground="{StaticResource WarnBrush}" />
+                                    </Border>
+                                </StackPanel>
+                                <Grid x:Name="PackingDetails" Margin="0,4,0,0" Visibility="Collapsed" ColumnSpacing="14" RowSpacing="4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition />
+                                        <RowDefinition />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="Packer" Style="{StaticResource MonoTinyText}" />
+                                    <TextBlock x:Name="SummaryPacker" Text="UPX" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" />
+                                    <TextBlock Text="Level" Grid.Row="1" Style="{StaticResource MonoTinyText}" />
+                                    <TextBlock x:Name="SummaryPackLevel" Text="best" Grid.Row="1" Grid.Column="1" Style="{StaticResource MonoBodyText}" Foreground="{StaticResource N10Brush}" />
+                                </Grid>
+                                <TextBlock x:Name="PackingDisabledText"
+                                           Text="Packing is disabled. Output will not be compressed."
+                                           Style="{StaticResource SectionSubtitleText}" />
+                            </StackPanel>
+                            <HyperlinkButton Grid.Column="2" Content="Edit" VerticalAlignment="Top" Click="GoToPacking_Click" />
+                        </Grid>
+                    </Border>
+                </StackPanel>
 
-               
-
-                <Border Margin="0,0,0,0"/>
-
-                <!-- Pipeline visualization moved to dedicated 'Pipeline' page in the navbar footer.
-     Open it for the live cinematic readout, recipe export/import, and SGN-compat analysis. -->
-                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,4">
-                    <Grid Padding="12">
+                <!-- Toolchain -->
+                <StackPanel Spacing="12">
+                    <Grid>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <FontIcon Glyph="&#xE9D9;" FontSize="20" Margin="0,2,12,0" VerticalAlignment="Center" />
-                        <StackPanel Grid.Column="1">
-                            <TextBlock Text="Pipeline readout" Style="{StaticResource SectionTitleText}" />
-                            <TextBlock Text="Live recipe view, recipe export/import, and stage analysis live on the dedicated Pipeline page."
-                       Style="{StaticResource SectionSubtitleText}"
-                       Margin="0,4,0,0"
-                       TextWrapping="Wrap" />
-                        </StackPanel>
-                        <Button Grid.Column="2"
-                Content="Open Pipeline →"
-                MinWidth="160"
-                VerticalAlignment="Center"
-                Click="OpenPipelinePage_Click" />
+                        <TextBlock Text="TOOLCHAIN" Style="{StaticResource SectionLabelText}" />
+                        <Button Grid.Column="1" x:Name="RefreshCompilerButton" Content="Re-detect" Click="RefreshCompiler_Click" />
                     </Grid>
-                </Border>
+                    <Border Style="{StaticResource CardBorder}">
+                        <StackPanel Spacing="12">
+                            <ComboBox x:Name="CompilerCombo" HorizontalAlignment="Stretch" />
+                            <TextBlock x:Name="CompilerStatus"
+                                       Style="{StaticResource SectionSubtitleText}"
+                                       FontFamily="{StaticResource MonoFontFamily}"
+                                       TextWrapping="Wrap" />
+                            <Border x:Name="DownloadCompilerPanel"
+                                    Style="{StaticResource AccentTintBorder}"
+                                    Visibility="Collapsed">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="No compiler found" Style="{StaticResource SectionTitleText}" Foreground="{StaticResource N10Brush}" />
+                                        <TextBlock Text="Download a portable MinGW-w64 compiler from GitHub."
+                                                   Style="{StaticResource SectionSubtitleText}" />
+                                    </StackPanel>
+                                    <Button x:Name="DownloadCompilerButton"
+                                            Grid.Column="1"
+                                            Content="Download compiler"
+                                            Style="{StaticResource AccentButtonStyle}"
+                                            Click="DownloadCompiler_Click" />
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
 
-                <Border Margin="0,0,0,10"/>
-                
-                <!-- Build Action -->
-                <Border Style="{StaticResource CardBorder}" Margin="0">
-                    <StackPanel Margin="16">
+                <!-- Compilation backend -->
+                <StackPanel x:Name="LlvmModeExpander" Spacing="12">
+                    <TextBlock Text="COMPILATION BACKEND" Style="{StaticResource SectionLabelText}" />
+                    <Border Style="{StaticResource CardBorder}">
+                        <StackPanel Spacing="12">
+                            <ComboBox x:Name="CompilationBackendCombo"
+                                      HorizontalAlignment="Stretch"
+                                      SelectionChanged="CompilationBackendCombo_SelectionChanged">
+                                <ComboBoxItem Content="Deterministic (standard toolchain)" Tag="Deterministic" IsSelected="True" />
+                                <ComboBoxItem Content="LLVM Obfuscated (bundled clang++ + IR passes)" Tag="LlvmObfuscated" />
+                            </ComboBox>
+                            <StackPanel x:Name="LlvmPassesPanel" Visibility="Collapsed" Spacing="8">
+                                <TextBlock Text="Obfuscation passes" Style="{StaticResource SectionSubtitleText}" />
+                                <TextBlock x:Name="LlvmPassesNote"
+                                           Text="Passes marked (not built) are stubs — compile pass.dll from Assets/llvm-passes/&lt;id&gt;/CMakeLists.txt to activate them."
+                                           Style="{StaticResource SectionSubtitleText}"
+                                           TextWrapping="Wrap" />
+                                <StackPanel x:Name="LlvmPassCheckboxes" Spacing="4" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Output options -->
+                <StackPanel Spacing="12">
+                    <TextBlock Text="OUTPUT" Style="{StaticResource SectionLabelText}" />
+                    <Border Style="{StaticResource CardBorder}">
+                        <StackPanel Spacing="12">
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="OutputPath"
+                                         PlaceholderText="Output directory (optional)"
+                                         FontFamily="{StaticResource MonoFontFamily}" />
+                                <Button x:Name="BrowseOutput" Grid.Column="1" Content="Browse" Click="BrowseOutput_Click" />
+                            </Grid>
+                            <CheckBox x:Name="OpenFolderAfterCompile" Content="Open output folder after compilation" IsChecked="True" />
+                            <CheckBox x:Name="GenerateDebugInfo" Content="Generate debug information (PDB)" IsChecked="False" />
+                            <CheckBox x:Name="StripToBinCheck" Content="Also strip compiled loader to flat .bin (shellcode-ready for injection)" IsChecked="False"
+                                      ToolTipService.ToolTip="Runs the strip pipeline step after compilation to produce a position-independent .bin alongside the .exe" />
+                            <CheckBox x:Name="VerboseBuildCheck" Content="Verbose build output" IsChecked="False" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Build action -->
+                <Border Style="{StaticResource AccentTintBorder}" Padding="18">
+                    <StackPanel Spacing="14">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <FontIcon Glyph="&#xE768;" FontSize="24" Margin="0,2,16,0" VerticalAlignment="Center"
-                                      Foreground="{ThemeResource AccentFillColorDefaultBrush}" />
-                            <StackPanel Grid.Column="1">
-                                <TextBlock Text="Build Pipeline" Style="{StaticResource SectionTitleText}" />
-                                <TextBlock x:Name="BuildDescription" 
+                            <FontIcon Glyph="&#xE768;" FontSize="22" Margin="0,2,16,0" VerticalAlignment="Center"
+                                      Foreground="{StaticResource AccBrush}" />
+                            <StackPanel Grid.Column="1" Spacing="4">
+                                <TextBlock Text="Build pipeline" Style="{StaticResource SectionTitleText}" Foreground="{StaticResource N10Brush}" />
+                                <TextBlock x:Name="BuildDescription"
                                            Text="Bin2Shell → Template compile → Backdoor → Pack → Output"
-                                           Style="{StaticResource SectionSubtitleText}"
-                                           Margin="0,4,0,0" />
+                                           Style="{StaticResource SectionSubtitleText}" />
                             </StackPanel>
                             <Button x:Name="CompileButton"
                                     Grid.Column="2"
                                     Content="Build"
-                                    Width="160"
+                                    MinWidth="160"
                                     Height="40"
                                     VerticalAlignment="Center"
                                     Style="{StaticResource AccentButtonStyle}"
                                     Click="CompileButton_Click" />
                         </Grid>
-
-                        <!-- Progress -->
-                        <StackPanel x:Name="CompileProgressPanel" Visibility="Collapsed" Margin="0,16,0,0">
+                        <StackPanel x:Name="CompileProgressPanel" Visibility="Collapsed" Spacing="8">
                             <ProgressBar x:Name="CompileProgress" IsIndeterminate="True" />
-                            <TextBlock x:Name="CompileProgressText" Text="Building..." Margin="0,8,0,0"
+                            <TextBlock x:Name="CompileProgressText"
+                                       Text="Building..."
                                        HorizontalAlignment="Center"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                       Style="{StaticResource SectionSubtitleText}" />
                         </StackPanel>
-
-                        <!-- Result -->
-                        <StackPanel x:Name="CompileResultPanel" Orientation="Horizontal" Margin="0,12,0,0" Visibility="Collapsed">
-                            <FontIcon x:Name="CompileResultIcon" Glyph="&#xE73E;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
+                        <StackPanel x:Name="CompileResultPanel" Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
+                            <FontIcon x:Name="CompileResultIcon" Glyph="&#xE73E;" FontSize="14" VerticalAlignment="Center" />
                             <TextBlock x:Name="CompileResultText" VerticalAlignment="Center" />
                             <HyperlinkButton x:Name="CompileOutputLink" Padding="4,0" VerticalAlignment="Center"
-                                             Margin="8,0,0,0" Visibility="Collapsed" Click="OpenOutputFolder_Click">
+                                             Visibility="Collapsed" Click="OpenOutputFolder_Click">
                                 <TextBlock Text="Open folder" TextDecorations="Underline" />
                             </HyperlinkButton>
                         </StackPanel>
                     </StackPanel>
                 </Border>
 
-
-                <Border Margin="0,0,0,15"/>
-                <!-- Build Log -->
-                <Expander IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
-                    <Expander.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <FontIcon Glyph="&#xF0E3;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Build Log" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
+                <!-- Pipeline readout -->
+                <Border Style="{StaticResource CardBorder}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE9D9;" FontSize="18" Margin="0,2,14,0" VerticalAlignment="Center" Foreground="{StaticResource AccBrush}" />
+                        <StackPanel Grid.Column="1" Spacing="4">
+                            <TextBlock Text="Pipeline readout" Style="{StaticResource SectionTitleText}" />
+                            <TextBlock Text="Live recipe view, recipe export/import, and stage analysis live on the dedicated Pipeline page."
+                                       Style="{StaticResource SectionSubtitleText}"
+                                       TextWrapping="Wrap" />
                         </StackPanel>
-                    </Expander.Header>
-                    <RichEditBox x:Name="BuildLogBox"
-                                 Height="250"
-                                 IsReadOnly="True"
-                                 FontFamily="Consolas"
-                                 FontSize="13"
-                                 FlowDirection="LeftToRight"
-                                 Margin="0,8,0,0" />
-                </Expander>
+                        <Button Grid.Column="2"
+                                Content="Open Pipeline →"
+                                MinWidth="160"
+                                VerticalAlignment="Center"
+                                Click="OpenPipelinePage_Click" />
+                    </Grid>
+                </Border>
 
             </StackPanel>
         </ScrollViewer>
+
+        <!-- RIGHT: build log live preview -->
+        <Border Grid.Column="1"
+                Background="{StaticResource N0Brush}"
+                BorderBrush="{StaticResource N4Brush}"
+                BorderThickness="1,0,0,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="34" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Preview tabs -->
+                <Border Background="{StaticResource N0Brush}"
+                        BorderBrush="{StaticResource N4Brush}"
+                        BorderThickness="0,0,0,1">
+                    <StackPanel Orientation="Horizontal" Padding="12,0" Spacing="4" VerticalAlignment="Center">
+                        <Border Padding="10,4" CornerRadius="4">
+                            <Border.Background>
+                                <SolidColorBrush Color="{StaticResource N2Color}" />
+                            </Border.Background>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE756;" FontSize="11" />
+                                <TextBlock Text="build_log.txt"
+                                           FontFamily="{StaticResource MonoFontFamily}"
+                                           FontSize="11"
+                                           Foreground="{StaticResource N10Brush}" />
+                                <Ellipse Width="6" Height="6" Fill="{StaticResource AccBrush}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                        <Border Padding="10,4">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE8A5;" FontSize="11" Foreground="{StaticResource N7Brush}" />
+                                <TextBlock Text="source.cpp"
+                                           FontFamily="{StaticResource MonoFontFamily}"
+                                           FontSize="11"
+                                           Foreground="{StaticResource N7Brush}" />
+                            </StackPanel>
+                        </Border>
+                        <Border Padding="10,4">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE82F;" FontSize="11" Foreground="{StaticResource N7Brush}" />
+                                <TextBlock Text="artifact"
+                                           FontFamily="{StaticResource MonoFontFamily}"
+                                           FontSize="11"
+                                           Foreground="{StaticResource N7Brush}" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <!-- Build log body -->
+                <Border Grid.Row="1" Padding="2">
+                    <RichEditBox x:Name="BuildLogBox"
+                                 IsReadOnly="True"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 FontFamily="{StaticResource MonoFontFamily}"
+                                 FontSize="12"
+                                 FlowDirection="LeftToRight" />
+                </Border>
+            </Grid>
+        </Border>
     </Grid>
 </Page>

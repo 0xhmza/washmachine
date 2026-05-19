@@ -83,26 +83,12 @@ public sealed class WebPayloadWizardWindow
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // content
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // nav buttons
 
-        // Title bar \u2014 Fluent header
-        var titleBar = new Grid { Height = 56 };
+        // Title bar
+        var titleBar = new Grid { Height = 48 };
         titleBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         titleBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var titleIcon = new FontIcon
-        {
-            Glyph = "\uE71B",
-            FontSize = 16,
-            Margin = new Thickness(20, 0, 12, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = (SolidColorBrush)App.Current.Resources["AccBrush"]
-        };
-        var titleText = new TextBlock
-        {
-            Text = "Web payload wizard",
-            VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 14,
-            FontWeight = new Windows.UI.Text.FontWeight(600),
-            Foreground = (SolidColorBrush)App.Current.Resources["N10Brush"]
-        };
+        var titleIcon = new FontIcon { Glyph = "\uE71B", FontSize = 16, Margin = new Thickness(16, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+        var titleText = new TextBlock { Text = "Web Payload Wizard", VerticalAlignment = VerticalAlignment.Center, FontSize = 14 };
         Grid.SetColumn(titleIcon, 0);
         Grid.SetColumn(titleText, 1);
         titleBar.Children.Add(titleIcon);

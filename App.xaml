@@ -9,7 +9,82 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
 
-            <!-- Dracula palette – Color tokens (used by PipelinePage local brushes etc.) -->
+            <!-- Theme-scoped overrides: force Windows 11 system accent on dark theme -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Default">
+                    <Color x:Key="SystemAccentColor">#60CDFF</Color>
+                    <Color x:Key="SystemAccentColorDark1">#4CC2FF</Color>
+                    <Color x:Key="SystemAccentColorDark2">#3AAEEC</Color>
+                    <Color x:Key="SystemAccentColorDark3">#2E96D0</Color>
+                    <Color x:Key="SystemAccentColorLight1">#99E2FF</Color>
+                    <Color x:Key="SystemAccentColorLight2">#B5EAFF</Color>
+                    <Color x:Key="SystemAccentColorLight3">#D6F2FF</Color>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <Color x:Key="SystemAccentColor">#60CDFF</Color>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
+            <!-- ═════════════════════════════════════════════════════════════
+                 WASHMACHINE DESIGN SYSTEM — Fluent dark (WinUI 3)
+                 Grounded in Mica/Acrylic layers with Windows 11 accent.
+                 Mirror of system.css from the design reconception bundle.
+                 ═════════════════════════════════════════════════════════════ -->
+
+            <!-- Neutral layers (n-0..n-10) -->
+            <Color x:Key="N0Color">#1A1A1A</Color>
+            <Color x:Key="N1Color">#202020</Color>
+            <Color x:Key="N2Color">#2B2B2B</Color>
+            <Color x:Key="N3Color">#323232</Color>
+            <Color x:Key="N4Color">#3D3D3D</Color>
+            <Color x:Key="N5Color">#4A4A4A</Color>
+            <Color x:Key="N6Color">#5C5C5C</Color>
+            <Color x:Key="N7Color">#8C8C8C</Color>
+            <Color x:Key="N8Color">#B3B3B3</Color>
+            <Color x:Key="N9Color">#DBDBDB</Color>
+            <Color x:Key="N10Color">#F2F2F2</Color>
+
+            <SolidColorBrush x:Key="N0Brush"  Color="{StaticResource N0Color}" />
+            <SolidColorBrush x:Key="N1Brush"  Color="{StaticResource N1Color}" />
+            <SolidColorBrush x:Key="N2Brush"  Color="{StaticResource N2Color}" />
+            <SolidColorBrush x:Key="N3Brush"  Color="{StaticResource N3Color}" />
+            <SolidColorBrush x:Key="N4Brush"  Color="{StaticResource N4Color}" />
+            <SolidColorBrush x:Key="N5Brush"  Color="{StaticResource N5Color}" />
+            <SolidColorBrush x:Key="N6Brush"  Color="{StaticResource N6Color}" />
+            <SolidColorBrush x:Key="N7Brush"  Color="{StaticResource N7Color}" />
+            <SolidColorBrush x:Key="N8Brush"  Color="{StaticResource N8Color}" />
+            <SolidColorBrush x:Key="N9Brush"  Color="{StaticResource N9Color}" />
+            <SolidColorBrush x:Key="N10Brush" Color="{StaticResource N10Color}" />
+
+            <!-- Windows 11 default dark accent -->
+            <Color x:Key="AccColor">#60CDFF</Color>
+            <Color x:Key="AccDimColor">#4CC2FF</Color>
+            <Color x:Key="AccHiColor">#99E2FF</Color>
+            <Color x:Key="AccBgColor">#21609A</Color>
+            <Color x:Key="AccLineColor">#3D7BB0</Color>
+            <SolidColorBrush x:Key="AccBrush"     Color="{StaticResource AccColor}" />
+            <SolidColorBrush x:Key="AccDimBrush"  Color="{StaticResource AccDimColor}" />
+            <SolidColorBrush x:Key="AccHiBrush"   Color="{StaticResource AccHiColor}" />
+            <SolidColorBrush x:Key="AccBgBrush"   Color="#3360CDFF" />
+            <SolidColorBrush x:Key="AccLineBrush" Color="#6660CDFF" />
+
+            <!-- Semantic status colors -->
+            <Color x:Key="OkColor">#6CCB5F</Color>
+            <Color x:Key="WarnColor">#FCE100</Color>
+            <Color x:Key="ErrColor">#FF99A4</Color>
+            <SolidColorBrush x:Key="OkBrush"     Color="{StaticResource OkColor}" />
+            <SolidColorBrush x:Key="WarnBrush"   Color="{StaticResource WarnColor}" />
+            <SolidColorBrush x:Key="ErrBrush"    Color="{StaticResource ErrColor}" />
+            <SolidColorBrush x:Key="OkBgBrush"   Color="#246CCB5F" />
+            <SolidColorBrush x:Key="WarnBgBrush" Color="#1FFCE100" />
+            <SolidColorBrush x:Key="ErrBgBrush"  Color="#1FFF99A4" />
+
+            <!-- Typography — Segoe UI Variable Display/Text + Cascadia Code mono -->
+            <FontFamily x:Key="SansFontFamily">Segoe UI Variable Text, Segoe UI Variable, Segoe UI</FontFamily>
+            <FontFamily x:Key="DisplayFontFamily">Segoe UI Variable Display, Segoe UI Variable, Segoe UI</FontFamily>
+            <FontFamily x:Key="MonoFontFamily">Cascadia Code, Cascadia Mono, Consolas</FontFamily>
+
+            <!-- Legacy Dracula palette retained for PipelinePage backwards compat -->
             <Color x:Key="DraculaBackgroundColor">#282A36</Color>
             <Color x:Key="DraculaCurrentLineColor">#6272A4</Color>
             <Color x:Key="DraculaSelectionColor">#44475A</Color>
@@ -21,8 +96,6 @@
             <Color x:Key="DraculaCyanColor">#8BE9FD</Color>
             <Color x:Key="DraculaPurpleColor">#BD93F9</Color>
             <Color x:Key="DraculaPinkColor">#FF79C6</Color>
-
-            <!-- Dracula palette – Brush tokens -->
             <SolidColorBrush x:Key="DraculaBackgroundBrush"    Color="{StaticResource DraculaBackgroundColor}" />
             <SolidColorBrush x:Key="DraculaCurrentLineBrush"   Color="{StaticResource DraculaCurrentLineColor}" />
             <SolidColorBrush x:Key="DraculaSelectionBrush"     Color="{StaticResource DraculaSelectionColor}" />
@@ -40,37 +113,154 @@
             <SolidColorBrush x:Key="DraculaOrangeSoftBrush"    Color="#33FFB86C" />
             <SolidColorBrush x:Key="DraculaCyanSoftBrush"      Color="#338BE9FD" />
 
-            <Thickness x:Key="PageMargin">24,18,24,28</Thickness>
-            <Thickness x:Key="SectionMargin">0,0,0,16</Thickness>
-            <x:Double x:Key="ContentMaxWidth">760</x:Double>
+            <!-- Layout tokens -->
+            <Thickness x:Key="PageMargin">28,22,28,28</Thickness>
+            <Thickness x:Key="SectionMargin">0,0,0,22</Thickness>
+            <x:Double x:Key="ContentMaxWidth">920</x:Double>
+
+            <CornerRadius x:Key="R1">4</CornerRadius>
+            <CornerRadius x:Key="R2">4</CornerRadius>
+            <CornerRadius x:Key="R3">7</CornerRadius>
+            <CornerRadius x:Key="R4">8</CornerRadius>
+
+            <!-- ═════════════════════════════════════════════════════════════
+                 Text styles
+                 ═════════════════════════════════════════════════════════════ -->
 
             <Style x:Key="PageTitleText" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource DisplayFontFamily}" />
                 <Setter Property="FontSize" Value="28" />
                 <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{StaticResource N10Brush}" />
+                <Setter Property="CharacterSpacing" Value="-10" />
             </Style>
             <Style x:Key="PageSubtitleText" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="14" />
-                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="FontFamily" Value="{StaticResource SansFontFamily}" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="Foreground" Value="{StaticResource N8Brush}" />
             </Style>
             <Style x:Key="SectionTitleText" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="18" />
+                <Setter Property="FontFamily" Value="{StaticResource SansFontFamily}" />
+                <Setter Property="FontSize" Value="14" />
                 <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{StaticResource N9Brush}" />
             </Style>
             <Style x:Key="SectionSubtitleText" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="13" />
-                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="FontFamily" Value="{StaticResource SansFontFamily}" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Foreground" Value="{StaticResource N7Brush}" />
             </Style>
+            <Style x:Key="SectionLabelText" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource SansFontFamily}" />
+                <Setter Property="FontSize" Value="11" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="CharacterSpacing" Value="60" />
+                <Setter Property="Foreground" Value="{StaticResource N7Brush}" />
+            </Style>
+            <Style x:Key="MonoTinyText" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource MonoFontFamily}" />
+                <Setter Property="FontSize" Value="11" />
+                <Setter Property="Foreground" Value="{StaticResource N7Brush}" />
+            </Style>
+            <Style x:Key="MonoBodyText" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource MonoFontFamily}" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Foreground" Value="{StaticResource N9Brush}" />
+            </Style>
+
             <Style x:Key="SectionDivider" TargetType="Border">
                 <Setter Property="Height" Value="1" />
-                <Setter Property="Background" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
-                <Setter Property="Margin" Value="0,12,0,16" />
+                <Setter Property="Background" Value="{StaticResource N4Brush}" />
+                <Setter Property="Margin" Value="0,14,0,18" />
             </Style>
+
+            <!-- ═════════════════════════════════════════════════════════════
+                 Card surfaces — Fluent layer fill
+                 ═════════════════════════════════════════════════════════════ -->
+
             <Style x:Key="CardBorder" TargetType="Border">
-                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
-                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="Background" Value="{StaticResource N2Brush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource N4Brush}" />
                 <Setter Property="BorderThickness" Value="1" />
                 <Setter Property="CornerRadius" Value="8" />
-                <Setter Property="Padding" Value="1" />
+                <Setter Property="Padding" Value="18" />
+            </Style>
+            <Style x:Key="FlatCardBorder" TargetType="Border">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderBrush" Value="{StaticResource N4Brush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="18" />
+            </Style>
+            <Style x:Key="ListCardBorder" TargetType="Border">
+                <Setter Property="Background" Value="{StaticResource N2Brush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource N4Brush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="0" />
+            </Style>
+            <Style x:Key="AccentTintBorder" TargetType="Border">
+                <Setter Property="Background" Value="{StaticResource AccBgBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource AccLineBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="12" />
+            </Style>
+
+            <!-- ═════════════════════════════════════════════════════════════
+                 Chip / InfoBadge
+                 ═════════════════════════════════════════════════════════════ -->
+
+            <Style x:Key="ChipBorder" TargetType="Border">
+                <Setter Property="Background" Value="{StaticResource N2Brush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource N5Brush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="4" />
+                <Setter Property="Padding" Value="8,2,8,2" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+            <Style x:Key="ChipAccBorder" TargetType="Border" BasedOn="{StaticResource ChipBorder}">
+                <Setter Property="Background" Value="{StaticResource AccBgBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource AccLineBrush}" />
+            </Style>
+            <Style x:Key="ChipOkBorder" TargetType="Border" BasedOn="{StaticResource ChipBorder}">
+                <Setter Property="Background" Value="{StaticResource OkBgBrush}" />
+                <Setter Property="BorderBrush" Value="#596CCB5F" />
+            </Style>
+            <Style x:Key="ChipWarnBorder" TargetType="Border" BasedOn="{StaticResource ChipBorder}">
+                <Setter Property="Background" Value="{StaticResource WarnBgBrush}" />
+                <Setter Property="BorderBrush" Value="#59FCE100" />
+            </Style>
+            <Style x:Key="ChipErrBorder" TargetType="Border" BasedOn="{StaticResource ChipBorder}">
+                <Setter Property="Background" Value="{StaticResource ErrBgBrush}" />
+                <Setter Property="BorderBrush" Value="#59FF99A4" />
+            </Style>
+
+            <Style x:Key="ChipText" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource SansFontFamily}" />
+                <Setter Property="FontSize" Value="11" />
+                <Setter Property="Foreground" Value="{StaticResource N8Brush}" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+            <Style x:Key="ChipMonoText" TargetType="TextBlock" BasedOn="{StaticResource ChipText}">
+                <Setter Property="FontFamily" Value="{StaticResource MonoFontFamily}" />
+                <Setter Property="FontSize" Value="11" />
+            </Style>
+
+            <!-- Kbd hint -->
+            <Style x:Key="KbdBorder" TargetType="Border">
+                <Setter Property="Background" Value="{StaticResource N2Brush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource N5Brush}" />
+                <Setter Property="BorderThickness" Value="1,1,1,2" />
+                <Setter Property="CornerRadius" Value="4" />
+                <Setter Property="Padding" Value="6,1,6,1" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+            <Style x:Key="KbdText" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource SansFontFamily}" />
+                <Setter Property="FontSize" Value="11" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{StaticResource N9Brush}" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>

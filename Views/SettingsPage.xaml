@@ -6,33 +6,21 @@
       mc:Ignorable="d"
       NavigationCacheMode="Enabled">
 
-    <Grid Background="Transparent">
+    <Grid Background="{StaticResource N1Brush}">
         <ScrollViewer VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled"
-                      Padding="0,32,0,0">
+                      HorizontalScrollBarVisibility="Disabled">
             <StackPanel Margin="{StaticResource PageMargin}"
-                        Orientation="Vertical"
-                        Width="{StaticResource ContentMaxWidth}"
-                        HorizontalAlignment="Center">
+                        Spacing="20"
+                        MaxWidth="{StaticResource ContentMaxWidth}"
+                        HorizontalAlignment="Stretch">
 
                 <!-- Page header -->
-                <StackPanel Margin="0,0,0,16">
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                        <FontIcon Glyph="&#xE80F;" FontSize="11" Margin="0,2,4,0" VerticalAlignment="Center"
-                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock Text="Application" Margin="2,0,0,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
-                        <TextBlock Text=" › " Margin="0,0,5,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
-                        <TextBlock Text="Settings" FontSize="12" VerticalAlignment="Center" />
-                    </StackPanel>
-                    <StackPanel Margin="0,20,0,20" Orientation="Horizontal" VerticalAlignment="Center">
-                        <FontIcon Glyph="&#xE713;" FontSize="30" Margin="0,2,12,0" />
-                        <StackPanel>
-                            <TextBlock Text="Settings" Style="{StaticResource PageTitleText}" />
-                            <TextBlock Text="Manage templates and application preferences."
-                                       Style="{StaticResource PageSubtitleText}"
-                                       Margin="0,4,0,0" />
-                        </StackPanel>
-                    </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Bottom">
+                    <TextBlock Text="Settings" Style="{StaticResource PageTitleText}" />
+                    <TextBlock Text="Manage templates and application preferences."
+                               Style="{StaticResource PageSubtitleText}"
+                               VerticalAlignment="Bottom"
+                               Margin="0,0,0,8" />
                 </StackPanel>
 
 

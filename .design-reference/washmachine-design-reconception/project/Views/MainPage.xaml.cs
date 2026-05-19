@@ -115,7 +115,7 @@ public sealed partial class MainPage : Page, IMainFormView
 
     public void SetPayloadEncodingEnabled(bool enabled)
     {
-        PayloadEncodingExpander.IsHitTestVisible = enabled;
+        PayloadEncodingExpander.IsEnabled = enabled;
         PayloadEncodingExpander.Opacity = enabled ? 1.0 : 0.4;
     }
 
@@ -228,44 +228,13 @@ public sealed partial class MainPage : Page, IMainFormView
     {
         if (!IsLoaded) return;
         await _coordinator.HandleTemplateChanged(this);
-        PushTemplateMetaToShell();
     }
 
-    private void Encoder_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
+    private void Encoder_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
         _coordinator.UpdateEncodingDescriptions(this);
-        PushEncodeMetaToShell();
-    }
 
-    private void Envelope_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
+    private void Envelope_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
         _coordinator.UpdateEncodingDescriptions(this);
-        PushEncodeMetaToShell();
-    }
-
-    private void PushEncodeMetaToShell()
-    {
-        if (App.ActiveWindow is not MainWindow mw) return;
-        try
-        {
-            string enc = (encoderCombo?.SelectedItem?.ToString() ?? "—").Split(' ', '·')[0].Trim();
-            string env = (envelopeCombo?.SelectedItem?.ToString() ?? "—").Split(' ', '·')[0].Trim();
-            string meta = $"{enc} · {env}";
-            mw.SetPipelineStageMeta("enc", meta);
-        }
-        catch { /* shell not ready */ }
-    }
-
-    private void PushTemplateMetaToShell()
-    {
-        if (App.ActiveWindow is not MainWindow mw) return;
-        try
-        {
-            string tpl = SelectedTemplateId ?? (templateCombo?.SelectedItem?.ToString() ?? "—");
-            mw.SetPipelineStageMeta("tpl", tpl);
-        }
-        catch { /* shell not ready */ }
-    }
 
     private void ShikataGaNaiEnabledChanged(object sender, RoutedEventArgs e)
     {
@@ -501,13 +470,10 @@ public sealed partial class MainPage : Page, IMainFormView
         if (string.IsNullOrWhiteSpace(path))
         {
             ResetShellcodeFileUi();
-            ResetDetectedPanel();
-            UpdateShellMainWindowStatus("(none)");
             return;
         }
 
         UpdateFileSizeBadge(path);
-        await UpdateDetectedPanelAsync(path);
 
         if (!path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || !System.IO.File.Exists(path))
         {
@@ -517,114 +483,6 @@ public sealed partial class MainPage : Page, IMainFormView
 
         _isManaged = await DetectManagedPeAsync(path);
         ShowPePanelsForExe(_isManaged);
-    }
-
-    /// <summary>Refresh the Detected analysis panel (size, arch, entropy, sha256) for the selected shellcode.</summary>
-    private async Task UpdateDetectedPanelAsync(string path)
-    {
-        if (!System.IO.File.Exists(path))
-        {
-            ResetDetectedPanel();
-            UpdateShellMainWindowStatus(System.IO.Path.GetFileName(path));
-            return;
-        }
-
-        try
-        {
-            byte[] bytes;
-            await using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
-            {
-                int cap = (int)Math.Min(fs.Length, 4 * 1024 * 1024);
-                bytes = new byte[cap];
-                int read = 0;
-                while (read < cap)
-                {
-                    int n = await fs.ReadAsync(bytes.AsMemory(read, cap - read));
-                    if (n <= 0) break;
-                    read += n;
-                }
-                if (read < cap) Array.Resize(ref bytes, read);
-            }
-
-            long fullSize = new System.IO.FileInfo(path).Length;
-            DetectedSizeText.Text = FormatBytes(fullSize);
-            DetectedArchText.Text = DetectArch(bytes);
-            DetectedEntropyText.Text = $"{ComputeEntropy(bytes):F2} / 8.0";
-            DetectedShaText.Text = ComputeSha256Short(bytes);
-
-            UpdateShellMainWindowStatus($"{System.IO.Path.GetFileName(path)} · {FormatBytes(fullSize)}");
-        }
-        catch (Exception ex)
-        {
-            _logger.Debug($"Detected panel refresh failed for '{path}': {ex.Message}");
-            ResetDetectedPanel();
-        }
-    }
-
-    private void ResetDetectedPanel()
-    {
-        if (DetectedSizeText == null) return;
-        DetectedSizeText.Text = "—";
-        DetectedArchText.Text = "—";
-        DetectedEntropyText.Text = "—";
-        DetectedShaText.Text = "—";
-    }
-
-    private static string FormatBytes(long n)
-    {
-        if (n < 1024) return $"{n} B";
-        if (n < 1024 * 1024) return $"{n / 1024.0:F1} KB";
-        return $"{n / (1024.0 * 1024.0):F2} MB";
-    }
-
-    private static string DetectArch(byte[] bytes)
-    {
-        // PE magic at offset 0x3C → e_lfanew → "PE\0\0" → IMAGE_FILE_HEADER.Machine
-        if (bytes.Length < 0x40) return "shellcode";
-        if (bytes[0] != 'M' || bytes[1] != 'Z') return "shellcode";
-        int peOffset = BitConverter.ToInt32(bytes, 0x3C);
-        if (peOffset < 0 || peOffset + 6 > bytes.Length) return "shellcode";
-        if (bytes[peOffset] != 'P' || bytes[peOffset + 1] != 'E') return "shellcode";
-        ushort machine = BitConverter.ToUInt16(bytes, peOffset + 4);
-        return machine switch
-        {
-            0x014C => "x86 PE",
-            0x8664 => "x86_64 PE",
-            0xAA64 => "arm64 PE",
-            _      => $"PE (0x{machine:X4})"
-        };
-    }
-
-    private static double ComputeEntropy(byte[] bytes)
-    {
-        if (bytes == null || bytes.Length == 0) return 0;
-        var counts = new int[256];
-        foreach (var b in bytes) counts[b]++;
-        double total = bytes.Length;
-        double e = 0;
-        for (int i = 0; i < 256; i++)
-        {
-            if (counts[i] == 0) continue;
-            double p = counts[i] / total;
-            e -= p * Math.Log2(p);
-        }
-        return e;
-    }
-
-    private static string ComputeSha256Short(byte[] bytes)
-    {
-        using var sha = System.Security.Cryptography.SHA256.Create();
-        var hash = sha.ComputeHash(bytes);
-        var hex = Convert.ToHexString(hash);
-        return hex.Length >= 8 ? $"{hex.Substring(0, 4)}…{hex.Substring(hex.Length - 4)}".ToLowerInvariant() : hex.ToLowerInvariant();
-    }
-
-    private static void UpdateShellMainWindowStatus(string srcValue)
-    {
-        if (App.ActiveWindow is MainWindow mw)
-        {
-            try { mw.SetStatusKey("src", srcValue); } catch { /* harness not ready */ }
-        }
     }
 
     /// <summary>Clears every PE/donut-related UI element back to its neutral state.</summary>

@@ -65,18 +65,6 @@ public sealed partial class CompilePage : Page
         UpdateConfigurationSummary();
     }
 
-    /// <summary>
-    /// Allows the shell's Build button (in MainWindow) to invoke the same flow
-    /// as clicking the in-page Build button.
-    /// </summary>
-    public void TriggerBuildFromShell()
-    {
-        if (CompileButton != null && CompileButton.IsEnabled)
-        {
-            CompileButton_Click(CompileButton, new RoutedEventArgs());
-        }
-    }
-
     private async void CompilePage_Loaded(object sender, RoutedEventArgs e)
     {
         if (!_compilersDetected)

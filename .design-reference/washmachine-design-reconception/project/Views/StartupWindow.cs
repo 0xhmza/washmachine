@@ -32,68 +32,35 @@ public sealed class StartupWindow
 
     public StartupWindow()
     {
-        // Gradient W tile + product/role text (matches design frame 09 startup)
-        var gradientBrush = new LinearGradientBrush
+        // Brand cluster — icon glyph + product/role text
+        var brandIcon = new FontIcon
         {
-            StartPoint = new Windows.Foundation.Point(0, 0),
-            EndPoint = new Windows.Foundation.Point(1, 1),
-        };
-        gradientBrush.GradientStops.Add(new GradientStop { Color = Microsoft.UI.ColorHelper.FromArgb(0xFF, 0x60, 0xCD, 0xFF), Offset = 0 });
-        gradientBrush.GradientStops.Add(new GradientStop { Color = Microsoft.UI.ColorHelper.FromArgb(0xFF, 0x4C, 0xC2, 0xFF), Offset = 1 });
-
-        var brandTile = new Border
-        {
-            Width = 40,
-            Height = 40,
-            CornerRadius = new CornerRadius(8),
+            Glyph = "\uE943",
+            FontSize = 22,
+            Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"],
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 12, 0),
-            Background = gradientBrush,
-            Child = new TextBlock
-            {
-                Text = "W",
-                FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["DisplayFontFamily"],
-                FontSize = 18,
-                FontWeight = Microsoft.UI.Text.FontWeights.Bold,
-                Foreground = new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(0xFF, 0x00, 0x3A, 0x5D)),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            }
         };
 
         _title = new TextBlock
         {
-            Text = "washmachine",
-            FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["SansFontFamily"],
-            FontSize = 18,
+            Text = "Washmachine",
+            FontSize = 22,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = (Brush)Application.Current.Resources["N10Brush"],
+            Foreground = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"],
         };
-
-        var brandRoleText = new TextBlock
-        {
-            Text = "v2.1.0 · loader builder",
-            FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["MonoFontFamily"],
-            FontSize = 11,
-            Foreground = (Brush)Application.Current.Resources["N7Brush"],
-        };
-
-        var brandTextStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 1 };
-        brandTextStack.Children.Add(_title);
-        brandTextStack.Children.Add(brandRoleText);
 
         var brandRow = new StackPanel { Orientation = Orientation.Horizontal };
-        brandRow.Children.Add(brandTile);
-        brandRow.Children.Add(brandTextStack);
+        brandRow.Children.Add(brandIcon);
+        brandRow.Children.Add(_title);
 
         _subtitle = new TextBlock
         {
-            Text = "Preparing your environment",
-            FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["SansFontFamily"],
-            FontSize = 14,
-            Foreground = (Brush)Application.Current.Resources["N8Brush"],
-            Margin = new Thickness(0, 14, 0, 14),
+            Text = "Preparing requirements…",
+            FontSize = 13,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            Margin = new Thickness(0, 2, 0, 14),
         };
 
         _provisionRow = new StepRow("Ensuring external requirements (Bin2Shell, SGN)");

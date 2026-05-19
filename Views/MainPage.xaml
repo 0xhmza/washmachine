@@ -5,134 +5,137 @@
       xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
       xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
       mc:Ignorable="d"
-      NavigationCacheMode="Required"
-      >
+      NavigationCacheMode="Required">
 
-    <Grid x:Name="Root" Background="Transparent">
+    <Grid x:Name="Root" Background="{StaticResource N1Brush}">
         <ScrollViewer VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled"
-                      Padding="0,32,0,0">
+                      Padding="0">
             <StackPanel Margin="{StaticResource PageMargin}"
-                        Orientation="Vertical"
-                        Width="{StaticResource ContentMaxWidth}"
-                        HorizontalAlignment="Center">
+                        Spacing="22"
+                        MaxWidth="{StaticResource ContentMaxWidth}"
+                        HorizontalAlignment="Stretch">
 
-                <!-- Page header -->
-                <StackPanel Margin="0,0,0,20">
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                        <FontIcon Glyph="&#xE80F;" FontSize="11" Margin="0,2,4,0" VerticalAlignment="Center"
-                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock Text="Pipeline" Margin="2,0,0,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
-                        <TextBlock Text=" › " Margin="0,0,5,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
-                        <TextBlock Text="Payload" FontSize="12" VerticalAlignment="Center" />
-                    </StackPanel>
-                    <StackPanel Margin="0,20,0,20" Orientation="Horizontal" VerticalAlignment="Center">
-                        <FontIcon Glyph="&#xE943;" FontSize="30" Margin="0,2,12,0" />
-                        <StackPanel>
-                            <TextBlock Text="Payload Configuration" Style="{StaticResource PageTitleText}" />
-                            <TextBlock Text="Configure shellcode source, encoding, and loader template."
-                                       Style="{StaticResource PageSubtitleText}"
-                                       Margin="0,4,0,0" />
-                        </StackPanel>
-                    </StackPanel>
-                    
+                <!-- Page header: title + sub -->
+                <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Bottom">
+                    <TextBlock Text="Shellcode source" Style="{StaticResource PageTitleText}" />
+                    <TextBlock Text="Pick one input. Everything downstream rebuilds when this changes."
+                               Style="{StaticResource PageSubtitleText}"
+                               VerticalAlignment="Bottom"
+                               Margin="0,0,0,8" />
                 </StackPanel>
 
-
-                <!-- Shellcode section -->
-                <Expander IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
-                    <Expander.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <FontIcon Glyph="&#xE943;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Shellcode" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
+                <!-- ═══ Section: Input mode ═══ -->
+                <StackPanel Spacing="12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                            <TextBlock Text="INPUT MODE" Style="{StaticResource SectionLabelText}" />
                         </StackPanel>
-                    </Expander.Header>
-                    <StackPanel Margin="0,12,0,4">
-                        <TextBlock Text="Choose the shellcode source to embed in the build."
-                                   Style="{StaticResource SectionSubtitleText}"
-                                   Margin="0,0,0,12" />
+                    </Grid>
 
-                        <!-- Source picker (hidden once source selected) -->
-                        <StackPanel x:Name="ShellcodeSourcePicker" Margin="0,4,0,12">
-                            <Border Style="{StaticResource CardBorder}">
-                                <StackPanel Margin="16">
-                                    <TextBlock Text="Select a source" Style="{StaticResource SectionTitleText}" />
-                                    <TextBlock Text="Pick exactly one source. You can change it later."
-                                               Style="{StaticResource SectionSubtitleText}"
-                                               Margin="0,4,0,12" />
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-
-                                        <Button Grid.Row="0" Grid.Column="0" Margin="0,0,8,8"
-                                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                                                Tag="File" Click="ShellcodeSourceSelect_Click" Padding="12,10">
-                                            <StackPanel Orientation="Horizontal">
-                                                <FontIcon Glyph="&#xE8A5;" FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center" />
-                                                <TextBlock Text="From file" VerticalAlignment="Center" />
-                                            </StackPanel>
-                                        </Button>
-
-                                        <Button Grid.Row="0" Grid.Column="1" Margin="0,0,0,8"
-                                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                                                Tag="Raw" Click="ShellcodeSourceSelect_Click" Padding="12,10">
-                                            <StackPanel Orientation="Horizontal">
-                                                <FontIcon Glyph="&#xE943;" FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center" />
-                                                <TextBlock Text="Raw bytes" VerticalAlignment="Center" />
-                                            </StackPanel>
-                                        </Button>
-
-                                        <Button Grid.Row="1" Grid.Column="0" Margin="0,0,8,0"
-                                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                                                Tag="Url" Click="ShellcodeSourceSelect_Click" Padding="12,10">
-                                            <StackPanel Orientation="Horizontal">
-                                                <FontIcon Glyph="&#xE71B;" FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center" />
-                                                <TextBlock Text="From URL" VerticalAlignment="Center" />
-                                            </StackPanel>
-                                        </Button>
-
-                                        <Button Grid.Row="1" Grid.Column="1"
-                                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                                                Tag="Generic" Click="ShellcodeSourceSelect_Click" Padding="12,10">
-                                            <StackPanel Orientation="Horizontal">
-                                                <FontIcon Glyph="&#xE7B8;" FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center" />
-                                                <TextBlock Text="Generic" VerticalAlignment="Center" />
-                                            </StackPanel>
-                                        </Button>
-                                    </Grid>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
-
-                        <!-- Source details (shown once source selected) -->
-                        <StackPanel x:Name="ShellcodeSourceDetails" Visibility="Collapsed">
-                            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,8">
-                                <Grid Margin="12">
+                    <!-- Source picker (compact tab-like selector) -->
+                    <StackPanel x:Name="ShellcodeSourcePicker" Spacing="10">
+                        <Border Style="{StaticResource CardBorder}">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Select a source"
+                                           Style="{StaticResource SectionTitleText}" />
+                                <TextBlock Text="Pick exactly one source. You can change it later."
+                                           Style="{StaticResource SectionSubtitleText}" />
+                                <Grid Margin="0,4,0,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <FontIcon x:Name="ShellcodeSourceIcon" Glyph="&#xE943;" FontSize="20" Margin="0,2,12,0" />
-                                    <StackPanel Grid.Column="1">
-                                        <TextBlock x:Name="ShellcodeSourceTitle" Text="Selected source" Style="{StaticResource SectionTitleText}" />
-                                        <TextBlock x:Name="ShellcodeSourceSummary" Text="Selected source: None"
-                                                   Style="{StaticResource SectionSubtitleText}"
-                                                   Margin="0,4,0,0" />
-                                    </StackPanel>
-                                    <Button Grid.Column="2" Content="Change source"
-                                            Click="ChangeShellcodeSource_Click" />
-                                </Grid>
-                            </Border>
 
-                            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,8">
-                                <Grid Margin="12">
+                                    <Button Grid.Row="0" Grid.Column="0" Margin="0,0,8,8"
+                                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                            Tag="File" Click="ShellcodeSourceSelect_Click" Padding="14,12">
+                                        <StackPanel Spacing="6">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon Glyph="&#xE8A5;" FontSize="14" VerticalAlignment="Center" />
+                                                <TextBlock Text="File" FontWeight="SemiBold" />
+                                            </StackPanel>
+                                            <TextBlock Text=".bin or .exe on disk" Style="{StaticResource MonoTinyText}" />
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Grid.Row="0" Grid.Column="1" Margin="0,0,8,8"
+                                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                            Tag="Raw" Click="ShellcodeSourceSelect_Click" Padding="14,12">
+                                        <StackPanel Spacing="6">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon Glyph="&#xE756;" FontSize="14" VerticalAlignment="Center" />
+                                                <TextBlock Text="Raw" FontWeight="SemiBold" />
+                                            </StackPanel>
+                                            <TextBlock Text="Paste hex bytes inline" Style="{StaticResource MonoTinyText}" />
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Grid.Row="0" Grid.Column="2" Margin="0,0,8,8"
+                                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                            Tag="Url" Click="ShellcodeSourceSelect_Click" Padding="14,12">
+                                        <StackPanel Spacing="6">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon Glyph="&#xE71B;" FontSize="14" VerticalAlignment="Center" />
+                                                <TextBlock Text="URL" FontWeight="SemiBold" />
+                                            </StackPanel>
+                                            <TextBlock Text="Fetch over HTTP(S)" Style="{StaticResource MonoTinyText}" />
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Grid.Row="0" Grid.Column="3" Margin="0,0,0,8"
+                                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                            Tag="Generic" Click="ShellcodeSourceSelect_Click" Padding="14,12">
+                                        <StackPanel Spacing="6">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon Glyph="&#xE7B8;" FontSize="14" VerticalAlignment="Center" />
+                                                <TextBlock Text="Test" FontWeight="SemiBold" />
+                                            </StackPanel>
+                                            <TextBlock Text="Built-in payloads" Style="{StaticResource MonoTinyText}" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Source details once selected -->
+                    <StackPanel x:Name="ShellcodeSourceDetails" Visibility="Collapsed" Spacing="10">
+                        <Border Style="{StaticResource CardBorder}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="280" />
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Left: source inputs -->
+                                <StackPanel Spacing="12" Margin="0,0,18,0">
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <FontIcon x:Name="ShellcodeSourceIcon" Glyph="&#xE8A5;" FontSize="14" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="ShellcodeSourceTitle" Text="Selected source"
+                                                   Style="{StaticResource SectionTitleText}"
+                                                   VerticalAlignment="Center" />
+                                        <Border Style="{StaticResource ChipBorder}" VerticalAlignment="Center">
+                                            <TextBlock x:Name="ShellcodeSourceSummary"
+                                                       Text="none"
+                                                       Style="{StaticResource ChipMonoText}" />
+                                        </Border>
+                                        <Border Width="0" />
+                                        <Button Content="Change source"
+                                                HorizontalAlignment="Right"
+                                                Click="ChangeShellcodeSource_Click" />
+                                    </StackPanel>
+
                                     <!-- File source -->
                                     <Grid x:Name="FileSourcePanel">
                                         <Grid.RowDefinitions>
@@ -142,16 +145,12 @@
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
                                         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
-                                            <TextBlock Text="Shellcode file (.bin or .exe):" VerticalAlignment="Center" />
-                                            <Border x:Name="FileByteCountBadge" Visibility="Collapsed"
-                                                    Background="{ThemeResource SystemFillColorSuccessBackgroundBrush}"
-                                                    CornerRadius="10" Padding="6,2">
-                                                <TextBlock x:Name="FileByteCountText" FontSize="11" FontFamily="Consolas" />
+                                            <TextBlock Text="Shellcode .bin path" Style="{StaticResource SectionSubtitleText}" VerticalAlignment="Center" />
+                                            <Border x:Name="FileByteCountBadge" Style="{StaticResource ChipOkBorder}" Visibility="Collapsed">
+                                                <TextBlock x:Name="FileByteCountText" Style="{StaticResource ChipMonoText}" Foreground="{StaticResource OkBrush}" />
                                             </Border>
-                                            <Border x:Name="FileMissingBadge" Visibility="Collapsed"
-                                                    Background="{ThemeResource SystemFillColorCriticalBackgroundBrush}"
-                                                    CornerRadius="10" Padding="6,2">
-                                                <TextBlock Text="file not found" FontSize="11" />
+                                            <Border x:Name="FileMissingBadge" Style="{StaticResource ChipErrBorder}" Visibility="Collapsed">
+                                                <TextBlock Text="file not found" Style="{StaticResource ChipText}" Foreground="{StaticResource ErrBrush}" />
                                             </Border>
                                         </StackPanel>
                                         <Grid Grid.Row="1">
@@ -159,22 +158,23 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBox x:Name="shellcodeFileInput" Margin="0,0,8,0" />
-                                            <Button x:Name="browseShellcodeFileButton" Grid.Column="1" Content="Browse" MinWidth="72" Click="BrowseShellcodeFile_Click" />
+                                            <TextBox x:Name="shellcodeFileInput"
+                                                     FontFamily="{StaticResource MonoFontFamily}"
+                                                     PlaceholderText="C:\Users\you\payloads\calc_x64.bin"
+                                                     Margin="0,0,8,0" />
+                                            <Button x:Name="browseShellcodeFileButton" Grid.Column="1" Content="Browse…" MinWidth="84" Click="BrowseShellcodeFile_Click" />
                                         </Grid>
 
                                         <!-- PE strip options — shown only when .exe is selected -->
-                                        <Grid x:Name="PeStripOptionsPanel" Grid.Row="2" Visibility="Collapsed" Margin="0,10,0,0">
+                                        <Grid x:Name="PeStripOptionsPanel" Grid.Row="2" Visibility="Collapsed" Margin="0,12,0,0">
                                             <Grid.RowDefinitions>
                                                 <RowDefinition Height="Auto" />
                                                 <RowDefinition x:Name="peStripSectionRow" Height="0" />
                                                 <RowDefinition Height="Auto" />
                                             </Grid.RowDefinitions>
-
-                                            <!-- Mode selector -->
-                                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <TextBlock Text="Strip mode:" VerticalAlignment="Center" />
-                                                <ComboBox x:Name="peStripModeCombo" MinWidth="180"
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <TextBlock Text="Strip mode" Style="{StaticResource SectionSubtitleText}" VerticalAlignment="Center" />
+                                                <ComboBox x:Name="peStripModeCombo" MinWidth="200"
                                                           SelectedValuePath="Tag"
                                                           SelectionChanged="PeStripMode_SelectionChanged">
                                                     <ComboBoxItem Content="Entry point to end" Tag="ep" IsSelected="True" />
@@ -182,72 +182,63 @@
                                                 </ComboBox>
                                                 <CheckBox x:Name="peStripTrimCheck" Content="Trim trailing zeros" IsChecked="True" VerticalAlignment="Center" />
                                             </StackPanel>
-
-                                            <!-- Section name row (visible only in section mode) -->
-                                            <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
-                                                <TextBlock Text="Section name:" VerticalAlignment="Center" Width="110" />
-                                                <TextBox x:Name="peStripSectionInput" PlaceholderText=".text" MinWidth="140" />
+                                            <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="0,8,0,0">
+                                                <TextBlock Text="Section name" Style="{StaticResource SectionSubtitleText}" Width="110" VerticalAlignment="Center" />
+                                                <TextBox x:Name="peStripSectionInput" PlaceholderText=".text" MinWidth="160"
+                                                         FontFamily="{StaticResource MonoFontFamily}" />
                                             </StackPanel>
-
-                                            <!-- Analyze + warning -->
-                                            <StackPanel Grid.Row="2" Orientation="Vertical" Margin="0,8,0,0" Spacing="6">
+                                            <StackPanel Grid.Row="2" Spacing="6" Margin="0,10,0,0">
                                                 <Button Content="Analyze PE" Click="AnalyzePe_Click" />
-                                                <TextBlock TextWrapping="Wrap" MaxWidth="480" FontSize="11"
-                                                           Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                                <TextBlock TextWrapping="Wrap" MaxWidth="520" FontSize="11"
+                                                           Foreground="{StaticResource WarnBrush}"
                                                            Text="Only use .exe files that are shellcode-format PEs (e.g. produced by donut, pe2shellcode or sRDI). Standard Metasploit/Cobalt Strike EXEs require raw shellcode (.bin) instead." />
                                             </StackPanel>
                                         </Grid>
 
-                                        <!-- Donut options — shown when a managed (.NET) EXE is selected -->
-                                        <Grid x:Name="DonutOptionsPanel" Grid.Row="3" Visibility="Collapsed" Margin="0,10,0,0">
+                                        <!-- Donut options -->
+                                        <Grid x:Name="DonutOptionsPanel" Grid.Row="3" Visibility="Collapsed" Margin="0,12,0,0">
                                             <Grid.RowDefinitions>
                                                 <RowDefinition Height="Auto" />
                                                 <RowDefinition Height="Auto" />
                                             </Grid.RowDefinitions>
-
-                                            <!-- Arch + info badge -->
-                                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <TextBlock Text="Target arch:" VerticalAlignment="Center" />
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <TextBlock Text="Target arch" Style="{StaticResource SectionSubtitleText}" VerticalAlignment="Center" />
                                                 <ComboBox x:Name="donutArchCombo" MinWidth="140"
                                                           SelectedValuePath="Tag">
                                                     <ComboBoxItem Content="x86" Tag="1" />
                                                     <ComboBoxItem Content="x64" Tag="2" />
                                                     <ComboBoxItem Content="x86 + x64" Tag="3" IsSelected="True" />
                                                 </ComboBox>
-                                                <Border Background="{ThemeResource AccentButtonBackground}"
-                                                        CornerRadius="10" Padding="8,2" VerticalAlignment="Center">
-                                                    <TextBlock Text=".NET → shellcode via donut" FontSize="11"
-                                                               Foreground="{ThemeResource AccentButtonForeground}" />
+                                                <Border Style="{StaticResource ChipAccBorder}">
+                                                    <TextBlock Text=".NET → shellcode via donut" Style="{StaticResource ChipText}" Foreground="{StaticResource AccHiBrush}" />
                                                 </Border>
                                             </StackPanel>
-
-                                            <!-- Optional class / method / params -->
-                                            <Grid Grid.Row="1" Margin="0,8,0,0">
+                                            <Grid Grid.Row="1" Margin="0,8,0,0" ColumnSpacing="10">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
-                                                <StackPanel Margin="0,0,6,0">
-                                                    <TextBlock Text="Class (optional)" FontSize="11"
-                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                <StackPanel>
+                                                    <TextBlock Text="Class (optional)" Style="{StaticResource SectionSubtitleText}" />
                                                     <TextBox x:Name="donutClassInput"
                                                              PlaceholderText="e.g. MyApp.Program"
-                                                             FontSize="12" Margin="0,2,0,0" />
+                                                             FontFamily="{StaticResource MonoFontFamily}"
+                                                             Margin="0,4,0,0" />
                                                 </StackPanel>
-                                                <StackPanel Grid.Column="1" Margin="0,0,6,0">
-                                                    <TextBlock Text="Method (optional)" FontSize="11"
-                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                <StackPanel Grid.Column="1">
+                                                    <TextBlock Text="Method (optional)" Style="{StaticResource SectionSubtitleText}" />
                                                     <TextBox x:Name="donutMethodInput"
                                                              PlaceholderText="e.g. Main"
-                                                             FontSize="12" Margin="0,2,0,0" />
+                                                             FontFamily="{StaticResource MonoFontFamily}"
+                                                             Margin="0,4,0,0" />
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="2">
-                                                    <TextBlock Text="Params (optional)" FontSize="11"
-                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <TextBlock Text="Params (optional)" Style="{StaticResource SectionSubtitleText}" />
                                                     <TextBox x:Name="donutParamsInput"
                                                              PlaceholderText="comma-separated args"
-                                                             FontSize="12" Margin="0,2,0,0" />
+                                                             FontFamily="{StaticResource MonoFontFamily}"
+                                                             Margin="0,4,0,0" />
                                                 </StackPanel>
                                             </Grid>
                                         </Grid>
@@ -259,10 +250,10 @@
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="*" />
                                         </Grid.RowDefinitions>
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                            <TextBlock Text="Raw shellcode:" Margin="0,0,6,0" VerticalAlignment="Center" />
-                                            <FontIcon Glyph="&#xE946;" FontSize="14" VerticalAlignment="Center"
-                                                      Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,0,6">
+                                            <TextBlock Text="Raw shellcode" Style="{StaticResource SectionSubtitleText}" VerticalAlignment="Center" />
+                                            <FontIcon Glyph="&#xE946;" FontSize="13" VerticalAlignment="Center"
+                                                      Foreground="{StaticResource AccBrush}"
                                                       Tapped="RAWShellcodeInfo_Click"
                                                       ToolTipService.ToolTip="Click for shellcode format details" />
                                         </StackPanel>
@@ -272,14 +263,14 @@
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
                                             <TextBox x:Name="shellcodeRawInput"
-                                                     FontFamily="Consolas"
+                                                     FontFamily="{StaticResource MonoFontFamily}"
                                                      AcceptsReturn="True"
                                                      TextWrapping="NoWrap"
                                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                                     MinHeight="140"
+                                                     MinHeight="160"
                                                      Margin="0,0,8,0" />
-                                            <Button x:Name="pasteShellcodeButton" Grid.Column="1" Content="Paste" MinWidth="72" VerticalAlignment="Bottom" Click="PasteShellcode_Click" />
+                                            <Button x:Name="pasteShellcodeButton" Grid.Column="1" Content="Paste" MinWidth="80" VerticalAlignment="Bottom" Click="PasteShellcode_Click" />
                                         </Grid>
                                     </Grid>
 
@@ -290,27 +281,35 @@
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
-                                        <TextBlock Text="Select a shellcode .bin file, then launch the wizard to configure web delivery." Margin="0,0,0,6" />
-                                        <Grid Grid.Row="1" Margin="0,0,0,8">
+                                        <TextBlock Text="Select a shellcode .bin file, then launch the wizard to configure web delivery."
+                                                   Style="{StaticResource SectionSubtitleText}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,0,0,8" />
+                                        <Grid Grid.Row="1" Margin="0,0,0,10">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBox x:Name="shellcodeUrlFileInput" PlaceholderText="Path to .bin shellcode file" Margin="0,0,8,0" />
-                                            <Button x:Name="urlBrowseButton" Grid.Column="1" Content="Browse" MinWidth="72" Click="urlBrowseButton_Click" />
+                                            <TextBox x:Name="shellcodeUrlFileInput"
+                                                     PlaceholderText="Path to .bin shellcode file"
+                                                     FontFamily="{StaticResource MonoFontFamily}"
+                                                     Margin="0,0,8,0" />
+                                            <Button x:Name="urlBrowseButton" Grid.Column="1" Content="Browse" MinWidth="84" Click="urlBrowseButton_Click" />
                                         </Grid>
                                         <Grid Grid.Row="2">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
-                                            <Button x:Name="startWizardButton" Content="Start Wizard" MinWidth="120"
+                                            <Button x:Name="startWizardButton"
+                                                    Content="Start wizard"
+                                                    MinWidth="140"
                                                     Style="{StaticResource AccentButtonStyle}"
                                                     Click="StartWizard_Click" />
                                             <TextBlock x:Name="wizardStatusText" Grid.Column="1"
-                                                       VerticalAlignment="Center" Margin="12,0,0,0"
-                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                       TextWrapping="Wrap" FontSize="12" />
+                                                       VerticalAlignment="Center" Margin="14,0,0,0"
+                                                       Style="{StaticResource SectionSubtitleText}"
+                                                       TextWrapping="Wrap" />
                                             <TextBox x:Name="shellcodeUrlValue" Visibility="Collapsed" />
                                         </Grid>
                                     </Grid>
@@ -321,231 +320,266 @@
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
-                                        <TextBlock Text="Choose a generic shellcode (for testing purposes):" Margin="0,0,0,6" />
-                                        <ComboBox x:Name="genericShellcodeCombo" Grid.Row="1" Width="360" />
+                                        <TextBlock Text="Built-in test payloads"
+                                                   Style="{StaticResource SectionSubtitleText}"
+                                                   Margin="0,0,0,6" />
+                                        <ComboBox x:Name="genericShellcodeCombo" Grid.Row="1" MinWidth="380" />
                                     </Grid>
-                                </Grid>
+
+                                    <!-- Action buttons -->
+                                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                                        <Button Content="Recompute hash" Click="ChangeShellcodeSource_Click" Visibility="Collapsed" />
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <!-- Right: detected analysis (visual fidelity) -->
+                                <Border Grid.Column="1"
+                                        BorderBrush="{StaticResource N4Brush}"
+                                        BorderThickness="1,0,0,0"
+                                        Padding="18,0,0,0">
+                                    <StackPanel Spacing="8">
+                                        <TextBlock Text="DETECTED" Style="{StaticResource SectionLabelText}" />
+                                        <Grid ColumnSpacing="10" RowSpacing="3">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="size" Style="{StaticResource MonoTinyText}" />
+                                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="DetectedSizeText"
+                                                       Text="—"
+                                                       Style="{StaticResource MonoBodyText}"
+                                                       Foreground="{StaticResource N10Brush}" />
+                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="arch" Style="{StaticResource MonoTinyText}" />
+                                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="DetectedArchText"
+                                                       Text="—"
+                                                       Style="{StaticResource MonoBodyText}"
+                                                       Foreground="{StaticResource N10Brush}" />
+                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="entropy" Style="{StaticResource MonoTinyText}" />
+                                            <TextBlock Grid.Row="2" Grid.Column="1" x:Name="DetectedEntropyText"
+                                                       Text="—"
+                                                       Style="{StaticResource MonoBodyText}"
+                                                       Foreground="{StaticResource N10Brush}" />
+                                            <TextBlock Grid.Row="3" Grid.Column="0" Text="sha256" Style="{StaticResource MonoTinyText}" />
+                                            <TextBlock Grid.Row="3" Grid.Column="1" x:Name="DetectedShaText"
+                                                       Text="—"
+                                                       Style="{StaticResource MonoBodyText}"
+                                                       Foreground="{StaticResource N9Brush}" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- ═══ Section: Shikata Ga Nai ═══ -->
+                <StackPanel Spacing="12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                            <TextBlock Text="SHIKATA GA NAI · PREPROCESSOR" Style="{StaticResource SectionLabelText}" />
+                            <Border Style="{StaticResource ChipAccBorder}">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <Ellipse Width="6" Height="6" Fill="{StaticResource AccBrush}" VerticalAlignment="Center" />
+                                    <TextBlock Text="optional" Style="{StaticResource ChipText}" Foreground="{StaticResource AccHiBrush}" />
+                                </StackPanel>
                             </Border>
                         </StackPanel>
-                    </StackPanel>
-                </Expander>
+                    </Grid>
+                    <Border x:Name="ShikataGaNaiExpander" Style="{StaticResource CardBorder}">
+                        <StackPanel Spacing="12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Polymorphic pre-encoding"
+                                               Style="{StaticResource SectionTitleText}" />
+                                    <TextBlock Text="Applied before the envelope/encoder stage."
+                                               Style="{StaticResource SectionSubtitleText}"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                                <CheckBox Grid.Column="1"
+                                          x:Name="shikataGaNaiEnabledCheckBox"
+                                          Content="Enabled"
+                                          Checked="ShikataGaNaiEnabledChanged"
+                                          Unchecked="ShikataGaNaiEnabledChanged" />
+                            </Grid>
 
-                <Border Margin="10,10,10,10"/>
+                            <Border Style="{StaticResource SectionDivider}" />
 
-                <!-- Shikata Ga Nai section (runs before Payload Encoding when enabled) -->
-                <Expander x:Name="ShikataGaNaiExpander" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
-                    <Expander.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <FontIcon Glyph="&#xE8C8;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Shikata Ga Nai" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Placement" Style="{StaticResource SectionSubtitleText}" />
+                                <RadioButton x:Name="shikataPlacementPre"
+                                             GroupName="SgnPlacement"
+                                             Content="Pre-Bin2Shell — bake SGN into the loader's shellcode (needs RWX at execution)"
+                                             IsChecked="True"
+                                             Checked="ShikataGaNaiPlacementChanged" />
+                                <RadioButton x:Name="shikataPlacementPost"
+                                             GroupName="SgnPlacement"
+                                             Content="Post-Bin2Shell — emit an extra SGN-encoded .bin from the stripped loader (any execution method works)"
+                                             Checked="ShikataGaNaiPlacementChanged" />
+                            </StackPanel>
+
+                            <Grid ColumnSpacing="14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Encode count" Style="{StaticResource SectionSubtitleText}" />
+                                    <NumberBox x:Name="shikataGaNaiEncodeCountInput"
+                                               Value="1"
+                                               Minimum="1"
+                                               SmallChange="1"
+                                               SpinButtonPlacementMode="Inline"
+                                               IsEnabled="False" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="4">
+                                    <TextBlock Text="Max obfuscation bytes" Style="{StaticResource SectionSubtitleText}" />
+                                    <NumberBox x:Name="shikataGaNaiMaxBytesInput"
+                                               Value="50"
+                                               Minimum="1"
+                                               SmallChange="1"
+                                               SpinButtonPlacementMode="Inline"
+                                               IsEnabled="False" />
+                                </StackPanel>
+                            </Grid>
                         </StackPanel>
-                    </Expander.Header>
-                    <StackPanel Margin="0,12,0,4" Spacing="12">
-                        <TextBlock Text="Polymorphic pre-encoding applied before the envelope/encoder stage."
-                                   Style="{StaticResource SectionSubtitleText}" />
-                        <CheckBox x:Name="shikataGaNaiEnabledCheckBox"
-                                  Content="Enable Shikata Ga Nai encoding"
-                                  Checked="ShikataGaNaiEnabledChanged"
-                                  Unchecked="ShikataGaNaiEnabledChanged" />
+                    </Border>
+                </StackPanel>
 
-                        <StackPanel Spacing="6">
-                            <TextBlock Text="Placement" Style="{StaticResource SectionSubtitleText}" />
-                            <RadioButton x:Name="shikataPlacementPre"
-                                         GroupName="SgnPlacement"
-                                         Content="Pre-Bin2Shell — bake SGN into the loader's shellcode (needs RWX at execution)"
-                                         IsChecked="True"
-                                         Checked="ShikataGaNaiPlacementChanged" />
-                            <RadioButton x:Name="shikataPlacementPost"
-                                         GroupName="SgnPlacement"
-                                         Content="Post-Bin2Shell — emit an extra SGN-encoded .bin from the stripped loader (any execution method works)"
-                                         Checked="ShikataGaNaiPlacementChanged" />
-                        </StackPanel>
-
-                        <Grid>
+                <!-- ═══ Section: Payload Encoding ═══ -->
+                <StackPanel x:Name="PayloadEncodingExpander" Spacing="12">
+                    <TextBlock Text="ENCODING" Style="{StaticResource SectionLabelText}" />
+                    <Border Style="{StaticResource CardBorder}">
+                        <Grid ColumnSpacing="18">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,8,0">
-                                <TextBlock Text="Encode count" Style="{StaticResource SectionSubtitleText}" />
-                                <NumberBox x:Name="shikataGaNaiEncodeCountInput"
-                                           Value="1"
-                                           Minimum="1"
-                                           SmallChange="1"
-                                           SpinButtonPlacementMode="Inline"
-                                           IsEnabled="False" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Spacing="4" Margin="8,0,0,0">
-                                <TextBlock Text="Max obfuscation bytes" Style="{StaticResource SectionSubtitleText}" />
-                                <NumberBox x:Name="shikataGaNaiMaxBytesInput"
-                                           Value="50"
-                                           Minimum="1"
-                                           SmallChange="1"
-                                           SpinButtonPlacementMode="Inline"
-                                           IsEnabled="False" />
-                            </StackPanel>
-                        </Grid>
-                    </StackPanel>
-                </Expander>
-
-                <!-- Payload Encoding section -->
-                <Expander x:Name="PayloadEncodingExpander" IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
-                    <Expander.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <FontIcon Glyph="&#xE809;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Payload Encoding" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Expander.Header>
-                    <StackPanel Margin="0,12,0,4" Spacing="12">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,8,0">
+                            <StackPanel Spacing="6">
                                 <TextBlock Text="Encoder" Style="{StaticResource SectionSubtitleText}" />
                                 <ComboBox x:Name="encoderCombo"
                                           HorizontalAlignment="Stretch"
                                           SelectionChanged="Encoder_SelectionChanged" />
                                 <TextBlock x:Name="encoderDescriptionText"
                                            TextWrapping="Wrap"
-                                           Style="{StaticResource CaptionTextBlockStyle}"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                           Style="{StaticResource SectionSubtitleText}" />
                             </StackPanel>
-                            <StackPanel Grid.Column="1" Spacing="4" Margin="8,0,0,0">
+                            <StackPanel Grid.Column="1" Spacing="6">
                                 <TextBlock Text="Envelope" Style="{StaticResource SectionSubtitleText}" />
                                 <ComboBox x:Name="envelopeCombo"
                                           HorizontalAlignment="Stretch"
                                           SelectionChanged="Envelope_SelectionChanged" />
                                 <TextBlock x:Name="envelopeDescriptionText"
                                            TextWrapping="Wrap"
-                                           Style="{StaticResource CaptionTextBlockStyle}"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                           Style="{StaticResource SectionSubtitleText}" />
                             </StackPanel>
                         </Grid>
-                    </StackPanel>
-                </Expander>
+                    </Border>
+                </StackPanel>
 
-                <!-- Template section -->
-                <Expander IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                    <Expander.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <FontIcon Glyph="&#xE8A5;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Payload Features" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Expander.Header>
-
-                    <Grid Margin="0,8,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="16" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-
-                        <!-- Playbook Column -->
-                        <StackPanel Grid.Column="0" Spacing="6">
-                            <TextBlock Text="Playbook"
-                       Style="{StaticResource SectionSubtitleText}" />
-                            <ComboBox x:Name="playbookComboBox"
-                      HorizontalAlignment="Stretch"
-                      SelectionChanged="Playbook_SelectionChanged" />
-                            <TextBlock x:Name="playbookPathText"
-                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                       TextWrapping="WrapWholeWords"
-                       Style="{StaticResource CaptionTextBlockStyle}" />
-                        </StackPanel>
-
-                        <!-- Template Column -->
-                        <StackPanel Grid.Column="2" Spacing="6">
-                            <TextBlock Text="Template"
-                       Style="{StaticResource SectionSubtitleText}" />
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-
-                                <ComboBox x:Name="templateCombo"
-                          Grid.Column="0"
-                          HorizontalAlignment="Stretch"
-                          Margin="0,0,8,0"
-                          SelectionChanged="Template_SelectionChanged" />
-
-                                <Button x:Name="configureTemplateButton"
-                        Grid.Column="1"
-                        Content="Configure"
-                        MinWidth="110"
-                        Margin="0,0,8,0"
-                        Click="ConfigureTemplate_Click"
-                        Style="{StaticResource AccentButtonStyle}" />
-
-                                <Button x:Name="refreshTemplateButton"
-                        Grid.Column="2"
-                        Content="Refresh"
-                        MinWidth="90"
-                        Click="refreshTemplateButton_Click" />
-                            </Grid>
-                        </StackPanel>
-                    </Grid>
-                </Expander>
-
-                <Border Margin="10,10,10,15"/>
-
-                <!-- Next Step card -->
-                <Border Style="{StaticResource CardBorder}" Margin="0">
-                    <StackPanel Margin="12">
-                        <Grid>
+                <!-- ═══ Section: Template ═══ -->
+                <StackPanel Spacing="12">
+                    <TextBlock Text="TEMPLATE &amp; PLAYBOOK" Style="{StaticResource SectionLabelText}" />
+                    <Border Style="{StaticResource CardBorder}">
+                        <Grid ColumnSpacing="18">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <FontIcon Glyph="&#xE72A;" FontSize="20" Margin="0,2,12,0" VerticalAlignment="Center" />
-                            <StackPanel Grid.Column="1">
-                                <TextBlock Text="Next: Backdooring" Style="{StaticResource SectionTitleText}" />
-                                <TextBlock Text="Continue to configure PE injection target, or skip to Compile."
-                                           Style="{StaticResource SectionSubtitleText}"
-                                           Margin="0,4,0,0" />
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Playbook" Style="{StaticResource SectionSubtitleText}" />
+                                <ComboBox x:Name="playbookComboBox"
+                                          HorizontalAlignment="Stretch"
+                                          SelectionChanged="Playbook_SelectionChanged" />
+                                <TextBlock x:Name="playbookPathText"
+                                           Foreground="{StaticResource N7Brush}"
+                                           FontFamily="{StaticResource MonoFontFamily}"
+                                           FontSize="11"
+                                           TextWrapping="WrapWholeWords" />
                             </StackPanel>
-                            <Button x:Name="goToBackdooringButton"
-                                    Grid.Column="2"
-                                    Content="Configure Backdooring →"
-                                    Width="200"
-                                    Margin="8,0,0,0"
-                                    VerticalAlignment="Center"
-                                    Style="{StaticResource AccentButtonStyle}"
-                                    Click="GoToBackdooringPage_Click" />
+                            <StackPanel Grid.Column="1" Spacing="6">
+                                <TextBlock Text="Template" Style="{StaticResource SectionSubtitleText}" />
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox x:Name="templateCombo"
+                                              Grid.Column="0"
+                                              HorizontalAlignment="Stretch"
+                                              SelectionChanged="Template_SelectionChanged" />
+                                    <Button x:Name="configureTemplateButton"
+                                            Grid.Column="1"
+                                            Content="Configure"
+                                            Click="ConfigureTemplate_Click"
+                                            Style="{StaticResource AccentButtonStyle}" />
+                                    <Button x:Name="refreshTemplateButton"
+                                            Grid.Column="2"
+                                            Content="Refresh"
+                                            Click="refreshTemplateButton_Click" />
+                                </Grid>
+                            </StackPanel>
                         </Grid>
-                    </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- ═══ Next step card ═══ -->
+                <Border Style="{StaticResource AccentTintBorder}" Padding="18">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE72A;" FontSize="18" Margin="0,2,14,0" Foreground="{StaticResource AccHiBrush}" />
+                        <StackPanel Grid.Column="1" Spacing="4">
+                            <TextBlock Text="Next · Backdooring" Style="{StaticResource SectionTitleText}" Foreground="{StaticResource N10Brush}" />
+                            <TextBlock Text="Continue to configure PE injection target, or skip to Compile."
+                                       Style="{StaticResource SectionSubtitleText}" />
+                        </StackPanel>
+                        <Button x:Name="goToBackdooringButton"
+                                Grid.Column="2"
+                                Content="Configure Backdooring →"
+                                MinWidth="200"
+                                Style="{StaticResource AccentButtonStyle}"
+                                Click="GoToBackdooringPage_Click" />
+                    </Grid>
                 </Border>
 
-                <Border Margin="10,10,10,15"/>
-                <!-- Status section (read-only) -->
-                <Expander IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
-                    <Expander.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <FontIcon Glyph="&#xF0E3;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Status Log" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Expander.Header>
-                    <RichEditBox x:Name="statusLogBox"
-                                 Height="120"
-                                 IsReadOnly="True"
-                                 FontFamily="Consolas"
-                                 FontSize="13"
-                                 FlowDirection="LeftToRight"
-                                 Margin="0,8,0,0" />
-                </Expander>
+                <!-- ═══ Status log (collapsible) ═══ -->
+                <StackPanel Spacing="10">
+                    <TextBlock Text="STATUS LOG" Style="{StaticResource SectionLabelText}" />
+                    <Border Style="{StaticResource CardBorder}" Padding="2">
+                        <RichEditBox x:Name="statusLogBox"
+                                     Height="160"
+                                     IsReadOnly="True"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     FontFamily="{StaticResource MonoFontFamily}"
+                                     FontSize="12"
+                                     FlowDirection="LeftToRight" />
+                    </Border>
+                </StackPanel>
 
-                <Border Margin="10,10,10,10"/>
                 <!-- Disclaimer -->
-                <Border Style="{StaticResource CardBorder}" Margin="0">
-                    <Grid Margin="12">
-                        <TextBlock Text="{x:Bind local:UiStrings.DisclaimerText}"
-                                   Style="{StaticResource PageSubtitleText}"
-                                   TextWrapping="Wrap" />
-                    </Grid>
+                <Border Style="{StaticResource FlatCardBorder}" Padding="14">
+                    <TextBlock Text="{x:Bind local:UiStrings.DisclaimerText}"
+                               Style="{StaticResource PageSubtitleText}"
+                               TextWrapping="Wrap" />
                 </Border>
 
             </StackPanel>
