@@ -71,3 +71,10 @@ last status.txt
 # Bundled LLVM binaries (~340 MB) — provision locally via build.ps1 or copy from C:\Program Files\LLVM\bin
 Tools/LLVM/bin/*.exe
 Tools/LLVM/bin/*.dll
+
+# LLVM SDK download cache (~2 GB) — staged by Assets/llvm-passes/build-all.ps1 when building the obfuscation pass DLLs
+.llvm-sdk-cache/
+
+# LLVM pass plugin build artefacts
+Assets/llvm-passes/*/build/
+Assets/llvm-passes/*/pass.dll
