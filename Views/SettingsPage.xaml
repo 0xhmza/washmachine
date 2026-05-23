@@ -60,7 +60,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <TextBox x:Name="templateCatalogUrl"
-                                         PlaceholderText="https://example.com/vx_api_snippets.yaml"
+                                         PlaceholderText="https://example.com/playbook.yaml"
                                          Margin="0,0,8,0" />
                                 <Button x:Name="importTemplateUrlButton"
                                         Grid.Column="1"

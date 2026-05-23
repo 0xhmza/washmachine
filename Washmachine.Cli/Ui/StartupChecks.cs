@@ -24,6 +24,7 @@ public static class StartupChecks
         var live = new LoadingScreen();
         live.AddStep("provision", "Ensuring external requirements (Bin2Shell, SGN, Donut)");
         live.AddStep("compiler", "Locating a C/C++ compiler");
+        live.AddStep("preflight", "Verifying LLVM/clang version for obfuscation passes");
         live.Render();
 
         // ── 1) Provision Bin2Shell ───────────────────────────────
@@ -59,6 +60,32 @@ public static class StartupChecks
         else
         {
             live.Update("compiler", StepState.Warning, "No C/C++ compiler found on this machine.");
+        }
+
+        // ── 3) Obfuscation-toolchain preflight ───────────────────
+        live.Update("preflight", StepState.Running, "Checking clang++/clang-cl/Bin2Shell + LLVM version…");
+        try
+        {
+            var preflight = new ToolPreflightService(paths, locator, logger);
+            var report = await preflight.RunAsync();
+            if (report.AllOk)
+            {
+                live.Update("preflight", StepState.Ok, "All obfuscation tools present and compatible.");
+            }
+            else
+            {
+                var missing = report.Missing.Select(s => s.Tool).ToList();
+                var incompatible = report.Incompatible.Select(s => s.Tool).ToList();
+                var parts = new List<string>();
+                if (missing.Count > 0) parts.Add("missing: " + string.Join(", ", missing));
+                if (incompatible.Count > 0) parts.Add("incompatible: " + string.Join(", ", incompatible));
+                parts.Add("run 'doctor' for details.");
+                live.Update("preflight", StepState.Warning, string.Join("  ·  ", parts));
+            }
+        }
+        catch (Exception ex)
+        {
+            live.Update("preflight", StepState.Warning, $"Preflight failed: {ex.Message}");
         }
 
         live.Finish();

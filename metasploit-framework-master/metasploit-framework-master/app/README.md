@@ -1,1 +1,0 @@
-This directory contains ActiveRecord concerns, models and validators.

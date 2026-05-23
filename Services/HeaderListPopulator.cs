@@ -10,9 +10,9 @@ public interface IHeaderListProvider
 
 public sealed class HeaderListProvider : IHeaderListProvider
 {
-    private readonly ICodeSnippetCatalogService _catalog;
+    private readonly IPlaybookService _catalog;
 
-    public HeaderListProvider(ICodeSnippetCatalogService catalog)
+    public HeaderListProvider(IPlaybookService catalog)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
     }

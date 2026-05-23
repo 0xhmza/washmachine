@@ -26,7 +26,7 @@ public sealed class MainFormCoordinator
     private static readonly Regex QuotedStringRegex = new("\"(?<segment>.*?)\"", RegexOptions.Compiled | RegexOptions.Singleline);
     private readonly IAppLogger _logger;
     private readonly IAppPaths _paths;
-    private readonly ICodeSnippetCatalogService _snippetCatalog;
+    private readonly IPlaybookService _snippetCatalog;
     private readonly IShellcodeEncodingCatalog _encodingCatalog;
     private readonly IBin2ShellRunner _bin2ShellRunner;
     private readonly ICompilerService _compiler;
@@ -46,7 +46,7 @@ public sealed class MainFormCoordinator
     public MainFormCoordinator(
         IAppLogger logger,
         IAppPaths paths,
-        ICodeSnippetCatalogService snippetCatalog,
+        IPlaybookService snippetCatalog,
         IShellcodeEncodingCatalog encodingCatalog,
         IBin2ShellRunner bin2ShellRunner,
         ICompilerService compiler,
@@ -535,7 +535,7 @@ public sealed class MainFormCoordinator
                 .ToList();
 
             if (allTemplates.Count == 0)
-                throw new InvalidOperationException("No code templates are defined in the snippet catalog.");
+                throw new InvalidOperationException("No code templates are defined in the playbook.");
 
             _templates = allTemplates;
 
@@ -637,7 +637,7 @@ public sealed class MainFormCoordinator
 
         var choice = ShowMessage(
             view,
-            "Import snippet catalog from a file or URL?\r\n\r\nYes = File, No = URL.",
+            "Import playbook from a file or URL?\r\n\r\nYes = File, No = URL.",
             "Import Template Catalog",
             MsgBoxButton.YesNoCancel,
             MsgBoxIcon.Question,
@@ -656,7 +656,7 @@ public sealed class MainFormCoordinator
                 view,
                 "Import Catalog from URL",
                 "Enter the URL that returns YAML content:",
-                "https://example.com/vx_api_snippets.yaml",
+                "https://example.com/playbook.yaml",
                 null);
 
             await ImportTemplateCatalogFromUrlAsync(view, rawUrl).ConfigureAwait(true);
@@ -669,13 +669,13 @@ public sealed class MainFormCoordinator
 
         string? selected = await SelectFileAsync(
             view,
-            "Select Snippet Catalog",
+            "Select Playbook",
             "YAML files (*.yaml;*.yml)|*.yaml;*.yml|All files (*.*)|*.*",
             _paths.AssetsDirectory);
 
         if (string.IsNullOrWhiteSpace(selected))
         {
-            _logger.Warn("Snippet catalog import cancelled.");
+            _logger.Warn("Playbook import cancelled.");
             return;
         }
 
@@ -686,7 +686,7 @@ public sealed class MainFormCoordinator
         }
         catch (Exception ex)
         {
-            _logger.Error($"Failed to read snippet catalog file: {ex.Message}");
+            _logger.Error($"Failed to read playbook file: {ex.Message}");
             ShowMessage(
                 view,
                 $"Unable to read the selected file.{Environment.NewLine}{ex.Message}",
@@ -735,7 +735,7 @@ public sealed class MainFormCoordinator
         }
         catch (Exception ex)
         {
-            _logger.Error($"Failed to download snippet catalog: {ex.Message}");
+            _logger.Error($"Failed to download playbook: {ex.Message}");
             ShowMessage(
                 view,
                 $"Failed to download the catalog.{Environment.NewLine}{ex.Message}",
@@ -756,7 +756,7 @@ public sealed class MainFormCoordinator
 
         if (!_snippetCatalog.TryReload(out var error))
         {
-            _logger.Error($"Failed to reload snippet catalog: {error}");
+            _logger.Error($"Failed to reload playbook: {error}");
             ShowMessage(
                 view,
                 $"Failed to reload the catalog.{Environment.NewLine}{error}",
@@ -771,7 +771,7 @@ public sealed class MainFormCoordinator
         ResetTemplateOptions(selectedTemplate);
         UpdateTemplateContext(view, selectedTemplate);
         view.PlaybookPathTextBlock.Text = _paths.ActivePlaybookPath;
-        _logger.Ok("Snippet catalog refreshed.");
+        _logger.Ok("Playbook refreshed.");
     }
 
     public async Task ReloadEncodingCatalogAsync(IMainFormView view)
@@ -829,7 +829,7 @@ public sealed class MainFormCoordinator
         }
         catch (Exception ex)
         {
-            _logger.Warn($"Failed to backup existing snippet catalog: {ex.Message}");
+            _logger.Warn($"Failed to backup existing playbook: {ex.Message}");
             backup = null;
         }
 
@@ -839,7 +839,7 @@ public sealed class MainFormCoordinator
         }
         catch (Exception ex)
         {
-            _logger.Error($"Failed to write snippet catalog: {ex.Message}");
+            _logger.Error($"Failed to write playbook: {ex.Message}");
             ShowMessage(
                 view,
                 $"Unable to write the catalog to disk.{Environment.NewLine}{ex.Message}",
@@ -883,10 +883,10 @@ public sealed class MainFormCoordinator
         ResetTemplateOptions(selectedTemplate);
         UpdateTemplateContext(view, selectedTemplate);
 
-        _logger.Ok($"Snippet catalog imported from {sourceLabel}.");
+        _logger.Ok($"Playbook imported from {sourceLabel}.");
         ShowMessage(
             view,
-            "Snippet catalog imported successfully.",
+            "Playbook imported successfully.",
             "Import Complete",
             MsgBoxButton.OK,
             MsgBoxIcon.Information);

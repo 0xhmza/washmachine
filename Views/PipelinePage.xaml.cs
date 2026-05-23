@@ -12,12 +12,12 @@ namespace Washmachine.Views;
 public sealed partial class PipelinePage : Page
 {
     private readonly AppPaths _paths = new();
-    private readonly ICodeSnippetCatalogService _snippets;
+    private readonly IPlaybookService _snippets;
 
     public PipelinePage()
     {
         InitializeComponent();
-        _snippets = new YamlCodeSnippetCatalogService(_paths);
+        _snippets = new PlaybookService(_paths);
 
         Loaded += (_, _) => Render();
     }
@@ -419,7 +419,7 @@ public sealed partial class PipelinePage : Page
         public string OutputArchHint  { get; set; } = "x64-PE";
         public string RecipeOneLiner  { get; set; } = "";
 
-        public static Snapshot Capture(ICodeSnippetCatalogService snippets)
+        public static Snapshot Capture(IPlaybookService snippets)
         {
             var snap     = new Snapshot();
             var main     = MainPage.Instance;

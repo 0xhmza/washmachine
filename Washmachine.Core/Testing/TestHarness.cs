@@ -76,7 +76,7 @@ public static class TestHarness
         var paths = new AppPaths();
         var logger = new ConsoleLogger();
         var runner = new Bin2ShellRunner(paths);
-        var snippetService = new YamlCodeSnippetCatalogService(paths);
+        var snippetService = new PlaybookService(paths);
         var toolLocator = new CompilerToolLocator(logger);
         var compiler = new CompilerService(paths, runner, snippetService, toolLocator, logger);
 
@@ -331,7 +331,7 @@ public static class TestHarness
         ShellcodeEncodingItem encoder,
         ShellcodeEncodingItem envelope,
         ShellcodeEncodingItem? webHelper,
-        ICodeSnippetCatalogService snippets)
+        IPlaybookService snippets)
     {
         var textBoxes = new Dictionary<string, string>
         {
@@ -360,7 +360,7 @@ public static class TestHarness
         ShellcodeEncodingItem encoder,
         ShellcodeEncodingItem envelope,
         ShellcodeEncodingItem? webHelper,
-        ICodeSnippetCatalogService snippets,
+        IPlaybookService snippets,
         IBin2ShellRunner runner,
         IAppPaths paths,
         IAppLogger logger)
@@ -422,7 +422,7 @@ public static class TestHarness
         string shellcodeFile,
         string templateId,
         Dictionary<string, string> snippetSelections,
-        ICodeSnippetCatalogService snippets)
+        IPlaybookService snippets)
     {
         var textBoxes = new Dictionary<string, string>
         {
@@ -458,7 +458,7 @@ public static class TestHarness
     private static IEnumerable<Dictionary<string, string>> EnumerateSnippetCombinations(
         IReadOnlyList<CodeTemplatePlaceholder> placeholders,
         IReadOnlyList<CodeSnippetSection> allSections,
-        ICodeSnippetCatalogService snippetService)
+        IPlaybookService snippetService)
     {
         // Build a list of (comboBoxName, possibleValues[]) per placeholder
         var axes = new List<(string ComboName, string[] Values)>();
@@ -522,7 +522,7 @@ public static class TestHarness
     private static void SetDefaultSnippets(
         Dictionary<string, string> comboBoxes,
         Dictionary<string, string> textBoxes,
-        ICodeSnippetCatalogService snippets,
+        IPlaybookService snippets,
         string templateId)
     {
         if (!snippets.TryGetTemplate(templateId, out var template))
@@ -545,7 +545,7 @@ public static class TestHarness
 
     private static void SetDefaultInputValues(
         Dictionary<string, string> textBoxes,
-        ICodeSnippetCatalogService snippets)
+        IPlaybookService snippets)
     {
         foreach (var section in snippets.GetAllSections())
         {
@@ -794,7 +794,7 @@ public static class TestHarness
 
     private static UiData BuildPhase3Data(
         string shellcodeFile,
-        ICodeSnippetCatalogService snippets)
+        IPlaybookService snippets)
     {
         var textBoxes = new Dictionary<string, string>
         {
@@ -818,7 +818,7 @@ public static class TestHarness
     private static UiData BuildPhase3DataWithEncoder(
         string shellcodeFile,
         ShellcodeEncodingItem encoder,
-        ICodeSnippetCatalogService snippets)
+        IPlaybookService snippets)
     {
         var textBoxes = new Dictionary<string, string>
         {

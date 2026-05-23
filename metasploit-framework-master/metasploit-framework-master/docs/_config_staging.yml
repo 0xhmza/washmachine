@@ -1,3 +1,0 @@
-# Staging assumes that it is currently deployed to gh-pages; All links are prefixed with /metasploit-framework
-baseurl: 'metasploit-framework'
-ga_tracking: ''

@@ -42,7 +42,7 @@ washmachine/
 │   │   ├── RequirementProvisioner.cs   ← downloads Bin2Shell + SGN if missing
 │   │   ├── ProgressReporter.cs         ← IProgressReporter + ConsoleProgressReporter
 │   │   ├── ShellcodeEncodingCatalogService.cs
-│   │   └── YamlCodeSnippetCatalogService.cs
+│   │   └── PlaybookService.cs
 │   ├── Testing/
 │   │   └── TestHarness.cs              ← headless combinatorial test runner
 │   ├── UiStrings.cs
@@ -54,7 +54,7 @@ washmachine/
 │   └── Washmachine.Cli.csproj
 │
 ├── Assets/                             ← runtime assets (shipped with both products)
-│   └── vx_api_snippets.yaml            ← YAML catalog: all templates & snippets
+│   └── default.yaml            ← default playbook (templates + snippets)
 │
 ├── Controllers/
 │   └── MainFormCoordinator.cs          ← GUI event ↔ service coordinator (GUI only)
@@ -109,7 +109,7 @@ UIData (control-value snapshot)
     ▼
 CompilerService.CompileAsync(data)
     │
-    ├─ YamlCodeSnippetCatalogService  ← resolves template + snippets from YAML
+    ├─ PlaybookService  ← resolves template + snippets from YAML
     ├─ SGN (optional)                 ← optional Shikata Ga Nai preprocessing
     ├─ Bin2ShellRunner                ← optional encoding (spawns python main.py)
     │
@@ -211,7 +211,7 @@ Minimum required files from `Output\cli\Release\publish\`:
 ```
 washmachine-cli.exe         ← single-file executable
 Assets\
-└── vx_api_snippets.yaml    ← YAML catalog (required at runtime)
+└── default.yaml    ← default playbook (required at runtime)
 ```
 
 Bin2Shell and SGN are downloaded automatically on first use of encoding features (`washmachine-cli provision`).
@@ -226,7 +226,7 @@ Files from `Output\Release\publish\`:
 washmachine.exe
 washmachine.dll
 Assets\
-└── vx_api_snippets.yaml
+└── default.yaml
 (supporting .dll files from dotnet publish)
 ```
 
@@ -236,7 +236,7 @@ Runtime prerequisites:
 
 ### Shared runtime assets
 
-Both products rely on `Assets/vx_api_snippets.yaml` being present **next to the executable** (resolved via `AppPaths.AssetsDirectory`). Always include the `Assets/` folder alongside the binary.
+Both products rely on `Assets/default.yaml` being present **next to the executable** (resolved via `AppPaths.AssetsDirectory`). Always include the `Assets/` folder alongside the binary.
 
 ### Bin2Shell + SGN (optional, auto-provisioned)
 

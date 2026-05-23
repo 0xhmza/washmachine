@@ -124,7 +124,7 @@ public sealed class CompilerService : ICompilerService
 
     private readonly IAppPaths _paths;
     private readonly IBin2ShellRunner _bin2ShellRunner;
-    private readonly ICodeSnippetCatalogService _snippets;
+    private readonly IPlaybookService _snippets;
     private readonly ICompilerToolLocator _toolLocator;
     private readonly IAppLogger _logger;
 
@@ -137,7 +137,7 @@ public sealed class CompilerService : ICompilerService
     public CompilerService(
         IAppPaths paths,
         IBin2ShellRunner bin2ShellRunner,
-        ICodeSnippetCatalogService snippets,
+        IPlaybookService snippets,
         ICompilerToolLocator toolLocator,
         IAppLogger logger)
     {
@@ -366,7 +366,7 @@ public sealed class CompilerService : ICompilerService
 
         var allTemplates = _snippets.GetTemplates();
         if (allTemplates == null || allTemplates.Count == 0)
-            throw new InvalidOperationException("No code templates are defined in the snippet catalog.");
+            throw new InvalidOperationException("No code templates are defined in the playbook.");
 
         if (!string.IsNullOrWhiteSpace(selectedId))
             _logger.Warn($"Template '{selectedId}' not found. Falling back to '{allTemplates[0].Id}'.");

@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <DefaultItemExcludes>$(DefaultItemExcludes);Washmachine.Core\**;Washmachine.Cli\**;Output\**;Testing\**;Icon\**;metasploit-framework-master\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Washmachine.Core\**;Washmachine.Cli\**;Output\**;Testing\**;Icon\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -74,7 +74,7 @@
     <ProjectReference Include="Washmachine.Core\Washmachine.Core.csproj" />
   </ItemGroup>
 
-  <!-- Copy Assets (YAML catalogs + C++ runtime headers + JSON schema) to publish output so AppPaths can locate them -->
+  <!-- Copy Assets (playbooks + C++ runtime headers + JSON schema) to publish output so AppPaths can locate them -->
   <ItemGroup>
     <Content Include="Assets\*.yaml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Assets\*.yml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

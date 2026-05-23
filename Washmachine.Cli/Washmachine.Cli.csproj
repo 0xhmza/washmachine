@@ -41,7 +41,7 @@
     <ProjectReference Include="..\Washmachine.Core\Washmachine.Core.csproj" />
   </ItemGroup>
 
-  <!-- Copy shared assets (YAML catalogs) to CLI output so AppPaths can locate them -->
+  <!-- Copy shared assets (playbooks + runtime headers) to CLI output so AppPaths can locate them -->
   <ItemGroup>
     <Content Include="..\Assets\**\*" Link="Assets\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\testing assets\binary\shellcodes\messagebox.bin" Link="messagebox.bin" CopyToOutputDirectory="PreserveNewest"

@@ -202,7 +202,7 @@ When **URL** mode is selected, click **Web Payload Wizard** to:
 
 ### Templates
 
-The **Template** combo lists every `id` defined under `templates:` in `Assets/vx_api_snippets.yaml`. Two ship by default:
+The **Template** combo lists every `id` defined under `templates:` in `Assets/default.yaml`. Two ship by default:
 
 | Template ID | Description |
 |---|---|
@@ -256,9 +256,9 @@ Use the **Finalize** page to configure post-compilation output processing:
 
 ## YAML Catalog Reference
 
-All templates and snippets live in a **single file**: `Assets/vx_api_snippets.yaml`. This is the only file you need to edit to add new techniques, templates, or UI controls.
+All templates and snippets live in a **single playbook file**: `Assets/default.yaml`. This is the only file you need to edit to add new techniques, templates, or UI controls.
 
-The catalog is parsed by `YamlCodeSnippetCatalogService` using [YamlDotNet](https://github.com/aaubry/YamlDotNet) with camelCase naming. It can also be written as JSON if preferred — the service tries YAML first, then JSON.
+The catalog is parsed by `PlaybookService` using [YamlDotNet](https://github.com/aaubry/YamlDotNet) with camelCase naming. It can also be written as JSON if preferred — the service tries YAML first, then JSON.
 
 ### File Structure
 
@@ -705,7 +705,7 @@ washmachine/
 │   └── Washmachine.Cli.csproj
 │
 ├── Assets/
-│   └── vx_api_snippets.yaml            ← single source of truth for all templates & snippets
+│   └── default.yaml                    ← default playbook (templates + snippets)
 ├── Controllers/
 │   └── MainFormCoordinator.cs          ← wires GUI events to Core services
 ├── Logging/
@@ -733,7 +733,7 @@ washmachine (GUI) ──references──► Washmachine.Core
 Washmachine.Cli  ──references──► Washmachine.Core
 ```
 
-All business logic (compilation, PE analysis, Bin2Shell integration, YAML catalog, test harness) lives in `Washmachine.Core`. Neither the CLI nor the GUI contains domain logic — they are thin consumers of Core services.
+All business logic (compilation, PE analysis, Bin2Shell integration, playbook engine, test harness) lives in `Washmachine.Core`. Neither the CLI nor the GUI contains domain logic — they are thin consumers of Core services.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full architecture diagram, compilation pipeline walkthrough, and end-product delivery guide.
 
@@ -772,7 +772,7 @@ Results are written to `test_results.json` next to the CLI executable.
 |---|---|
 | **Compiler not found** | Ensure `cl.exe`, `g++.exe`, or `clang++.exe` is on your `PATH`. For MSVC, run from a *Developer Command Prompt* or set `VCToolsInstallDir`. |
 | **Python not found** | Bin2Shell encoding features require Python 3.10+. Install it and ensure `python` or `python3` is on `PATH`. |
-| **YAML catalog missing** | The file `Assets/vx_api_snippets.yaml` must be present next to the executable. Run `dotnet build` to copy assets, or check that the `Assets/` folder exists in the output directory. |
+| **Playbook missing** | The file `Assets/default.yaml` must be present next to the executable. Run `dotnet build` to copy assets, or check that the `Assets/` folder exists in the output directory. |
 | **Bin2Shell not provisioned** | Run `washmachine-cli provision` once before using encoding, envelope, or web-delivery features. |
 
 For full documentation see **[https://0xhmza.github.io/washmachine/](https://0xhmza.github.io/washmachine/)**.

@@ -43,7 +43,7 @@ public sealed partial class MainPage : Page, IMainFormView
         _peStripper = new PeStripService(new ConsoleLogger()); // analysis-only, no UI logging needed
         var clipboard = new ClipboardService();
         var interaction = new UserInteractionService();
-        var snippetCatalog = new YamlCodeSnippetCatalogService(_paths);
+        var snippetCatalog = new PlaybookService(_paths);
         var bin2ShellRunner = new Bin2ShellRunner(_paths);
         var encodingCatalog = new ShellcodeEncodingCatalogService(bin2ShellRunner, _paths);
         var toolLocator = new CompilerToolLocator(_logger);

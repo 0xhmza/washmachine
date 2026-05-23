@@ -251,7 +251,7 @@ public static partial class Program
     private static async Task<EncodeSessionContext> CreateEncodeSessionContextAsync()
     {
         var paths = new AppPaths();
-        var snippetService = new YamlCodeSnippetCatalogService(paths);
+        var snippetService = new PlaybookService(paths);
         ShellcodeEncodingCatalog? encodingCatalog = null;
         string? catalogWarning = null;
 
@@ -2719,7 +2719,7 @@ public static partial class Program
 
     private sealed record SnippetIndexEntry(int GlobalId, CodeSnippetSection Section, CodeSnippetItem Item, string ModulePath);
 
-    private static IReadOnlyList<SnippetIndexEntry> BuildGlobalSnippetIndex(ICodeSnippetCatalogService snippetService)
+    private static IReadOnlyList<SnippetIndexEntry> BuildGlobalSnippetIndex(IPlaybookService snippetService)
     {
         return snippetService.GetAllSections()
             .Where(section => !IsSyntheticSnippetSection(section))
@@ -2735,7 +2735,7 @@ public static partial class Program
         => $"module/{GetSectionCategory(section)}/{NormalizePathSegment(item.Id)}";
 
     private static bool TryResolveSnippetByModulePath(
-        ICodeSnippetCatalogService snippetService,
+        IPlaybookService snippetService,
         string path,
         out CodeSnippetSection? section,
         out CodeSnippetItem? item)
@@ -2967,7 +2967,7 @@ public static partial class Program
     {
         public EncodeSessionContext(
             IAppPaths paths,
-            ICodeSnippetCatalogService snippetService,
+            IPlaybookService snippetService,
             ShellcodeEncodingCatalog? encodingCatalog,
             string? encodingCatalogWarning,
             ISet<string> knownTextInputs)
@@ -2980,7 +2980,7 @@ public static partial class Program
         }
 
         public IAppPaths Paths { get; }
-        public ICodeSnippetCatalogService SnippetService { get; }
+        public IPlaybookService SnippetService { get; }
         public ShellcodeEncodingCatalog? EncodingCatalog { get; set; }
         public string? EncodingCatalogWarning { get; set; }
         public ISet<string> KnownTextInputs { get; }

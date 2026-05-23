@@ -31,7 +31,7 @@ public sealed partial class CompilePage : Page
     private readonly ICompilerService _compiler;
     private readonly ICompilerToolLocator _toolLocator;
     private readonly PeBackdoorService _backdoorService;
-    private readonly ICodeSnippetCatalogService _snippets;
+    private readonly IPlaybookService _snippets;
     private string? _lastOutputPath;
     private List<CompilerToolCandidate>? _compilerCandidates;
 
@@ -53,7 +53,7 @@ public sealed partial class CompilePage : Page
         _backdoorService = new PeBackdoorService(_paths, _logger);
 
         var bin2ShellRunner = new Bin2ShellRunner(_paths);
-        _snippets = new YamlCodeSnippetCatalogService(_paths);
+        _snippets = new PlaybookService(_paths);
         _compiler = new CompilerService(_paths, bin2ShellRunner, _snippets, _toolLocator, _logger);
 
         Loaded += CompilePage_Loaded;

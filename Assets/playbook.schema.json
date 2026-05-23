@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://washmachine.dev/schemas/playbook.schema.json",
   "title": "Washmachine Playbook",
-  "description": "Schema for default.yaml and any other playbook file under Assets/. Loaded by Washmachine.Core/Services/YamlCodeSnippetCatalogService.cs. The runtime validator (ValidateCatalogShape) enforces the same shape — keep both in sync. Editors with a YAML extension that supports JSON Schema (e.g. VS Code yaml-language-server) can use this for autocomplete and inline error reporting.",
+  "description": "Schema for default.yaml and any other playbook file under Assets/. Loaded by Washmachine.Core/Services/PlaybookService.cs. The runtime validator (ValidateCatalogShape) enforces the same shape — keep both in sync. Editors with a YAML extension that supports JSON Schema (e.g. VS Code yaml-language-server) can use this for autocomplete and inline error reporting.",
   "type": "object",
   "additionalProperties": false,
   "required": ["sections"],

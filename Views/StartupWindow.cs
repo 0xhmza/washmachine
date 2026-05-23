@@ -26,6 +26,7 @@ public sealed class StartupWindow
 
     private readonly StepRow _provisionRow;
     private readonly StepRow _compilerRow;
+    private readonly StepRow _preflightRow;
 
     private readonly AppPaths _paths = new();
     private readonly DebugLogger _logger = new();
@@ -65,10 +66,12 @@ public sealed class StartupWindow
 
         _provisionRow = new StepRow("Ensuring external requirements (Bin2Shell, SGN)");
         _compilerRow = new StepRow("Locating a C/C++ compiler");
+        _preflightRow = new StepRow("Verifying LLVM/clang version for obfuscation passes");
 
         _steps = new StackPanel { Spacing = 8 };
         _steps.Children.Add(_provisionRow.Root);
         _steps.Children.Add(_compilerRow.Root);
+        _steps.Children.Add(_preflightRow.Root);
 
         // Steps live inside a subtle Fluent card so they read as a grouped panel
         var stepsCard = new Border
@@ -112,7 +115,7 @@ public sealed class StartupWindow
         _window.SystemBackdrop = new MicaBackdrop();
         _window.ExtendsContentIntoTitleBar = true;
 
-        _window.AppWindow.Resize(new SizeInt32(560, 320));
+        _window.AppWindow.Resize(new SizeInt32(560, 380));
 
         var display = DisplayArea.GetFromWindowId(_window.AppWindow.Id, DisplayAreaFallback.Primary);
         if (display != null)
@@ -120,7 +123,7 @@ public sealed class StartupWindow
             var work = display.WorkArea;
             _window.AppWindow.Move(new PointInt32(
                 work.X + (work.Width - 560) / 2,
-                work.Y + (work.Height - 320) / 2));
+                work.Y + (work.Height - 380) / 2));
         }
 
         var presenter = _window.AppWindow.Presenter as OverlappedPresenter;
@@ -185,13 +188,40 @@ public sealed class StartupWindow
             }
         }
 
+        // ── 3) Obfuscation-toolchain preflight ───────────────────
+        _preflightRow.SetRunning("Checking clang++/clang-cl/Bin2Shell + LLVM version…");
+        ToolPreflightReport? preflightReport = null;
+        try
+        {
+            var preflight = new ToolPreflightService(_paths, locator, _logger);
+            preflightReport = await preflight.RunAsync();
+            if (preflightReport.AllOk)
+            {
+                _preflightRow.SetOk("All obfuscation tools present and compatible.");
+            }
+            else
+            {
+                var missing = preflightReport.Missing.Select(s => s.Tool).ToList();
+                var incompatible = preflightReport.Incompatible.Select(s => s.Tool).ToList();
+                var parts = new List<string>();
+                if (missing.Count > 0) parts.Add("missing: " + string.Join(", ", missing));
+                if (incompatible.Count > 0) parts.Add("incompatible: " + string.Join(", ", incompatible));
+                _preflightRow.SetWarning(string.Join("  ·  ", parts) + ". Obfuscation backend will be unavailable.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _preflightRow.SetWarning($"Preflight failed: {ex.Message}");
+        }
+
         _progress.IsIndeterminate = false;
         _progress.Value = 100;
 
         return new StartupOutcome(
             Provisioned: provisioned,
             CompilerPath: best?.Path,
-            CompilerKind: best?.Kind);
+            CompilerKind: best?.Kind,
+            PreflightReport: preflightReport);
     }
 
     private async Task<CompilerToolCandidate?> PromptForCompilerAsync(ICompilerToolLocator locator)
@@ -398,7 +428,11 @@ public sealed class StartupWindow
     }
 }
 
-public sealed record StartupOutcome(bool Provisioned, string? CompilerPath, string? CompilerKind)
+public sealed record StartupOutcome(
+    bool Provisioned,
+    string? CompilerPath,
+    string? CompilerKind,
+    ToolPreflightReport? PreflightReport = null)
 {
     public bool CompilerFound => !string.IsNullOrEmpty(CompilerPath);
 }

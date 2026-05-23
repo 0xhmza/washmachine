@@ -158,7 +158,7 @@ public static partial class Program
 
     private static int ShowModuleSection(AppPaths paths, string? filter)
     {
-        var catalog = new YamlCodeSnippetCatalogService(paths);
+        var catalog = new PlaybookService(paths);
         var sections = catalog.GetAllSections()
             .Where(section => !IsSyntheticSnippetSection(section))
             .Where(section => filter is null || SectionMatchesCategory(section, filter))
@@ -189,7 +189,7 @@ public static partial class Program
 
     private static int ShowTemplateSection(AppPaths paths)
     {
-        var catalog = new YamlCodeSnippetCatalogService(paths);
+        var catalog = new PlaybookService(paths);
         var rows = catalog.GetTemplates()
             .OrderBy(template => template.Id, StringComparer.OrdinalIgnoreCase)
             .Select((template, index) => new ShowRow(
@@ -204,7 +204,7 @@ public static partial class Program
 
     private static int ShowExecutionSection(AppPaths paths)
     {
-        var catalog = new YamlCodeSnippetCatalogService(paths);
+        var catalog = new PlaybookService(paths);
         var section = catalog.GetAllSections()
             .FirstOrDefault(s => string.Equals(s.Template, "shellcodeexecution", StringComparison.OrdinalIgnoreCase));
 
@@ -308,7 +308,7 @@ public static partial class Program
     {
         try
         {
-            var catalog = new YamlCodeSnippetCatalogService(new AppPaths());
+            var catalog = new PlaybookService(new AppPaths());
             return catalog.GetAllSections()
                 .Where(s => !IsSyntheticSnippetSection(s))
                 .Select(GetSectionCategory)

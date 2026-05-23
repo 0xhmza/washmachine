@@ -54,7 +54,7 @@ public interface ITemplateScannerService
 /// </summary>
 public sealed class TemplateScannerService : ITemplateScannerService
 {
-    private readonly ICodeSnippetCatalogService _catalog;
+    private readonly IPlaybookService _catalog;
 
     /// <summary>
     /// Capability-token → required snippet section template (case-insensitive).
@@ -68,7 +68,7 @@ public sealed class TemplateScannerService : ITemplateScannerService
 
     private const string StubSelectionId = "None";
 
-    public TemplateScannerService(ICodeSnippetCatalogService catalog)
+    public TemplateScannerService(IPlaybookService catalog)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
     }

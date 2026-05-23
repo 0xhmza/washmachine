@@ -17,7 +17,7 @@ public static partial class Program
     private static readonly Dictionary<string, List<string>> InputHistory = new(StringComparer.OrdinalIgnoreCase);
     private static readonly string[] RootReplCommands =
     {
-        "encode", "analyze", "backdoor", "strip", "show", "provision", "test", "scan", "help",
+        "encode", "analyze", "backdoor", "strip", "show", "provision", "test", "scan", "doctor", "help",
         "banner", "scheme", "clear", "cls", "exit", "quit", "q"
     };
     private static StartupResult? _startupResult;
@@ -70,7 +70,8 @@ public static partial class Program
         ["provision"] = new[] { "-CoreOnly", "--core-only" },
         ["test"] = new[] { "--help", "-h" },
         ["scan"] = new[] { "-Json", "--json", "--help", "-h" },
-        ["help"] = new[] { "encode", "analyze", "backdoor", "strip", "show", "provision", "test", "scan" }
+        ["help"] = new[] { "encode", "analyze", "backdoor", "strip", "show", "provision", "test", "scan", "doctor" },
+        ["doctor"] = new[] { "--json", "--help", "-h" }
     };
     private static bool _isRepl;
 
@@ -141,6 +142,7 @@ public static partial class Program
             "provision" => wantsHelp ? PrintProvisionUsage() : await RunProvisionAsync(cmdArgs),
             "test"      => wantsHelp ? PrintTestUsage() : await TestHarness.RunAsync(cmdArgs),
             "scan"      => wantsHelp ? PrintScanUsage() : RunScan(cmdArgs),
+            "doctor"    => wantsHelp ? PrintDoctorUsage() : await RunDoctorAsync(cmdArgs),
             _ => PrintUnknownCommand(command),
         };
     }
@@ -160,13 +162,14 @@ public static partial class Program
             "provision" => PrintProvisionUsage(),
             "test"      => PrintTestUsage(),
             "scan"      => PrintScanUsage(),
+            "doctor"    => PrintDoctorUsage(),
             _ => HandleHelpUnknown(args[0]),
         };
     }
 
     private static int HandleHelpUnknown(string topic)
     {
-        var validTopics = new[] { "encode", "analyze", "backdoor", "strip", "show", "list", "provision", "test", "scan" };
+        var validTopics = new[] { "encode", "analyze", "backdoor", "strip", "show", "list", "provision", "test", "scan", "doctor" };
         var suggestions = SuggestSimilarNames(topic, validTopics, 3);
 
         AnsiConsole.WriteLine();
@@ -739,7 +742,7 @@ public static partial class Program
         try
         {
             var paths = new AppPaths();
-            var snippetService = new YamlCodeSnippetCatalogService(paths);
+            var snippetService = new PlaybookService(paths);
             var sections = snippetService.GetAllSections();
             sectionCount = sections.Count;
             snippetCount = sections.Sum(s => s.Items.Count);
@@ -2872,7 +2875,7 @@ public static partial class Program
         }
 
         var paths = new AppPaths();
-        var catalog = new YamlCodeSnippetCatalogService(paths);
+        var catalog = new PlaybookService(paths);
         var scanner = new TemplateScannerService(catalog);
 
         TemplateScanReport report;

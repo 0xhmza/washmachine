@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Washmachine installer (WiX v5+).
+
+    Build via .\publish.ps1 -Installer. That script:
+      1. dotnet publish the GUI (Release) and CLI (Release)
+      2. Stages the publish output + Tools\LLVM + Tools\Bin2Shell into the staging dir
+      3. dotnet wix build against this manifest
+         (native <Files Include="…\**"/> harvester pulls everything in)
+
+    MSVC (cl.exe) is *not* bundled — preflight tells the user to install
+    Visual Studio Build Tools when it's missing.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="Washmachine"
+      Manufacturer="Washmachine"
+      Version="$(WashmachineVersion)"
+      UpgradeCode="6c5e2e1b-3a8e-4d4b-9b06-1c1f5bb5b54a"
+      Scope="perMachine"
+      InstallerVersion="500"
+      Compressed="yes">
+
+    <SummaryInformation Description="Washmachine — shellcode loader builder" />
+
+    <!-- Roll up older installs and reinstall the new payload in one transaction. -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Washmachine is already installed." />
+
+    <Media Id="1" Cabinet="washmachine.cab" EmbedCab="yes" />
+
+    <!-- Install layout: %ProgramFiles%\Washmachine\ -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Washmachine" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Washmachine" />
+    </StandardDirectory>
+
+    <!-- ─── Payload (everything under publish\) ────────────────────────
+         The publish.ps1 script stages the GUI publish, the CLI single-file
+         exe, Tools\LLVM\ and Tools\Bin2Shell\ into one tree. <Files> walks
+         that tree and emits a Component per file rooted at INSTALLFOLDER. -->
+    <ComponentGroup Id="PublishedFiles" Directory="INSTALLFOLDER">
+      <Files Include="!(bindpath.payload)\**" />
+    </ComponentGroup>
+
+    <!-- ─── Start Menu shortcuts ──────────────────────────────────── -->
+    <DirectoryRef Id="ApplicationProgramsFolder">
+      <Component Id="ApplicationShortcuts" Guid="*">
+        <Shortcut
+            Id="GuiShortcut"
+            Name="Washmachine"
+            Description="Shellcode loader builder"
+            Target="[INSTALLFOLDER]washmachine.exe"
+            WorkingDirectory="INSTALLFOLDER" />
+        <Shortcut
+            Id="CliShortcut"
+            Name="Washmachine CLI"
+            Description="Washmachine command-line interface"
+            Target="[%COMSPEC]"
+            Arguments='/k "[INSTALLFOLDER]washmachine-cli.exe"'
+            WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue
+            Root="HKCU"
+            Key="Software\Washmachine"
+            Name="Installed"
+            Type="integer"
+            Value="1"
+            KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="Main" Title="Washmachine" Level="1" Display="expand">
+      <ComponentGroupRef Id="PublishedFiles" />
+      <ComponentRef Id="ApplicationShortcuts" />
+    </Feature>
+  </Package>
+</Wix>

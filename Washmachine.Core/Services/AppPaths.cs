@@ -6,7 +6,7 @@ public interface IAppPaths
 {
     string ExecutableDirectory { get; }
     string AssetsDirectory { get; }
-    string SnippetCatalogFile { get; }
+    string DefaultPlaybookFile { get; }
     string ActivePlaybookPath { get; }
     string ActivePlaybookFullPath { get; }
     string Bin2ShellScript { get; }
@@ -61,7 +61,7 @@ public sealed class AppPaths : IAppPaths
         ExecutableDirectory = AppDomain.CurrentDomain.BaseDirectory;
 
         AssetsDirectory = Path.Combine(ExecutableDirectory, "Assets");
-        SnippetCatalogFile = Path.Combine(AssetsDirectory, "default.yaml");
+        DefaultPlaybookFile = Path.Combine(AssetsDirectory, "default.yaml");
         _activePlaybookStateFile = Path.Combine(AssetsDirectory, ".active-playbook");
 
         Bin2ShellScript = Path.Combine(ExecutableDirectory, "Tools", "Bin2Shell", "main.py");
@@ -81,7 +81,7 @@ public sealed class AppPaths : IAppPaths
 
     public string ExecutableDirectory { get; }
     public string AssetsDirectory { get; }
-    public string SnippetCatalogFile { get; }
+    public string DefaultPlaybookFile { get; }
     public string ActivePlaybookPath
     {
         get
@@ -97,7 +97,7 @@ public sealed class AppPaths : IAppPaths
         {
             var available = GetAvailablePlaybookFiles();
             if (available.Count == 0)
-                return SnippetCatalogFile;
+                return DefaultPlaybookFile;
 
             try
             {
@@ -123,8 +123,8 @@ public sealed class AppPaths : IAppPaths
                 // Fall back to default selection.
             }
 
-            if (File.Exists(SnippetCatalogFile))
-                return SnippetCatalogFile;
+            if (File.Exists(DefaultPlaybookFile))
+                return DefaultPlaybookFile;
 
             return available
                 .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
@@ -239,7 +239,7 @@ public sealed class AppPaths : IAppPaths
         var errors = new List<string>();
 
         if (!File.Exists(ActivePlaybookFullPath))
-            errors.Add($"Snippet catalog missing: '{ActivePlaybookPath}'.");
+            errors.Add($"Playbook missing: '{ActivePlaybookPath}'.");
 
         if (!File.Exists(RuntimeHeaderFile))
             errors.Add($"Runtime header missing: '{Path.GetRelativePath(ExecutableDirectory, RuntimeHeaderFile)}'.");
