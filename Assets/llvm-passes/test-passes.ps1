@@ -33,6 +33,8 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $here)
 if (-not $ClangDir) {
     $candidates = @(
         (Join-Path $repoRoot "Tools\LLVM\bin"),
+        (Join-Path $repoRoot "Tools\msys64\mingw64\bin"),
+        "C:\msys64\mingw64\bin",
         "C:\Program Files\LLVM\bin"
     )
     foreach ($c in $candidates) {

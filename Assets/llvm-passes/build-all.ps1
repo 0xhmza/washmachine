@@ -1,156 +1,286 @@
 <#
 .SYNOPSIS
-    Build every Washmachine LLVM obfuscation pass plugin in-tree.
+    Build all four Washmachine LLVM obfuscation pass plug-ins.
 
 .DESCRIPTION
-    Iterates over each subdirectory of Assets\llvm-passes that contains a
-    CMakeLists.txt and produces `pass.dll` next to the source. Detects the
-    LLVM 22 development SDK automatically (looks at -LlvmDir, then common
-    install locations) and fails fast with actionable guidance if the SDK is
-    missing — a stock LLVM Windows binary release ships only the C API
-    headers, not the C++ headers needed to build pass plugins.
+    Compiles bogus-control-flow, control-flow-flattening, instruction-substitution,
+    and string-obfuscation into pass.dll files that clang can load with -fpass-plugin.
 
-.PARAMETER LlvmDir
-    Path to the directory containing LLVMConfig.cmake.
-    Defaults to "C:\Program Files\LLVM\lib\cmake\llvm".
+    Toolchain resolution order (first match wins):
+      1. Tools\msys64\mingw64  – bundled minimal MSYS2/MinGW-w64 + LLVM SDK
+      2. C:\msys64\mingw64     – system-wide MSYS2 installation
+      3. Auto-download          – fetches msys2-base + installs required packages
 
-.PARAMETER Clean
-    Wipe each pass's build directory before configuring.
+    Required packages (installed automatically if needed):
+      mingw-w64-x86_64-gcc  mingw-w64-x86_64-cmake  mingw-w64-x86_64-ninja
+      mingw-w64-x86_64-llvm  mingw-w64-x86_64-libffi
+
+.PARAMETER Force
+    Re-build even if pass.dll is already present.
+
+.PARAMETER SkipDownload
+    Fail instead of downloading msys2 when the toolchain is absent.
 
 .EXAMPLE
     .\build-all.ps1
-    .\build-all.ps1 -LlvmDir "C:\Dev\llvm-22-sdk\lib\cmake\llvm" -Clean
+    .\build-all.ps1 -Force
 #>
 param(
-    [string]$LlvmDir = "C:\Program Files\LLVM\lib\cmake\llvm",
-    [switch]$Clean
+    [switch]$Force,
+    [switch]$SkipDownload
 )
 
-$ErrorActionPreference = "Stop"
-$here = $PSScriptRoot
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
 
-function Resolve-Sdk {
-    param([string]$Preferred)
+$here     = $PSScriptRoot                             # Assets\llvm-passes\
+$repoRoot = (Resolve-Path (Join-Path $here '..\..')).Path  # repo root
 
-    $candidates = @($Preferred,
-        "C:\Program Files\LLVM\lib\cmake\llvm",
-        "C:\Program Files (x86)\LLVM\lib\cmake\llvm",
-        "$env:USERPROFILE\scoop\apps\llvm\current\lib\cmake\llvm",
-        "C:\msys64\mingw64\lib\cmake\llvm")
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+function Write-Step  { param($msg) Write-Host "==> $msg" -ForegroundColor Cyan }
+function Write-Ok    { param($msg) Write-Host "    OK  $msg" -ForegroundColor Green }
+function Write-Warn  { param($msg) Write-Host "  WARN: $msg" -ForegroundColor Yellow }
+function Write-Fail  { param($msg) Write-Host " ERROR: $msg" -ForegroundColor Red }
 
-    foreach ($c in $candidates) {
-        if ($c -and (Test-Path (Join-Path $c "LLVMConfig.cmake"))) {
-            return (Resolve-Path $c).Path
+# ---------------------------------------------------------------------------
+# Locate or provision the toolchain
+# ---------------------------------------------------------------------------
+Write-Step "LLVM passes"
+
+$MINGW = $null
+
+# 1. Bundled toolchain (trimmed, lives in Tools\msys64)
+$bundled = Join-Path $repoRoot 'Tools\msys64\mingw64'
+if (Test-Path (Join-Path $bundled 'bin\g++.exe')) {
+    $llvmHeader = Join-Path $bundled 'include\llvm\Plugins\PassPlugin.h'
+    $altHeader  = Join-Path $bundled 'include\llvm\Passes\PassPlugin.h'
+    if ((Test-Path $llvmHeader) -or (Test-Path $altHeader)) {
+        $MINGW = $bundled
+        Write-Ok "Bundled toolchain: $MINGW"
+    } else {
+        Write-Warn "Bundled g++ found but LLVM headers missing — will install packages."
+    }
+}
+
+# 2. System MSYS2 at C:\msys64
+if (-not $MINGW) {
+    $sys = 'C:\msys64\mingw64'
+    if (Test-Path (Join-Path $sys 'bin\g++.exe')) {
+        $llvmHeader = Join-Path $sys 'include\llvm\Plugins\PassPlugin.h'
+        $altHeader  = Join-Path $sys 'include\llvm\Passes\PassPlugin.h'
+        if ((Test-Path $llvmHeader) -or (Test-Path $altHeader)) {
+            $MINGW = $sys
+            Write-Ok "System MSYS2 toolchain: $MINGW"
         }
     }
-    return $null
 }
 
-function Require-Tool {
-    param([string]$Name, [string]$HelpUrl = "")
-    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-        Write-Host "ERROR: '$Name' not found on PATH." -ForegroundColor Red
-        if ($HelpUrl) { Write-Host "  Install: $HelpUrl" -ForegroundColor Yellow }
-        exit 1
+# 3. Try to provision the bundled toolchain via pacman (if usr/bin/pacman exists)
+if (-not $MINGW) {
+    $pacman = Join-Path $repoRoot 'Tools\msys64\usr\bin\pacman.exe'
+    if (-not (Test-Path $pacman)) { $pacman = 'C:\msys64\usr\bin\pacman.exe' }
+
+    if (Test-Path $pacman) {
+        Write-Step "Installing required packages via pacman..."
+        $pkgs = @(
+            'mingw-w64-x86_64-gcc',
+            'mingw-w64-x86_64-cmake',
+            'mingw-w64-x86_64-ninja',
+            'mingw-w64-x86_64-llvm',
+            'mingw-w64-x86_64-libffi'
+        )
+        & $pacman -S --noconfirm --needed @pkgs 2>&1 | Write-Host
+        if ($LASTEXITCODE -ne 0) { Write-Fail "pacman install failed."; exit 1 }
+
+        # Re-check after install
+        $msys64Root = Split-Path (Split-Path $pacman)
+        $mg = Join-Path $msys64Root 'mingw64'
+        if (Test-Path (Join-Path $mg 'bin\g++.exe')) { $MINGW = $mg }
     }
 }
 
-Write-Host ""
-Write-Host "=== Washmachine LLVM Pass Build ===" -ForegroundColor Cyan
+# 4. Auto-download msys2-base SFX and bootstrap
+if (-not $MINGW) {
+    if ($SkipDownload) {
+        Write-Fail "Toolchain not found and -SkipDownload was specified."
+        Write-Host "  Install options:"
+        Write-Host "    scoop install llvm                   (recommended)"
+        Write-Host "    pacman -S mingw-w64-x86_64-llvm      (MSYS2)"
+        exit 1
+    }
 
-Require-Tool -Name "cmake" -HelpUrl "https://cmake.org/download/"
+    Write-Step "Downloading MSYS2 base installer..."
 
-$sdk = Resolve-Sdk -Preferred $LlvmDir
-if (-not $sdk) {
-    Write-Host ""
-    Write-Host "ERROR: LLVMConfig.cmake not found." -ForegroundColor Red
-    Write-Host ""
-    Write-Host "The stock 'LLVM-22.x.x-win64.exe' binary release does NOT include the" -ForegroundColor Yellow
-    Write-Host "C++ headers or LLVMConfig.cmake needed to build pass plugins. You need" -ForegroundColor Yellow
-    Write-Host "a developer-flavoured LLVM install. Options:" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "  1. Build LLVM 22 from source with -DLLVM_INSTALL_UTILS=ON and" -ForegroundColor Gray
-    Write-Host "     `cmake --install`. Then pass:" -ForegroundColor Gray
-    Write-Host "        .\build-all.ps1 -LlvmDir <prefix>\lib\cmake\llvm" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "  2. Install via scoop: 'scoop install llvm' (ships dev headers)" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "  3. Use MSYS2 mingw64 LLVM:" -ForegroundColor Gray
-    Write-Host "        pacman -S mingw-w64-x86_64-llvm" -ForegroundColor Gray
-    Write-Host ""
+    # Pinned to a known-good release; update the date if you need a newer base.
+    $msys2Url  = 'https://github.com/msys2/msys2-installer/releases/download/2024-11-19/msys2-base-x86_64-20241119.sfx.exe'
+    $toolsDir  = Join-Path $repoRoot 'Tools'
+    $sfxPath   = Join-Path $env:TEMP 'msys2-base.sfx.exe'
+
+    if (-not (Test-Path $toolsDir)) { New-Item -ItemType Directory -Force $toolsDir | Out-Null }
+
+    Write-Host "  URL : $msys2Url"
+    Write-Host "  Dest: $sfxPath"
+    $wc = New-Object System.Net.WebClient
+    $wc.DownloadFile($msys2Url, $sfxPath)
+
+    Write-Step "Extracting to $toolsDir ..."
+    & $sfxPath -y "-o$toolsDir" 2>&1 | Out-Null
+    Remove-Item $sfxPath -Force -EA SilentlyContinue
+
+    $downloadedMsys = Join-Path $toolsDir 'msys64'
+    if (-not (Test-Path "$downloadedMsys\usr\bin\pacman.exe")) {
+        Write-Fail "Extraction failed — msys64\usr\bin\pacman.exe not found."
+        exit 1
+    }
+
+    Write-Step "Bootstrapping pacman database..."
+    $bash = "$downloadedMsys\usr\bin\bash.exe"
+    & $bash -lc 'pacman -Syu --noconfirm' 2>&1 | Out-Null
+
+    Write-Step "Installing required packages..."
+    $pkgs = 'mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja mingw-w64-x86_64-llvm mingw-w64-x86_64-libffi'
+    & $bash -lc "pacman -S --noconfirm --needed $pkgs" 2>&1 | Write-Host
+
+    $MINGW = Join-Path $downloadedMsys 'mingw64'
+    if (-not (Test-Path "$MINGW\bin\g++.exe")) {
+        Write-Fail "After download+install g++ still missing. Aborting."
+        exit 1
+    }
+    Write-Ok "Toolchain ready: $MINGW"
+}
+
+# Determine LLVM cmake dir
+$llvmDir = Join-Path $MINGW 'lib\cmake\llvm'
+if (-not (Test-Path "$llvmDir\LLVMConfig.cmake")) {
+    Write-Fail "LLVMConfig.cmake not found at: $llvmDir"
+    Write-Warn "The LLVM package may not be installed."
+    Write-Host "  Run: pacman -S --noconfirm --needed mingw-w64-x86_64-llvm"
     exit 1
 }
 
-Write-Host "LLVM SDK : $sdk" -ForegroundColor Green
+# Ensure llvm/Plugins/PassPlugin.h is reachable (older LLVM used Passes/)
+$pluginsHeader = Join-Path $MINGW 'include\llvm\Plugins\PassPlugin.h'
+$passesHeader  = Join-Path $MINGW 'include\llvm\Passes\PassPlugin.h'
+if (-not (Test-Path $pluginsHeader) -and -not (Test-Path $passesHeader)) {
+    Write-Fail "PassPlugin.h not found under include\llvm\Plugins\ or include\llvm\Passes\"
+    exit 1
+}
 
-# Official LLVM Windows release ships LLVMExports.cmake with an absolute path
-# to diaguids.lib baked in from the build machine ("C:\Program Files\Microsoft
-# Visual Studio\2022\Enterprise\..."). Repoint it at whichever VS install is
-# present on this box so the link step doesn't fail with LNK1181.
-$exports = Join-Path $sdk "LLVMExports.cmake"
-if (Test-Path $exports) {
-    $found = Get-ChildItem "C:\Program Files\Microsoft Visual Studio" -Recurse `
-        -Filter "diaguids.lib" -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -match "amd64\\diaguids\.lib$" } |
-        Select-Object -First 1 -ExpandProperty FullName
-    if ($found) {
-        $localDia = $found -replace '\\', '/'
-        $content = Get-Content -Raw $exports
-        if ($content -match 'diaguids\.lib' -and $content -notmatch [regex]::Escape($localDia)) {
-            $patched = [regex]::Replace($content,
-                '[A-Z]:/[^"]*?DIA SDK/lib/amd64/diaguids\.lib', $localDia)
-            if ($patched -ne $content) {
-                Set-Content -Path $exports -Value $patched -NoNewline
-                Write-Host "Patched diaguids.lib path in LLVMExports.cmake -> $localDia" -ForegroundColor Yellow
-            }
-        }
+# Patch LLVMExports.cmake if it still uses FATAL_ERROR for missing imported files.
+# This is needed when the toolchain has been trimmed (non-x86 backend .a files removed)
+# but LLVMExports.cmake still references them.  Downgrading to WARNING is safe because
+# we only link against x86 targets, all of which are present.
+$llvmExports = Join-Path $llvmDir 'LLVMExports.cmake'
+if (Test-Path $llvmExports) {
+    $raw = Get-Content $llvmExports -Raw
+    if ($raw -match 'message\(FATAL_ERROR "The imported target') {
+        $patched = $raw -replace 'message\(FATAL_ERROR "The imported target', 'message(WARNING "Skipping missing import:'
+        Set-Content -Path $llvmExports -Value $patched -NoNewline
+        Write-Warn "Patched LLVMExports.cmake: FATAL_ERROR -> WARNING for missing imported files (trimmed toolchain)."
     }
 }
 
-$passes = Get-ChildItem -Path $here -Directory |
-    Where-Object { Test-Path (Join-Path $_.FullName "CMakeLists.txt") }
+# Prepend toolchain bin to PATH so cmake/ninja/g++ are found
+$env:PATH = "$MINGW\bin;$env:PATH"
 
-if (-not $passes) {
-    Write-Host "No pass directories with CMakeLists.txt under $here" -ForegroundColor Yellow
-    exit 0
-}
+# ---------------------------------------------------------------------------
+# Build each pass
+# ---------------------------------------------------------------------------
+$passes = @(
+    @{ Dir = 'bogus-control-flow';        Proj = 'BogusControlFlowPass'        }
+    @{ Dir = 'control-flow-flattening';   Proj = 'ControlFlowFlatteningPass'   }
+    @{ Dir = 'instruction-substitution';  Proj = 'InstructionSubstitutionPass' }
+    @{ Dir = 'string-obfuscation';        Proj = 'StringObfuscationPass'       }
+)
 
-$failed = @()
-foreach ($p in $passes) {
-    Write-Host ""
-    Write-Host "--- Building $($p.Name) ---" -ForegroundColor Cyan
-    $buildDir = Join-Path $p.FullName "build"
-    if ($Clean -and (Test-Path $buildDir)) {
-        Remove-Item -Recurse -Force $buildDir
-    }
-    New-Item -ItemType Directory -Force $buildDir | Out-Null
+$ok   = [System.Collections.Generic.List[string]]::new()
+$fail = [System.Collections.Generic.List[string]]::new()
 
-    & cmake -S $p.FullName -B $buildDir -DLLVM_DIR="$sdk" -DCMAKE_BUILD_TYPE=Release
-    if ($LASTEXITCODE -ne 0) { $failed += $p.Name; continue }
+foreach ($pass in $passes) {
+    $passDir  = Join-Path $here $pass.Dir
+    $outDll   = Join-Path $passDir 'pass.dll'
+    $buildDir = Join-Path $passDir 'build'
 
-    & cmake --build $buildDir --config Release
-    if ($LASTEXITCODE -ne 0) { $failed += $p.Name; continue }
+    Write-Step "pass: $($pass.Dir)"
 
-    # CMake on Windows multi-config generators drops the DLL under build\Release\
-    $built = @(
-        (Join-Path $buildDir "Release\pass.dll"),
-        (Join-Path $buildDir "pass.dll")
-    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-
-    if (-not $built) {
-        Write-Host "  Build reported success but pass.dll not found." -ForegroundColor Red
-        $failed += $p.Name
+    if ((Test-Path $outDll) -and -not $Force) {
+        Write-Ok "already built ($outDll). Use -Force to rebuild."
+        $ok.Add($pass.Dir)
         continue
     }
 
-    $dest = Join-Path $p.FullName "pass.dll"
-    Copy-Item -Force $built $dest
-    Write-Host "  -> $dest" -ForegroundColor Green
+    # Clean stale build dir
+    if (Test-Path $buildDir) {
+        Remove-Item -Recurse -Force $buildDir -EA SilentlyContinue
+    }
+    New-Item -ItemType Directory -Force $buildDir | Out-Null
+
+    # --- cmake configure ---
+    Write-Host "  cmake configure"
+    $cmakeArgs = @(
+        $passDir,
+        '-G', 'Ninja',
+        "-DCMAKE_C_COMPILER=$MINGW\bin\gcc.exe",
+        "-DCMAKE_CXX_COMPILER=$MINGW\bin\g++.exe",
+        "-DLLVM_DIR=$llvmDir",
+        '-DCMAKE_BUILD_TYPE=Release'
+    )
+    Push-Location $buildDir
+    $cmakeOut = & "$MINGW\bin\cmake.exe" @cmakeArgs 2>&1
+    $cmakeRC  = $LASTEXITCODE
+    Pop-Location
+
+    if ($cmakeRC -ne 0) {
+        Write-Fail "configure failed for $($pass.Dir)"
+        Write-Host ($cmakeOut | Where-Object { $_ -match 'Error|error|WARN' }) -ForegroundColor DarkRed
+        $fail.Add($pass.Dir); continue
+    }
+
+    # --- ninja build ---
+    Write-Host "  ninja build"
+    Push-Location $buildDir
+    $ninjaOut = & "$MINGW\bin\ninja.exe" 2>&1
+    $ninjaRC  = $LASTEXITCODE
+    Pop-Location
+
+    if ($ninjaRC -ne 0) {
+        Write-Fail "build failed for $($pass.Dir)"
+        Write-Host ($ninjaOut | Select-Object -Last 30) -ForegroundColor DarkRed
+        $fail.Add($pass.Dir); continue
+    }
+
+    # Copy dll out of build dir
+    $built = Join-Path $buildDir 'pass.dll'
+    if (Test-Path $built) {
+        Copy-Item $built $outDll -Force
+        $mb = [math]::Round((Get-Item $outDll).Length / 1MB, 1)
+        Write-Ok "$outDll  ($mb MB)"
+        $ok.Add($pass.Dir)
+    } else {
+        Write-Fail "pass.dll not found in build dir after successful ninja run"
+        $fail.Add($pass.Dir)
+    }
+
+    # Clean build dir (not needed at runtime)
+    Remove-Item -Recurse -Force $buildDir -EA SilentlyContinue
 }
 
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
 Write-Host ""
-if ($failed.Count -gt 0) {
-    Write-Host "FAILED: $($failed -join ', ')" -ForegroundColor Red
+Write-Step "Summary"
+foreach ($name in $ok)   { Write-Host "    OK : $name" -ForegroundColor Green }
+foreach ($name in $fail) { Write-Fail "Failed: $name" }
+
+if ($fail.Count -gt 0) {
+    Write-Fail "$($fail.Count) pass build(s) failed."
     exit 1
+} else {
+    Write-Host ""
+    Write-Ok "All $($ok.Count) passes built successfully."
+    Write-Host ""
+    Write-Host "  Load a pass in clang:  clang -fpass-plugin=<path>\pass.dll ..." -ForegroundColor Gray
 }
-Write-Host "All passes built." -ForegroundColor Green

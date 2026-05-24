@@ -48,10 +48,13 @@ publish/
 # Crash dumps
 mono_crash.*
 
-# Compiled temp binaries produced by the tool at runtime
-**/temp/cpp/
+# Per-session build artifacts (logs, generated .cpp, build/ subdir)
+Output/sessions/
 **/logging/
 !/Logging/
+
+# build.ps1 run logs
+Logs/
 
 # Test artifacts
 test_results.json
@@ -72,7 +75,11 @@ last status.txt
 Tools/LLVM/bin/*.exe
 Tools/LLVM/bin/*.dll
 
-# LLVM SDK download cache (~2 GB) — staged by Assets/llvm-passes/build-all.ps1 when building the obfuscation pass DLLs
+# MinGW-w64 + LLVM build toolchain (~1 GB trimmed) — auto-provisioned by
+# Assets/llvm-passes/build-all.ps1; do NOT commit (too large for git).
+Tools/msys64/
+
+# LLVM SDK download cache — staged by Assets/llvm-passes/build-all.ps1
 .llvm-sdk-cache/
 
 # LLVM pass plugin build artefacts
