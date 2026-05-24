@@ -85,3 +85,4 @@ Tools/msys64/
 # LLVM pass plugin build artefacts
 Assets/llvm-passes/*/build/
 Assets/llvm-passes/*/pass.dll
+Assets/llvm-passes/pass-runner.exe
