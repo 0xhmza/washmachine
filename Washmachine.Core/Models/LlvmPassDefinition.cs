@@ -17,6 +17,12 @@ public sealed record LlvmPassDefinition
     /// <summary>Absolute path to the compiled pass plugin DLL, or null when not yet built.</summary>
     public string? PluginPath { get; init; }
 
+    /// <summary>
+    /// The pass name used in an explicit opt pipeline string (e.g. "bcf", "cff", "sub", "strenc").
+    /// Populated from <c>opt_name</c> in pass.json; used by pass-runner.exe.
+    /// </summary>
+    public string? OptPassName { get; init; }
+
     /// <summary>True when the plugin DLL has been built and can be loaded by clang++.</summary>
     public bool IsBuilt => PluginPath is not null && File.Exists(PluginPath);
 }

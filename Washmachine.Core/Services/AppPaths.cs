@@ -35,6 +35,9 @@ public interface IAppPaths
     /// <summary>Directory containing the LLVM pass stubs (Assets/llvm-passes/).</summary>
     string LlvmPassesDirectory { get; }
 
+    /// <summary>Path to the MinGW-built pass-runner.exe that applies obfuscation passes to LLVM bitcode.</summary>
+    string LlvmPassRunner { get; }
+
     bool SetActivePlaybook(string playbookPath);
     IReadOnlyList<string> GetAvailablePlaybookFiles();
     string CreateCompilationSessionDirectory(string? inputName = null, string? outputName = null);
@@ -77,6 +80,7 @@ public sealed class AppPaths : IAppPaths
         LlvmClangPlusPlus = Path.Combine(LlvmBinDirectory, "clang++.exe");
         LlvmClangCl = Path.Combine(LlvmBinDirectory, "clang-cl.exe");
         LlvmPassesDirectory = Path.Combine(AssetsDirectory, "llvm-passes");
+        LlvmPassRunner = Path.Combine(LlvmPassesDirectory, "pass-runner.exe");
     }
 
     public string ExecutableDirectory { get; }
@@ -142,6 +146,7 @@ public sealed class AppPaths : IAppPaths
     public string LlvmClangPlusPlus { get; }
     public string LlvmClangCl { get; }
     public string LlvmPassesDirectory { get; }
+    public string LlvmPassRunner { get; }
 
     public bool SetActivePlaybook(string playbookPath)
     {

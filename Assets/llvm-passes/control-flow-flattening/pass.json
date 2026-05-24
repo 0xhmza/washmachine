@@ -1,5 +1,6 @@
 {
   "id": "control-flow-flattening",
+  "opt_name": "cff",
   "name": "Control-Flow Flattening",
   "description": "Flattens function control-flow graphs into a switch-dispatch loop, destroying structural analysis."
 }

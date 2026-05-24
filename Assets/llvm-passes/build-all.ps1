@@ -194,7 +194,6 @@ $passes = @(
     @{ Dir = 'instruction-substitution';  Proj = 'InstructionSubstitutionPass' }
     @{ Dir = 'string-obfuscation';        Proj = 'StringObfuscationPass'       }
 )
-
 $ok   = [System.Collections.Generic.List[string]]::new()
 $fail = [System.Collections.Generic.List[string]]::new()
 
@@ -265,6 +264,71 @@ foreach ($pass in $passes) {
 
     # Clean build dir (not needed at runtime)
     Remove-Item -Recurse -Force $buildDir -EA SilentlyContinue
+}
+
+# ---------------------------------------------------------------------------
+# Build pass-runner.exe (ABI bridge: MinGW-built, no runtime DLL deps)
+# ---------------------------------------------------------------------------
+Write-Step "pass-runner"
+
+$runnerSrcDir = Join-Path $here 'pass-runner'
+$runnerExe    = Join-Path $here 'pass-runner.exe'
+$runnerBuild  = Join-Path $runnerSrcDir 'build'
+
+if ((Test-Path $runnerExe) -and -not $Force) {
+    $mb = [math]::Round((Get-Item $runnerExe).Length / 1MB, 1)
+    Write-Ok "already built ($runnerExe, $mb MB). Use -Force to rebuild."
+    $ok.Add('pass-runner')
+} else {
+    if (Test-Path $runnerBuild) {
+        Remove-Item -Recurse -Force $runnerBuild -EA SilentlyContinue
+    }
+    New-Item -ItemType Directory -Force $runnerBuild | Out-Null
+
+    Write-Host "  cmake configure"
+    $cmakeArgs = @(
+        $runnerSrcDir,
+        '-G', 'Ninja',
+        "-DCMAKE_C_COMPILER=$MINGW\bin\gcc.exe",
+        "-DCMAKE_CXX_COMPILER=$MINGW\bin\g++.exe",
+        "-DLLVM_DIR=$llvmDir",
+        '-DCMAKE_BUILD_TYPE=Release'
+    )
+    Push-Location $runnerBuild
+    $cmakeOut = & "$MINGW\bin\cmake.exe" @cmakeArgs 2>&1
+    $cmakeRC  = $LASTEXITCODE
+    Pop-Location
+
+    if ($cmakeRC -ne 0) {
+        Write-Fail "configure failed for pass-runner"
+        Write-Host ($cmakeOut | Where-Object { $_ -match 'Error|error|WARN' }) -ForegroundColor DarkRed
+        $fail.Add('pass-runner')
+    } else {
+        Write-Host "  ninja build"
+        Push-Location $runnerBuild
+        $ninjaOut = & "$MINGW\bin\ninja.exe" 2>&1
+        $ninjaRC  = $LASTEXITCODE
+        Pop-Location
+
+        if ($ninjaRC -ne 0) {
+            Write-Fail "build failed for pass-runner"
+            Write-Host ($ninjaOut | Select-Object -Last 30) -ForegroundColor DarkRed
+            $fail.Add('pass-runner')
+        } else {
+            $built = Join-Path $runnerBuild 'pass-runner.exe'
+            if (Test-Path $built) {
+                Copy-Item $built $runnerExe -Force
+                $mb = [math]::Round((Get-Item $runnerExe).Length / 1MB, 1)
+                Write-Ok "$runnerExe  ($mb MB)"
+                $ok.Add('pass-runner')
+            } else {
+                Write-Fail "pass-runner.exe not found in build dir after successful ninja run"
+                $fail.Add('pass-runner')
+            }
+        }
+
+        Remove-Item -Recurse -Force $runnerBuild -EA SilentlyContinue
+    }
 }
 
 # ---------------------------------------------------------------------------

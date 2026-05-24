@@ -58,6 +58,7 @@ public sealed class LlvmPassRegistry
                     Id = meta.Id,
                     Name = string.IsNullOrWhiteSpace(meta.Name) ? meta.Id : meta.Name,
                     Description = meta.Description ?? string.Empty,
+                    OptPassName = meta.OptName,
                     PluginPath = File.Exists(dllPath) ? dllPath : null,
                 });
             }
@@ -111,5 +112,7 @@ public sealed class LlvmPassRegistry
         public string Id { get; init; } = string.Empty;
         public string? Name { get; init; }
         public string? Description { get; init; }
+        [System.Text.Json.Serialization.JsonPropertyName("opt_name")]
+        public string? OptName { get; init; }
     }
 }

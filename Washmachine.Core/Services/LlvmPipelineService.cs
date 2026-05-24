@@ -105,6 +105,10 @@ public static class LlvmPipelineService
             .Select(p => p.PluginPath!)
             .ToList();
 
+        var passPipeline = string.Join(",", enabledPasses
+            .Where(p => p.IsBuilt && !string.IsNullOrWhiteSpace(p.OptPassName))
+            .Select(p => p.OptPassName!));
+
         if (enabledPasses.Count > 0 && passPluginArgs.Count == 0)
             logger.Warn("LLVM: All enabled passes are unbuilt — compiling without obfuscation. " +
                         "Build pass.dll stubs from Assets/llvm-passes/<id>/CMakeLists.txt.");
@@ -133,9 +137,17 @@ public static class LlvmPipelineService
         if (useClangCl)
         {
             logger.Info("LLVM: Using clang-cl (MSVC-compatible) toolchain.");
+
+            // Derive pass-runner.exe path from LLVM bin directory structure:
+            // llvmBinDirectory = <exe>/Tools/LLVM/bin
+            // passRunner       = <exe>/Assets/llvm-passes/pass-runner.exe
+            var exeDir = Path.GetFullPath(Path.Combine(llvmBinDirectory, "..", "..", ".."));
+            var passRunnerExe = Path.Combine(exeDir, "Assets", "llvm-passes", "pass-runner.exe");
+
             return await CompileWithClangClAsync(
                 sources, tempExe, extraLibs, staticLibs, isDll,
-                passPluginArgs, vcVarsScript!, llvmBinDirectory,
+                passPluginArgs, passPipeline, passRunnerExe,
+                vcVarsScript!, llvmBinDirectory,
                 buildDirectory, options, logger, cancellationToken);
         }
 
@@ -155,6 +167,8 @@ public static class LlvmPipelineService
         string[] staticLibs,
         bool isDll,
         IReadOnlyList<string> passPlugins,
+        string passPipeline,
+        string passRunnerExe,
         string vcVarsScript,
         string llvmBinDir,
         string buildDir,
@@ -166,8 +180,29 @@ public static class LlvmPipelineService
         if (!File.Exists(clangCl))
             return new CppFileConversionResult(false, $"LLVM: {ClangClExe} not found at '{clangCl}'.");
 
-        // Translate the universal option model into clang-cl's MSVC-style flags.
-        string optFlag = TranslateClFromOpt(opt.OptLevel);          // /O1, /O2, /Od, /Os
+        // When passes are present, use the 3-step ABI-safe pipeline:
+        //   1. clang-cl emits unoptimized LLVM bitcode (MSVC C++ ABI IR, no crash risk)
+        //   2. pass-runner.exe applies obfuscation passes (MinGW ABI, same as pass DLLs)
+        //   3. clang-cl compiles + optimizes obfuscated bitcode and links the final binary
+        if (passPlugins.Count > 0)
+        {
+            if (!File.Exists(passRunnerExe))
+                return new CppFileConversionResult(false,
+                    $"LLVM: pass-runner.exe not found at '{passRunnerExe}'. " +
+                    "Run Assets/llvm-passes/build-all.ps1 to build it.");
+
+            if (string.IsNullOrWhiteSpace(passPipeline))
+                return new CppFileConversionResult(false,
+                    "LLVM: Cannot build pass pipeline string — passes may be missing opt_name in pass.json.");
+
+            return await CompileWithPassRunnerAsync(
+                sources, outputExe, extraLibs, staticLibs, isDll,
+                passPlugins, passPipeline, passRunnerExe,
+                vcVarsScript, clangCl, buildDir, opt, logger, ct);
+        }
+
+        // ── Single-step path (no obfuscation passes) ──────────────────────────
+        string optFlag = TranslateClFromOpt(opt.OptLevel);
         string cppStd  = $"/std:c++{opt.CppStandard}";
         string subsystem = isDll
             ? "/DLL"
@@ -181,12 +216,9 @@ public static class LlvmPipelineService
         foreach (var define in opt.Defines)
             sb.Append($"/D{define} ");
 
-        // Plugin flags route through /clang: when going through clang-cl
-        foreach (var dll in passPlugins)
-            sb.Append($"/clang:-fpass-plugin={Q(dll)} ");
-
+        // LTO with clang-cl requires the lld linker
         if (opt.Lto)
-            sb.Append("/clang:-flto ");
+            sb.Append("/clang:-flto /clang:-fuse-ld=lld ");
 
         foreach (var flag in opt.ExtraFlags)
             sb.Append($"/clang:{flag} ");
@@ -197,7 +229,6 @@ public static class LlvmPipelineService
         sb.Append(" kernel32.lib user32.lib gdi32.lib advapi32.lib shell32.lib ole32.lib");
         sb.Append(" comdlg32.lib ntdll.lib");
 
-        // Extra libs detected from source (e.g. winhttp)
         foreach (var lib in extraLibs.Where(l => l.StartsWith("-l", StringComparison.Ordinal)))
             sb.Append($" {lib[2..]}.lib");
 
@@ -207,9 +238,142 @@ public static class LlvmPipelineService
         var argsStr = sb.ToString().Trim();
         logger.Debug($"LLVM clang-cl args: {Truncate(argsStr, 600)}");
 
-        // Bootstrap MSVC environment then invoke clang-cl
         var cmdLine = $"cmd.exe /c \"\"{vcVarsScript}\" && \"{clangCl}\" {argsStr}\"";
         return await RunCompilerAsync(cmdLine, buildDir, outputExe, "clang-cl", logger, ct);
+    }
+
+    // ── 3-step pipeline (clang-cl with obfuscation passes) ───────────────────
+    //
+    // Step 1: clang-cl + vcvars → emit unoptimized LLVM bitcode (.bc) per source
+    // Step 2: pass-runner.exe  → apply obfuscation passes (MinGW ABI, no crash)
+    // Step 3: clang-cl + vcvars → optimize + compile + link all .obf.bc → EXE
+    //
+    // This avoids the C++ ABI mismatch crash that occurs when MSVC-ABI clang-cl
+    // tries to call into GNU-ABI pass DLLs via -fpass-plugin.
+    private static async Task<CppFileConversionResult> CompileWithPassRunnerAsync(
+        string[] sources,
+        string outputExe,
+        IReadOnlyList<string> extraLibs,
+        string[] staticLibs,
+        bool isDll,
+        IReadOnlyList<string> passPlugins,
+        string passPipeline,
+        string passRunnerExe,
+        string vcVarsScript,
+        string clangCl,
+        string buildDir,
+        LlvmCompileOptions opt,
+        IAppLogger logger,
+        CancellationToken ct)
+    {
+        string cppStd = $"/std:c++{opt.CppStandard}";
+        string subsystem = isDll
+            ? "/DLL"
+            : opt.Subsystem.Equals("console", StringComparison.OrdinalIgnoreCase)
+                ? "/SUBSYSTEM:CONSOLE"
+                : "/SUBSYSTEM:WINDOWS /entry:mainCRTStartup";
+
+        // Base flags for step 1 (frontend only, no optimization — passes apply after)
+        var step1Base = new StringBuilder();
+        step1Base.Append($"/nologo /Od /Gy /EHsc {cppStd} ");
+        if (opt.DebugInfo) step1Base.Append("/Z7 ");
+        foreach (var define in opt.Defines)
+            step1Base.Append($"/D{define} ");
+        step1Base.Append("/c /clang:-emit-llvm ");
+
+        var bcFiles    = new List<string>(sources.Length);
+        var obfBcFiles = new List<string>(sources.Length);
+
+        try
+        {
+            // Step 1: emit unoptimized bitcode for every source file
+            for (int i = 0; i < sources.Length; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var bcPath = Path.Combine(buildDir, $"src_{i}.bc");
+                bcFiles.Add(bcPath);
+
+                var step1Args = $"{step1Base}{Q(sources[i])}";
+                logger.Debug($"LLVM clang-cl [step 1, src {i}]: {Truncate(step1Args, 400)}");
+
+                // clang-cl outputs <basename>.bc in the working directory;
+                // we want it at the explicit bcPath, so rename after compile.
+                var stem    = Path.GetFileNameWithoutExtension(sources[i]);
+                var autoOut = Path.Combine(buildDir, $"{stem}.bc");
+
+                var cmd1 = $"cmd.exe /c \"\"{vcVarsScript}\" && \"{clangCl}\" {step1Args}\"";
+                var (s1ok, s1err) = await RunIntermediateAsync(cmd1, buildDir, autoOut, "clang-cl[emit-bc]", logger, ct);
+                if (!s1ok)
+                    return new CppFileConversionResult(false,
+                        $"LLVM: step 1 (emit bitcode) failed for source {i}: {s1err}");
+
+                // Rename the auto-named output to our indexed name to avoid collisions
+                if (!autoOut.Equals(bcPath, StringComparison.OrdinalIgnoreCase))
+                    File.Move(autoOut, bcPath, overwrite: true);
+            }
+
+            // Step 2: apply obfuscation passes to each bitcode file
+            for (int i = 0; i < bcFiles.Count; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var bcPath  = bcFiles[i];
+                var obfPath = Path.ChangeExtension(bcPath, ".obf.bc");
+                obfBcFiles.Add(obfPath);
+
+                var psi2 = new ProcessStartInfo
+                {
+                    FileName = passRunnerExe,
+                    WorkingDirectory = buildDir,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                psi2.ArgumentList.Add($"-passes={passPipeline}");
+                psi2.ArgumentList.Add(bcPath);
+                psi2.ArgumentList.Add("-o");
+                psi2.ArgumentList.Add(obfPath);
+
+                logger.Debug($"LLVM pass-runner [step 2, src {i}]: -passes={passPipeline}");
+                var (s2ok, s2err) = await RunPassRunnerAsync(psi2, obfPath, "pass-runner", logger, ct);
+                if (!s2ok)
+                    return new CppFileConversionResult(false,
+                        $"LLVM: step 2 (obfuscate) failed for source {i}: {s2err}");
+            }
+
+            // Step 3: optimize + compile obfuscated bitcode and link
+            // Running the LLVM optimizer here (after obfuscation) matches the EP-callback
+            // behavior of -fpass-plugin where late optimization runs after our passes.
+            string optFlag = TranslateClFromOpt(opt.OptLevel);
+            var sb3 = new StringBuilder();
+            sb3.Append($"/nologo {optFlag} /Gy /EHsc {cppStd} ");
+            foreach (var flag in opt.ExtraFlags)
+                sb3.Append($"/clang:{flag} ");
+
+            sb3.Append($"/Fe:{Q(outputExe)} ");
+            sb3.Append(string.Join(" ", obfBcFiles.Select(Q)));
+            sb3.Append($" /link /OPT:REF /OPT:ICF /INCREMENTAL:NO {subsystem}");
+            sb3.Append(" kernel32.lib user32.lib gdi32.lib advapi32.lib shell32.lib ole32.lib");
+            sb3.Append(" comdlg32.lib ntdll.lib");
+
+            foreach (var lib in extraLibs.Where(l => l.StartsWith("-l", StringComparison.Ordinal)))
+                sb3.Append($" {lib[2..]}.lib");
+            foreach (var lib in staticLibs)
+                sb3.Append($" {Q(lib)}");
+
+            var step3Args = sb3.ToString().Trim();
+            logger.Debug($"LLVM clang-cl [step 3 link]: {Truncate(step3Args, 600)}");
+
+            var cmd3 = $"cmd.exe /c \"\"{vcVarsScript}\" && \"{clangCl}\" {step3Args}\"";
+            return await RunCompilerAsync(cmd3, buildDir, outputExe, "clang-cl[link]", logger, ct);
+        }
+        finally
+        {
+            foreach (var f in bcFiles.Concat(obfBcFiles))
+            {
+                try { File.Delete(f); } catch { }
+            }
+        }
     }
 
     // ─── MinGW path (clang++.exe) ────────────────────────────────────────────
@@ -515,4 +679,101 @@ public static class LlvmPipelineService
 
     private static string Truncate(string s, int max)
         => s.Length <= max ? s : s[..max] + "...";
+
+    /// <summary>
+    /// Runs a shell command without hash-renaming the output. Used for intermediate steps
+    /// (bitcode emit, pass-runner) where we need to control the output filename precisely.
+    /// </summary>
+    private static async Task<(bool Success, string Error)> RunIntermediateAsync(
+        string cmd,
+        string workingDir,
+        string expectedOutput,
+        string label,
+        IAppLogger logger,
+        CancellationToken ct)
+    {
+        logger.Debug($"LLVM {label}: {Truncate(cmd, 300)}");
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = "cmd.exe",
+            Arguments = $"/S /C \"{cmd}\"",
+            WorkingDirectory = workingDir,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        using var process = new Process { StartInfo = psi };
+        if (!process.Start())
+            return (false, $"LLVM: Failed to start {label} process.");
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
+        var stderrTask = process.StandardError.ReadToEndAsync(ct);
+        await process.WaitForExitAsync(ct).ConfigureAwait(false);
+        var stdout = await stdoutTask.ConfigureAwait(false);
+        var stderr = await stderrTask.ConfigureAwait(false);
+
+        if (!string.IsNullOrWhiteSpace(stdout)) logger.Debug($"LLVM {label} stdout: {Truncate(stdout, 400)}");
+        if (!string.IsNullOrWhiteSpace(stderr)) logger.Debug($"LLVM {label} stderr: {Truncate(stderr, 400)}");
+
+        if (process.ExitCode != 0)
+        {
+            var output = string.IsNullOrWhiteSpace(stdout) ? stderr : stdout;
+            var msg = $"LLVM {label} failed (exit {process.ExitCode}):\n{output}";
+            logger.Warn(msg);
+            return (false, msg);
+        }
+
+        if (!File.Exists(expectedOutput))
+        {
+            var msg = $"LLVM {label} exited cleanly but produced no output at '{expectedOutput}'.";
+            logger.Warn(msg);
+            return (false, msg);
+        }
+
+        return (true, string.Empty);
+    }
+
+    /// <summary>
+    /// Runs pass-runner.exe (a MinGW process, no vcvars needed) without hash-renaming.
+    /// </summary>
+    private static async Task<(bool Success, string Error)> RunPassRunnerAsync(
+        ProcessStartInfo psi,
+        string expectedOutput,
+        string label,
+        IAppLogger logger,
+        CancellationToken ct)
+    {
+        using var process = new Process { StartInfo = psi };
+        if (!process.Start())
+            return (false, $"LLVM: Failed to start {label} process.");
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
+        var stderrTask = process.StandardError.ReadToEndAsync(ct);
+        await process.WaitForExitAsync(ct).ConfigureAwait(false);
+        var stdout = await stdoutTask.ConfigureAwait(false);
+        var stderr = await stderrTask.ConfigureAwait(false);
+
+        if (!string.IsNullOrWhiteSpace(stdout)) logger.Debug($"LLVM {label} stdout: {Truncate(stdout, 400)}");
+        if (!string.IsNullOrWhiteSpace(stderr)) logger.Debug($"LLVM {label} stderr: {Truncate(stderr, 400)}");
+
+        if (process.ExitCode != 0)
+        {
+            var output = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+            var msg = $"LLVM {label} failed (exit {process.ExitCode}):\n{output}";
+            logger.Warn(msg);
+            return (false, msg);
+        }
+
+        if (!File.Exists(expectedOutput))
+        {
+            var msg = $"LLVM {label} exited cleanly but produced no output at '{expectedOutput}'.";
+            logger.Warn(msg);
+            return (false, msg);
+        }
+
+        return (true, string.Empty);
+    }
 }

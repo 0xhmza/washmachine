@@ -1,5 +1,6 @@
 {
   "id": "bogus-control-flow",
+  "opt_name": "bcf",
   "name": "Bogus Control Flow",
   "description": "Inserts opaque predicates and dead code blocks to confuse decompilers."
 }
