@@ -181,38 +181,121 @@
 
                 <Border Margin="0,0,0,0"/>
 
-                <!-- Compiler Selection -->
+                <!-- Compiler Selection (cards) -->
                 <Expander IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
                     <Expander.Header>
                         <StackPanel Orientation="Horizontal">
                             <FontIcon Glyph="&#xE74E;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Compiler" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
+                            <TextBlock Text="Compiler Toolchain" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Expander.Header>
-                    <StackPanel Margin="0,12,0,4">
-                        <TextBlock Text="Select compiler toolchain:"
-                                   Style="{StaticResource SectionSubtitleText}"
-                                   Margin="0,0,0,8" />
-
+                    <StackPanel Margin="0,12,0,4" Spacing="10">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <ComboBox x:Name="CompilerCombo" Margin="0,0,8,0" HorizontalAlignment="Stretch" />
-                            <Button x:Name="RefreshCompilerButton" Grid.Column="1" Content="Detect" MinWidth="90"
-                                    Click="RefreshCompiler_Click" />
+                            <TextBlock Text="Pick a compiler — selecting LLVM unlocks the obfuscation pipeline."
+                                       Style="{StaticResource SectionSubtitleText}"
+                                       VerticalAlignment="Center" />
+                            <Button x:Name="RefreshCompilerButton" Grid.Column="1" MinWidth="100"
+                                    Click="RefreshCompiler_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE72C;" FontSize="13" />
+                                    <TextBlock Text="Detect" />
+                                </StackPanel>
+                            </Button>
                         </Grid>
 
-                        <TextBlock x:Name="CompilerStatus" Margin="0,8,0,0"
+                        <!-- Cards list -->
+                        <ListView x:Name="CompilerCardsList"
+                                  SelectionMode="Single"
+                                  HorizontalAlignment="Stretch"
+                                  SelectionChanged="CompilerCardsList_SelectionChanged"
+                                  IsItemClickEnabled="True"
+                                  IsTabStop="False"
+                                  Background="Transparent"
+                                  Padding="0">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Margin" Value="0,0,0,6" />
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="6"
+                                            Padding="12">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border Width="36" Height="36" CornerRadius="6"
+                                                    Background="{Binding AccentBrush}"
+                                                    VerticalAlignment="Center" Margin="0,0,12,0">
+                                                <FontIcon Glyph="{Binding Glyph}" FontSize="16"
+                                                          Foreground="White"
+                                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock Text="{Binding Kind}" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+                                                    <Border Background="{ThemeResource SystemFillColorSolidNeutralBackgroundBrush}"
+                                                            CornerRadius="3" Padding="6,1" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Edition}" FontSize="10" />
+                                                    </Border>
+                                                    <Border Background="{Binding BackendBadgeBrush}"
+                                                            CornerRadius="3" Padding="6,1" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding BackendBadge}" FontSize="10" Foreground="White" />
+                                                    </Border>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Path}"
+                                                           FontSize="11"
+                                                           FontFamily="Consolas"
+                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Margin="0,4,0,0" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <!-- Empty / scanning placeholder -->
+                        <Border x:Name="NoCompilerCard"
+                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="14"
+                                Visibility="Collapsed">
+                            <StackPanel Spacing="6">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE783;" FontSize="14"
+                                              Foreground="{ThemeResource SystemFillColorCautionBrush}" />
+                                    <TextBlock Text="No compiler detected" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBlock Text="Install MSVC / MinGW / LLVM, or drop a bundled LLVM into Tools\LLVM\bin\."
+                                           Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock x:Name="CompilerStatus"
                                    Style="{StaticResource SectionSubtitleText}" />
 
                         <!-- Download Compiler -->
-                        <Border x:Name="DownloadCompilerPanel" 
+                        <Border x:Name="DownloadCompilerPanel"
                                 Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                CornerRadius="4"
+                                CornerRadius="6"
                                 Padding="12"
-                                Margin="0,12,0,0"
                                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                 BorderThickness="1"
                                 Visibility="Collapsed">
@@ -227,8 +310,8 @@
                                                Style="{StaticResource CaptionTextBlockStyle}"
                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 </StackPanel>
-                                <Button x:Name="DownloadCompilerButton" 
-                                        Content="Download Compiler" 
+                                <Button x:Name="DownloadCompilerButton"
+                                        Content="Download Compiler"
                                         Grid.Column="1"
                                         Click="DownloadCompiler_Click" />
                             </Grid>
@@ -239,44 +322,164 @@
 
                 <Border Margin="0,0,0,0"/>
 
-                <!-- Compilation Mode -->
-                <Expander x:Name="LlvmModeExpander" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
+                <!-- LLVM Obfuscation (only shown when LLVM compiler is selected) -->
+                <Expander x:Name="LlvmModeExpander"
+                          IsExpanded="True"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Stretch"
+                          Visibility="Collapsed"
+                          Margin="0,0,0,4">
                     <Expander.Header>
                         <StackPanel Orientation="Horizontal">
                             <FontIcon Glyph="&#xE9D3;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Compilation Mode" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
+                            <TextBlock Text="LLVM Obfuscation" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
+                            <Border Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                    CornerRadius="3" Padding="6,1" Margin="10,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="LLVM ONLY" FontSize="10" Foreground="White" />
+                            </Border>
                         </StackPanel>
                     </Expander.Header>
                     <StackPanel Margin="0,12,0,4" Spacing="12">
-                        <TextBlock Text="Select backend:"
-                                   Style="{StaticResource SectionSubtitleText}" />
-                        <ComboBox x:Name="CompilationBackendCombo"
-                                  HorizontalAlignment="Stretch"
-                                  SelectionChanged="CompilationBackendCombo_SelectionChanged">
-                            <ComboBoxItem Content="Deterministic (standard toolchain)" Tag="Deterministic" IsSelected="True" />
-                            <ComboBoxItem Content="LLVM Obfuscated (bundled clang++ + IR passes)" Tag="LlvmObfuscated" />
-                        </ComboBox>
-
-                        <StackPanel x:Name="LlvmPassesPanel" Visibility="Collapsed" Spacing="8">
-                            <TextBlock Text="Obfuscation passes:"
-                                       Style="{StaticResource SectionSubtitleText}" />
+                        <TextBlock Text="IR-level passes injected via -fpass-plugin. Toggle any combination — unbuilt passes are skipped by the pipeline with a warning."
+                                   Style="{StaticResource SectionSubtitleText}"
+                                   TextWrapping="Wrap" />
+                        <StackPanel x:Name="LlvmPassesPanel" Spacing="8">
                             <TextBlock x:Name="LlvmPassesNote"
-                                       Text="Passes marked (not built) are stubs — compile pass.dll from Assets/llvm-passes/&lt;id&gt;/CMakeLists.txt to activate them."
+                                       Text="Unbuilt passes are marked (stub). Build pass.dll from Assets/llvm-passes/&lt;id&gt;/CMakeLists.txt to activate them."
                                        Style="{StaticResource CaptionTextBlockStyle}"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                        TextWrapping="Wrap" />
-                            <StackPanel x:Name="LlvmPassCheckboxes" Spacing="4" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Available passes" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="All" MinWidth="60" Margin="0,0,6,0"
+                                        Click="LlvmSelectAllPasses_Click" />
+                                <Button Grid.Column="2" Content="None" MinWidth="60"
+                                        Click="LlvmClearAllPasses_Click" />
+                            </Grid>
+                            <StackPanel x:Name="LlvmPassCheckboxes" Spacing="6" />
                         </StackPanel>
+
+                        <Border Style="{StaticResource SectionDivider}" Margin="0,4,0,0" />
+
+                        <TextBlock Text="Toolchain mode" FontWeight="SemiBold" />
+                        <RadioButtons x:Name="LlvmToolchainRadio" SelectedIndex="0">
+                            <x:String>Auto (clang-cl if MSVC available, else clang++)</x:String>
+                            <x:String>Force clang-cl (MSVC ABI)</x:String>
+                            <x:String>Force clang++ (MinGW target)</x:String>
+                        </RadioButtons>
                     </StackPanel>
                 </Expander>
 
                 <Border Margin="0,0,0,0"/>
+
+                <!-- Compilation Controls (universal) -->
+                <Expander IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <FontIcon Glyph="&#xE713;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Compilation Flow" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Expander.Header>
+                    <StackPanel Margin="0,12,0,4" Spacing="12">
+
+                        <Grid ColumnSpacing="12" RowSpacing="10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Grid.Row="0" Grid.Column="0">
+                                <TextBlock Text="Optimization" Style="{StaticResource SectionSubtitleText}" Margin="0,0,0,4" />
+                                <ComboBox x:Name="OptimizationCombo" HorizontalAlignment="Stretch">
+                                    <ComboBoxItem Content="O0 — no optimization" Tag="O0" />
+                                    <ComboBoxItem Content="O1 — basic"          Tag="O1" />
+                                    <ComboBoxItem Content="O2 — recommended"    Tag="O2" IsSelected="True" />
+                                    <ComboBoxItem Content="O3 — aggressive"     Tag="O3" />
+                                    <ComboBoxItem Content="Os — size"           Tag="Os" />
+                                    <ComboBoxItem Content="Oz — smallest"       Tag="Oz" />
+                                </ComboBox>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="0" Grid.Column="1">
+                                <TextBlock Text="Architecture" Style="{StaticResource SectionSubtitleText}" Margin="0,0,0,4" />
+                                <ComboBox x:Name="ArchitectureCombo" HorizontalAlignment="Stretch">
+                                    <ComboBoxItem Content="x86_64 (64-bit)" Tag="x64" IsSelected="True" />
+                                    <ComboBoxItem Content="i686 (32-bit)"   Tag="x86" />
+                                </ComboBox>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="0" Grid.Column="2">
+                                <TextBlock Text="Subsystem" Style="{StaticResource SectionSubtitleText}" Margin="0,0,0,4" />
+                                <ComboBox x:Name="SubsystemCombo" HorizontalAlignment="Stretch">
+                                    <ComboBoxItem Content="Windows (no console)" Tag="windows" IsSelected="True" />
+                                    <ComboBoxItem Content="Console"              Tag="console" />
+                                </ComboBox>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="1" Grid.Column="0">
+                                <TextBlock Text="C++ Standard" Style="{StaticResource SectionSubtitleText}" Margin="0,0,0,4" />
+                                <ComboBox x:Name="CppStandardCombo" HorizontalAlignment="Stretch">
+                                    <ComboBoxItem Content="C++14" Tag="14" />
+                                    <ComboBoxItem Content="C++17" Tag="17" IsSelected="True" />
+                                    <ComboBoxItem Content="C++20" Tag="20" />
+                                </ComboBox>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2">
+                                <TextBlock Text="Preprocessor defines (comma- or space-separated, e.g. NDEBUG, FOO=1)" Style="{StaticResource SectionSubtitleText}" Margin="0,0,0,4" />
+                                <TextBox x:Name="DefinesTextBox" PlaceholderText="NDEBUG, WASH_QUIET" />
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel>
+                            <TextBlock Text="Extra compiler flags (passed verbatim — power users only)"
+                                       Style="{StaticResource SectionSubtitleText}" Margin="0,0,0,4" />
+                            <TextBox x:Name="ExtraFlagsTextBox" PlaceholderText="-Wno-unused-variable -fvisibility=hidden" />
+                        </StackPanel>
+
+                        <Border Style="{StaticResource SectionDivider}" Margin="0,0,0,0" />
+
+                        <!-- Toggles row -->
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="6">
+                                <CheckBox x:Name="StripSymbolsCheck" Content="Strip symbols from binary" IsChecked="True"
+                                          ToolTipService.ToolTip="Drops debug/symbol tables to shrink and harden the output binary" />
+                                <CheckBox x:Name="LtoCheck" Content="Link-time optimization (LTO)" IsChecked="False"
+                                          ToolTipService.ToolTip="Enables -flto. LLVM only — ignored on MSVC/MinGW paths." />
+                                <CheckBox x:Name="GcSectionsCheck" Content="Garbage-collect dead sections" IsChecked="True"
+                                          ToolTipService.ToolTip="Adds -ffunction-sections -fdata-sections + --gc-sections to drop unreferenced code" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="6">
+                                <CheckBox x:Name="GenerateDebugInfo" Content="Generate debug info (PDB)" IsChecked="False" />
+                                <CheckBox x:Name="VerboseBuildCheck" Content="Verbose build output" IsChecked="False" />
+                                <CheckBox x:Name="OpenFolderAfterCompile" Content="Open output folder after build" IsChecked="True" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Expander>
+
+                <Border Margin="0,0,0,0"/>
+
                 <!-- Output Options -->
                 <Expander IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
                     <Expander.Header>
                         <StackPanel Orientation="Horizontal">
                             <FontIcon Glyph="&#xE8B7;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Output Options" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
+                            <TextBlock Text="Output" Style="{StaticResource SectionTitleText}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Expander.Header>
                     <StackPanel Margin="0,12,0,4">
@@ -290,11 +493,8 @@
                                     Click="BrowseOutput_Click" />
                         </Grid>
 
-                        <CheckBox x:Name="OpenFolderAfterCompile" Content="Open output folder after compilation" IsChecked="True" />
-                        <CheckBox x:Name="GenerateDebugInfo" Content="Generate debug information (PDB)" IsChecked="False" Margin="0,4,0,0" />
-                        <CheckBox x:Name="StripToBinCheck" Content="Also strip compiled loader to flat .bin (shellcode-ready for injection)" IsChecked="False" Margin="0,4,0,0"
+                        <CheckBox x:Name="StripToBinCheck" Content="Also strip compiled loader to flat .bin (shellcode-ready for injection)" IsChecked="False"
                                   ToolTipService.ToolTip="Runs the strip pipeline step after compilation to produce a position-independent .bin alongside the .exe" />
-                        <CheckBox x:Name="VerboseBuildCheck" Content="Verbose build output" IsChecked="False" Margin="0,4,0,0" />
                     </StackPanel>
                 </Expander>
 

@@ -681,20 +681,9 @@ public static class TestHarness
     }
 
     private static string? FindProducedExe(CompilerResult result)
-    {
-        // Use the OutputExePath directly from the compile result
-        if (!string.IsNullOrEmpty(result.OutputExePath) && File.Exists(result.OutputExePath))
-            return result.OutputExePath;
-
-        // Fallback: scan the build-artifact directory for the newest exe/dll
-        var tempDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "temp", "cpp", "compiled");
-        if (!Directory.Exists(tempDir)) return null;
-        return Directory.GetFiles(tempDir)
-            .Where(f => f.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
-                        f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(File.GetLastWriteTimeUtc)
-            .FirstOrDefault();
-    }
+        => !string.IsNullOrEmpty(result.OutputExePath) && File.Exists(result.OutputExePath)
+            ? result.OutputExePath
+            : null;
 
     private static async Task<(int exitCode, string? error)> ExecuteExeAsync(string exePath, TimeSpan timeout)
     {

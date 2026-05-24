@@ -7,6 +7,25 @@ using Washmachine.Models;
 namespace Washmachine.Services;
 
 /// <summary>
+/// Fine-grained controls passed to <see cref="LlvmPipelineService.CompileAsync"/>.
+/// All fields are optional — null/empty falls back to the historical defaults.
+/// </summary>
+public sealed class LlvmCompileOptions
+{
+    public string Toolchain { get; init; } = "auto";  // auto | clang-cl | clang++
+    public string OptLevel  { get; init; } = "O2";    // O0..O3, Os, Oz
+    public string Arch      { get; init; } = "x64";   // x64 | x86
+    public string Subsystem { get; init; } = "windows"; // windows | console
+    public string CppStandard { get; init; } = "17";  // 14 | 17 | 20
+    public IReadOnlyList<string> Defines    { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<string> ExtraFlags { get; init; } = Array.Empty<string>();
+    public bool StripSymbols { get; init; }
+    public bool Lto          { get; init; }
+    public bool NoGcSections { get; init; }
+    public bool DebugInfo    { get; init; }
+}
+
+/// <summary>
 /// Compiles C++ source using the bundled LLVM clang++/clang-cl with optional IR-level
 /// obfuscation passes injected via <c>-fpass-plugin=</c>.
 ///
@@ -29,7 +48,7 @@ public static class LlvmPipelineService
     /// Compiles all .cpp files in <paramref name="sourceDirectory"/> using the bundled LLVM toolchain,
     /// applying <paramref name="enabledPasses"/> as IR-level plugins.
     /// </summary>
-    public static async Task<CppFileConversionResult> CompileAsync(
+    public static Task<CppFileConversionResult> CompileAsync(
         string sourceDirectory,
         string llvmBinDirectory,
         string buildDirectory,
@@ -37,10 +56,23 @@ public static class LlvmPipelineService
         CompilerToolDiscoveryResult? discovery,
         IAppLogger logger,
         CancellationToken cancellationToken = default)
+        => CompileAsync(sourceDirectory, llvmBinDirectory, buildDirectory, enabledPasses, discovery,
+                        new LlvmCompileOptions(), logger, cancellationToken);
+
+    public static async Task<CppFileConversionResult> CompileAsync(
+        string sourceDirectory,
+        string llvmBinDirectory,
+        string buildDirectory,
+        IReadOnlyList<LlvmPassDefinition> enabledPasses,
+        CompilerToolDiscoveryResult? discovery,
+        LlvmCompileOptions options,
+        IAppLogger logger,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(sourceDirectory);
         ArgumentNullException.ThrowIfNull(llvmBinDirectory);
         ArgumentNullException.ThrowIfNull(buildDirectory);
+        ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
         CppFileConversionResult Fail(string msg)
@@ -80,23 +112,38 @@ public static class LlvmPipelineService
             logger.Info($"LLVM: Loading {passPluginArgs.Count} obfuscation pass(es): " +
                         string.Join(", ", enabledPasses.Where(p => p.IsBuilt).Select(p => p.Name)));
 
-        // Try MSVC-style first (clang-cl + vcvars), then MinGW-style (clang++).
+        // Honor the forced-toolchain selection, else auto-detect MSVC vs MinGW.
+        var toolchain = (options.Toolchain ?? "auto").ToLowerInvariant();
         var vcVarsScript = FindVcVarsScript(discovery);
-        if (vcVarsScript is not null)
+
+        bool useClangCl = toolchain switch
+        {
+            "clang-cl" => true,
+            "clang++"  => false,
+            _          => vcVarsScript is not null,
+        };
+
+        if (useClangCl && vcVarsScript is null)
+        {
+            logger.Warn("LLVM: clang-cl forced but no MSVC vcvars script was found. " +
+                        "Install Visual Studio Build Tools or pick a different toolchain mode.");
+            return Fail("LLVM: clang-cl requires MSVC (vcvars). None detected.");
+        }
+
+        if (useClangCl)
         {
             logger.Info("LLVM: Using clang-cl (MSVC-compatible) toolchain.");
             return await CompileWithClangClAsync(
                 sources, tempExe, extraLibs, staticLibs, isDll,
-                passPluginArgs, vcVarsScript, llvmBinDirectory,
-                buildDirectory, logger, cancellationToken);
+                passPluginArgs, vcVarsScript!, llvmBinDirectory,
+                buildDirectory, options, logger, cancellationToken);
         }
 
-        // MinGW fallback
-        logger.Info("LLVM: MSVC not found. Falling back to clang++ with MinGW target.");
+        logger.Info("LLVM: Using clang++ with MinGW target.");
         return await CompileWithClangPlusPlusAsync(
             sources, tempExe, extraLibs, staticLibs, isDll,
             passPluginArgs, llvmBinDirectory,
-            buildDirectory, logger, cancellationToken);
+            buildDirectory, options, logger, cancellationToken);
     }
 
     // ─── MSVC path (clang-cl.exe) ────────────────────────────────────────────
@@ -111,6 +158,7 @@ public static class LlvmPipelineService
         string vcVarsScript,
         string llvmBinDir,
         string buildDir,
+        LlvmCompileOptions opt,
         IAppLogger logger,
         CancellationToken ct)
     {
@@ -118,15 +166,30 @@ public static class LlvmPipelineService
         if (!File.Exists(clangCl))
             return new CppFileConversionResult(false, $"LLVM: {ClangClExe} not found at '{clangCl}'.");
 
-        // Build argument list for clang-cl (MSVC-compatible flags)
-        var sb = new StringBuilder();
-        sb.Append($"/nologo /O1 /Gy /DNDEBUG /EHsc /std:c++17 ");
+        // Translate the universal option model into clang-cl's MSVC-style flags.
+        string optFlag = TranslateClFromOpt(opt.OptLevel);          // /O1, /O2, /Od, /Os
+        string cppStd  = $"/std:c++{opt.CppStandard}";
+        string subsystem = isDll
+            ? "/DLL"
+            : opt.Subsystem.Equals("console", StringComparison.OrdinalIgnoreCase)
+                ? "/SUBSYSTEM:CONSOLE"
+                : "/SUBSYSTEM:WINDOWS /entry:mainCRTStartup";
 
-        // Pass plugin flags must use /clang: prefix when going through clang-cl
+        var sb = new StringBuilder();
+        sb.Append($"/nologo {optFlag} /Gy /EHsc {cppStd} ");
+        if (opt.DebugInfo) sb.Append("/Z7 ");
+        foreach (var define in opt.Defines)
+            sb.Append($"/D{define} ");
+
+        // Plugin flags route through /clang: when going through clang-cl
         foreach (var dll in passPlugins)
             sb.Append($"/clang:-fpass-plugin={Q(dll)} ");
 
-        var subsystem = isDll ? "/DLL" : "/SUBSYSTEM:WINDOWS /entry:mainCRTStartup";
+        if (opt.Lto)
+            sb.Append("/clang:-flto ");
+
+        foreach (var flag in opt.ExtraFlags)
+            sb.Append($"/clang:{flag} ");
 
         sb.Append($"/Fe:{Q(outputExe)} ");
         sb.Append(string.Join(" ", sources.Select(Q)));
@@ -136,11 +199,7 @@ public static class LlvmPipelineService
 
         // Extra libs detected from source (e.g. winhttp)
         foreach (var lib in extraLibs.Where(l => l.StartsWith("-l", StringComparison.Ordinal)))
-        {
-            // Convert -lwinhttp → winhttp.lib
-            var libName = lib[2..] + ".lib";
-            sb.Append($" {libName}");
-        }
+            sb.Append($" {lib[2..]}.lib");
 
         foreach (var lib in staticLibs)
             sb.Append($" {Q(lib)}");
@@ -164,6 +223,7 @@ public static class LlvmPipelineService
         IReadOnlyList<string> passPlugins,
         string llvmBinDir,
         string buildDir,
+        LlvmCompileOptions opt,
         IAppLogger logger,
         CancellationToken ct)
     {
@@ -171,24 +231,45 @@ public static class LlvmPipelineService
         if (!File.Exists(clangPP))
             return new CppFileConversionResult(false, $"LLVM: {ClangPlusPlusExe} not found at '{clangPP}'.");
 
+        var target = opt.Arch.Equals("x86", StringComparison.OrdinalIgnoreCase)
+            ? "i686-w64-mingw32"
+            : "x86_64-w64-mingw32";
+
         var args = new List<string>
         {
-            "-target", "x86_64-w64-mingw32",
-            "-Os", "-s",
-            "-std=c++17",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-Wl,--gc-sections",
-            "-DNDEBUG",
+            "-target", target,
+            $"-{opt.OptLevel}",
+            $"-std=c++{opt.CppStandard}",
         };
+
+        if (opt.StripSymbols) args.Add("-s");
+        if (opt.DebugInfo)    args.Add("-g");
+        if (opt.Lto)          args.Add("-flto");
+        if (!opt.NoGcSections)
+        {
+            args.AddRange(["-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections"]);
+        }
+
+        foreach (var define in opt.Defines)
+            args.Add($"-D{define}");
 
         foreach (var dll in passPlugins)
             args.AddRange(["-fpass-plugin", dll]);
 
         if (isDll)
+        {
             args.Add("-shared");
+        }
         else
-            args.AddRange(["-static-libgcc", "-Wl,--subsystem,windows"]);
+        {
+            args.Add("-static-libgcc");
+            var subsystem = opt.Subsystem.Equals("console", StringComparison.OrdinalIgnoreCase)
+                ? "console" : "windows";
+            args.Add($"-Wl,--subsystem,{subsystem}");
+        }
+
+        foreach (var flag in opt.ExtraFlags)
+            args.Add(flag);
 
         args.AddRange(["-o", outputExe]);
         args.AddRange(sources);
@@ -213,6 +294,18 @@ public static class LlvmPipelineService
 
         return await RunCompilerProcessAsync(psi, outputExe, "clang++", logger, ct);
     }
+
+    /// <summary>Maps the universal opt token to a clang-cl /O flag. Defaults to /O2.</summary>
+    private static string TranslateClFromOpt(string opt) => opt.ToUpperInvariant() switch
+    {
+        "O0" => "/Od",
+        "O1" => "/O1",
+        "O2" => "/O2",
+        "O3" => "/O2 /clang:-O3",
+        "OS" => "/Os",
+        "OZ" => "/Os /clang:-Oz",
+        _    => "/O2",
+    };
 
     // ─── Process runners ─────────────────────────────────────────────────────
 

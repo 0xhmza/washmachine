@@ -238,10 +238,10 @@ After clicking **Go**, the pipeline runs in order:
 2. Shellcode is encoded via **Bin2Shell**
 3. Snippets are collected; their `includes` and `implementation` blocks are deduplicated and merged
 4. The selected template's `content` is rendered — all `{{PLACEHOLDER}}` tokens are substituted
-5. The final `.cpp` source is written to `temp/cpp/`
-6. The compiler is invoked; output exe lands in `temp/cpp/Compiled BInaries/`
+5. The final `.cpp` source is written to the per-session `source/` folder
+6. The compiler is invoked; the output exe lands in the per-session `build/` folder
 7. Optional post-compile stages can run: strip loader to `.bin`, backdoor a target PE, then pack
-8. Session artifacts (`source.cpp`, `build_log.txt`) are saved under `logging/session_<timestamp>_<uuid>/`
+8. The final artifact is copied to the user-chosen output path; everything else stays under `Output/sessions/<timestamp>_<slug>/` (input, source, build, logs, report)
 
 ### Finalize Output (GUI)
 

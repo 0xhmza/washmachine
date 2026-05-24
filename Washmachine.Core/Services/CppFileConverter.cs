@@ -12,19 +12,22 @@ namespace Washmachine.Services;
 public static class CppFileConverter
 {
     /// <summary>
-    /// Compiles all .cpp files in <paramref name="directory"/> to a single minimized .exe using a compiler found in <paramref name="compilerDirectory"/>.
-    /// The exe is written to <paramref name="outputDirectory"/> (or "compiled" under <paramref name="directory"/> if not specified)
-    /// and named "yyyyMMdd_HHmmss-xxxxx.exe" (xxxxx = first 5 chars of SHA-256 of the exe).
+    /// Compiles all .cpp files in <paramref name="directory"/> to a single minimized .exe using a
+    /// compiler found in <paramref name="compilerDirectory"/>. The exe is written to
+    /// <paramref name="outputDirectory"/> and named "yyyyMMdd_HHmmss-xxxxx.exe"
+    /// (xxxxx = first 5 chars of SHA-256 of the exe).
     /// </summary>
     public static async Task<CppFileConversionResult> ConvertAsync(
         string directory,
         string compilerDirectory,
+        string outputDirectory,
         IAppLogger logger,
-        CancellationToken cancellationToken = default,
-        string? outputDirectory = null)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(directory);
         ArgumentNullException.ThrowIfNull(compilerDirectory);
+        if (string.IsNullOrWhiteSpace(outputDirectory))
+            throw new ArgumentException("Output directory is required.", nameof(outputDirectory));
         ArgumentNullException.ThrowIfNull(logger);
 
         CppFileConversionResult Fail(string message)
@@ -57,11 +60,9 @@ public static class CppFileConverter
 
         logger.Debug($"Discovered {sources.Length} .cpp file(s) to compile. First few: {string.Join(", ", sources.Take(3).Select(Path.GetFileName))}{(sources.Length > 3 ? ", ..." : string.Empty)}");
 
-        // Build artifacts land in the caller-specified output directory, or
-        // `<directory>/compiled` as a default fallback.
-        var outputDir = !string.IsNullOrWhiteSpace(outputDirectory)
-            ? outputDirectory
-            : Path.Combine(directory, "compiled");
+        // Build artifacts land in the caller-specified output directory (the per-session
+        // build/ folder under Output/sessions/<id>/build/).
+        var outputDir = outputDirectory;
         Directory.CreateDirectory(outputDir);
         logger.Debug($"Output directory: {outputDir}");
 

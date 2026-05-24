@@ -921,6 +921,87 @@ public static partial class Program
                         state.LlvmPasses.Add(passValue!);
                     break;
 
+                case "-LlvmToolchain" or "--llvm-toolchain":
+                    if (!TryReadFlagValue(args, ref i, out var tcValue))
+                    {
+                        messages.Add("Missing value after -LlvmToolchain. Expected: auto | clang-cl | clang++");
+                        break;
+                    }
+                    state.LlvmToolchain = tcValue!.ToLowerInvariant();
+                    break;
+
+                case "-OptLevel" or "--opt-level":
+                    if (!TryReadFlagValue(args, ref i, out var optValue))
+                    {
+                        messages.Add("Missing value after -OptLevel. Expected: O0 | O1 | O2 | O3 | Os | Oz");
+                        break;
+                    }
+                    state.OptLevel = optValue!;
+                    break;
+
+                case "-Arch" or "--arch":
+                    if (!TryReadFlagValue(args, ref i, out var archValue))
+                    {
+                        messages.Add("Missing value after -Arch. Expected: x64 | x86");
+                        break;
+                    }
+                    state.Arch = archValue!.ToLowerInvariant();
+                    break;
+
+                case "-Subsystem" or "--subsystem":
+                    if (!TryReadFlagValue(args, ref i, out var subValue))
+                    {
+                        messages.Add("Missing value after -Subsystem. Expected: windows | console");
+                        break;
+                    }
+                    state.Subsystem = subValue!.ToLowerInvariant();
+                    break;
+
+                case "-CppStandard" or "--cpp-standard":
+                    if (!TryReadFlagValue(args, ref i, out var stdValue))
+                    {
+                        messages.Add("Missing value after -CppStandard. Expected: 14 | 17 | 20");
+                        break;
+                    }
+                    state.CppStandard = stdValue!;
+                    break;
+
+                case "-Define" or "--define" or "-D":
+                    if (!TryReadFlagValue(args, ref i, out var defValue))
+                    {
+                        messages.Add("Missing value after -Define. Expected: NAME[=VALUE]");
+                        break;
+                    }
+                    if (!string.IsNullOrWhiteSpace(defValue))
+                        state.Defines.Add(defValue!);
+                    break;
+
+                case "-ExtraFlag" or "--extra-flag":
+                    if (!TryReadFlagValue(args, ref i, out var flagValue))
+                    {
+                        messages.Add("Missing value after -ExtraFlag.");
+                        break;
+                    }
+                    if (!string.IsNullOrWhiteSpace(flagValue))
+                        state.ExtraFlags.Add(flagValue!);
+                    break;
+
+                case "-StripSymbols" or "--strip-symbols":
+                    state.StripSymbols = true;
+                    break;
+
+                case "-Lto" or "--lto":
+                    state.Lto = true;
+                    break;
+
+                case "-NoGcSections" or "--no-gc-sections":
+                    state.NoGcSections = true;
+                    break;
+
+                case "-Debug" or "--debug":
+                    state.DebugInfo = true;
+                    break;
+
                 default:
                     return new EncodeParseOutcome(state, messages, Array.Empty<EncodeOptionSpec>(), $"Unknown option: {arg}", RequiresInteractiveFallback: false);
             }
@@ -1042,7 +1123,18 @@ public static partial class Program
         {
             [UiDataKeys.Template] = state.Template,
             [UiDataKeys.CompilationBackend] = state.CompilationBackend,
+            [UiDataKeys.LlvmToolchain] = state.LlvmToolchain,
+            [UiDataKeys.LlvmOptLevel] = state.OptLevel,
+            [UiDataKeys.LlvmArch] = state.Arch,
+            [UiDataKeys.LlvmSubsystem] = state.Subsystem,
+            [UiDataKeys.LlvmCppStandard] = state.CppStandard,
         };
+
+        // Booleans flow through TextBoxes (UiData has no dedicated bool bucket).
+        textBoxes[UiDataKeys.LlvmStripSymbols]  = state.StripSymbols ? bool.TrueString : bool.FalseString;
+        textBoxes[UiDataKeys.LlvmLto]           = state.Lto          ? bool.TrueString : bool.FalseString;
+        textBoxes[UiDataKeys.LlvmNoGcSections]  = state.NoGcSections ? bool.TrueString : bool.FalseString;
+        textBoxes[UiDataKeys.LlvmDebugInfo]     = state.DebugInfo    ? bool.TrueString : bool.FalseString;
 
         var encodingCatalogService = new ShellcodeEncodingCatalogService(runner, context.Paths);
         try
@@ -1065,6 +1157,12 @@ public static partial class Program
         // LLVM obfuscation passes
         if (state.LlvmPasses.Count > 0)
             listBoxes[UiDataKeys.LlvmObfuscationPasses] = state.LlvmPasses.ToList();
+
+        // LLVM compilation-flow lists
+        if (state.Defines.Count > 0)
+            listBoxes[UiDataKeys.LlvmDefines] = state.Defines.ToList();
+        if (state.ExtraFlags.Count > 0)
+            listBoxes[UiDataKeys.LlvmExtraFlags] = state.ExtraFlags.ToList();
 
         foreach (var kv in state.Snippets)
         {
@@ -3009,6 +3107,19 @@ public static partial class Program
         public string CompilationBackend { get; set; } = "Deterministic";
         public List<string> LlvmPasses { get; set; } = [];
 
+        // ── LLVM compilation-flow controls (only applied when LLVM backend is active) ──
+        public string LlvmToolchain { get; set; } = "auto";       // auto | clang-cl | clang++
+        public string OptLevel { get; set; } = "O2";              // O0 .. O3, Os, Oz
+        public string Arch { get; set; } = "x64";                 // x64 | x86
+        public string Subsystem { get; set; } = "windows";        // windows | console
+        public string CppStandard { get; set; } = "17";           // 14 | 17 | 20
+        public List<string> Defines { get; set; } = [];           // -DNAME[=VAL]
+        public List<string> ExtraFlags { get; set; } = [];        // passed verbatim
+        public bool StripSymbols { get; set; }
+        public bool Lto { get; set; }
+        public bool NoGcSections { get; set; }
+        public bool DebugInfo { get; set; }
+
         public EncodeSessionState Clone()
         {
             return new EncodeSessionState
@@ -3033,6 +3144,17 @@ public static partial class Program
                 Json = Json,
                 CompilationBackend = CompilationBackend,
                 LlvmPasses = LlvmPasses.ToList(),
+                LlvmToolchain = LlvmToolchain,
+                OptLevel = OptLevel,
+                Arch = Arch,
+                Subsystem = Subsystem,
+                CppStandard = CppStandard,
+                Defines = Defines.ToList(),
+                ExtraFlags = ExtraFlags.ToList(),
+                StripSymbols = StripSymbols,
+                Lto = Lto,
+                NoGcSections = NoGcSections,
+                DebugInfo = DebugInfo,
             };
         }
     }

@@ -63,4 +63,39 @@ public static class UiDataKeys
     /// Stored in ListBoxes.
     /// </summary>
     public const string LlvmObfuscationPasses = "llvmObfuscationPasses";
+
+    // ── LLVM compilation-flow keys (LLVM backend only) ────────────────────────
+
+    /// <summary>"auto", "clang-cl", or "clang++". Forces the LLVM driver used.</summary>
+    public const string LlvmToolchain = "llvmToolchain";
+
+    /// <summary>Optimization level token (O0/O1/O2/O3/Os/Oz).</summary>
+    public const string LlvmOptLevel = "llvmOptLevel";
+
+    /// <summary>Target architecture: x64 | x86.</summary>
+    public const string LlvmArch = "llvmArch";
+
+    /// <summary>Subsystem: windows | console.</summary>
+    public const string LlvmSubsystem = "llvmSubsystem";
+
+    /// <summary>C++ standard digits: 14 | 17 | 20.</summary>
+    public const string LlvmCppStandard = "llvmCppStandard";
+
+    /// <summary>Preprocessor define list (each entry "NAME" or "NAME=VAL").</summary>
+    public const string LlvmDefines = "llvmDefines";
+
+    /// <summary>Extra compiler flags passed verbatim.</summary>
+    public const string LlvmExtraFlags = "llvmExtraFlags";
+
+    /// <summary>Boolean toggle: strip symbols from the output binary.</summary>
+    public const string LlvmStripSymbols = "llvmStripSymbols";
+
+    /// <summary>Boolean toggle: enable -flto.</summary>
+    public const string LlvmLto = "llvmLto";
+
+    /// <summary>Boolean toggle: disable dead-section GC (the default is enabled).</summary>
+    public const string LlvmNoGcSections = "llvmNoGcSections";
+
+    /// <summary>Boolean toggle: emit debug info.</summary>
+    public const string LlvmDebugInfo = "llvmDebugInfo";
 }

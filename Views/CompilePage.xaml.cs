@@ -1,6 +1,8 @@
+using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http;
@@ -11,6 +13,7 @@ using Washmachine.Logging;
 using Washmachine.Models;
 using Washmachine.Services;
 using Windows.Storage.Pickers;
+using Windows.UI;
 using WinRT.Interop;
 
 namespace Washmachine.Views;
@@ -24,7 +27,10 @@ public sealed partial class CompilePage : Page
     public string? OutputDirectory          => OutputPath?.Text;
     public bool   GenerateDebugInfoEnabled => GenerateDebugInfo?.IsChecked == true;
     public bool   VerboseBuildEnabled      => VerboseBuildCheck?.IsChecked == true;
-    public string? SelectedCompilerDisplay  => CompilerCombo?.SelectedItem?.ToString();
+    public string? SelectedCompilerDisplay  => SelectedCompilerCard is { } c ? $"{c.Kind} ({c.Path})" : null;
+
+    private readonly ObservableCollection<CompilerCardViewModel> _compilerCards = new();
+    private CompilerCardViewModel? SelectedCompilerCard => CompilerCardsList?.SelectedItem as CompilerCardViewModel;
 
     private readonly IAppLogger _logger;
     private readonly AppPaths _paths;
@@ -56,6 +62,8 @@ public sealed partial class CompilePage : Page
         _snippets = new PlaybookService(_paths);
         _compiler = new CompilerService(_paths, bin2ShellRunner, _snippets, _toolLocator, _logger);
 
+        CompilerCardsList.ItemsSource = _compilerCards;
+
         Loaded += CompilePage_Loaded;
     }
 
@@ -78,36 +86,30 @@ public sealed partial class CompilePage : Page
 
     private async Task RefreshCompilers()
     {
-        CompilerCombo.Items.Clear();
+        _compilerCards.Clear();
         CompilerStatus.Text = "Detecting compilers...";
         DownloadCompilerPanel.Visibility = Visibility.Collapsed;
+        NoCompilerCard.Visibility = Visibility.Collapsed;
 
         try
         {
             var result = await _toolLocator.DiscoverAsync();
             _compilerCandidates = result.Candidates?.ToList();
-            
-            if (result.Candidates == null || result.Candidates.Count == 0)
+            PopulateCompilerCards(_compilerCandidates);
+
+            if (_compilerCards.Count == 0)
             {
-                CompilerCombo.Items.Add("No compiler found");
-                CompilerCombo.SelectedIndex = 0;
-                CompilerCombo.IsEnabled = false;
                 CompileButton.IsEnabled = false;
-                CompilerStatus.Text = "No compiler detected. Install Visual Studio or MinGW.";
+                CompilerStatus.Text = "No compiler detected. Install MSVC / MinGW / LLVM, or drop one into Tools\\LLVM\\bin.";
                 CompilerStatus.Foreground = App.ThemeBrush("DraculaOrangeBrush");
+                NoCompilerCard.Visibility = Visibility.Visible;
                 DownloadCompilerPanel.Visibility = Visibility.Visible;
             }
             else
             {
-                foreach (var compiler in result.Candidates)
-                {
-                    var displayName = $"{compiler.Kind} ({compiler.Path})";
-                    CompilerCombo.Items.Add(displayName);
-                }
-                CompilerCombo.SelectedIndex = 0;
-                CompilerCombo.IsEnabled = true;
+                CompilerCardsList.SelectedIndex = 0;
                 CompileButton.IsEnabled = true;
-                CompilerStatus.Text = $"Found {result.Candidates.Count} compiler(s)";
+                CompilerStatus.Text = $"Found {_compilerCards.Count} compiler(s).";
                 CompilerStatus.Foreground = App.ThemeBrush("DraculaGreenBrush");
             }
         }
@@ -117,6 +119,14 @@ public sealed partial class CompilePage : Page
             CompilerStatus.Foreground = App.ThemeBrush("DraculaRedBrush");
             DownloadCompilerPanel.Visibility = Visibility.Visible;
         }
+    }
+
+    private void PopulateCompilerCards(IReadOnlyList<CompilerToolCandidate>? candidates)
+    {
+        _compilerCards.Clear();
+        if (candidates == null) return;
+        foreach (var c in candidates)
+            _compilerCards.Add(CompilerCardViewModel.FromCandidate(c));
     }
 
     // ─── LLVM pass loading and backend selection ─────────────────────────────
@@ -131,14 +141,19 @@ public sealed partial class CompilePage : Page
             LlvmPassCheckboxes.Children.Clear();
             foreach (var pass in passes)
             {
-                var status = pass.IsBuilt ? "ready" : "not built";
+                var status = pass.IsBuilt ? "ready" : "stub";
                 var cb = new CheckBox
                 {
                     Content = $"{pass.Name}  ({status})",
                     Tag = pass.Id,
-                    IsEnabled = pass.IsBuilt,
+                    IsEnabled = true,
                 };
-                ToolTipService.SetToolTip(cb, pass.Description);
+                ToolTipService.SetToolTip(cb,
+                    string.IsNullOrEmpty(pass.Description)
+                        ? (pass.IsBuilt
+                            ? "Compiled — will be loaded as -fpass-plugin."
+                            : "No compiled pass.dll yet — selection is recorded but the pipeline will skip with a warning.")
+                        : pass.Description);
                 LlvmPassCheckboxes.Children.Add(cb);
             }
         }
@@ -148,28 +163,31 @@ public sealed partial class CompilePage : Page
         }
     }
 
-    private void CompilationBackendCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void CompilerCardsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (LlvmPassesPanel is null) return; // not yet initialized during InitializeComponent
+        if (LlvmModeExpander is null) return;
 
-        if (CompilationBackendCombo.SelectedItem is ComboBoxItem item &&
-            item.Tag is string tag &&
-            tag.Equals("LlvmObfuscated", StringComparison.OrdinalIgnoreCase))
+        var card = SelectedCompilerCard;
+        bool isLlvm = card?.IsLlvm == true;
+
+        LlvmModeExpander.Visibility = isLlvm ? Visibility.Visible : Visibility.Collapsed;
+
+        // Surface the implicit backend choice in the status line so users understand
+        // what selecting a card just changed.
+        if (card != null)
         {
-            LlvmPassesPanel.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            LlvmPassesPanel.Visibility = Visibility.Collapsed;
+            CompilerStatus.Text = isLlvm
+                ? $"Active: {card.Kind} → LLVM obfuscation backend enabled."
+                : $"Active: {card.Kind} → deterministic backend.";
+            CompilerStatus.Foreground = App.ThemeBrush(isLlvm
+                ? "DraculaPurpleBrush"
+                : "DraculaGreenBrush");
         }
     }
 
+    /// <summary>Resolves the backend tag the CLI expects based on the currently selected card.</summary>
     private string GetSelectedCompilationBackend()
-    {
-        if (CompilationBackendCombo.SelectedItem is ComboBoxItem item && item.Tag is string tag)
-            return tag;
-        return "Deterministic";
-    }
+        => SelectedCompilerCard?.IsLlvm == true ? "LlvmObfuscated" : "Deterministic";
 
     private List<string> GetSelectedLlvmPassIds()
     {
@@ -181,6 +199,60 @@ public sealed partial class CompilePage : Page
         }
         return ids;
     }
+
+    private void LlvmSelectAllPasses_Click(object sender, RoutedEventArgs e)
+        => SetAllPasses(true);
+
+    private void LlvmClearAllPasses_Click(object sender, RoutedEventArgs e)
+        => SetAllPasses(false);
+
+    private void SetAllPasses(bool isChecked)
+    {
+        foreach (var child in LlvmPassCheckboxes.Children)
+            if (child is CheckBox cb) cb.IsChecked = isChecked;
+    }
+
+    // ─── Compilation-flow helpers ────────────────────────────────────────────
+
+    private string GetTag(ComboBox combo, string fallback)
+        => combo.SelectedItem is ComboBoxItem item && item.Tag is string s ? s : fallback;
+
+    private IEnumerable<string> SplitDefines(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) yield break;
+        foreach (var tok in raw.Split(new[] { ',', ' ', '\t', ';' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var t = tok.Trim();
+            if (t.Length > 0) yield return t;
+        }
+    }
+
+    private IEnumerable<string> SplitExtraFlags(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) yield break;
+        // Naive shell-split: respects double-quoted segments
+        var sb = new System.Text.StringBuilder();
+        bool inQ = false;
+        foreach (var c in raw)
+        {
+            if (c == '"') { inQ = !inQ; continue; }
+            if (!inQ && char.IsWhiteSpace(c))
+            {
+                if (sb.Length > 0) { yield return sb.ToString(); sb.Clear(); }
+                continue;
+            }
+            sb.Append(c);
+        }
+        if (sb.Length > 0) yield return sb.ToString();
+    }
+
+    private string GetSelectedLlvmToolchainMode()
+        => LlvmToolchainRadio?.SelectedIndex switch
+        {
+            1 => "clang-cl",
+            2 => "clang++",
+            _ => "auto"
+        };
 
     private void UpdateConfigurationSummary()
     {
@@ -367,38 +439,33 @@ public sealed partial class CompilePage : Page
             _compilerCandidates = result.Candidates?.ToList();
 
             // Update UI
-            CompilerCombo.Items.Clear();
+            PopulateCompilerCards(result.Candidates);
 
-            if (result.Candidates == null || result.Candidates.Count == 0)
+            if (_compilerCards.Count == 0)
             {
-                CompilerCombo.Items.Add("No compiler found");
-                CompilerCombo.SelectedIndex = 0;
-                CompilerCombo.IsEnabled = false;
                 CompileButton.IsEnabled = false;
-                CompilerStatus.Text = "No compiler detected. Install Visual Studio or MinGW.";
+                CompilerStatus.Text = "No compiler detected. Install MSVC / MinGW / LLVM, or drop one into Tools\\LLVM\\bin.";
                 CompilerStatus.Foreground = App.ThemeBrush("DraculaOrangeBrush");
+                NoCompilerCard.Visibility = Visibility.Visible;
                 DownloadCompilerPanel.Visibility = Visibility.Visible;
 
                 detectionWindow.SetComplete(false, "No compilers found");
-                detectionWindow.AppendLog("\n❌ No compilers detected. Please install Visual Studio or MinGW.");
+                detectionWindow.AppendLog("\n❌ No compilers detected. Please install MSVC / MinGW / LLVM, or drop a compiler into Tools\\LLVM\\bin.");
             }
             else
             {
-                foreach (var compiler in result.Candidates)
-                {
-                    var displayName = $"{compiler.Kind} ({compiler.Path})";
-                    CompilerCombo.Items.Add(displayName);
+                foreach (var compiler in result.Candidates!)
                     detectionWindow.AppendLog($"  ✓ Found: {compiler.Kind} at {compiler.Path}");
-                }
-                CompilerCombo.SelectedIndex = 0;
-                CompilerCombo.IsEnabled = true;
+
+                CompilerCardsList.SelectedIndex = 0;
                 CompileButton.IsEnabled = true;
-                CompilerStatus.Text = $"Found {result.Candidates.Count} compiler(s)";
+                CompilerStatus.Text = $"Found {_compilerCards.Count} compiler(s).";
                 CompilerStatus.Foreground = App.ThemeBrush("DraculaGreenBrush");
+                NoCompilerCard.Visibility = Visibility.Collapsed;
                 DownloadCompilerPanel.Visibility = Visibility.Collapsed;
 
-                detectionWindow.SetComplete(true, $"Found {result.Candidates.Count} compiler(s)");
-                detectionWindow.AppendLog($"\n✓ Detection complete. {result.Candidates.Count} compiler(s) available.");
+                detectionWindow.SetComplete(true, $"Found {_compilerCards.Count} compiler(s)");
+                detectionWindow.AppendLog($"\n✓ Detection complete. {_compilerCards.Count} compiler(s) available.");
             }
 
             // Log any errors encountered
@@ -1010,13 +1077,41 @@ public sealed partial class CompilePage : Page
         if (VerboseBuildCheck.IsChecked == true)
             args.Add("-Verbose");
 
-        // Compilation backend
+        // Compilation backend + compilation-flow controls.
+        // Flow controls are LLVM-pipeline scoped — the deterministic CLI path does
+        // not yet understand these flags, so only emit them for LLVM builds.
         var backend = GetSelectedCompilationBackend();
-        if (!string.IsNullOrEmpty(backend) && !backend.Equals("Deterministic", StringComparison.OrdinalIgnoreCase))
+        bool isLlvmBackend = !backend.Equals("Deterministic", StringComparison.OrdinalIgnoreCase);
+
+        if (isLlvmBackend)
         {
             args.AddRange(["-Backend", backend]);
             foreach (var passId in GetSelectedLlvmPassIds())
                 args.AddRange(["-LlvmPass", passId]);
+
+            var toolchain = GetSelectedLlvmToolchainMode();
+            if (!toolchain.Equals("auto", StringComparison.OrdinalIgnoreCase))
+                args.AddRange(["-LlvmToolchain", toolchain]);
+
+            args.AddRange(["-OptLevel", GetTag(OptimizationCombo, "O2")]);
+            args.AddRange(["-Arch", GetTag(ArchitectureCombo, "x64")]);
+            args.AddRange(["-Subsystem", GetTag(SubsystemCombo, "windows")]);
+            args.AddRange(["-CppStandard", GetTag(CppStandardCombo, "17")]);
+
+            foreach (var define in SplitDefines(DefinesTextBox?.Text))
+                args.AddRange(["-Define", define]);
+
+            foreach (var flag in SplitExtraFlags(ExtraFlagsTextBox?.Text))
+                args.AddRange(["-ExtraFlag", flag]);
+
+            if (StripSymbolsCheck?.IsChecked == true)
+                args.Add("-StripSymbols");
+            if (LtoCheck?.IsChecked == true)
+                args.Add("-Lto");
+            if (GcSectionsCheck?.IsChecked == false)
+                args.Add("-NoGcSections");
+            if (GenerateDebugInfo?.IsChecked == true)
+                args.Add("-Debug");
         }
 
         // JSON output for machine-readable result
@@ -1786,6 +1881,62 @@ public sealed partial class CompilePage : Page
             if (StripToBinCheck != null) StripToBinCheck.IsChecked = recipe.Compile.StripToBin;
             if (VerboseBuildCheck != null) VerboseBuildCheck.IsChecked = recipe.Compile.Verbose;
         }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Compiler-card view-model (drives the ListView template)
+// ═══════════════════════════════════════════════════════════════════════
+
+public sealed class CompilerCardViewModel
+{
+    public string Kind { get; init; } = string.Empty;
+    public string Path { get; init; } = string.Empty;
+    public string Edition { get; init; } = string.Empty;
+    public string Glyph { get; init; } = "";
+    public string BackendBadge { get; init; } = "DETERMINISTIC";
+    public bool IsLlvm { get; init; }
+
+    /// <summary>Solid brush used for the rounded icon background.</summary>
+    public SolidColorBrush AccentBrush { get; init; } = new(Microsoft.UI.Colors.SlateGray);
+
+    /// <summary>Solid brush used for the backend badge — green for deterministic, purple for LLVM.</summary>
+    public SolidColorBrush BackendBadgeBrush { get; init; } = new(Microsoft.UI.Colors.DimGray);
+
+    public static CompilerCardViewModel FromCandidate(CompilerToolCandidate c)
+    {
+        bool isLlvm = c.Kind.StartsWith("LLVM", StringComparison.OrdinalIgnoreCase);
+
+        // Pick a glyph + accent color per family. Keeps the cards visually distinct.
+        // Segoe MDL2: E945 = chip, EC4A = beaker, E7C3 = network, E81E = console.
+        string glyph;
+        Color accent;
+        if (c.Kind.Equals("MSVC", StringComparison.OrdinalIgnoreCase))
+            { glyph = ""; accent = Color.FromArgb(0xFF, 0x5C, 0x2D, 0x91); }   // VS purple
+        else if (c.Kind.StartsWith("LLVM Clang-cl", StringComparison.OrdinalIgnoreCase))
+            { glyph = ""; accent = Color.FromArgb(0xFF, 0x26, 0x2D, 0x91); }   // clang-cl indigo
+        else if (c.Kind.StartsWith("LLVM", StringComparison.OrdinalIgnoreCase))
+            { glyph = ""; accent = Color.FromArgb(0xFF, 0x6D, 0x28, 0xD9); }   // LLVM violet
+        else if (c.Kind.StartsWith("MinGW", StringComparison.OrdinalIgnoreCase))
+            { glyph = ""; accent = Color.FromArgb(0xFF, 0x0E, 0x7A, 0x0D); }   // gcc green
+        else
+            { glyph = ""; accent = Color.FromArgb(0xFF, 0x60, 0x60, 0x60); }   // fallback
+
+        Color badgeColor = isLlvm
+            ? Color.FromArgb(0xFF, 0x6D, 0x28, 0xD9)
+            : Color.FromArgb(0xFF, 0x0E, 0x7A, 0x0D);
+
+        return new CompilerCardViewModel
+        {
+            Kind = c.Kind,
+            Path = c.Path,
+            Edition = string.IsNullOrWhiteSpace(c.Edition) ? "Local" : c.Edition,
+            Glyph = glyph,
+            IsLlvm = isLlvm,
+            BackendBadge = isLlvm ? "LLVM OBFUSCATED" : "DETERMINISTIC",
+            AccentBrush = new SolidColorBrush(accent),
+            BackendBadgeBrush = new SolidColorBrush(badgeColor),
+        };
     }
 }
 

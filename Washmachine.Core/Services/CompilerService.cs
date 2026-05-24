@@ -1093,7 +1093,7 @@ public sealed class CompilerService : ICompilerService
 
         try
         {
-            var result = await CppFileConverter.ConvertAsync(directory, compilerDirectory, logger, cancellationToken, outputDirectory: buildDirectory).ConfigureAwait(false);
+            var result = await CppFileConverter.ConvertAsync(directory, compilerDirectory, buildDirectory, logger, cancellationToken).ConfigureAwait(false);
 
             if (result.Success)
             {
@@ -1133,6 +1133,40 @@ public sealed class CompilerService : ICompilerService
             return parsed;
         }
         return Models.CompilationBackend.Deterministic;
+    }
+
+    /// <summary>
+    /// Builds an <see cref="LlvmCompileOptions"/> object from the UI/CLI state.
+    /// Unknown or missing values fall back to the historical defaults so the LLVM
+    /// pipeline keeps working when the GUI doesn't surface a control.
+    /// </summary>
+    private static LlvmCompileOptions BuildLlvmCompileOptions(UiData data)
+    {
+        string Combo(string key, string fallback)
+            => data.ComboBoxes.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v) ? v.Trim() : fallback;
+
+        bool BoolText(string key)
+            => data.TextBoxes.TryGetValue(key, out var v) && bool.TryParse(v, out var b) && b;
+
+        IReadOnlyList<string> List(string key)
+            => data.ListBoxes.TryGetValue(key, out var v) && v is { Count: > 0 }
+                ? (IReadOnlyList<string>)v
+                : Array.Empty<string>();
+
+        return new LlvmCompileOptions
+        {
+            Toolchain    = Combo(UiDataKeys.LlvmToolchain,   "auto"),
+            OptLevel     = Combo(UiDataKeys.LlvmOptLevel,    "O2"),
+            Arch         = Combo(UiDataKeys.LlvmArch,        "x64"),
+            Subsystem    = Combo(UiDataKeys.LlvmSubsystem,   "windows"),
+            CppStandard  = Combo(UiDataKeys.LlvmCppStandard, "17"),
+            Defines      = List(UiDataKeys.LlvmDefines),
+            ExtraFlags   = List(UiDataKeys.LlvmExtraFlags),
+            StripSymbols = BoolText(UiDataKeys.LlvmStripSymbols),
+            Lto          = BoolText(UiDataKeys.LlvmLto),
+            NoGcSections = BoolText(UiDataKeys.LlvmNoGcSections),
+            DebugInfo    = BoolText(UiDataKeys.LlvmDebugInfo),
+        };
     }
 
     private async Task<CppFileConversionResult> ExecuteLlvmConversionAsync(
@@ -1177,10 +1211,19 @@ public sealed class CompilerService : ICompilerService
         if (enabledPasses.Count > 0)
             notes.Add($"LLVM passes loaded: {string.Join(", ", enabledPasses.Select(p => p.Name))}");
 
+        var llvmOptions = BuildLlvmCompileOptions(data);
+        notes.Add($"LLVM options: toolchain={llvmOptions.Toolchain} opt={llvmOptions.OptLevel} arch={llvmOptions.Arch} subsystem={llvmOptions.Subsystem} std=c++{llvmOptions.CppStandard}" +
+                  (llvmOptions.StripSymbols ? " strip" : "") +
+                  (llvmOptions.Lto          ? " lto"   : "") +
+                  (llvmOptions.DebugInfo    ? " debug" : "") +
+                  (llvmOptions.NoGcSections ? " no-gc-sections" : "") +
+                  (llvmOptions.Defines.Count    > 0 ? " defines=[" + string.Join(",", llvmOptions.Defines) + "]" : "") +
+                  (llvmOptions.ExtraFlags.Count > 0 ? " extraFlags=[" + string.Join(" ", llvmOptions.ExtraFlags) + "]" : ""));
+
         try
         {
             var result = await LlvmPipelineService.CompileAsync(
-                sourceDir, llvmBin, buildDirectory, enabledPasses, discovery, logger, cancellationToken)
+                sourceDir, llvmBin, buildDirectory, enabledPasses, discovery, llvmOptions, logger, cancellationToken)
                 .ConfigureAwait(false);
 
             if (result.Success)

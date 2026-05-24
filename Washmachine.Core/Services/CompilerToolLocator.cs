@@ -18,7 +18,7 @@ public interface ICompilerToolLocator
 /// </summary>
 public sealed class CompilerToolLocator : ICompilerToolLocator
 {
-    private static readonly string[] ExecutableNames = { "cl.exe", "clang++.exe", "g++.exe" };
+    private static readonly string[] ExecutableNames = { "cl.exe", "clang-cl.exe", "clang++.exe", "g++.exe" };
     private static readonly string[] HintVariables = { "VCToolsInstallDir", "VCINSTALLDIR", "VSINSTALLDIR" };
     private static readonly string[] VsVersions = { "2022", "2019", "2017" };
     private static readonly string[] VsEditions = { "BuildTools", "Community", "Professional", "Enterprise" };
@@ -188,6 +188,21 @@ public sealed class CompilerToolLocator : ICompilerToolLocator
             yield break;
 
         _logger.Info($"Scanning bundled toolchains under: {toolsRoot}");
+
+        // Prefer well-known LLVM bin layout (Tools\LLVM\bin\clang++.exe, clang-cl.exe).
+        var llvmBin = Path.Combine(toolsRoot, "LLVM", "bin");
+        if (Directory.Exists(llvmBin))
+        {
+            foreach (var exe in new[] { "clang++.exe", "clang-cl.exe", "clang.exe" })
+            {
+                var direct = Path.Combine(llvmBin, exe);
+                if (File.Exists(direct))
+                {
+                    _logger.Info($"Found bundled LLVM compiler: {direct}");
+                    yield return direct;
+                }
+            }
+        }
 
         foreach (var name in ExecutableNames)
         {
@@ -503,25 +518,53 @@ public sealed class CompilerToolLocator : ICompilerToolLocator
     {
         var name = Path.GetFileName(path);
         var installation = Path.GetDirectoryName(path) ?? string.Empty;
+        var (kind, edition) = ClassifyCompiler(path, name, installation);
         return new CompilerToolCandidate
         {
             Path = path,
-            Kind = name,
+            Kind = kind,
             InstallationPath = installation,
-            Edition = "Local",
+            Edition = edition,
             Validated = true,
             Notes = "Found via lightweight scan"
         };
     }
 
+    /// <summary>
+    /// Maps an exe path to a friendly (kind, edition) label.
+    /// Kind is used by the UI to drive backend choice and visual grouping.
+    /// </summary>
+    private static (string Kind, string Edition) ClassifyCompiler(string fullPath, string name, string installation)
+    {
+        bool isBundled = installation.Contains(
+            $"{Path.DirectorySeparatorChar}Tools{Path.DirectorySeparatorChar}",
+            StringComparison.OrdinalIgnoreCase);
+        bool isLlvmPath = installation.Contains(
+            $"{Path.DirectorySeparatorChar}LLVM{Path.DirectorySeparatorChar}",
+            StringComparison.OrdinalIgnoreCase)
+            || installation.EndsWith($"{Path.DirectorySeparatorChar}LLVM{Path.DirectorySeparatorChar}bin", StringComparison.OrdinalIgnoreCase);
+
+        if (name.Equals("cl.exe", StringComparison.OrdinalIgnoreCase))
+            return ("MSVC", "Visual Studio");
+        if (name.Equals("clang-cl.exe", StringComparison.OrdinalIgnoreCase))
+            return ("LLVM Clang-cl", isBundled ? "Bundled" : "Local");
+        if (name.Equals("clang++.exe", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("clang.exe", StringComparison.OrdinalIgnoreCase))
+            return ("LLVM Clang", isBundled || isLlvmPath ? "Bundled" : "Local");
+        if (name.Equals("g++.exe", StringComparison.OrdinalIgnoreCase))
+            return ("MinGW G++", isBundled ? "Bundled" : "Local");
+        return (name, "Local");
+    }
+
     private static int KindPriority(CompilerToolCandidate candidate)
     {
-        var name = Path.GetFileName(candidate.Path);
-        if (name.Equals("cl.exe", StringComparison.OrdinalIgnoreCase))
-            return 0;
-        if (name.Equals("clang++.exe", StringComparison.OrdinalIgnoreCase))
+        if (candidate.Kind.StartsWith("LLVM", StringComparison.OrdinalIgnoreCase))
+            return 0; // Surface bundled LLVM first — it powers the obfuscation pipeline.
+        if (candidate.Kind.Equals("MSVC", StringComparison.OrdinalIgnoreCase))
             return 1;
-        return 2;
+        if (candidate.Kind.StartsWith("MinGW", StringComparison.OrdinalIgnoreCase))
+            return 2;
+        return 3;
     }
 
     private void LogSummary(CompilerToolDiscoveryResult discovery)
