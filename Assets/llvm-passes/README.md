@@ -1,68 +1,143 @@
 # LLVM Obfuscation Passes
 
-Plug-in passes that the **LLVM Obfuscated** compilation backend (`CompilationBackend.LlvmObfuscated`) loads at IR level via clang's `-fpass-plugin=` flag. Each one rewrites the program after the front-end parses C++ and before the back-end emits machine code.
+Four LLVM IR obfuscation passes for the **LlvmObfuscated** compiler backend.  
+Built with the bundled `Tools\msys64` MinGW toolchain — no external dependencies required.
 
-## Pipeline
+---
 
-```
-.cpp ──clang──▶ LLVM IR ──opt + pass plugins──▶ LLVM IR ──back-end──▶ .exe / .dll
-                              ▲
-                     each pass.dll plugs in here
-```
+## Passes
 
-`LlvmPipelineService` appends one `-fpass-plugin=<pass.dll>` per enabled pass (`/clang:-fpass-plugin=…` when going through `clang-cl`).
-
-## Shipped passes
-
-| Id                          | Glyph state | Purpose                                                                                 |
-| --------------------------- | ----------- | --------------------------------------------------------------------------------------- |
-| `bogus-control-flow`        | source      | Inserts opaque predicates + dead branches so decompilers can't trace real flow.         |
-| `control-flow-flattening`   | source      | Replaces a function's CFG with one switch-dispatch loop; destroys structural analysis.  |
-| `instruction-substitution`  | source      | Swaps `a+b`, `a-b`, XORs etc. for semantically equivalent but less recognizable forms.  |
-| `string-obfuscation`        | source      | Encrypts string literals; emits a per-string decrypt stub that runs at load time.       |
+| ID | Name | Pipeline key | Purpose |
+|----|------|--------------|---------|
+| `bogus-control-flow` | Bogus Control Flow | `bcf` | Inserts opaque predicates + dead branches so decompilers can't trace real control flow |
+| `control-flow-flattening` | Control-Flow Flattening | `cff` | Replaces the CFG with one switch-dispatch loop; destroys structural analysis |
+| `instruction-substitution` | Instruction Substitution | `sub` | Replaces `a+b`, XOR, etc. with semantically equivalent but less recognizable forms |
+| `string-obfuscation` | String Obfuscation | `strenc` | Encrypts string literals; emits a per-string decrypt stub that runs at load time |
 
 Each directory contains:
 
 ```
-pass.json         metadata read by LlvmPassRegistry (id / name / description)
-pass.cpp          the pass, written against LLVM's new pass-manager API
-CMakeLists.txt    builds pass.cpp → pass.dll
-pass.dll          only present after a successful build
+pass.json       metadata (id / name / description / opt_name) read by LlvmPassRegistry
+pass.cpp        the LLVM new-pass-manager pass implementation
+CMakeLists.txt  builds pass.cpp → pass.dll (MinGW static-linked, no runtime DLL deps)
+pass.dll        present only after a successful build (git-ignored)
 ```
 
-`LlvmPassRegistry.IsBuilt` is just `File.Exists(pass.dll)`. Until it's there the GUI labels the checkbox `(stub)` and the pipeline silently skips it with a warning instead of failing the build.
+---
 
-## Building
+## Build
 
-Run the unified build script and pick **"Build LLVM passes"** from the menu:
+From the repository root:
 
 ```powershell
-.\build.ps1
+.\Assets\llvm-passes\build-all.ps1          # incremental
+.\Assets\llvm-passes\build-all.ps1 -Force   # clean rebuild
 ```
 
-Or call the underlying script directly:
+This will:
+1. Auto-detect the bundled MinGW toolchain at `Tools\msys64\mingw64`
+2. Build each of the four pass DLLs
+3. Build `pass-runner.exe` — the monolithic obfuscation tool used at runtime
 
-```powershell
-.\Assets\llvm-passes\build-all.ps1
-.\Assets\llvm-passes\build-all.ps1 -Clean
-.\Assets\llvm-passes\build-all.ps1 -LlvmDir "C:\Dev\llvm-sdk\lib\cmake\llvm"
+**Outputs (all git-ignored, must be built locally):**
+
+| Artifact | Location |
+|----------|----------|
+| `bogus-control-flow/pass.dll` | `Assets/llvm-passes/bogus-control-flow/` |
+| `control-flow-flattening/pass.dll` | `Assets/llvm-passes/control-flow-flattening/` |
+| `instruction-substitution/pass.dll` | `Assets/llvm-passes/instruction-substitution/` |
+| `string-obfuscation/pass.dll` | `Assets/llvm-passes/string-obfuscation/` |
+| `pass-runner.exe` | `Assets/llvm-passes/` |
+
+---
+
+## Runtime pipeline
+
+The official LLVM Windows binaries (`clang-cl.exe`, `clang++.exe`) use the **MSVC C++ ABI**.  
+The MinGW-built pass DLLs use the **GNU/Itanium ABI**.  
+Loading a MinGW DLL into the MSVC clang via `-fpass-plugin` crashes immediately (ABI mismatch on vtable/typeinfo layout).
+
+The backend uses a **three-step pipeline** to work around this:
+
+```
+Step 1   clang-cl /c /clang:-emit-llvm source.cpp   →  source.bc       (MSVC frontend, no optimisation)
+Step 2   pass-runner -passes=bcf,cff,sub,strenc      →  source.obf.bc   (MinGW tool, same ABI as passes)
+Step 3   clang-cl /O2 /Fe:output.exe source.obf.bc  →  output.exe      (MSVC backend, full optimisation)
 ```
 
-Each pass is configured with CMake and built to `build/Release/pass.dll`, then copied next to the source as `pass.dll`.
+### Why pass-runner is monolithic
 
-## LLVM SDK requirement (Windows gotcha)
+An earlier design loaded each `pass.dll` at runtime via `LoadLibraryA`.  
+This caused a second failure: both the host EXE and each DLL statically link LLVM,  
+creating **duplicate `AnalysisKey` singletons** in the same process → `0xC0000005` access violation.
 
-The official **`LLVM-x.x.x-win64.exe`** binary release only ships the C API headers and runtime, **not** `LLVMConfig.cmake` or the C++ headers needed to build pass plugins. You need a developer build. Options:
+The fix: compile all four `pass.cpp` files **directly into `pass-runner.exe`**.
 
-1. Build LLVM from source with `cmake --install`, then point `build-all.ps1` at `<prefix>\lib\cmake\llvm`.
-2. `scoop install llvm` — Scoop's package ships the dev headers.
-3. MSYS2: `pacman -S mingw-w64-x86_64-llvm`.
+```
+pass-runner.exe
+├── main.cpp                           (pipeline driver, forward-declares each pass's info fn)
+├── bogus-control-flow/pass.cpp        (compiled in)
+├── control-flow-flattening/pass.cpp   (compiled in)
+├── instruction-substitution/pass.cpp  (compiled in)
+└── string-obfuscation/pass.cpp        (compiled in)
+```
 
-`build-all.ps1` auto-discovers the SDK in the common install locations and also patches `LLVMExports.cmake` to repoint the hard-coded `diaguids.lib` path at whatever Visual Studio is on this machine (LNK1181 workaround).
+Single LLVM instance, no DLL loading at runtime, no ODR conflicts.  
+Each pass exposes a uniquely-named function (e.g. `getBogusControlFlowPluginInfo()`);  
+`main.cpp` calls all four at startup and the `-passes=` pipeline string controls which ones run.
 
-## Writing a new pass
+---
 
-1. Create `Assets/llvm-passes/<id>/` with `pass.json`, `pass.cpp`, `CMakeLists.txt`.
-2. The pass **must** be a Module pass (Windows clang plugins choke on function-pass adapters — see `~/.claude/memory/llvm-pass-static-link.md`).
-3. Implement `llvmGetPassPluginInfo()` and register at `PipelineStartEPCallback` or `OptimizerLastEPCallback`.
-4. Rebuild via the menu; the GUI picks it up automatically (registry rescans on every page load).
+## Adding a new pass
+
+1. Create `Assets/llvm-passes/<id>/` with `pass.json`, `pass.cpp`, `CMakeLists.txt`
+2. In `pass.cpp`, expose a uniquely-named info function alongside the standard weak export:
+   ```cpp
+   // Unique name (forward-declared in pass-runner/main.cpp):
+   llvm::PassPluginLibraryInfo getMyPassPluginInfo() { ... }
+
+   // Standard weak export (for standalone DLL usage):
+   extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo
+   llvmGetPassPluginInfo() { return getMyPassPluginInfo(); }
+   ```
+3. In `pass.json`, include an `opt_name` field (the pipeline key, e.g. `"mypass"`):
+   ```json
+   { "name": "My Pass", "description": "What it does.", "opt_name": "mypass" }
+   ```
+4. In `pass-runner/main.cpp`, add a forward declaration and entry in `kPassInfos[]`
+5. In `pass-runner/CMakeLists.txt`, add `../my-pass/pass.cpp` to `add_executable`
+6. In `build-all.ps1`, add `"my-pass"` to the `$passes` array
+7. Register the pass in `Assets/default.yaml` under `llvm_passes:`
+
+---
+
+## Session history — problems solved
+
+### P1 · ZLIB linker error in MSYS2 build
+The MSYS2 LLVM CMake config lists `ZLIB::ZLIB` but the trimmed `Tools\msys64` only ships
+the static `libz.a`, not the shared import library. Fixed in each pass `CMakeLists.txt` by
+redirecting the `ZLIB::ZLIB` imported target to `libz.a`.
+
+### P2 · `clang-cl: error: LTO requires -fuse-ld=lld`
+When LTO was requested in the single-step (no passes) path, clang-cl needed an explicit
+linker flag. Fixed by appending `-fuse-ld=lld` when LTO is active on the single-step path.
+
+### P3 · C++ ABI mismatch → `clang frontend command failed due to signal`
+Loading MinGW `pass.dll` via `-fpass-plugin` into the MSVC-ABI `clang-cl.exe` caused an
+immediate crash. Root cause: incompatible vtable/typeinfo layouts. Solution: the 3-step
+pipeline described above.
+
+### P4 · Duplicate LLVM singletons → `0xC0000005` in pass-runner
+An intermediate design loaded pass DLLs via `LoadLibraryA` at runtime. Both the EXE and
+each DLL statically linked LLVM, creating N+1 copies of LLVM's `AnalysisKey` singletons
+in the same process. Solution: monolithic compilation (all four passes built into the EXE).
+
+### P5 · `opt_name` JSON field not deserialised
+`PropertyNameCaseInsensitive = true` only handles capitalisation differences, not snake_case.
+Fixed by adding `[JsonPropertyName("opt_name")]` to `LlvmPassRegistry.PassMeta.OptName`.
+
+### P6 · `HashAndRenameAsync` clobbering intermediate bitcode paths
+The existing `RunCompilerAsync` renames output files to content-hash-based names.
+Step 2 couldn't find the bitcode after step 1 had renamed it. Fixed by adding
+`RunIntermediateAsync` and `RunPassRunnerAsync` helpers that skip the hash-rename.
+
