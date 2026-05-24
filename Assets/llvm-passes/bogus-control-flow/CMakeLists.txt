@@ -44,4 +44,42 @@ if(NOT LLVM_ENABLE_RTTI)
     target_compile_options(pass PRIVATE $<IF:$<CXX_COMPILER_ID:MSVC>,/GR-,-fno-rtti>)
 endif()
 
+# ── Self-contained DLL ────────────────────────────────────────────────────────
+# clang-cl loads pass.dll inside an MSVC environment where MinGW runtime DLLs
+# (libgcc, libstdc++, libwinpthread, zlib1, libzstd) are not on PATH.
+# For GCC/MinGW builds: switch every .dll.a import stub to its .a static
+# counterpart and force-static the C++ / threading runtimes.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(_msys_lib "${LLVM_INSTALL_PREFIX}/lib")
+
+    # Swap zstd::libzstd_shared → zstd::libzstd_static and replace raw
+    # "pthread" with the static winpthread archive in LLVMSupport's deps.
+    if(TARGET LLVMSupport)
+        get_target_property(_ill LLVMSupport INTERFACE_LINK_LIBRARIES)
+        if(_ill)
+            list(TRANSFORM _ill REPLACE "^zstd::libzstd_shared$" "zstd::libzstd_static")
+            list(REMOVE_ITEM _ill "pthread")
+            set_property(TARGET LLVMSupport PROPERTY INTERFACE_LINK_LIBRARIES "${_ill}")
+        endif()
+    endif()
+
+    # Force-include all libwinpthread.a objects so clock_gettime64 is defined
+    # directly in pass.dll before libstdc++.a's chrono.o is linked.
+    if(EXISTS "${_msys_lib}/libwinpthread.a")
+        target_link_libraries(pass PRIVATE
+            "-Wl,--whole-archive,${_msys_lib}/libwinpthread.a,--no-whole-archive")
+    endif()
+
+    # ZLIB::ZLIB: cmake uses IMPORTED_IMPLIB on Windows — clear it so cmake
+    # falls back to IMPORTED_LOCATION which we point to the static archive.
+    if(TARGET ZLIB::ZLIB AND EXISTS "${_msys_lib}/libz.a")
+        set_property(TARGET ZLIB::ZLIB PROPERTY IMPORTED_IMPLIB           "")
+        set_property(TARGET ZLIB::ZLIB PROPERTY IMPORTED_IMPLIB_RELEASE   "")
+        set_property(TARGET ZLIB::ZLIB PROPERTY IMPORTED_LOCATION         "${_msys_lib}/libz.a")
+        set_property(TARGET ZLIB::ZLIB PROPERTY IMPORTED_LOCATION_RELEASE "${_msys_lib}/libz.a")
+    endif()
+
+    target_link_options(pass PRIVATE -static-libgcc -static-libstdc++ -Wl,--as-needed)
+endif()
+
 set_target_properties(pass PROPERTIES OUTPUT_NAME pass PREFIX "" SUFFIX ".dll")
