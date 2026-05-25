@@ -273,6 +273,29 @@ public static class LlvmPipelineService
                 ? "/SUBSYSTEM:CONSOLE"
                 : "/SUBSYSTEM:WINDOWS /entry:mainCRTStartup";
 
+        // ── Reproducibility & forensic logging ────────────────────────────
+        // 1. Pin OBFUSCATION_SEED for pass-runner so the IR transformations
+        //    are reproducible from the manifest (and so we know what was
+        //    used even when the caller left it unset).
+        // 2. Snapshot pre/post-pass bitcode into <buildDir>/ir/ — the
+        //    working *.bc files in buildDir root are still deleted at the
+        //    end of the run; the snapshots survive.
+        // 3. Write <buildDir>/llvm_pipeline.json with seed, plugins,
+        //    runner, per-step timings + exit codes, and artifact hashes —
+        //    even on partial failure.
+        var (seedValue, seedSource) = ResolveSeed();
+        logger.Info($"LLVM obfuscation seed: {seedValue} (source: {seedSource})");
+
+        var irDir = Path.Combine(buildDir, "ir");
+        Directory.CreateDirectory(irDir);
+        var llvmBinDir = Path.GetDirectoryName(clangCl) ?? string.Empty;
+
+        var manifestSteps     = new List<Dictionary<string, object?>>();
+        var manifestArtifacts = new Dictionary<string, object>();
+        var pipelineStart     = DateTime.UtcNow;
+        string? manifestError = null;
+        CppFileConversionResult? result = null;
+
         // Base flags for step 1 (frontend only, no optimization — passes apply after)
         var step1Base = new StringBuilder();
         step1Base.Append($"/nologo /Od /Gy /EHsc {cppStd} ");
@@ -302,14 +325,29 @@ public static class LlvmPipelineService
                 var autoOut = Path.Combine(buildDir, $"{stem}.bc");
 
                 var cmd1 = $"cmd.exe /c \"\"{vcVarsScript}\" && \"{clangCl}\" {step1Args}\"";
+                var sw1  = System.Diagnostics.Stopwatch.StartNew();
                 var (s1ok, s1err) = await RunIntermediateAsync(cmd1, buildDir, autoOut, "clang-cl[emit-bc]", logger, ct);
+                sw1.Stop();
+                manifestSteps.Add(new() {
+                    ["step"] = 1, ["tool"] = "clang-cl[emit-bc]",
+                    ["source"] = stem, ["ok"] = s1ok, ["durationMs"] = sw1.ElapsedMilliseconds,
+                });
                 if (!s1ok)
-                    return new CppFileConversionResult(false,
+                {
+                    result = new CppFileConversionResult(false,
                         $"LLVM: step 1 (emit bitcode) failed for source {i}: {s1err}");
+                    return result;
+                }
 
                 // Rename the auto-named output to our indexed name to avoid collisions
                 if (!autoOut.Equals(bcPath, StringComparison.OrdinalIgnoreCase))
                     File.Move(autoOut, bcPath, overwrite: true);
+
+                // Snapshot the pre-pass IR into ir/<stem>.pre.bc so it survives cleanup
+                var preSnap = Path.Combine(irDir, $"{stem}.pre.bc");
+                File.Copy(bcPath, preSnap, overwrite: true);
+                manifestArtifacts[ToRelKey(buildDir, preSnap)] = FileMeta(preSnap);
+                TryDisassemble(llvmBinDir, preSnap, Path.ChangeExtension(preSnap, ".ll"), logger);
             }
 
             // Step 2: apply obfuscation passes to each bitcode file
@@ -319,6 +357,7 @@ public static class LlvmPipelineService
                 var bcPath  = bcFiles[i];
                 var obfPath = Path.ChangeExtension(bcPath, ".obf.bc");
                 obfBcFiles.Add(obfPath);
+                var stem    = Path.GetFileNameWithoutExtension(sources[i]);
 
                 var psi2 = new ProcessStartInfo
                 {
@@ -333,12 +372,32 @@ public static class LlvmPipelineService
                 psi2.ArgumentList.Add(bcPath);
                 psi2.ArgumentList.Add("-o");
                 psi2.ArgumentList.Add(obfPath);
+                // Pin OBFUSCATION_SEED for the child only; the parent env
+                // is unmodified. With UseShellExecute=false, EnvironmentVariables
+                // starts as a copy of the parent's environment.
+                psi2.EnvironmentVariables["OBFUSCATION_SEED"] = seedValue;
 
                 logger.Debug($"LLVM pass-runner [step 2, src {i}]: -passes={passPipeline}");
+                var sw2 = System.Diagnostics.Stopwatch.StartNew();
                 var (s2ok, s2err) = await RunPassRunnerAsync(psi2, obfPath, "pass-runner", logger, ct);
+                sw2.Stop();
+                manifestSteps.Add(new() {
+                    ["step"] = 2, ["tool"] = "pass-runner",
+                    ["source"] = stem, ["passes"] = passPipeline,
+                    ["ok"] = s2ok, ["durationMs"] = sw2.ElapsedMilliseconds,
+                });
                 if (!s2ok)
-                    return new CppFileConversionResult(false,
+                {
+                    result = new CppFileConversionResult(false,
                         $"LLVM: step 2 (obfuscate) failed for source {i}: {s2err}");
+                    return result;
+                }
+
+                // Snapshot the post-pass IR into ir/<stem>.post.bc
+                var postSnap = Path.Combine(irDir, $"{stem}.post.bc");
+                File.Copy(obfPath, postSnap, overwrite: true);
+                manifestArtifacts[ToRelKey(buildDir, postSnap)] = FileMeta(postSnap);
+                TryDisassemble(llvmBinDir, postSnap, Path.ChangeExtension(postSnap, ".ll"), logger);
             }
 
             // Step 3: optimize + compile obfuscated bitcode and link
@@ -365,15 +424,181 @@ public static class LlvmPipelineService
             logger.Debug($"LLVM clang-cl [step 3 link]: {Truncate(step3Args, 600)}");
 
             var cmd3 = $"cmd.exe /c \"\"{vcVarsScript}\" && \"{clangCl}\" {step3Args}\"";
-            return await RunCompilerAsync(cmd3, buildDir, outputExe, "clang-cl[link]", logger, ct);
+            var sw3  = System.Diagnostics.Stopwatch.StartNew();
+            result   = await RunCompilerAsync(cmd3, buildDir, outputExe, "clang-cl[link]", logger, ct);
+            sw3.Stop();
+            manifestSteps.Add(new() {
+                ["step"] = 3, ["tool"] = "clang-cl[link]",
+                ["ok"] = result.Success, ["durationMs"] = sw3.ElapsedMilliseconds,
+                ["outputPath"] = result.OutputExePath,
+            });
+            return result;
+        }
+        catch (Exception ex)
+        {
+            manifestError = ex.Message;
+            throw;
         }
         finally
         {
+            // Clean up the working .bc files in buildDir root; the IR
+            // snapshots in ir/ persist.
             foreach (var f in bcFiles.Concat(obfBcFiles))
             {
                 try { File.Delete(f); } catch { }
             }
+
+            // Write the manifest unconditionally so even partial failures
+            // leave a record of what was tried, which seed was used, and
+            // what intermediate artifacts were captured.
+            try
+            {
+                WritePipelineManifest(
+                    buildDir, seedValue, seedSource, passPipeline,
+                    passPlugins, passRunnerExe, clangCl, vcVarsScript,
+                    opt, manifestSteps, manifestArtifacts,
+                    pipelineStart, manifestError, result?.Success, logger);
+            }
+            catch (Exception ex)
+            {
+                logger.Warn($"LLVM: failed to write pipeline manifest: {ex.Message}");
+            }
         }
+    }
+
+    // ─── Manifest / IR helpers ────────────────────────────────────────────
+
+    /// <summary>
+    /// Resolves the obfuscation seed for the pass-runner child process.
+    /// If OBFUSCATION_SEED is already set in the parent environment we
+    /// reuse it (and report "env"); otherwise we generate one with
+    /// crypto-grade entropy and report "generated". Either way the seed
+    /// is logged so a future run with the same value reproduces the IR.
+    /// </summary>
+    private static (string Value, string Source) ResolveSeed()
+    {
+        var existing = Environment.GetEnvironmentVariable("OBFUSCATION_SEED");
+        if (!string.IsNullOrWhiteSpace(existing) && ulong.TryParse(existing, out _))
+            return (existing!, "env");
+
+        Span<byte> b = stackalloc byte[8];
+        RandomNumberGenerator.Fill(b);
+        // Clear the top bit so the result fits in a signed int64 string too
+        b[0] &= 0x7F;
+        ulong v = BitConverter.ToUInt64(b);
+        if (v == 0) v = 1;
+        return (v.ToString(System.Globalization.CultureInfo.InvariantCulture), "generated");
+    }
+
+    private static string ToRelKey(string root, string path)
+        => Path.GetRelativePath(root, path).Replace('\\', '/');
+
+    private static Dictionary<string, object?> FileMeta(string path)
+    {
+        var fi = new FileInfo(path);
+        return new()
+        {
+            ["size"] = fi.Length,
+            ["sha256"] = HashFile(path),
+        };
+    }
+
+    private static string HashFile(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream));
+    }
+
+    /// <summary>
+    /// Best-effort .bc → .ll disassembly so humans can read the IR. Uses
+    /// llvm-dis.exe if it's in the LLVM bin dir; silently skips if not.
+    /// </summary>
+    private static void TryDisassemble(string llvmBinDir, string bcPath, string llPath, IAppLogger logger)
+    {
+        if (string.IsNullOrWhiteSpace(llvmBinDir)) return;
+        var dis = Path.Combine(llvmBinDir, "llvm-dis.exe");
+        if (!File.Exists(dis)) return;
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = dis,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError  = true,
+            };
+            psi.ArgumentList.Add(bcPath);
+            psi.ArgumentList.Add("-o");
+            psi.ArgumentList.Add(llPath);
+            using var p = Process.Start(psi);
+            if (p is null) return;
+            if (!p.WaitForExit(10_000))
+            {
+                try { p.Kill(); } catch { }
+                logger.Debug($"llvm-dis timed out on {Path.GetFileName(bcPath)}");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.Debug($"llvm-dis on {Path.GetFileName(bcPath)} failed: {ex.Message}");
+        }
+    }
+
+    private static void WritePipelineManifest(
+        string buildDir,
+        string seedValue, string seedSource,
+        string passPipeline,
+        IReadOnlyList<string> passPlugins,
+        string passRunnerExe,
+        string clangCl, string vcVarsScript,
+        LlvmCompileOptions opt,
+        IReadOnlyList<Dictionary<string, object?>> steps,
+        IReadOnlyDictionary<string, object> artifacts,
+        DateTime startedUtc, string? error, bool? success,
+        IAppLogger logger)
+    {
+        var manifest = new Dictionary<string, object?>
+        {
+            ["schemaVersion"] = 1,
+            ["startedUtc"]    = startedUtc.ToString("o"),
+            ["finishedUtc"]   = DateTime.UtcNow.ToString("o"),
+            ["success"]       = success,
+            ["error"]         = error,
+            ["seed"]          = new { value = seedValue, source = seedSource, envVar = "OBFUSCATION_SEED" },
+            ["passes"]        = passPipeline.Split(',', StringSplitOptions.RemoveEmptyEntries),
+            ["plugins"]       = passPlugins.Select(p => new
+            {
+                path   = p,
+                exists = File.Exists(p),
+                size   = File.Exists(p) ? new FileInfo(p).Length : -1L,
+                sha256 = File.Exists(p) ? HashFile(p) : null,
+            }).ToArray(),
+            ["passRunner"]    = new
+            {
+                path   = passRunnerExe,
+                exists = File.Exists(passRunnerExe),
+                size   = File.Exists(passRunnerExe) ? new FileInfo(passRunnerExe).Length : -1L,
+                sha256 = File.Exists(passRunnerExe) ? HashFile(passRunnerExe) : null,
+            },
+            ["toolchain"]     = new { clangCl, vcvars64 = vcVarsScript },
+            ["compileOptions"] = new
+            {
+                opt.OptLevel, opt.Arch, opt.Subsystem,
+                cppStandard = opt.CppStandard,
+                opt.StripSymbols, opt.Lto, opt.NoGcSections, opt.DebugInfo,
+                defines    = opt.Defines.ToArray(),
+                extraFlags = opt.ExtraFlags.ToArray(),
+            },
+            ["steps"]         = steps,
+            ["artifacts"]     = artifacts,
+        };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(manifest,
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        var manifestPath = Path.Combine(buildDir, "llvm_pipeline.json");
+        File.WriteAllText(manifestPath, json);
+        logger.Info($"LLVM pipeline manifest: {Path.GetRelativePath(buildDir, manifestPath)}");
     }
 
     // ─── MinGW path (clang++.exe) ────────────────────────────────────────────
