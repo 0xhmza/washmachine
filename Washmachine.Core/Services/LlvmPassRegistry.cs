@@ -96,8 +96,7 @@ public sealed class LlvmPassRegistry
 
             if (!pass.IsBuilt)
             {
-                _logger.Warn($"LLVM pass '{id}' ({pass.Name}) has not been compiled yet. Skipping. " +
-                             $"Build pass.dll from Assets/llvm-passes/{id}/ using the provided CMakeLists.txt.");
+                _logger.Warn($"LLVM pass '{id}' ({pass.Name}) is missing its opt_name in pass.json — skipping.");
                 continue;
             }
 

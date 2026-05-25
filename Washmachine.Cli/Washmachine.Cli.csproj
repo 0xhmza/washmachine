@@ -43,7 +43,17 @@
 
   <!-- Copy shared assets (playbooks + runtime headers) to CLI output so AppPaths can locate them -->
   <ItemGroup>
-    <Content Include="..\Assets\**\*" Link="Assets\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!--
+      Exclude the per-pass build artefacts (pass.dll, pass.cpp, CMakeLists.txt
+      inside Assets\llvm-passes\<id>\): only pass-runner.exe is needed at
+      runtime, and the standalone DLLs save ~62 MB by being dropped.
+      pass.json is still picked up by the broad ** glob and is needed by
+      LlvmPassRegistry to enumerate pass names.
+    -->
+    <Content Include="..\Assets\**\*"
+             Exclude="..\Assets\llvm-passes\*\pass.dll;..\Assets\llvm-passes\*\pass.cpp;..\Assets\llvm-passes\*\CMakeLists.txt;..\Assets\llvm-passes\*\build\**;..\Assets\llvm-passes\pass-runner\**"
+             Link="Assets\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\testing assets\binary\shellcodes\messagebox.bin" Link="messagebox.bin" CopyToOutputDirectory="PreserveNewest"
               Condition="Exists('..\testing assets\binary\shellcodes\messagebox.bin')" />
   </ItemGroup>

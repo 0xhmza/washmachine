@@ -1153,19 +1153,23 @@ public sealed class CompilerService : ICompilerService
                 ? (IReadOnlyList<string>)v
                 : Array.Empty<string>();
 
+        int IntText(string key, int fallback)
+            => data.TextBoxes.TryGetValue(key, out var v) && int.TryParse(v, out var i) ? i : fallback;
+
         return new LlvmCompileOptions
         {
-            Toolchain    = Combo(UiDataKeys.LlvmToolchain,   "auto"),
-            OptLevel     = Combo(UiDataKeys.LlvmOptLevel,    "O2"),
-            Arch         = Combo(UiDataKeys.LlvmArch,        "x64"),
-            Subsystem    = Combo(UiDataKeys.LlvmSubsystem,   "windows"),
-            CppStandard  = Combo(UiDataKeys.LlvmCppStandard, "17"),
-            Defines      = List(UiDataKeys.LlvmDefines),
-            ExtraFlags   = List(UiDataKeys.LlvmExtraFlags),
-            StripSymbols = BoolText(UiDataKeys.LlvmStripSymbols),
-            Lto          = BoolText(UiDataKeys.LlvmLto),
-            NoGcSections = BoolText(UiDataKeys.LlvmNoGcSections),
-            DebugInfo    = BoolText(UiDataKeys.LlvmDebugInfo),
+            Toolchain     = Combo(UiDataKeys.LlvmToolchain,   "auto"),
+            OptLevel      = Combo(UiDataKeys.LlvmOptLevel,    "O2"),
+            Arch          = Combo(UiDataKeys.LlvmArch,        "x64"),
+            Subsystem     = Combo(UiDataKeys.LlvmSubsystem,   "windows"),
+            CppStandard   = Combo(UiDataKeys.LlvmCppStandard, "17"),
+            Defines       = List(UiDataKeys.LlvmDefines),
+            ExtraFlags    = List(UiDataKeys.LlvmExtraFlags),
+            StripSymbols  = BoolText(UiDataKeys.LlvmStripSymbols),
+            Lto           = BoolText(UiDataKeys.LlvmLto),
+            NoGcSections  = BoolText(UiDataKeys.LlvmNoGcSections),
+            DebugInfo     = BoolText(UiDataKeys.LlvmDebugInfo),
+            SlowdownLevel = Math.Clamp(IntText(UiDataKeys.LlvmSlowdownLevel, 0), 0, 100),
         };
     }
 

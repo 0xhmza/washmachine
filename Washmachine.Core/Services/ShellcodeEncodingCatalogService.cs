@@ -95,6 +95,12 @@ public sealed class ShellcodeEncodingCatalogService : IShellcodeEncodingCatalog
                 string v when v.StartsWith("available web", StringComparison.OrdinalIgnoreCase) => CatalogSection.WebHelpers,
                 string v when v.Equals("Web Helpers:", StringComparison.OrdinalIgnoreCase) => CatalogSection.WebHelpers,
                 string v when v.StartsWith("Web", StringComparison.OrdinalIgnoreCase) && v.EndsWith(":", StringComparison.Ordinal) && v.Contains("helper", StringComparison.OrdinalIgnoreCase) => CatalogSection.WebHelpers,
+                // bin2shell emits "available carriers (--carrier):" between
+                // Web Helpers and the defaults footer. Without this case the
+                // parser stays in WebHelpers and `ini`/`png`/`bmp`/`ico` leak
+                // into the Web Helper dropdown.
+                string v when v.StartsWith("available carriers", StringComparison.OrdinalIgnoreCase) => CatalogSection.Carriers,
+                string v when v.Equals("Carriers:", StringComparison.OrdinalIgnoreCase) => CatalogSection.Carriers,
                 _ => current
             };
 
@@ -224,7 +230,13 @@ public sealed class ShellcodeEncodingCatalogService : IShellcodeEncodingCatalog
         Compressors,
         Envelopes,
         AntiEmulation,
-        WebHelpers
+        WebHelpers,
+        // Carriers are intentionally parsed but discarded: they belong to a
+        // separate bin2shell feature (--carrier) that the GUI does not expose
+        // here. We still need to recognise the section header so subsequent
+        // carrier lines don't leak into the previous bucket (e.g. WebHelpers
+        // ending up showing png/ico/bmp/ini).
+        Carriers,
     }
 }
 

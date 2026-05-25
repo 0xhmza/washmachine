@@ -193,6 +193,7 @@ $passes = @(
     @{ Dir = 'control-flow-flattening';   Proj = 'ControlFlowFlatteningPass'   }
     @{ Dir = 'instruction-substitution';  Proj = 'InstructionSubstitutionPass' }
     @{ Dir = 'string-obfuscation';        Proj = 'StringObfuscationPass'       }
+    @{ Dir = 'time-stretch';              Proj = 'TimeStretchPass'             }
 )
 $ok   = [System.Collections.Generic.List[string]]::new()
 $fail = [System.Collections.Generic.List[string]]::new()

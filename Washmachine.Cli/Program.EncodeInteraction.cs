@@ -1002,6 +1002,21 @@ public static partial class Program
                     state.DebugInfo = true;
                     break;
 
+                case "-SlowdownLevel" or "--slowdown-level":
+                    if (!TryReadFlagValue(args, ref i, out var slowValue))
+                    {
+                        messages.Add("Missing value after -SlowdownLevel. Expected: integer 0..100.");
+                        break;
+                    }
+                    if (!int.TryParse(slowValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var slowInt) ||
+                        slowInt < 0 || slowInt > 100)
+                    {
+                        messages.Add($"Invalid -SlowdownLevel value '{slowValue}'. Expected: integer 0..100.");
+                        break;
+                    }
+                    state.SlowdownLevel = slowInt;
+                    break;
+
                 default:
                     return new EncodeParseOutcome(state, messages, Array.Empty<EncodeOptionSpec>(), $"Unknown option: {arg}", RequiresInteractiveFallback: false);
             }
@@ -1135,6 +1150,7 @@ public static partial class Program
         textBoxes[UiDataKeys.LlvmLto]           = state.Lto          ? bool.TrueString : bool.FalseString;
         textBoxes[UiDataKeys.LlvmNoGcSections]  = state.NoGcSections ? bool.TrueString : bool.FalseString;
         textBoxes[UiDataKeys.LlvmDebugInfo]     = state.DebugInfo    ? bool.TrueString : bool.FalseString;
+        textBoxes[UiDataKeys.LlvmSlowdownLevel] = state.SlowdownLevel.ToString(CultureInfo.InvariantCulture);
 
         var encodingCatalogService = new ShellcodeEncodingCatalogService(runner, context.Paths);
         try
@@ -3119,6 +3135,7 @@ public static partial class Program
         public bool Lto { get; set; }
         public bool NoGcSections { get; set; }
         public bool DebugInfo { get; set; }
+        public int SlowdownLevel { get; set; }              // 0..100; 0 disables the time-stretch pass
 
         public EncodeSessionState Clone()
         {
@@ -3155,6 +3172,7 @@ public static partial class Program
                 Lto = Lto,
                 NoGcSections = NoGcSections,
                 DebugInfo = DebugInfo,
+                SlowdownLevel = SlowdownLevel,
             };
         }
     }

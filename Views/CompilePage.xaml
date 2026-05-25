@@ -366,6 +366,31 @@
 
                         <Border Style="{StaticResource SectionDivider}" Margin="0,4,0,0" />
 
+                        <StackPanel Spacing="4">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Time stretch — execution slowdown" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" x:Name="SlowdownValueLabel"
+                                           Text="off" MinWidth="48"
+                                           HorizontalAlignment="Right" VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </Grid>
+                            <TextBlock Text="Inserts data-dependent integer-arithmetic chains at function entries to consume real cycles. Looks statistically like normal hashing/mixer code — no cpuid, rdtsc, fences, NOP sleds, or spin loops. Slowdown scales with the program's own call frequency. 0 disables the pass."
+                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       TextWrapping="Wrap" />
+                            <Slider x:Name="SlowdownSlider"
+                                    Minimum="0" Maximum="100" Value="0"
+                                    StepFrequency="1" SmallChange="1" LargeChange="10"
+                                    TickFrequency="10" TickPlacement="Outside"
+                                    ValueChanged="SlowdownSlider_ValueChanged" />
+                        </StackPanel>
+
+                        <Border Style="{StaticResource SectionDivider}" Margin="0,4,0,0" />
+
                         <TextBlock Text="Toolchain mode" FontWeight="SemiBold" />
                         <RadioButtons x:Name="LlvmToolchainRadio" SelectedIndex="0">
                             <x:String>Auto (clang-cl if MSVC available, else clang++)</x:String>

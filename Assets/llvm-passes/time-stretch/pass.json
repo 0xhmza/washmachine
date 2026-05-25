@@ -1,0 +1,6 @@
+{
+  "id": "time-stretch",
+  "opt_name": "tstr",
+  "name": "Time Stretch",
+  "description": "Slows execution by a controllable factor using ordinary integer-arithmetic chains on volatile state. No cpuid/rdtsc, no fences, no spin loops. Intensity is set by the slider above."
+}

@@ -31,6 +31,7 @@ llvm::PassPluginLibraryInfo getBogusControlFlowPluginInfo();
 llvm::PassPluginLibraryInfo getControlFlowFlatteningPluginInfo();
 llvm::PassPluginLibraryInfo getInstructionSubstitutionPluginInfo();
 llvm::PassPluginLibraryInfo getStringObfuscationPluginInfo();
+llvm::PassPluginLibraryInfo getTimeStretchPluginInfo();
 
 static cl::opt<std::string> PassPipeline(
     "passes",
@@ -77,6 +78,7 @@ int main(int argc, char **argv) {
         getControlFlowFlatteningPluginInfo(),
         getInstructionSubstitutionPluginInfo(),
         getStringObfuscationPluginInfo(),
+        getTimeStretchPluginInfo(),
     };
     for (auto &Info : kPassInfos) {
         if (Info.RegisterPassBuilderCallbacks)

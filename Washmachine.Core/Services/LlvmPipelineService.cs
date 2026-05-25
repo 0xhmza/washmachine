@@ -23,6 +23,13 @@ public sealed class LlvmCompileOptions
     public bool Lto          { get; init; }
     public bool NoGcSections { get; init; }
     public bool DebugInfo    { get; init; }
+
+    /// <summary>
+    /// Time-Stretch pass intensity (0..100). Forwarded to pass-runner.exe via
+    /// the SLOWDOWN_LEVEL environment variable. Has no effect unless the
+    /// time-stretch pass is in the pipeline.
+    /// </summary>
+    public int SlowdownLevel { get; init; }
 }
 
 /// <summary>
@@ -100,21 +107,19 @@ public static class LlvmPipelineService
         var extraLibs = DetectRequiredLibraries(sources);
         var staticLibs = Directory.GetFiles(sourceDirectory, "*.lib", SearchOption.TopDirectoryOnly);
 
-        var passPluginArgs = enabledPasses
-            .Where(p => p.IsBuilt)
-            .Select(p => p.PluginPath!)
-            .ToList();
-
+        // Passes are scheduled by name through pass-runner.exe (the monolithic
+        // tool that statically links every pass). We no longer load individual
+        // pass.dll files — the standalone DLL route is ABI-broken on Windows
+        // and is documented as deprecated in Assets/llvm-passes/README.md.
         var passPipeline = string.Join(",", enabledPasses
             .Where(p => p.IsBuilt && !string.IsNullOrWhiteSpace(p.OptPassName))
             .Select(p => p.OptPassName!));
 
-        if (enabledPasses.Count > 0 && passPluginArgs.Count == 0)
-            logger.Warn("LLVM: All enabled passes are unbuilt — compiling without obfuscation. " +
-                        "Build pass.dll stubs from Assets/llvm-passes/<id>/CMakeLists.txt.");
-        else if (passPluginArgs.Count > 0)
-            logger.Info($"LLVM: Loading {passPluginArgs.Count} obfuscation pass(es): " +
-                        string.Join(", ", enabledPasses.Where(p => p.IsBuilt).Select(p => p.Name)));
+        if (enabledPasses.Count > 0 && string.IsNullOrWhiteSpace(passPipeline))
+            logger.Warn("LLVM: Enabled passes have no opt_name in pass.json — compiling without obfuscation.");
+        else if (!string.IsNullOrWhiteSpace(passPipeline))
+            logger.Info($"LLVM: Scheduling {enabledPasses.Count} obfuscation pass(es) via pass-runner: " +
+                        string.Join(", ", enabledPasses.Select(p => p.Name)));
 
         // Honor the forced-toolchain selection, else auto-detect MSVC vs MinGW.
         var toolchain = (options.Toolchain ?? "auto").ToLowerInvariant();
@@ -146,15 +151,20 @@ public static class LlvmPipelineService
 
             return await CompileWithClangClAsync(
                 sources, tempExe, extraLibs, staticLibs, isDll,
-                passPluginArgs, passPipeline, passRunnerExe,
+                passPipeline, passRunnerExe,
                 vcVarsScript!, llvmBinDirectory,
                 buildDirectory, options, logger, cancellationToken);
         }
 
+        if (!string.IsNullOrWhiteSpace(passPipeline))
+        {
+            logger.Warn("LLVM: clang++ MinGW path does not apply obfuscation passes (pass-runner needs the clang-cl/MSVC path). " +
+                        "Compiling without passes.");
+        }
         logger.Info("LLVM: Using clang++ with MinGW target.");
         return await CompileWithClangPlusPlusAsync(
             sources, tempExe, extraLibs, staticLibs, isDll,
-            passPluginArgs, llvmBinDirectory,
+            llvmBinDirectory,
             buildDirectory, options, logger, cancellationToken);
     }
 
@@ -166,7 +176,6 @@ public static class LlvmPipelineService
         IReadOnlyList<string> extraLibs,
         string[] staticLibs,
         bool isDll,
-        IReadOnlyList<string> passPlugins,
         string passPipeline,
         string passRunnerExe,
         string vcVarsScript,
@@ -182,22 +191,18 @@ public static class LlvmPipelineService
 
         // When passes are present, use the 3-step ABI-safe pipeline:
         //   1. clang-cl emits unoptimized LLVM bitcode (MSVC C++ ABI IR, no crash risk)
-        //   2. pass-runner.exe applies obfuscation passes (MinGW ABI, same as pass DLLs)
+        //   2. pass-runner.exe applies obfuscation passes (statically linked)
         //   3. clang-cl compiles + optimizes obfuscated bitcode and links the final binary
-        if (passPlugins.Count > 0)
+        if (!string.IsNullOrWhiteSpace(passPipeline))
         {
             if (!File.Exists(passRunnerExe))
                 return new CppFileConversionResult(false,
                     $"LLVM: pass-runner.exe not found at '{passRunnerExe}'. " +
                     "Run Assets/llvm-passes/build-all.ps1 to build it.");
 
-            if (string.IsNullOrWhiteSpace(passPipeline))
-                return new CppFileConversionResult(false,
-                    "LLVM: Cannot build pass pipeline string — passes may be missing opt_name in pass.json.");
-
             return await CompileWithPassRunnerAsync(
                 sources, outputExe, extraLibs, staticLibs, isDll,
-                passPlugins, passPipeline, passRunnerExe,
+                passPipeline, passRunnerExe,
                 vcVarsScript, clangCl, buildDir, opt, logger, ct);
         }
 
@@ -256,7 +261,6 @@ public static class LlvmPipelineService
         IReadOnlyList<string> extraLibs,
         string[] staticLibs,
         bool isDll,
-        IReadOnlyList<string> passPlugins,
         string passPipeline,
         string passRunnerExe,
         string vcVarsScript,
@@ -377,6 +381,13 @@ public static class LlvmPipelineService
                 // starts as a copy of the parent's environment.
                 psi2.EnvironmentVariables["OBFUSCATION_SEED"] = seedValue;
 
+                // The time-stretch pass reads this; harmless for the others.
+                // Always set so the value can't leak in from the parent shell.
+                var slow = opt.SlowdownLevel;
+                if (slow < 0) slow = 0;
+                if (slow > 100) slow = 100;
+                psi2.EnvironmentVariables["SLOWDOWN_LEVEL"] = slow.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
                 logger.Debug($"LLVM pass-runner [step 2, src {i}]: -passes={passPipeline}");
                 var sw2 = System.Diagnostics.Stopwatch.StartNew();
                 var (s2ok, s2err) = await RunPassRunnerAsync(psi2, obfPath, "pass-runner", logger, ct);
@@ -455,7 +466,7 @@ public static class LlvmPipelineService
             {
                 WritePipelineManifest(
                     buildDir, seedValue, seedSource, passPipeline,
-                    passPlugins, passRunnerExe, clangCl, vcVarsScript,
+                    passRunnerExe, clangCl, vcVarsScript,
                     opt, manifestSteps, manifestArtifacts,
                     pipelineStart, manifestError, result?.Success, logger);
             }
@@ -549,7 +560,6 @@ public static class LlvmPipelineService
         string buildDir,
         string seedValue, string seedSource,
         string passPipeline,
-        IReadOnlyList<string> passPlugins,
         string passRunnerExe,
         string clangCl, string vcVarsScript,
         LlvmCompileOptions opt,
@@ -567,13 +577,6 @@ public static class LlvmPipelineService
             ["error"]         = error,
             ["seed"]          = new { value = seedValue, source = seedSource, envVar = "OBFUSCATION_SEED" },
             ["passes"]        = passPipeline.Split(',', StringSplitOptions.RemoveEmptyEntries),
-            ["plugins"]       = passPlugins.Select(p => new
-            {
-                path   = p,
-                exists = File.Exists(p),
-                size   = File.Exists(p) ? new FileInfo(p).Length : -1L,
-                sha256 = File.Exists(p) ? HashFile(p) : null,
-            }).ToArray(),
             ["passRunner"]    = new
             {
                 path   = passRunnerExe,
@@ -587,6 +590,7 @@ public static class LlvmPipelineService
                 opt.OptLevel, opt.Arch, opt.Subsystem,
                 cppStandard = opt.CppStandard,
                 opt.StripSymbols, opt.Lto, opt.NoGcSections, opt.DebugInfo,
+                opt.SlowdownLevel,
                 defines    = opt.Defines.ToArray(),
                 extraFlags = opt.ExtraFlags.ToArray(),
             },
@@ -609,7 +613,6 @@ public static class LlvmPipelineService
         IReadOnlyList<string> extraLibs,
         string[] staticLibs,
         bool isDll,
-        IReadOnlyList<string> passPlugins,
         string llvmBinDir,
         string buildDir,
         LlvmCompileOptions opt,
@@ -642,8 +645,10 @@ public static class LlvmPipelineService
         foreach (var define in opt.Defines)
             args.Add($"-D{define}");
 
-        foreach (var dll in passPlugins)
-            args.AddRange(["-fpass-plugin", dll]);
+        // Note: -fpass-plugin used to be injected here when pass.dll files
+        // shipped. Those DLLs are no longer in the payload (the monolithic
+        // pass-runner.exe handles obfuscation via the clang-cl path). The
+        // MinGW clang++ fallback compiles only — no obfuscation.
 
         if (isDll)
         {
@@ -757,20 +762,23 @@ public static class LlvmPipelineService
                 ? $"LLVM {compilerLabel} exited with code {process.ExitCode}."
                 : $"LLVM {compilerLabel} failed (exit {process.ExitCode}):\n{combinedOutput}";
             logger.Warn(errorMsg);
-            return new CppFileConversionResult(false, errorMsg, stdout, stderr);
+            return new CppFileConversionResult(false, errorMsg,
+                CompilerStdout: stdout, CompilerStderr: stderr);
         }
 
         if (!File.Exists(expectedOutputPath))
         {
             var msg = $"LLVM {compilerLabel} exited cleanly but produced no output at '{expectedOutputPath}'.";
             logger.Warn(msg);
-            return new CppFileConversionResult(false, msg, stdout, stderr);
+            return new CppFileConversionResult(false, msg,
+                CompilerStdout: stdout, CompilerStderr: stderr);
         }
 
         // Hash and rename to final deterministic filename
         var finalPath = await HashAndRenameAsync(expectedOutputPath, logger).ConfigureAwait(false);
         logger.Ok($"LLVM build succeeded: {Path.GetFileName(finalPath)}");
-        return new CppFileConversionResult(true, null, stdout, stderr, finalPath);
+        return new CppFileConversionResult(true, null,
+            OutputExePath: finalPath, CompilerStdout: stdout, CompilerStderr: stderr);
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────

@@ -80,7 +80,24 @@
     <Content Include="Assets\*.yml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Assets\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Assets\runtime\*.h" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="Assets\llvm-passes\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!--
+      Ship only what the runtime needs from llvm-passes/:
+        * pass.json    — LlvmPassRegistry reads id/opt_name/name from these
+        * pass-runner.exe — the monolithic tool that actually applies passes
+        * README.md / build-all.ps1 / test-passes.ps1 — kept for developers
+                          who want to rebuild from a payload directory
+
+      Pruned (was ~62 MB across 4 DLLs + sources):
+        * pass.dll  — only used by standalone clang -fpass-plugin, which is
+                      ABI-broken on Windows; pass-runner statically links
+                      every pass in.
+        * pass.cpp / CMakeLists.txt — build inputs, not runtime artefacts.
+    -->
+    <Content Include="Assets\llvm-passes\*\pass.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\llvm-passes\pass-runner.exe" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Condition="Exists('Assets\llvm-passes\pass-runner.exe')" />
+    <Content Include="Assets\llvm-passes\README.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\llvm-passes\build-all.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\llvm-passes\test-passes.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Bundled LLVM tools for LlvmPipelineService -->
@@ -100,7 +117,11 @@
     <Copy SourceFiles="@(_PriFile)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
   </Target>
 
-  <!-- Remove AI projection DLLs that ship with WindowsAppSDK 1.8+ but are unused by this app -->
+  <!-- Remove AI projection DLLs that ship with WindowsAppSDK 1.8+ but are unused by this app.
+       NOTE: pruning the other Notifications/Widgets/OAuth/etc. projection DLLs
+       breaks WinUI startup (Microsoft.UI.Xaml resolves their metadata during
+       bootstrap even when no app code references them — STOWED_EXCEPTION
+       0xC000027B at init). Only the Microsoft.Windows.AI* set is safe to drop. -->
   <Target Name="RemoveUnusedAIProjectionDlls" AfterTargets="Build;Publish">
     <ItemGroup>
       <_AIProjectionDlls Include="$(OutputPath)Microsoft.Windows.AI*.Projection.dll" />

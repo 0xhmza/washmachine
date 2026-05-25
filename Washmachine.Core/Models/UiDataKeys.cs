@@ -98,4 +98,7 @@ public static class UiDataKeys
 
     /// <summary>Boolean toggle: emit debug info.</summary>
     public const string LlvmDebugInfo = "llvmDebugInfo";
+
+    /// <summary>Time-Stretch pass intensity (0..100). 0 disables the pass.</summary>
+    public const string LlvmSlowdownLevel = "llvmSlowdownLevel";
 }

@@ -1,6 +1,7 @@
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -39,6 +40,7 @@ public sealed partial class CompilePage : Page
     private readonly PeBackdoorService _backdoorService;
     private readonly IPlaybookService _snippets;
     private string? _lastOutputPath;
+    private string? _lastSessionDir;
     private List<CompilerToolCandidate>? _compilerCandidates;
 
     private bool _compilersDetected;
@@ -131,6 +133,12 @@ public sealed partial class CompilePage : Page
 
     // ─── LLVM pass loading and backend selection ─────────────────────────────
 
+    // Pass IDs that have a bespoke UI control (e.g. a slider) — hidden from
+    // the generic checkbox list so users aren't presented with two ways to
+    // toggle the same pass.
+    private static readonly HashSet<string> SliderControlledPassIds =
+        new(StringComparer.OrdinalIgnoreCase) { "time-stretch" };
+
     private void LoadLlvmPasses()
     {
         try
@@ -141,6 +149,8 @@ public sealed partial class CompilePage : Page
             LlvmPassCheckboxes.Children.Clear();
             foreach (var pass in passes)
             {
+                if (SliderControlledPassIds.Contains(pass.Id)) continue;
+
                 var status = pass.IsBuilt ? "ready" : "stub";
                 var cb = new CheckBox
                 {
@@ -161,6 +171,24 @@ public sealed partial class CompilePage : Page
         {
             _logger.Warn($"Could not load LLVM passes: {ex.Message}");
         }
+    }
+
+    // Slider value → live label. The value is read directly at CLI-args time;
+    // no other state to keep in sync here.
+    private void SlowdownSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        if (SlowdownValueLabel is null) return;
+        int v = (int)Math.Round(e.NewValue);
+        SlowdownValueLabel.Text = v == 0 ? "off" : v.ToString();
+    }
+
+    private int GetSlowdownLevel()
+    {
+        if (SlowdownSlider is null) return 0;
+        int v = (int)Math.Round(SlowdownSlider.Value);
+        if (v < 0) v = 0;
+        if (v > 100) v = 100;
+        return v;
     }
 
     private void CompilerCardsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -924,6 +952,12 @@ public sealed partial class CompilePage : Page
 
             ShowCompileResult(true, $"Success: {Path.GetFileName(currentOutput)}");
 
+            // Pop a dialog with full build stats (path, size, hash, session
+            // log dir, pipeline manifest, seed, …). Best-effort: any I/O
+            // failure inside the dialog should not derail the build.
+            try { await ShowCompileStatsDialogAsync(currentOutput, _lastSessionDir); }
+            catch (Exception ex) { _logger.Warn($"Could not show stats dialog: {ex.Message}"); }
+
             if (OpenFolderAfterCompile.IsChecked == true)
             {
                 Process.Start(new ProcessStartInfo { FileName = outputDir, UseShellExecute = true });
@@ -1089,6 +1123,17 @@ public sealed partial class CompilePage : Page
             foreach (var passId in GetSelectedLlvmPassIds())
                 args.AddRange(["-LlvmPass", passId]);
 
+            // Time-Stretch is driven by the slider rather than a checkbox.
+            // When the user has dialed in any non-zero intensity we both
+            // include the pass in the pipeline and forward the level via
+            // SLOWDOWN_LEVEL (which the pass reads at module-init time).
+            int slowLevel = GetSlowdownLevel();
+            if (slowLevel > 0)
+            {
+                args.AddRange(["-LlvmPass", "time-stretch"]);
+                args.AddRange(["-SlowdownLevel", slowLevel.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
+            }
+
             var toolchain = GetSelectedLlvmToolchainMode();
             if (!toolchain.Equals("auto", StringComparison.OrdinalIgnoreCase))
                 args.AddRange(["-LlvmToolchain", toolchain]);
@@ -1155,6 +1200,26 @@ public sealed partial class CompilePage : Page
             var exePath      = root.TryGetProperty("OutputExePath", out var ep) ? ep.GetString() : null;
             var convSuccess  = root.TryGetProperty("ConversionSuccess", out var cv) && cv.GetBoolean();
             var convError    = root.TryGetProperty("ConversionError", out var ce) ? ce.GetString() : null;
+
+            // Capture the session log directory from the Notes array (first
+            // entry is always "Session log directory: <path>") so the stats
+            // dialog can surface it and the user can open it directly.
+            _lastSessionDir = null;
+            if (root.TryGetProperty("Notes", out var notesEl) && notesEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var note in notesEl.EnumerateArray())
+                {
+                    var text = note.GetString();
+                    if (text is null) continue;
+                    const string marker = "Session log directory:";
+                    var idx = text.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+                    if (idx >= 0)
+                    {
+                        _lastSessionDir = text[(idx + marker.Length)..].Trim();
+                        break;
+                    }
+                }
+            }
 
             if (!convSuccess && !string.IsNullOrEmpty(convError))
                 _logger.Error($"Compiler: {convError}");
@@ -1646,6 +1711,157 @@ public sealed partial class CompilePage : Page
                 FileName = _lastOutputPath,
                 UseShellExecute = true
             });
+        }
+    }
+
+    // ─── Post-compile stats dialog ─────────────────────────────────────────
+
+    /// <summary>
+    /// Pops a ContentDialog with every artefact the user is likely to want
+    /// after a successful build: binary name + path + size + SHA-256, the
+    /// session log dir, and (if the LLVM-obfuscated backend wrote one) the
+    /// pipeline manifest path + seed.
+    /// </summary>
+    private async Task ShowCompileStatsDialogAsync(string finalExePath, string? sessionDir)
+    {
+        if (string.IsNullOrEmpty(finalExePath) || !File.Exists(finalExePath))
+            return;
+
+        var fi = new FileInfo(finalExePath);
+        string sha256 = await Task.Run(() =>
+        {
+            using var stream = File.OpenRead(finalExePath);
+            return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream));
+        });
+
+        // Probe the session for an LLVM pipeline manifest (only written by the
+        // LLVM-obfuscated backend). Reading it is best-effort.
+        string? manifestPath = null;
+        string? seedValue = null;
+        string? seedSource = null;
+        IReadOnlyList<string>? passes = null;
+        if (!string.IsNullOrEmpty(sessionDir) && Directory.Exists(sessionDir))
+        {
+            var candidate = Path.Combine(sessionDir, "build", "llvm_pipeline.json");
+            if (File.Exists(candidate))
+            {
+                manifestPath = candidate;
+                try
+                {
+                    using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(candidate));
+                    if (doc.RootElement.TryGetProperty("seed", out var seedEl))
+                    {
+                        if (seedEl.TryGetProperty("value", out var v))  seedValue  = v.GetString();
+                        if (seedEl.TryGetProperty("source", out var s)) seedSource = s.GetString();
+                    }
+                    if (doc.RootElement.TryGetProperty("passes", out var pEl) && pEl.ValueKind == JsonValueKind.Array)
+                        passes = pEl.EnumerateArray().Select(e => e.GetString() ?? "").Where(s => s.Length > 0).ToArray();
+                }
+                catch { /* manifest may have been written in a partial state */ }
+            }
+        }
+
+        // Build the dialog body as a Grid of label/value rows so paths stay
+        // monospaced and selectable (copy with Ctrl+C in TextBox).
+        var grid = new Grid { ColumnSpacing = 12, RowSpacing = 6 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        void AddRow(string label, string value, bool mono = true)
+        {
+            int row = grid.RowDefinitions.Count;
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var lbl = new TextBlock
+            {
+                Text = label,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Top,
+            };
+            Grid.SetRow(lbl, row); Grid.SetColumn(lbl, 0);
+            grid.Children.Add(lbl);
+
+            var val = new TextBox
+            {
+                Text = value,
+                IsReadOnly = true,
+                AcceptsReturn = false,
+                TextWrapping = TextWrapping.Wrap,
+                FontFamily = mono ? new FontFamily("Consolas") : new FontFamily("Segoe UI"),
+                BorderThickness = new Thickness(0),
+                Background = new SolidColorBrush(Colors.Transparent),
+                Padding = new Thickness(0),
+            };
+            Grid.SetRow(val, row); Grid.SetColumn(val, 1);
+            grid.Children.Add(val);
+        }
+
+        AddRow("Binary",       fi.Name);
+        AddRow("Directory",    fi.DirectoryName ?? "");
+        AddRow("Full path",    fi.FullName);
+        AddRow("Size",         $"{fi.Length:N0} bytes ({fi.Length / 1024.0:N1} KB)");
+        AddRow("SHA-256",      sha256);
+        AddRow("Modified",     fi.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"));
+
+        if (!string.IsNullOrEmpty(sessionDir))
+            AddRow("Session log", sessionDir);
+
+        if (manifestPath != null)
+        {
+            AddRow("Pipeline manifest", manifestPath);
+            if (passes is { Count: > 0 })
+                AddRow("LLVM passes", string.Join(", ", passes));
+            if (!string.IsNullOrEmpty(seedValue))
+                AddRow("Obfuscation seed", $"{seedValue} (source: {seedSource ?? "?"})");
+        }
+
+        var scroll = new ScrollViewer
+        {
+            Content = grid,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            MaxHeight = 480,
+        };
+
+        var dialog = new ContentDialog
+        {
+            Title = "Build complete",
+            Content = scroll,
+            PrimaryButtonText = "Open folder",
+            SecondaryButtonText = "Open session log",
+            CloseButtonText = "Close",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = this.XamlRoot,
+        };
+
+        if (string.IsNullOrEmpty(sessionDir) || !Directory.Exists(sessionDir))
+            dialog.IsSecondaryButtonEnabled = false;
+
+        var result = await dialog.ShowAsync();
+
+        if (result == ContentDialogResult.Primary && !string.IsNullOrEmpty(fi.DirectoryName))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"/select,\"{fi.FullName}\"",
+                    UseShellExecute = true,
+                });
+            }
+            catch (Exception ex) { _logger.Warn($"Could not open folder: {ex.Message}"); }
+        }
+        else if (result == ContentDialogResult.Secondary && !string.IsNullOrEmpty(sessionDir))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = sessionDir,
+                    UseShellExecute = true,
+                });
+            }
+            catch (Exception ex) { _logger.Warn($"Could not open session log: {ex.Message}"); }
         }
     }
 

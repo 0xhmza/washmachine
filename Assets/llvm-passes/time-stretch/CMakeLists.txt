@@ -1,12 +1,15 @@
 cmake_minimum_required(VERSION 3.20)
-project(WashmachinePassRunner LANGUAGES C CXX)
+project(TimeStretchPass LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# LLVM_DIR can be passed via -DLLVM_DIR=<path>; build-all.ps1 always passes
+# it explicitly. The fallback list mirrors the other passes so a manual
+# cmake invocation still works.
 if(NOT DEFINED LLVM_DIR)
     foreach(_candidate
-            "${CMAKE_CURRENT_SOURCE_DIR}/../../../Tools/msys64/mingw64/lib/cmake/llvm"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../Tools/msys64/mingw64/lib/cmake/llvm"
             "C:/msys64/mingw64/lib/cmake/llvm"
             "C:/Program Files/LLVM/lib/cmake/llvm")
         if(EXISTS "${_candidate}/LLVMConfig.cmake")
@@ -19,35 +22,31 @@ endif()
 find_package(LLVM REQUIRED CONFIG)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION} at ${LLVM_DIR}")
 
-add_executable(pass-runner
-    main.cpp
-    ../bogus-control-flow/pass.cpp
-    ../control-flow-flattening/pass.cpp
-    ../instruction-substitution/pass.cpp
-    ../string-obfuscation/pass.cpp
-    ../time-stretch/pass.cpp)
+add_library(pass MODULE pass.cpp)
 
-target_include_directories(pass-runner PRIVATE ${LLVM_INCLUDE_DIRS})
+target_include_directories(pass PRIVATE ${LLVM_INCLUDE_DIRS})
 
 separate_arguments(LLVM_DEFS_LIST NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(pass-runner PRIVATE ${LLVM_DEFS_LIST})
+target_compile_definitions(pass PRIVATE ${LLVM_DEFS_LIST})
 
-# pass-runner only does IR-in / IR-out: parse bitcode, run module/function
-# passes, emit bitcode. It never produces machine code, so the codegen
-# components (MC, Object, Target, X86) and their transitive closures are
-# pure dead weight. Dropping them removes ~20 MB from the linked binary.
 llvm_map_components_to_libnames(llvm_libs
     Core Support IRReader Analysis Passes TransformUtils
-    BitReader BitWriter)
-target_link_libraries(pass-runner PRIVATE ${llvm_libs})
+    BitReader BitWriter MC Object Target)
+target_link_libraries(pass PRIVATE ${llvm_libs})
 
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(pass-runner PRIVATE $<IF:$<CXX_COMPILER_ID:MSVC>,/GR-,-fno-rtti>)
+if(EXISTS "${LLVM_INCLUDE_DIRS}/llvm/Plugins/PassPlugin.h")
+    target_compile_definitions(pass PRIVATE LLVM_PASSPLUGIN_HEADER_PLUGINS)
 endif()
 
-# ── Self-contained EXE ────────────────────────────────────────────────────────
-# Same static-linking approach as the pass DLLs so pass-runner.exe has no
-# MinGW runtime DLL dependencies (libstdc++, libwinpthread, zlib1, libzstd).
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(pass PRIVATE $<IF:$<CXX_COMPILER_ID:MSVC>,/GR-,-fno-rtti>)
+endif()
+
+# Self-contained DLL — same approach as the other passes so pass.dll has no
+# MinGW runtime DLL dependencies when loaded from a clang-cl/MSVC environment.
+# (The runtime pipeline does NOT use this DLL — pass-runner.exe statically
+# links every pass — but we keep the build path for developers that want
+# to validate the pass standalone.)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(_msys_lib "${LLVM_INSTALL_PREFIX}/lib")
 
@@ -61,7 +60,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     endif()
 
     if(EXISTS "${_msys_lib}/libwinpthread.a")
-        target_link_libraries(pass-runner PRIVATE
+        target_link_libraries(pass PRIVATE
             "-Wl,--whole-archive,${_msys_lib}/libwinpthread.a,--no-whole-archive")
     endif()
 
@@ -72,8 +71,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         set_property(TARGET ZLIB::ZLIB PROPERTY IMPORTED_LOCATION_RELEASE "${_msys_lib}/libz.a")
     endif()
 
-    target_link_options(pass-runner PRIVATE -static-libgcc -static-libstdc++
-        -Wl,--as-needed -Wl,--allow-multiple-definition)
+    target_link_options(pass PRIVATE -static-libgcc -static-libstdc++ -Wl,--as-needed)
 endif()
 
-set_target_properties(pass-runner PROPERTIES OUTPUT_NAME "pass-runner")
+set_target_properties(pass PROPERTIES OUTPUT_NAME pass PREFIX "" SUFFIX ".dll")
