@@ -244,7 +244,7 @@ public static class TestHarness
                 var repoRoot = FindRepoRoot(paths.ExecutableDirectory);
                 if (repoRoot != null)
                 {
-                    assetsDir = Path.Combine(repoRoot, "testing assets", "binary", "shellcodes");
+                    assetsDir = Path.Combine(repoRoot, "Testing", "binary", "shellcodes");
                 }
             }
 
@@ -253,8 +253,10 @@ public static class TestHarness
                 logger.Info($"=== PHASE 3: Multi-shellcode input testing ===");
                 logger.Info($"  Assets directory: {assetsDir}");
 
-                // Safe shellcodes for automated testing (no network, quick execution)
-                var safeShellcodes = new[] { "calc64.bin", "messagebox.bin", "notepad64.bin", "createfile.bin" };
+                // Safe shellcodes for automated testing (no network, quick execution).
+                // big_payload.bin is a synthetic 4 MB NOP-sled + ret blob created on demand
+                // by run_tests.ps1 — it stresses the encoding/compilation path with a large input.
+                var safeShellcodes = new[] { "calc64.bin", "messagebox.bin", "notepad64.bin", "createfile.bin", "big_payload.bin" };
                 var foundShellcodes = Directory.GetFiles(assetsDir, "*.bin")
                     .Where(f => safeShellcodes.Contains(Path.GetFileName(f), StringComparer.OrdinalIgnoreCase))
                     .ToList();
@@ -343,13 +345,13 @@ public static class TestHarness
 
         var comboBoxes = new Dictionary<string, string>
         {
-            [UiDataKeys.Template] = "shellcode-minimal",
+            [UiDataKeys.Template] = "default",
             ["bin2hexEncoder"] = encoder.DisplayText,
             ["bin2hexEnvelope"] = envelope.DisplayText,
         };
 
         // Set default snippets for the minimal template
-        SetDefaultSnippets(comboBoxes, textBoxes, snippets, "shellcode-minimal");
+        SetDefaultSnippets(comboBoxes, textBoxes, snippets, "default");
 
         return new UiData(textBoxes, comboBoxes);
     }
@@ -403,12 +405,12 @@ public static class TestHarness
 
             var comboBoxes = new Dictionary<string, string>
             {
-                [UiDataKeys.Template] = "shellcode-minimal",
+                [UiDataKeys.Template] = "default",
                 ["bin2hexEncoder"] = encoder.DisplayText,
                 ["bin2hexEnvelope"] = envelope.DisplayText,
             };
 
-            SetDefaultSnippets(comboBoxes, textBoxes, snippets, "shellcode-minimal");
+            SetDefaultSnippets(comboBoxes, textBoxes, snippets, "default");
             return new UiData(textBoxes, comboBoxes);
         }
         catch (Exception ex)
@@ -795,12 +797,12 @@ public static class TestHarness
 
         var comboBoxes = new Dictionary<string, string>
         {
-            [UiDataKeys.Template] = "shellcode-minimal",
+            [UiDataKeys.Template] = "default",
             ["bin2hexEncoder"] = "0 - none",
             ["bin2hexEnvelope"] = "0 - none",
         };
 
-        SetDefaultSnippets(comboBoxes, textBoxes, snippets, "shellcode-minimal");
+        SetDefaultSnippets(comboBoxes, textBoxes, snippets, "default");
         return new UiData(textBoxes, comboBoxes);
     }
 
@@ -819,12 +821,12 @@ public static class TestHarness
 
         var comboBoxes = new Dictionary<string, string>
         {
-            [UiDataKeys.Template] = "shellcode-minimal",
+            [UiDataKeys.Template] = "default",
             ["bin2hexEncoder"] = encoder.DisplayText,
             ["bin2hexEnvelope"] = "0 - none",
         };
 
-        SetDefaultSnippets(comboBoxes, textBoxes, snippets, "shellcode-minimal");
+        SetDefaultSnippets(comboBoxes, textBoxes, snippets, "default");
         return new UiData(textBoxes, comboBoxes);
     }
 

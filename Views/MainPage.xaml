@@ -333,7 +333,9 @@
                 <Border Margin="10,10,10,10"/>
 
                 <!-- Shikata Ga Nai section (runs before Payload Encoding when enabled) -->
-                <Expander x:Name="ShikataGaNaiExpander" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4">
+                <Expander x:Name="ShikataGaNaiExpander" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,4"
+                          Expanding="ShikataGaNaiExpander_Expanding"
+                          Collapsed="ShikataGaNaiExpander_Collapsed">
                     <Expander.Header>
                         <StackPanel Orientation="Horizontal">
                             <FontIcon Glyph="&#xE8C8;" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />

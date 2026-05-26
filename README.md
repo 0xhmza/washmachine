@@ -4,7 +4,7 @@
 
 Washmachine is a modular, template-driven shellcode evasion framework built for red teamers and security researchers. From raw shellcode to fully backdoored PE — the entire offensive pipeline lives under one roof.
 
-The standout feature is the **YAML-based playbook system**. Every C++ template and code snippet is defined in a single `.yaml` catalog — **89 snippets** across **10 categories**, **6 templates**, and **5 PE injection methods** — all swappable without touching the codebase. When a technique gets flagged by a new signature, update the playbook. Hand it to an LLM if you want. No recompilation needed.
+The standout feature is the **YAML-based playbook system**. Every C++ template and code snippet is defined in a single `.yaml` catalog — one full-featured **default** template plus dozens of swappable snippets across **13 categories** (anti-emulation, anti-sandbox, anti-debugging, anti-analysis, guardrails, decoys, UAC bypass, installation, backdoor config, persistence, evasion, process injection, shellcode execution) and **5 PE injection methods**. When a technique gets flagged by a new signature, update the playbook. Hand it to an LLM if you want. No recompilation needed.
 
 Available as both a **standalone CLI** (`washmachine-cli`) with an interactive REPL shell, and a **WinUI 3 desktop app** with the exact same capabilities.
 
@@ -202,12 +202,11 @@ When **URL** mode is selected, click **Web Payload Wizard** to:
 
 ### Templates
 
-The **Template** combo lists every `id` defined under `templates:` in `Assets/default.yaml`. Two ship by default:
+The **Template** combo lists every `id` defined under `templates:` in `Assets/default.yaml`. One ships by default:
 
 | Template ID | Description |
 |---|---|
-| `default` | Full loader with all feature placeholders (`GUARDRAILS`, `ANTI_DEBUGGING`, `UAC_BYPASS`, `PROCESS_INJECTION`, `SHELLCODE_EXECUTION`) |
-| `minimal` | Bare minimum — shellcode source + one execution snippet, nothing else |
+| `default` | Full loader wired to every section: anti-emulation, anti-sandbox, guardrails, anti-debug, anti-analysis, decoy, UAC bypass, installation, backdoor config, persistence, evasion, process injection, shellcode execution. Snippets in each section are swappable via the section combo (and most accept a `None` item to disable that stage). |
 
 Selecting a template resets the available snippet combos to only those referenced by that template's `placeholders`.
 
@@ -741,28 +740,38 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full architecture diagram, compil
 
 ## Testing
 
-A headless combinatorial test harness exercises Phase 1 (all encoder × envelope combinations) and Phase 2 (all template × snippet permutations) without any UI.
+Two complementary drivers cover the headless tests:
+
+**`Testing\run_tests.ps1`** — drives the built-in test harness (Phase 1 encoder×envelope, Phase 2 template+snippet, Phase 3 multi-shellcode) against both `messagebox.bin` (~433 B) and a synthetic `big_payload.bin` (default 4 MB NOP-sled + ret, created on demand). Group `small`, `big`, `matrix` or `all`:
 
 ```powershell
-# Build CLI and run all phases
-.\Testing\run_tests.ps1 -ShellcodeFile path\to\messagebox.bin
+# Full run — small + big encoding sweeps, plus snippet matrix + multi-shellcode
+.\Testing\run_tests.ps1
 
-# Run only Phase 1 (encoding combos)
-.\Testing\run_tests.ps1 -Phase 1 -ShellcodeFile path\to\messagebox.bin
+# Only the small-payload encoding sweep (also spins up a Python HTTP server
+# for URL-source coverage)
+.\Testing\run_tests.ps1 -Phase small
 
-# Run only Phase 3 (multiple shellcode inputs from test assets)
-.\Testing\run_tests.ps1 -Phase 3
+# Only the big-payload sweep — synthesises an 8 MB NOP-sled .bin if missing
+.\Testing\run_tests.ps1 -Phase big -BigPayloadSizeMB 8
 ```
 
-Or invoke directly via the CLI:
+**`Testing\run_param_tests.ps1`** — calls `washmachine-cli encode` directly with hand-picked parameter combinations on both the small and big payload. Covers `-e`/`-v` (encoder/envelope), `--sgn`, `--clone-from`, `--pad-nops` and combined permutations:
 
 ```powershell
-washmachine-cli test --shellcode path\to\messagebox.bin --phase all
-washmachine-cli test --shellcode path\to\messagebox.bin --phase 1 --url http://host/payload.bin
-washmachine-cli test --phase 3 --test-assets "testing assets\binary\shellcodes"
+.\Testing\run_param_tests.ps1
+.\Testing\run_param_tests.ps1 -BigPayloadSizeMB 6
 ```
 
-Results are written to `test_results.json` next to the CLI executable.
+Or invoke the harness yourself:
+
+```powershell
+washmachine-cli test --shellcode Testing\binary\shellcodes\messagebox.bin --phase all
+washmachine-cli test --shellcode Testing\binary\shellcodes\messagebox.bin --phase 1 --url http://host/payload.bin
+washmachine-cli test --phase 3 --test-assets Testing\binary\shellcodes
+```
+
+Per-group results are written next to `Testing\` as `test_results.<group>.json`; raw harness output also lands in `test_results.json` next to the CLI executable. `run_param_tests.ps1` writes `Testing\param_test_results.json`.
 
 ---
 

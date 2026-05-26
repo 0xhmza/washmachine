@@ -23,7 +23,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$outputDir = Join-Path $repoRoot "testing assets\binary\output"
+$outputDir = Join-Path $repoRoot "Output\Debug\backdoor-tests"
 
 # Auto-detect CLI
 if (-not $CliPath) {
@@ -40,31 +40,29 @@ if (-not (Test-Path $outputDir)) {
 }
 
 # Test assets
-$injectablesDir = Join-Path $repoRoot "testing assets\binary\injectables"
-$shellcodesDir  = Join-Path $repoRoot "testing assets\binary\shellcodes"
+$injectablesDir = Join-Path $repoRoot "Testing\binary\injectables"
+$shellcodesDir  = Join-Path $repoRoot "Testing\binary\shellcodes"
 
 # Define test matrix
 $tests = @(
     # [Target, Shellcode, Method, Encryption, ExpectedResult]
-    @{ Target="WinDirStat - Copy.exe"; Shellcode="nop.bin";      Method="code-cave";    Enc="none"; Name="WDS-nop-cave" }
-    @{ Target="WinDirStat - Copy.exe"; Shellcode="nop16.bin";    Method="code-cave";    Enc="none"; Name="WDS-nop16-cave" }
-    @{ Target="WinDirStat - Copy.exe"; Shellcode="calc64.bin";   Method="code-cave";    Enc="none"; Name="WDS-calc-cave" }
-    @{ Target="WinDirStat - Copy.exe"; Shellcode="calc64.bin";   Method="new-section";  Enc="none"; Name="WDS-calc-newsec" }
-    @{ Target="WinDirStat - Copy.exe"; Shellcode="calc64.bin";   Method="section-ext";  Enc="none"; Name="WDS-calc-secext" }
-    @{ Target="WinDirStat - Copy.exe"; Shellcode="messagebox.bin"; Method="code-cave";  Enc="none"; Name="WDS-msgbox-cave" }
-    @{ Target="WinDirStat - Copy.exe"; Shellcode="messagebox.bin"; Method="new-section"; Enc="none"; Name="WDS-msgbox-newsec" }
-    @{ Target="WinDirStat - Copy.exe"; Shellcode="notepad64.bin"; Method="code-cave";   Enc="none"; Name="WDS-notepad-cave" }
-    @{ Target="WinDirStat - Copy.exe"; Shellcode="calc64.bin";   Method="code-cave";    Enc="xor";  Name="WDS-calc-cave-xor" }
+    @{ Target="WinDirStat.exe";        Shellcode="calc64.bin";    Method="code-cave";    Enc="none"; Name="WDS-calc-cave" }
+    @{ Target="WinDirStat.exe";        Shellcode="calc64.bin";    Method="new-section";  Enc="none"; Name="WDS-calc-newsec" }
+    @{ Target="WinDirStat.exe";        Shellcode="calc64.bin";    Method="section-ext";  Enc="none"; Name="WDS-calc-secext" }
+    @{ Target="WinDirStat.exe";        Shellcode="messagebox.bin"; Method="code-cave";  Enc="none"; Name="WDS-msgbox-cave" }
+    @{ Target="WinDirStat.exe";        Shellcode="messagebox.bin"; Method="new-section"; Enc="none"; Name="WDS-msgbox-newsec" }
+    @{ Target="WinDirStat.exe";        Shellcode="notepad64.bin"; Method="code-cave";    Enc="none"; Name="WDS-notepad-cave" }
+    @{ Target="WinDirStat.exe";        Shellcode="calc64.bin";    Method="code-cave";    Enc="xor";  Name="WDS-calc-cave-xor" }
     @{ Target="7z.exe";                Shellcode="calc64.bin";    Method="code-cave";    Enc="none"; Name="7z-calc-cave" }
     @{ Target="7z.exe";                Shellcode="calc64.bin";    Method="new-section";  Enc="none"; Name="7z-calc-newsec" }
     @{ Target="7z.exe";                Shellcode="calc64.bin";    Method="section-ext";  Enc="none"; Name="7z-calc-secext" }
     @{ Target="procexp64.exe";         Shellcode="notepad64.bin"; Method="code-cave";    Enc="none"; Name="procexp-notepad-cave" }
     @{ Target="procexp64.exe";         Shellcode="notepad64.bin"; Method="new-section";  Enc="none"; Name="procexp-notepad-newsec" }
-    @{ Target="wifiinfoview.exe";      Shellcode="nop16.bin";     Method="code-cave";    Enc="none"; Name="wifi-nop-cave" }
-    @{ Target="Cacheset.exe";          Shellcode="nop16.bin";     Method="code-cave";    Enc="none"; Name="cacheset-nop-cave-x86" }
-    @{ Target="Cacheset.exe";          Shellcode="nop16.bin";     Method="new-section";  Enc="none"; Name="cacheset-nop-newsec-x86" }
-    @{ Target="Cacheset.exe";          Shellcode="nop16.bin";     Method="section-ext";  Enc="none"; Name="cacheset-nop-secext-x86" }
-    @{ Target="Cacheset.exe";          Shellcode="nop16.bin";     Method="code-cave";    Enc="xor";  Name="cacheset-nop-cave-xor-x86" }
+    @{ Target="wifiinfoview.exe";      Shellcode="messagebox.bin"; Method="code-cave";   Enc="none"; Name="wifi-msgbox-cave" }
+    @{ Target="Cacheset.exe";          Shellcode="messagebox.bin"; Method="code-cave";   Enc="none"; Name="cacheset-msgbox-cave-x86" }
+    @{ Target="Cacheset.exe";          Shellcode="messagebox.bin"; Method="new-section"; Enc="none"; Name="cacheset-msgbox-newsec-x86" }
+    @{ Target="Cacheset.exe";          Shellcode="messagebox.bin"; Method="section-ext"; Enc="none"; Name="cacheset-msgbox-secext-x86" }
+    @{ Target="Cacheset.exe";          Shellcode="messagebox.bin"; Method="code-cave";   Enc="xor";  Name="cacheset-msgbox-cave-xor-x86" }
 )
 
 $passed = 0

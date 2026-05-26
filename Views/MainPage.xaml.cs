@@ -113,10 +113,47 @@ public sealed partial class MainPage : Page, IMainFormView
 
     public bool IsShikataGaNaiPostPlacement => ShikataGaNaiPlacement == "post";
 
+    /// <summary>
+    /// Tracks the intended IsEnabled state of PayloadEncodingExpander so it can be
+    /// restored after WinUI 3 visual-state propagation bugs reset it.
+    /// </summary>
+    private bool _payloadEncodingEnabled = true;
+
     public void SetPayloadEncodingEnabled(bool enabled)
     {
+        _payloadEncodingEnabled = enabled;
         PayloadEncodingExpander.IsEnabled = enabled;
         PayloadEncodingExpander.Opacity = enabled ? 1.0 : 0.4;
+    }
+
+    /// <summary>
+    /// Re-applies the correct IsEnabled state to all sections that have an explicit
+    /// enabled/disabled contract. Call this after any Expander expand/collapse that
+    /// may have triggered WinUI 3's visual-state propagation bug.
+    /// </summary>
+    private void RefreshExpanderEnabledStates()
+    {
+        PayloadEncodingExpander.IsEnabled = _payloadEncodingEnabled;
+        PayloadEncodingExpander.Opacity = _payloadEncodingEnabled ? 1.0 : 0.4;
+    }
+
+    /// <summary>
+    /// WinUI 3 bug: expanding an Expander whose content contains IsEnabled=false controls
+    /// can incorrectly propagate that disabled state to the next sibling Expander.
+    /// We defer a state-restore so it runs after WinUI finishes applying visual states.
+    /// </summary>
+    private void ShikataGaNaiExpander_Expanding(Expander sender, ExpanderExpandingEventArgs args)
+    {
+        DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Normal,
+            RefreshExpanderEnabledStates);
+    }
+
+    private void ShikataGaNaiExpander_Collapsed(Expander sender, ExpanderCollapsedEventArgs args)
+    {
+        DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Normal,
+            RefreshExpanderEnabledStates);
     }
 
     private static int GetPositiveNumberBoxValue(NumberBox numberBox, int fallback)
