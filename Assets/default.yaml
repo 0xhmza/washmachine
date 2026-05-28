@@ -1102,14 +1102,46 @@ sections:
   - id: EnvVarExists
     display: Environment Variable Exists
     default: false
+    inputs:
+    - id: env_var_name
+      label: Variable name
+      type: textbox
+      placement: after
+      required: true
+      width: 180
+      placeholder: COMPUTERNAME
+      defaultValue: COMPUTERNAME
+      infoAction: EnvVarNameInfo
+      infoButtonLabel: Examples
     snippet: |
       // Guardrail: Require environment variable to exist
-      if (GetEnvironmentVariableW(L"__GUARDRAIL_PARAM__", nullptr, 0) == 0) {
+      if (GetEnvironmentVariableW(L"$env_var_name$", nullptr, 0) == 0) {
           return 0;
       }
   - id: EnvVarContains
     display: Environment Variable Contains Value
     default: false
+    inputs:
+    - id: env_var_name
+      label: Variable name
+      type: textbox
+      placement: after
+      required: true
+      width: 180
+      placeholder: COMPUTERNAME
+      defaultValue: COMPUTERNAME
+      infoAction: EnvVarNameInfo
+      infoButtonLabel: Examples
+    - id: env_var_value
+      label: Expected value
+      type: textbox
+      placement: after
+      required: true
+      width: 180
+      placeholder: TARGET
+      defaultValue: TARGET
+      infoAction: EnvVarValueInfo
+      infoButtonLabel: Examples
     snippet: |
       // Guardrail: Environment variable must contain specific value
       {
@@ -1129,8 +1161,8 @@ sections:
           };
           
           char buffer[1024];
-          DWORD result = GetEnvironmentVariableA("COMPUTERNAME", buffer, 1024);
-          if (result == 0 || !contains_ci(buffer, "__GUARDRAIL_PARAM__")) {
+          DWORD result = GetEnvironmentVariableA("$env_var_name$", buffer, 1024);
+          if (result == 0 || !contains_ci(buffer, "$env_var_value$")) {
               return 0;
           }
       }
@@ -1157,19 +1189,36 @@ sections:
   - id: DateRangeCheck
     display: Execution Date Range
     default: false
+    inputs:
+    - id: start_date
+      label: Start date (YYYYMMDD)
+      type: textbox
+      placement: after
+      required: true
+      width: 100
+      placeholder: 20240101
+      defaultValue: 20240101
+      infoAction: DateRangeInfo
+      infoButtonLabel: Format
+    - id: end_date
+      label: End date (YYYYMMDD)
+      type: textbox
+      placement: after
+      required: true
+      width: 100
+      placeholder: 20251231
+      defaultValue: 20251231
+      infoAction: DateRangeInfo
+      infoButtonLabel: Format
     snippet: |
       // Guardrail: Only execute within date range
       {
           SYSTEMTIME st;
           GetLocalTime(&st);
           
-          // Configure your date range (YYYY, MM, DD)
-          WORD startYear = 2024, startMonth = 1, startDay = 1;
-          WORD endYear = 2025, endMonth = 12, endDay = 31;
-          
-          DWORD current = (st.wYear * 10000) + (st.wMonth * 100) + st.wDay;
-          DWORD start = (startYear * 10000) + (startMonth * 100) + startDay;
-          DWORD end = (endYear * 10000) + (endMonth * 100) + endDay;
+          DWORD current = (DWORD)((st.wYear * 10000) + (st.wMonth * 100) + st.wDay);
+          DWORD start = $start_date$;
+          DWORD end = $end_date$;
           
           if (current < start || current > end) {
               return 0;
@@ -1179,10 +1228,21 @@ sections:
   - id: FileExistsCheck
     display: Required File Exists
     default: false
+    inputs:
+    - id: file_path
+      label: File path
+      type: textbox
+      placement: after
+      required: true
+      width: 240
+      placeholder: C:\\target\\marker.txt
+      defaultValue: C:\\target\\marker.txt
+      infoAction: FilePathInfo
+      infoButtonLabel: Examples
     snippet: |
       // Guardrail: Required file must exist
       {
-          DWORD attr = GetFileAttributesW(L"C:\\Users\\target\\Desktop\\marker.txt");
+          DWORD attr = GetFileAttributesW(L"$file_path$");
           if (attr == INVALID_FILE_ATTRIBUTES) {
               return 0;
           }
@@ -1247,16 +1307,6 @@ sections:
               NetApiBufferFree(domain);
           }
       }
-  inputs:
-  - id: guardrailParamTextBox
-    label: Guardrail parameter
-    type: textbox
-    placement: before
-    required: false
-    width: 240
-    infoAction: GuardRailInfo
-    infoButtonLabel: Info
-    defaultValue: COMPUTERNAME#contains#TARGET
 - header: Decoy
   template: decoy
   display: Decoy Operations
@@ -1351,6 +1401,17 @@ sections:
   - id: ClassicRemoteThread
     display: Classic Remote Thread Injection
     default: false
+    inputs:
+    - id: psname
+      label: Target process
+      type: textbox
+      placement: after
+      required: true
+      width: 180
+      placeholder: notepad.exe
+      defaultValue: notepad.exe
+      infoAction: PsInjTargetInfo
+      infoButtonLabel: Examples
     snippet: |
       // Classic VirtualAllocEx + WriteProcessMemory + CreateRemoteThread
       {
@@ -1391,6 +1452,17 @@ sections:
   - id: QueueUserAPC
     display: QueueUserAPC Injection
     default: false
+    inputs:
+    - id: psname
+      label: Target process
+      type: textbox
+      placement: after
+      required: true
+      width: 180
+      placeholder: notepad.exe
+      defaultValue: notepad.exe
+      infoAction: PsInjTargetInfo
+      infoButtonLabel: Examples
     snippet: |
       // QueueUserAPC injection into target process
       {
@@ -1435,14 +1507,6 @@ sections:
           }
       }
 
-  inputs:
-  - id: PsInjPsNameTextBox
-    label: Target process name
-    type: textbox
-    placement: before
-    required: true
-    width: 240
-    defaultValue: notepad.exe
 - header: Shellcode Execution
   template: shellcodeexecution
   display: Shellcode Execution

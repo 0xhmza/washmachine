@@ -333,7 +333,7 @@ public sealed class TemplateOptionsWindow
         var row = CreateRow();
         row.Children.Add(new TextBlock
         {
-            Text = section.AllowMultiple ? "Snippets" : "Snippet",
+            Text = section.AllowMultiple ? "Techniques" : "Technique",
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 8, 0)
         });
@@ -511,6 +511,19 @@ public sealed class TemplateOptionsWindow
             };
 
             inputRow.Children.Add(textBox);
+
+            if (!string.IsNullOrWhiteSpace(input.InfoAction))
+            {
+                var infoButton = new Button
+                {
+                    Content = string.IsNullOrWhiteSpace(input.InfoButtonLabel) ? "Info" : input.InfoButtonLabel,
+                    MinWidth = 64,
+                    Margin = new Thickness(4, 0, 0, 0)
+                };
+                infoButton.Click += (_, _) => _infoAction?.Invoke(input.InfoAction);
+                inputRow.Children.Add(infoButton);
+            }
+
             panel.Children.Add(inputRow);
 
             _bindings.Add(new FieldBinding(scopedKey, FieldKind.Text, textBox));

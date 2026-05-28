@@ -1767,27 +1767,16 @@ public sealed class CompilerService : ICompilerService
         string placeholderName,
         ICollection<string> notes)
     {
-        if (!TryGetFirstSelection(data, TemplateGuardrail, out var section, out var selection))
+        if (!TryGetSectionSelections(data, TemplateGuardrail, out var section, out var selections))
             return;
 
-        var parameter = data.TextBoxes.TryGetValue("guardrailParamTextBox", out var rawParam)
-            ? rawParam.Trim()
-            : string.Empty;
-
-        string snippet = SubstituteAndCollect(plan, data, section, selection, notes);
-        bool requiresParameter =
-            snippet.Contains("$guardrail_param$", StringComparison.Ordinal) ||
-            snippet.Contains("__GUARDRAIL_PARAM__", StringComparison.Ordinal);
-
-        if (requiresParameter && string.IsNullOrWhiteSpace(parameter))
-            throw new InvalidOperationException("Guardrail parameter is required for the selected guardrail.");
-
-        snippet = snippet.Replace("$guardrail_param$", parameter)
-                         .Replace("__GUARDRAIL_PARAM__", parameter);
-
-        plan.GuardrailSnippets.Add(snippet);
-        AddCustomSnippet(plan, placeholderName, snippet);
-        LogSnippetEnabled(section.Template, selection.Id, notes);
+        foreach (var selection in selections)
+        {
+            string snippet = SubstituteAndCollect(plan, data, section, selection, notes);
+            plan.GuardrailSnippets.Add(snippet);
+            AddCustomSnippet(plan, placeholderName, snippet);
+            LogSnippetEnabled(section.Template, selection.Id, notes);
+        }
     }
 
     private void ApplyProcessInjectionSelection(
@@ -1799,12 +1788,7 @@ public sealed class CompilerService : ICompilerService
         if (!TryGetFirstSelection(data, TemplateProcessInjection, out var section, out var selection))
             return;
 
-        if (!data.TextBoxes.TryGetValue("PsInjPsNameTextBox", out var psName) || string.IsNullOrWhiteSpace(psName))
-            throw new InvalidOperationException("Process injection requires a target process name.");
-
-        var trimmedName = psName.Trim();
         string snippet = SubstituteAndCollect(plan, data, section, selection, notes);
-        snippet = snippet.Replace("$psname$", trimmedName);
 
         plan.ProcessInjectionSnippet = snippet;
         plan.ProcessLookupHelper = _processLookupHelper.Value;
@@ -1812,9 +1796,13 @@ public sealed class CompilerService : ICompilerService
 
         LogSnippetEnabled(section.Template, selection.Id, notes);
 
-        var note = $"Process injection target set to {trimmedName}.";
-        notes.Add(note);
-        _logger.Debug(note);
+        var psNameKey = BuildScopedInputKey(section.Template, selection.Id, "psname");
+        if (data.TextBoxes.TryGetValue(psNameKey, out var psDisplay) && !string.IsNullOrWhiteSpace(psDisplay))
+        {
+            var note = $"Process injection target set to {psDisplay.Trim()}.";
+            notes.Add(note);
+            _logger.Debug(note);
+        }
     }
 
     private void ApplyAntiDebugSelection(

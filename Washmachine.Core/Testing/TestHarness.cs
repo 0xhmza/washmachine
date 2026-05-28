@@ -46,19 +46,19 @@ public static class TestHarness
         {
             switch (args[i])
             {
-                case "--shellcode" when i + 1 < args.Length:
+                case "--shellcode" or "-Shellcode" or "-s" when i + 1 < args.Length:
                     shellcodeFile = args[++i];
                     break;
-                case "--url" when i + 1 < args.Length:
+                case "--url" or "-Url" or "-u" when i + 1 < args.Length:
                     payloadUrl = args[++i];
                     break;
-                case "--phase" when i + 1 < args.Length:
+                case "--phase" or "-Phase" when i + 1 < args.Length:
                     phase = args[++i];
                     break;
-                case "--test-assets" when i + 1 < args.Length:
+                case "--test-assets" or "-TestAssets" when i + 1 < args.Length:
                     testAssetsDir = args[++i];
                     break;
-                case "--stop-on-fail":
+                case "--stop-on-fail" or "-StopOnFail":
                     stopOnFail = true;
                     break;
             }
@@ -68,7 +68,7 @@ public static class TestHarness
         bool requiresShellcode = phase is null or "all" or "1" or "2";
         if (requiresShellcode && (string.IsNullOrEmpty(shellcodeFile) || !File.Exists(shellcodeFile)))
         {
-            Console.Error.WriteLine("Usage: --shellcode <path-to-.bin> [--url <payload-url>] [--phase 1|2|3|all] [--test-assets <dir>] [--stop-on-fail]");
+            Console.Error.WriteLine("Usage: -Shellcode <path-to-.bin> [-Url <payload-url>] [-Phase 1|2|3|all] [-TestAssets <dir>] [-StopOnFail]");
             return 1;
         }
 

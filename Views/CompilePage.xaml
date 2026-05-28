@@ -345,7 +345,7 @@
                                    TextWrapping="Wrap" />
                         <StackPanel x:Name="LlvmPassesPanel" Spacing="8">
                             <TextBlock x:Name="LlvmPassesNote"
-                                       Text="Unbuilt passes are marked (stub). Build pass.dll from Assets/llvm-passes/&lt;id&gt;/CMakeLists.txt to activate them."
+                                           Text="Passes marked STUB are not yet compiled and will be skipped by the pipeline. Build with Assets/llvm-passes/build-all.ps1 to activate them."
                                        Style="{StaticResource CaptionTextBlockStyle}"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                        TextWrapping="Wrap" />
@@ -372,13 +372,18 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="Time stretch — execution slowdown" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="Time stretch — execution slowdown" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <Border x:Name="TimeStretchStatusBadge" CornerRadius="3" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                                        <TextBlock x:Name="TimeStretchStatusText" FontSize="10" Foreground="White" />
+                                    </Border>
+                                </StackPanel>
                                 <TextBlock Grid.Column="1" x:Name="SlowdownValueLabel"
                                            Text="off" MinWidth="48"
                                            HorizontalAlignment="Right" VerticalAlignment="Center"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </Grid>
-                            <TextBlock Text="Inserts data-dependent integer-arithmetic chains at function entries to consume real cycles. Looks statistically like normal hashing/mixer code — no cpuid, rdtsc, fences, NOP sleds, or spin loops. Slowdown scales with the program's own call frequency. 0 disables the pass."
+                            <TextBlock Text="Inserts data-dependent integer-arithmetic chains at function entries to consume real cycles. Looks statistically like normal hashing/mixer code — no cpuid, rdtsc, fences, NOP sleds, or spin loops. Slowdown scales with the program's own call frequency. Level × 2 = arithmetic ops per function entry (max 200 at level 100). 0 disables the pass."
                                        Style="{StaticResource CaptionTextBlockStyle}"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                        TextWrapping="Wrap" />

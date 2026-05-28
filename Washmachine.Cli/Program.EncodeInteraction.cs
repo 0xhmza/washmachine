@@ -345,7 +345,7 @@ public static partial class Program
             var command = tokens[0].ToLowerInvariant();
             if (IsHelpToken(command))
             {
-                HandleEncodeHelp(context, tokens);
+                await HandleEncodeHelp(context, state, tokens);
                 continue;
             }
             try
@@ -389,7 +389,7 @@ public static partial class Program
                         break;
 
                     case "help":
-                        HandleEncodeHelp(context, tokens);
+                        await HandleEncodeHelp(context, state, tokens);
                         break;
 
                     case "reset":
@@ -459,7 +459,7 @@ public static partial class Program
         // Help shortcut: 'set OPT --help' / 'set OPT -h' route to per-option help.
         if (tokens.Length >= 3 && IsHelpToken(tokens[2]))
         {
-            HandleEncodeHelp(context, new[] { "help", tokens[1] });
+            await HandleEncodeHelp(context, state, new[] { "help", tokens[1] });
             return;
         }
 
@@ -551,7 +551,7 @@ public static partial class Program
         var catalog = isEncoder ? context.EncodingCatalog!.Encoders : context.EncodingCatalog!.Envelopes;
         await RunShowAsync([isEncoder ? "encoders" : "envelopes"]);
         AnsiConsole.WriteLine();
-        string rawChoice = AnsiConsole.Ask<string>($"[{UiColors.Accent}]Choose {spec.Name} (ID or name, 0 for none):[/]");
+        string rawChoice = AnsiConsole.Ask<string>($"[{UiColors.Header}]Select {spec.Name}[/] [{UiColors.Muted}](ID or name, 0 for none):[/]");
 
         // Try numeric ID first
         if (int.TryParse(rawChoice, NumberStyles.Integer, CultureInfo.InvariantCulture, out int chosenId))
@@ -712,23 +712,12 @@ public static partial class Program
         }
     }
 
-    private static void HandleEncodeHelp(EncodeSessionContext context, string[] tokens)
+    private static async Task HandleEncodeHelp(EncodeSessionContext context, EncodeSessionState state, string[] tokens)
     {
         if (tokens.Length == 1)
         {
-            WriteStatus(StatusPrefix.Info, "Encode parameters:");
-            foreach (var optionSpec in EncodeOptionSpecs)
-            {
-                Console.WriteLine(optionSpec.Name);
-                Console.WriteLine($"  current:  {GetDefaultHelpValue(optionSpec)}");
-                Console.WriteLine($"  required: {(optionSpec.Required ? "yes" : "no")}");
-                Console.WriteLine($"  format:   {GetExpectedValueText(context, optionSpec)}");
-                Console.WriteLine($"  example:  {optionSpec.Example}");
-                Console.WriteLine($"  desc:     {optionSpec.Details}");
-                Console.WriteLine();
-            }
-
-            Console.WriteLine("Commands: show options | show <catalog> | set <OPTION> [VALUE] | unset <OPTION> | get <OPTION> | help <OPTION> | reset | run | exit");
+            PrintEncodeUsage();
+            PrintSessionCommandList();
             return;
         }
 
@@ -744,12 +733,17 @@ public static partial class Program
             return;
         }
 
-        Console.WriteLine(spec!.Name);
-        Console.WriteLine($"  required: {(spec.Required ? "yes" : "no")}");
-        Console.WriteLine($"  default:  {GetDefaultHelpValue(spec)}");
-        Console.WriteLine($"  format:   {GetExpectedValueText(context, spec)}");
-        Console.WriteLine($"  example:  {spec.Example}");
-        Console.WriteLine($"  desc:     {spec.Details}");
+        var sessionSpec = new SessionOptionSpec(
+            Name: spec!.Name,
+            Required: spec.Required,
+            DefaultValue: spec.DefaultValue,
+            Description: spec.Description,
+            Details: spec.Details,
+            Expected: GetExpectedValueText(context, spec),
+            Example: spec.Example);
+
+        PrintOptionHelpDetail(sessionSpec, GetCurrentOptionValue(state, spec));
+        await ShowEncodeOptionValuesAsync(context, spec);
     }
 
     private static void PrintEncodeBuildValidation(EncodeBuildValidation validation)
@@ -2373,9 +2367,9 @@ public static partial class Program
 
         string prompt = prefix switch
         {
-            "file:" => $"[{UiColors.Accent}]Path to .bin file (e.g. C:\\payloads\\shell.bin):[/]",
-            "hex:"  => $"[{UiColors.Accent}]Hex bytes (e.g. fc4883e4f0...):[/]",
-            _       => $"[{UiColors.Accent}]URL (e.g. https://example.com/shell.bin):[/]",
+            "file:" => $"[{UiColors.Header}]Path to .bin file[/] [{UiColors.Muted}](e.g. C:\\payloads\\shell.bin):[/]",
+            "hex:"  => $"[{UiColors.Header}]Hex bytes[/] [{UiColors.Muted}](e.g. fc4883e4f0...):[/]",
+            _       => $"[{UiColors.Header}]URL[/] [{UiColors.Muted}](e.g. https://example.com/shell.bin):[/]",
         };
 
         string rawValue = AnsiConsole.Ask<string>(prompt);
@@ -2407,7 +2401,7 @@ public static partial class Program
         await RunShowAsync(["templates"]);
         AnsiConsole.WriteLine();
 
-        string rawChoice = AnsiConsole.Ask<string>($"[{UiColors.Accent}]Choose TEMPLATE (ID or name):[/]");
+        string rawChoice = AnsiConsole.Ask<string>($"[{UiColors.Header}]Select TEMPLATE[/] [{UiColors.Muted}](ID or name):[/]");
 
         // Try numeric row index first
         if (int.TryParse(rawChoice, NumberStyles.Integer, CultureInfo.InvariantCulture, out int chosenIdx))
@@ -2475,7 +2469,7 @@ public static partial class Program
             await RunShowAsync(["execution"]);
             AnsiConsole.WriteLine();
 
-            string rawChoice = AnsiConsole.Ask<string>($"[{UiColors.Accent}]Choose SHELLCODE_EXECUTION (ID or name, default to reset):[/]");
+            string rawChoice = AnsiConsole.Ask<string>($"[{UiColors.Header}]Select SHELLCODE_EXECUTION[/] [{UiColors.Muted}](ID or name, default to reset):[/]");
 
             // Try numeric index first
             if (int.TryParse(rawChoice, NumberStyles.Integer, CultureInfo.InvariantCulture, out int chosenIdx))

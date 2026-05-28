@@ -138,9 +138,9 @@ public static partial class Program
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[{UiColors.Warning}]Warning:[/] Bin2Shell is not available for [{UiColors.Accent}]show {title.ToLowerInvariant()}[/].");
-            AnsiConsole.MarkupLine($"[{UiColors.Muted}]{Markup.Escape(ex.Message)}[/]");
-            AnsiConsole.MarkupLine($"[{UiColors.Muted}]Run [{UiColors.Accent}]washmachine-cli provision[/] [{UiColors.Muted}]and try again.[/]");
+            AnsiConsole.WriteLine();
+            WriteStatus(StatusPrefix.Failure, $"Bin2Shell is not available for 'show {title.ToLowerInvariant()}': {ex.Message}");
+            AnsiConsole.MarkupLine($"[{UiColors.Muted}]Run[/] [{UiColors.Accent}]provision[/] [{UiColors.Muted}]and try again.[/]");
             return 1;
         }
 
@@ -166,8 +166,9 @@ public static partial class Program
 
         if (filter is not null && sections.Count == 0)
         {
-            AnsiConsole.MarkupLine($"[{UiColors.Error}]Error:[/] Unknown module category: {Markup.Escape(filter)}.");
-            AnsiConsole.MarkupLine($"[{UiColors.Muted}]Use [{UiColors.Accent}]show modules[/] [{UiColors.Muted}]to inspect available categories.[/]");
+            AnsiConsole.WriteLine();
+            WriteStatus(StatusPrefix.Failure, $"Unknown module category: '{filter}'.");
+            AnsiConsole.MarkupLine($"[{UiColors.Muted}]Run[/] [{UiColors.Accent}]show modules[/] [{UiColors.Muted}]to inspect available categories.[/]");
             return 1;
         }
 
@@ -210,7 +211,8 @@ public static partial class Program
 
         if (section is null)
         {
-            AnsiConsole.MarkupLine($"[{UiColors.Error}]Error:[/] Shellcode execution section not found in catalog.");
+            AnsiConsole.WriteLine();
+            WriteStatus(StatusPrefix.Failure, "Shellcode execution section not found in the active playbook.");
             return 1;
         }
 
@@ -255,11 +257,15 @@ public static partial class Program
     {
         var validTargets = new[] { "all", "encoders", "envelopes", "modules", "templates", "compilers", "execution" };
         var suggestions = SuggestSimilarNames(target, validTargets, 3);
-        var hint = suggestions.Count > 0
-            ? $" Did you mean: {string.Join(", ", suggestions)}?"
-            : " Valid targets: all | encoders | envelopes | modules | templates | compilers | execution.";
-        WriteStatus(StatusPrefix.Failure, $"Unknown show target: '{target}'.{hint}");
-        WriteStatus(StatusPrefix.Info, "Run 'show --help' for the full reference.");
+
+        AnsiConsole.WriteLine();
+        WriteStatus(StatusPrefix.Failure, $"Unknown show target: '{target}'.");
+        if (suggestions.Count > 0)
+        {
+            AnsiConsole.MarkupLine($"[{UiColors.Muted}]Did you mean:[/] " +
+                string.Join(", ", suggestions.Select(s => $"[{UiColors.Accent}]{Markup.Escape(s)}[/]")));
+        }
+        AnsiConsole.MarkupLine($"[{UiColors.Muted}]Run[/] [{UiColors.Accent}]show --help[/] [{UiColors.Muted}]for the full target list.[/]");
         return 1;
     }
 

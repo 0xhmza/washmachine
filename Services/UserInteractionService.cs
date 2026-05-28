@@ -46,6 +46,7 @@ public interface IUserInteractionService
 
     void ShowShellcodeTip(nint hwnd);
     void ShowGuardRailInfo(nint hwnd);
+    void ShowInputExample(nint hwnd, string title, string description, string example);
 }
 
 public sealed class UserInteractionService : IUserInteractionService
@@ -210,6 +211,11 @@ public sealed class UserInteractionService : IUserInteractionService
             "PROCESSOR_LEVEL#smallerthan#10";
 
         CreateInfoWindow("Environment Condition Format", "Environment Condition Format", info, example, hwnd).Activate();
+    }
+
+    public void ShowInputExample(nint hwnd, string title, string description, string example)
+    {
+        CreateInfoWindow(title, title, description, example, hwnd).Activate();
     }
 
     private static Window CreateTextWindow(string title, string content, string? header, bool canCopy, nint ownerHwnd)

@@ -149,12 +149,44 @@ public sealed partial class CompilePage : Page
             LlvmPassCheckboxes.Children.Clear();
             foreach (var pass in passes)
             {
-                if (SliderControlledPassIds.Contains(pass.Id)) continue;
+                if (SliderControlledPassIds.Contains(pass.Id))
+                {
+                    // Set Time Stretch status badge
+                    if (TimeStretchStatusBadge != null && TimeStretchStatusText != null)
+                    {
+                        var badgeColor = pass.IsBuilt
+                            ? Color.FromArgb(0xFF, 0x22, 0xC5, 0x5E)
+                            : Color.FromArgb(0xFF, 0xD9, 0x77, 0x06);
+                        TimeStretchStatusBadge.Background = new SolidColorBrush(badgeColor);
+                        TimeStretchStatusText.Text = pass.IsBuilt ? "READY" : "STUB";
+                    }
+                    continue;
+                }
 
-                var status = pass.IsBuilt ? "ready" : "stub";
+                var passColor = pass.IsBuilt
+                    ? Color.FromArgb(0xFF, 0x22, 0xC5, 0x5E)
+                    : Color.FromArgb(0xFF, 0xD9, 0x77, 0x06);
+                var badge = new Border
+                {
+                    Background = new SolidColorBrush(passColor),
+                    CornerRadius = new CornerRadius(3),
+                    Padding = new Thickness(6, 1, 6, 1),
+                    Margin = new Thickness(8, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Child = new TextBlock
+                    {
+                        Text = pass.IsBuilt ? "READY" : "STUB",
+                        FontSize = 10,
+                        Foreground = new SolidColorBrush(Colors.White)
+                    }
+                };
+                var cbContent = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+                cbContent.Children.Add(new TextBlock { Text = pass.Name, VerticalAlignment = VerticalAlignment.Center });
+                cbContent.Children.Add(badge);
+
                 var cb = new CheckBox
                 {
-                    Content = $"{pass.Name}  ({status})",
+                    Content = cbContent,
                     Tag = pass.Id,
                     IsEnabled = true,
                 };
@@ -179,7 +211,7 @@ public sealed partial class CompilePage : Page
     {
         if (SlowdownValueLabel is null) return;
         int v = (int)Math.Round(e.NewValue);
-        SlowdownValueLabel.Text = v == 0 ? "off" : v.ToString();
+        SlowdownValueLabel.Text = v == 0 ? "off" : $"{v}/100 · {v * 2} ops/fn";
     }
 
     private int GetSlowdownLevel()

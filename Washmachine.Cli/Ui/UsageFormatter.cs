@@ -38,7 +38,8 @@ public record CommandUsage(
     UsageOptionGroup[]? OptionGroups = null,
     UsageSection[]? Sections = null,
     UsageExample[]? Examples = null,
-    UsageNote[]? Related = null);
+    UsageNote[]? Related = null,
+    string? HeaderTitle = null);
 
 /// <summary>
 /// Flat, box-free help renderer. Sections are separated by bold headers and
@@ -70,7 +71,7 @@ public static class UsageFormatter
 
     public static void Print(CommandUsage usage)
     {
-        PrintSectionHeader($"{usage.Name} command");
+        PrintSectionHeader(usage.HeaderTitle ?? $"{usage.Name} command");
 
         // Overview fields
         PrintKv("Summary", usage.Summary, UiColors.Value);

@@ -948,6 +948,41 @@ public sealed class MainFormCoordinator
             case "GuardRailInfo":
                 ShowGuardRailInfo(view);
                 break;
+            case "PsInjTargetInfo":
+                _interaction.ShowInputExample(
+                    view.WindowHandle,
+                    "Target Process",
+                    "Name of the process to inject into. Must be a running 64-bit process accessible to the current user.",
+                    "notepad.exe\r\nexplorer.exe\r\nwordpad.exe");
+                break;
+            case "EnvVarNameInfo":
+                _interaction.ShowInputExample(
+                    view.WindowHandle,
+                    "Environment Variable Name",
+                    "Name of the Windows environment variable to check. The comparison is case-insensitive.",
+                    "COMPUTERNAME\r\nUSERNAME\r\nUSERDOMAIN\r\nPROCESSOR_LEVEL\r\nNUMBER_OF_PROCESSORS");
+                break;
+            case "EnvVarValueInfo":
+                _interaction.ShowInputExample(
+                    view.WindowHandle,
+                    "Expected Variable Value",
+                    "Substring to find inside the variable's value. The match is case-insensitive.",
+                    "ACME\r\nWORKSTATION\r\nTARGET-PC");
+                break;
+            case "DateRangeInfo":
+                _interaction.ShowInputExample(
+                    view.WindowHandle,
+                    "Date Format — YYYYMMDD",
+                    "Enter the date as an 8-digit integer: year (4 digits) followed by month (2 digits) then day (2 digits). The payload will only execute if the current date falls within the specified range.",
+                    "20240101  →  January 1, 2024\r\n20251231  →  December 31, 2025\r\n20240601  →  June 1, 2024");
+                break;
+            case "FilePathInfo":
+                _interaction.ShowInputExample(
+                    view.WindowHandle,
+                    "Required File Path",
+                    "Absolute path to a file that must exist on the target system for execution to proceed. Use double backslashes.",
+                    "C:\\Users\\target\\Desktop\\marker.txt\r\nC:\\ProgramData\\beacon.dat\r\nC:\\Windows\\Temp\\flag.tmp");
+                break;
             default:
                 _logger.Warn($"No handler registered for template info action '{action}'.");
                 break;

@@ -20,7 +20,8 @@ public static partial class Program
             return 0;
         }
 
-        bool jsonMode = args.Any(a => a is "--json");
+        bool jsonMode = args.Any(a => string.Equals(a, "--json", StringComparison.OrdinalIgnoreCase)
+                                   || string.Equals(a, "-Json", StringComparison.Ordinal));
 
         var paths = new AppPaths();
         var logger = new ConsoleLogger();
@@ -90,21 +91,45 @@ public static partial class Program
 
     private static int PrintDoctorUsage()
     {
-        UsageFormatter.Print(new CommandUsage(
+        UsageFormatter.Print(BuildDoctorUsage());
+        return 0;
+    }
+
+    private static CommandUsage BuildDoctorUsage() =>
+        new(
             Name: "doctor",
             Summary: "Verify that LLVM/clang, MSVC cl.exe, and Bin2Shell are installed and version-compatible.",
-            Syntax: "washmachine-cli doctor [--json]",
+            Syntax: "washmachine-cli doctor [-Json]",
             Description: "Runs the same preflight that auto-fires when the REPL launches, but prints a full per-tool report.",
             WhenToUse: "Run before shipping a build, when troubleshooting an obfuscation-pass load failure, or to confirm an LLVM upgrade.",
-            Output: "A table of tool status + remediation hints. Exit code 0 when all OK, 1 otherwise.",
-            OptionGroups: [],
-            Sections: [],
+            Output: "A table of tool status plus remediation hints. Exit code 0 when all OK, 1 otherwise.",
+            OptionGroups:
+            [
+                new UsageOptionGroup(
+                    "Output",
+                    "Choose between the styled table and machine-readable output.",
+                    [
+                        new UsageOption("-Json, --json", "Emit JSON instead of the styled table."),
+                    ]),
+            ],
+            Sections:
+            [
+                new UsageSection(
+                    "Practical tips",
+                    Bullets:
+                    [
+                        "Run doctor first whenever a build fails mysteriously — it surfaces missing or out-of-date tooling before you dig deeper.",
+                        "Combine with provision when the report says Bin2Shell is missing.",
+                    ]),
+            ],
             Examples:
             [
                 new UsageExample("washmachine-cli doctor", "Print the preflight table.", "Any shell"),
-                new UsageExample("washmachine-cli doctor --json", "Machine-friendly output for CI scripts.", "Any shell"),
+                new UsageExample("washmachine-cli doctor -Json", "Machine-friendly output for CI scripts.", "Any shell"),
             ],
-            Related: []));
-        return 0;
-    }
+            Related:
+            [
+                new UsageNote("provision", "Run it when doctor reports Bin2Shell as missing."),
+                new UsageNote("show compilers", "Inspect compiler candidates after doctor confirms they exist."),
+            ]);
 }

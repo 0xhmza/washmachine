@@ -68,7 +68,15 @@ public static partial class Program
         },
         ["show"] = ShowTargets,
         ["provision"] = new[] { "-CoreOnly", "--core-only" },
-        ["test"] = new[] { "--help", "-h" },
+        ["test"] = new[]
+        {
+            "-Shellcode", "--shellcode", "-s",
+            "-Url", "--url", "-u",
+            "-Phase", "--phase",
+            "-TestAssets", "--test-assets",
+            "-StopOnFail", "--stop-on-fail",
+            "--help", "-h"
+        },
         ["scan"] = new[] { "-Json", "--json", "--help", "-h" },
         ["help"] = new[] { "encode", "analyze", "backdoor", "strip", "show", "provision", "test", "scan", "doctor" },
         ["doctor"] = new[] { "--json", "--help", "-h" }
@@ -173,15 +181,14 @@ public static partial class Program
         var suggestions = SuggestSimilarNames(topic, validTopics, 3);
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[{UiColors.Error}]Unknown help topic '{Markup.Escape(topic)}'.[/]");
+        WriteStatus(StatusPrefix.Failure, $"Unknown help topic: '{topic}'.");
         if (suggestions.Count > 0)
         {
             AnsiConsole.MarkupLine($"[{UiColors.Muted}]Did you mean:[/] " +
                 string.Join(", ", suggestions.Select(s => $"[{UiColors.Accent}]{Markup.Escape(s)}[/]")));
         }
-        AnsiConsole.MarkupLine($"[{UiColors.Muted}]Run[/] [{UiColors.Accent}]help[/] [{UiColors.Muted}]on its own to see all commands.[/]");
-        AnsiConsole.WriteLine();
-        return PrintUsage();
+        AnsiConsole.MarkupLine($"[{UiColors.Muted}]Run[/] [{UiColors.Accent}]help[/] [{UiColors.Muted}]on its own for the full command list.[/]");
+        return 1;
     }
 
     /// <summary>Interactive read-eval-print loop.</summary>
@@ -2270,6 +2277,7 @@ public static partial class Program
         BuildProvisionUsage(),
         BuildTestUsage(),
         BuildScanUsage(),
+        BuildDoctorUsage(),
     ];
 
     private static CommandUsage BuildEncodeUsage() =>
@@ -2619,11 +2627,11 @@ public static partial class Program
                     "Core options",
                     "Phase 1 and 2 require a shellcode file. Phase 3 can use the configured test-assets directory.",
                     [
-                        new UsageOption("--shellcode <file>", "Base shellcode file for phases 1 and 2, and for URL-mode setup."),
-                        new UsageOption("--url <payload-url>", "Optional hosted payload URL used for the URL branch of phase 1."),
-                        new UsageOption("--phase <value>", "Select which test phase to run.", "all", "1 | 2 | 3 | all"),
-                        new UsageOption("--test-assets <dir>", "Directory of safe shellcode test assets used by phase 3."),
-                        new UsageOption("--stop-on-fail", "Abort the harness on the first failing test case."),
+                        new UsageOption("-s, -Shellcode <file>", "Base shellcode file for phases 1 and 2, and for URL-mode setup."),
+                        new UsageOption("-u, -Url <payload-url>", "Optional hosted payload URL used for the URL branch of phase 1."),
+                        new UsageOption("-Phase <value>", "Select which test phase to run.", "all", "1 | 2 | 3 | all"),
+                        new UsageOption("-TestAssets <dir>", "Directory of safe shellcode test assets used by phase 3."),
+                        new UsageOption("-StopOnFail", "Abort the harness on the first failing test case."),
                     ]),
             ],
             Sections:
@@ -2640,16 +2648,16 @@ public static partial class Program
                     "Practical tips",
                     Bullets:
                     [
-                        "Use --phase 1 or --phase 2 during iteration when you do not need the full sweep.",
-                        "Add --stop-on-fail when debugging a regression so the first bad case is easier to isolate.",
-                        "Run help test for the high-level view, then use test --help in scripts if you only want the harness usage line.",
+                        "Use -Phase 1 or -Phase 2 during iteration when you do not need the full sweep.",
+                        "Add -StopOnFail when debugging a regression so the first bad case is easier to isolate.",
+                        "Both -Pascal and --posix flag styles are accepted (e.g. -Shellcode or --shellcode).",
                     ]),
             ],
             Examples:
             [
-                new UsageExample("washmachine-cli test --shellcode .\\messagebox.bin --phase all", "Run the full harness from a known-safe sample.", "PowerShell / pwsh"),
-                new UsageExample("washmachine-cli test --shellcode ./messagebox.bin --phase 1 --stop-on-fail", "Focus on encoder and envelope coverage while iterating.", "Bash / Zsh"),
-                new UsageExample("washmachine-cli test --shellcode messagebox.bin --url https://host/payload.bin --phase 1", "Exercise file and URL branches together for phase 1.", "Any shell"),
+                new UsageExample("washmachine-cli test -Shellcode .\\messagebox.bin -Phase all", "Run the full harness from a known-safe sample.", "PowerShell / pwsh"),
+                new UsageExample("washmachine-cli test -s ./messagebox.bin -Phase 1 -StopOnFail", "Focus on encoder and envelope coverage while iterating.", "Bash / Zsh"),
+                new UsageExample("washmachine-cli test -s messagebox.bin -u https://host/payload.bin -Phase 1", "Exercise file and URL branches together for phase 1.", "Any shell"),
             ],
             Related:
             [
@@ -3163,108 +3171,91 @@ public static partial class Program
 
     private static int PrintUsage()
     {
-        var commands = GetHelpCatalog();
-        int nameWidth = commands.Max(c => c.Name.Length);
-
-        // Overview
-        UsageFormatter.PrintSectionHeader("Overview");
-        AnsiConsole.MarkupLine($"  [{UiColors.Value}]Command guide for washmachine-cli v{Ui.Banner.AppVersion}.[/]");
-        AnsiConsole.MarkupLine($"  [{UiColors.Label}]Usage[/]   [{UiColors.Accent}]washmachine-cli <command> [[options]][/]");
-        AnsiConsole.MarkupLine($"  [{UiColors.Muted}]Run[/] [{UiColors.Accent}]help <command>[/] [{UiColors.Muted}]or[/] [{UiColors.Accent}]<command> --help[/] [{UiColors.Muted}]for details on any command.[/]");
-
-        // Modes — explains one-liner vs interactive at a glance
-        UsageFormatter.PrintSectionHeader("Modes");
-        var modeNotes = new (string label, string desc)[]
-        {
-            ("One-liner",   "Provide a command and all flags on the command line. The CLI runs once and exits."),
-            ("Interactive", "Run a bare command (e.g. 'backdoor') with no required flags to drop into a Metasploit-style configuration session."),
-            ("REPL",        "Launch washmachine-cli with no arguments to enter the persistent shell with banner, history, and tab completion."),
-            ("Help / version", "Help: 'help', '--help', '-h', '-?'. Version: '--version', '-V', 'version'."),
-        };
-        int modeLabelWidth = modeNotes.Max(n => n.label.Length);
-        foreach (var (label, desc) in modeNotes)
-            AnsiConsole.MarkupLine($"  [{UiColors.Label}]{Markup.Escape(label.PadRight(modeLabelWidth))}[/]   [{UiColors.Value}]{Markup.Escape(desc)}[/]");
-
-        // Command index — with one-line example each
-        UsageFormatter.PrintSectionHeader("Commands");
-        foreach (var cmd in commands)
-        {
-            string name = cmd.Name.PadRight(nameWidth);
-            AnsiConsole.MarkupLine($"  [{UiColors.Accent}]{Markup.Escape(name)}[/]   [{UiColors.Value}]{Markup.Escape(cmd.Summary)}[/]");
-            if (cmd.Examples is { Length: > 0 })
-                AnsiConsole.MarkupLine($"  [{UiColors.Muted}]{new string(' ', nameWidth)}     e.g.  {Markup.Escape(cmd.Examples[0].Command)}[/]");
-        }
-
-        // REPL-only chrome commands
-        UsageFormatter.PrintSectionHeader("REPL-only commands");
-        var replCommands = new (string name, string desc)[]
-        {
-            ("scheme",  "List or switch the active color scheme (e.g. 'scheme dracula')."),
-            ("banner",  "Reprint the welcome chrome and info grid."),
-            ("clear",   "Clear the screen (also: 'cls')."),
-            ("version", "Print the CLI version."),
-            ("exit",    "Leave the REPL (also: 'quit', 'q')."),
-        };
-        int replLabelWidth = replCommands.Max(c => c.name.Length);
-        foreach (var (name, desc) in replCommands)
-            AnsiConsole.MarkupLine($"  [{UiColors.Accent}]{Markup.Escape(name.PadRight(replLabelWidth))}[/]   [{UiColors.Value}]{Markup.Escape(desc)}[/]");
-
-        // Getting started
-        UsageFormatter.PrintSectionHeader("Getting started");
-        foreach (var bullet in new[]
-        {
-            "Run 'provision' once if you want Bin2Shell available before your first encode.",
-            "Use 'show templates', 'show modules', and 'show encoders' to discover valid IDs on this machine.",
-            "Use 'help <command>' when you want details for one command without leaving the terminal flow.",
-            "Common flow: 'analyze target' to recon, then 'backdoor' to patch — or 'encode' → 'strip' → 'backdoor'.",
-            "Inside a session, type 'show options' for the parameter table and 'help <OPTION>' for details on any field.",
-        })
-            AnsiConsole.MarkupLine($"  [{UiColors.Value}]· {Markup.Escape(bullet)}[/]");
-
-        // Shell and path tips
-        UsageFormatter.PrintSectionHeader("Shell and path tips");
-        var shellNotes = new[]
-        {
-            ("Windows PowerShell / pwsh", @"Use .\payload.bin or C:\path\payload.bin, and quote paths with spaces."),
-            ("Bash / Zsh",                @"Use ./payload.bin or /path/payload.bin, and quote paths with spaces."),
-            ("Shared",                    "Flags and command names stay the same across shells; only path style and quoting change."),
-            ("Env",                       "WASHMACHINE_SCHEME selects the color scheme. Set NO_COLOR to any non-empty value to disable all ANSI styling (https://no-color.org)."),
-        };
-        int shellLabelWidth = shellNotes.Max(n => n.Item1.Length);
-        foreach (var (label, desc) in shellNotes)
-            AnsiConsole.MarkupLine($"  [{UiColors.Label}]{Markup.Escape(label.PadRight(shellLabelWidth))}[/]   [{UiColors.Value}]{Markup.Escape(desc)}[/]");
-
-        // Documentation
-        UsageFormatter.PrintSectionHeader("Documentation");
-        AnsiConsole.MarkupLine($"  [{UiColors.Value}]· https://0xhmza.github.io/washmachine/cli-reference.html[/]");
-
-        AnsiConsole.WriteLine();
+        UsageFormatter.Print(BuildTopLevelUsage());
         return 0;
+    }
+
+    /// <summary>Top-level help is rendered through the same pipeline as every
+    /// per-command help so the two screens share section headers, KV table
+    /// layout, and color treatment.</summary>
+    private static CommandUsage BuildTopLevelUsage()
+    {
+        var commands = GetHelpCatalog();
+
+        // Commands list as a flat option group: name = "Flag", summary = description.
+        var commandOptions = commands
+            .Select(c => new UsageOption(c.Name, c.Summary))
+            .ToArray();
+
+        return new CommandUsage(
+            Name: "help",
+            HeaderTitle: $"washmachine-cli v{Ui.Banner.AppVersion}",
+            Summary: "Modular shellcode evasion framework for red teamers and security researchers.",
+            Syntax: "washmachine-cli <command> [options]",
+            Description: "Run a command with -h / --help / 'help <command>' for full details on any command.",
+            WhenToUse: "One-liner: pass a command and all flags. Interactive: pass a bare command (e.g. 'backdoor') to drop into a Metasploit-style session. REPL: pass no arguments at all.",
+            Output: "Each command prints a styled report by default. Pass -Json to most commands for machine-readable output.",
+            OptionGroups:
+            [
+                new UsageOptionGroup(
+                    "Commands",
+                    "Run 'help <command>' or '<command> --help' for the full reference of any of these.",
+                    commandOptions),
+                new UsageOptionGroup(
+                    "REPL-only commands",
+                    "Available only inside the interactive REPL.",
+                    [
+                        new UsageOption("scheme",  "List or switch the active color scheme (e.g. 'scheme dracula')."),
+                        new UsageOption("banner",  "Reprint the welcome chrome and info grid."),
+                        new UsageOption("clear",   "Clear the screen (also: 'cls')."),
+                        new UsageOption("version", "Print the CLI version."),
+                        new UsageOption("exit",    "Leave the REPL (also: 'quit', 'q')."),
+                    ]),
+            ],
+            Sections:
+            [
+                new UsageSection(
+                    "Getting started",
+                    Bullets:
+                    [
+                        "Run 'doctor' to confirm compilers and helper tools are present.",
+                        "Run 'provision' once if you want Bin2Shell available before your first encode.",
+                        "Use 'show templates', 'show modules', 'show encoders' to discover valid IDs.",
+                        "Common flow: 'analyze target' to recon, then 'backdoor' to patch, or 'encode' to build a fresh loader.",
+                        "Inside any interactive session, type 'show options' for the parameter table and 'help <OPTION>' for details on any field.",
+                    ]),
+                new UsageSection(
+                    "Shell and path tips",
+                    Notes:
+                    [
+                        new UsageNote("PowerShell / pwsh", @"Use .\payload.bin or C:\path\payload.bin. Quote paths with spaces."),
+                        new UsageNote("Bash / Zsh",        @"Use ./payload.bin or /path/payload.bin. Quote paths with spaces."),
+                        new UsageNote("Flag styles",       "All commands accept both -Pascal and --posix flag styles (e.g. -Shellcode or --shellcode)."),
+                        new UsageNote("Env",               "WASHMACHINE_SCHEME selects the color scheme. NO_COLOR disables ANSI styling (https://no-color.org)."),
+                    ]),
+                new UsageSection(
+                    "Documentation",
+                    Bullets:
+                    [
+                        "https://0xhmza.github.io/washmachine-docs/",
+                    ]),
+            ]);
     }
 
     private static int PrintUnknownCommand(string command)
     {
-        var validCommands = new[] { "encode", "analyze", "backdoor", "strip", "show", "provision", "test", "scan", "help" };
+        var validCommands = new[] { "encode", "analyze", "backdoor", "strip", "show", "provision", "test", "scan", "doctor", "help" };
 
         AnsiConsole.WriteLine();
-        WriteStatus(StatusPrefix.Failure, $"Unknown command: '{command}'");
-        AnsiConsole.WriteLine();
+        WriteStatus(StatusPrefix.Failure, $"Unknown command: '{command}'.");
 
         var suggestions = SuggestSimilarNames(command, validCommands, 3);
         if (suggestions.Count > 0)
         {
-            AnsiConsole.MarkupLine($"[{UiColors.Muted}]Did you mean:[/]");
-            foreach (var s in suggestions)
-                AnsiConsole.MarkupLine($"  [{UiColors.Accent}]{Markup.Escape(s)}[/]");
-            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine($"[{UiColors.Muted}]Did you mean:[/] " +
+                string.Join(", ", suggestions.Select(s => $"[{UiColors.Accent}]{Markup.Escape(s)}[/]")));
         }
-
-        AnsiConsole.MarkupLine($"[{UiColors.Muted}]Available commands:[/]");
-        foreach (var c in validCommands.Where(c => c != "help"))
-            AnsiConsole.MarkupLine($"  [{UiColors.Accent}]{c}[/]");
-
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[{UiColors.Muted}]Run[/] [{UiColors.Accent}]help[/] [{UiColors.Muted}]for usage information, or[/] [{UiColors.Accent}]help <command>[/] [{UiColors.Muted}]for one command.[/]");
+        AnsiConsole.MarkupLine($"[{UiColors.Muted}]Run[/] [{UiColors.Accent}]help[/] [{UiColors.Muted}]for the full command list.[/]");
         return 1;
     }
 
