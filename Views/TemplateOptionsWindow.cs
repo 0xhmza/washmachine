@@ -1,3 +1,4 @@
+using Microsoft.UI.Text;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -31,14 +32,12 @@ public sealed class TemplateOptionsState
 }
 
 /// <summary>
-/// Renders template-specific inputs and snippet selectors in a scrollable dialog.
+/// Renders template-specific inputs and technique selectors in a scrollable dialog.
 /// </summary>
 public sealed class TemplateOptionsWindow
 {
     private const int DefaultInputWidth = 260;
-    private const int DefaultSelectorWidth = 360;
-    private const int MinSelectorHeight = 90;
-    private const int MaxSelectorHeight = 240;
+    private const int MaxSelectorHeight = 260;
 
     private readonly Window _window;
     private readonly TaskCompletionSource<TemplateOptionsState?> _tcs;
@@ -90,9 +89,9 @@ public sealed class TemplateOptionsWindow
         Grid.SetRow(titleBar, 0);
         root.Children.Add(titleBar);
 
-        var headerPanel = BuildHeaderPanel();
-        Grid.SetRow(headerPanel, 1);
-        root.Children.Add(headerPanel);
+        var toolbar = BuildToolbar();
+        Grid.SetRow(toolbar, 1);
+        root.Children.Add(toolbar);
 
         _sectionsHost = new StackPanel { Orientation = Orientation.Vertical };
         var scrollViewer = new ScrollViewer
@@ -112,9 +111,9 @@ public sealed class TemplateOptionsWindow
             Margin = new Thickness(12, 12, 12, 0)
         };
 
-        var bottomPanel = BuildBottomPanel();
-        Grid.SetRow(bottomPanel, 3);
-        root.Children.Add(bottomPanel);
+        var bottomBar = BuildBottomBar();
+        Grid.SetRow(bottomBar, 3);
+        root.Children.Add(bottomBar);
 
         _window = new Window
         {
@@ -143,12 +142,14 @@ public sealed class TemplateOptionsWindow
         var tcs = new TaskCompletionSource<TemplateOptionsState?>();
         var dlg = new TemplateOptionsWindow(template, sections, existingState, infoAction, tcs);
 
-        dlg._window.AppWindow.Resize(new SizeInt32(900, 620));
         var display = DisplayArea.GetFromWindowId(dlg._window.AppWindow.Id, DisplayAreaFallback.Primary);
         var work = display.WorkArea;
+        int winW = Math.Min(1000, work.Width - 80);
+        int winH = Math.Min(680, work.Height - 80);
+        dlg._window.AppWindow.Resize(new SizeInt32(winW, winH));
         dlg._window.AppWindow.Move(new PointInt32(
-            work.X + (work.Width - 900) / 2,
-            work.Y + (work.Height - 620) / 2));
+            work.X + (work.Width - winW) / 2,
+            work.Y + (work.Height - winH) / 2));
 
         // Make modal: disable the owner window until this window closes.
         if (ownerHandle != 0)
@@ -164,42 +165,62 @@ public sealed class TemplateOptionsWindow
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool EnableWindow(nint hWnd, bool bEnable);
 
-    private FrameworkElement BuildHeaderPanel()
+    private FrameworkElement BuildToolbar()
     {
-        var panel = new StackPanel
+        var outer = new Border
         {
-            Orientation = Orientation.Horizontal,
-            Margin = new Thickness(12, 10, 12, 4),
-            Spacing = 8
+            BorderBrush = App.ThemeBrush("DividerStrokeColorDefaultBrush"),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Padding = new Thickness(12, 8, 12, 8)
         };
 
-        var expandButton = new Button { Content = "Expand all", MinWidth = 110 };
-        expandButton.Click += (_, _) => SetAllSectionsCollapsed(false);
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
 
-        var collapseButton = new Button { Content = "Collapse all", MinWidth = 110 };
-        collapseButton.Click += (_, _) => SetAllSectionsCollapsed(true);
+        var expandBtn = new Button();
+        var expandContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        expandContent.Children.Add(new FontIcon { Glyph = "\uE70D", FontSize = 13 });
+        expandContent.Children.Add(new TextBlock { Text = "Expand all", VerticalAlignment = VerticalAlignment.Center });
+        expandBtn.Content = expandContent;
+        expandBtn.Click += (_, _) => SetAllSectionsCollapsed(false);
 
-        panel.Children.Add(expandButton);
-        panel.Children.Add(collapseButton);
-        return panel;
+        var collapseBtn = new Button();
+        var collapseContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        collapseContent.Children.Add(new FontIcon { Glyph = "\uE70E", FontSize = 13 });
+        collapseContent.Children.Add(new TextBlock { Text = "Collapse all", VerticalAlignment = VerticalAlignment.Center });
+        collapseBtn.Content = collapseContent;
+        collapseBtn.Click += (_, _) => SetAllSectionsCollapsed(true);
+
+        panel.Children.Add(expandBtn);
+        panel.Children.Add(collapseBtn);
+        outer.Child = panel;
+        return outer;
     }
 
-    private FrameworkElement BuildBottomPanel()
+    private FrameworkElement BuildBottomBar()
     {
+        var outer = new Border
+        {
+            BorderBrush = App.ThemeBrush("DividerStrokeColorDefaultBrush"),
+            BorderThickness = new Thickness(0, 1, 0, 0),
+            Padding = new Thickness(12, 10, 12, 12)
+        };
+
         var panel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(12, 8, 12, 12),
             Spacing = 8
         };
 
         var saveButton = new Button
         {
-            Content = "Save",
-            MinWidth = 110,
-            Style = (Style)Application.Current.Resources["AccentButtonStyle"]
+            Style = (Style)Application.Current.Resources["AccentButtonStyle"],
+            MinWidth = 110
         };
+        var saveContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        saveContent.Children.Add(new FontIcon { Glyph = "\uE74E", FontSize = 14 });
+        saveContent.Children.Add(new TextBlock { Text = "Save", VerticalAlignment = VerticalAlignment.Center });
+        saveButton.Content = saveContent;
         saveButton.Click += (_, _) =>
         {
             _tcs.TrySetResult(BuildResultState());
@@ -207,7 +228,7 @@ public sealed class TemplateOptionsWindow
             _window.Close();
         };
 
-        var cancelButton = new Button { Content = "Cancel", MinWidth = 110 };
+        var cancelButton = new Button { Content = "Cancel", MinWidth = 90 };
         cancelButton.Click += (_, _) =>
         {
             _tcs.TrySetResult(null);
@@ -217,7 +238,8 @@ public sealed class TemplateOptionsWindow
 
         panel.Children.Add(saveButton);
         panel.Children.Add(cancelButton);
-        return panel;
+        outer.Child = panel;
+        return outer;
     }
 
     private void OnWindowClosedCancel(object sender, WindowEventArgs e)
@@ -246,11 +268,55 @@ public sealed class TemplateOptionsWindow
 
     private SectionUi CreateSection(CodeSnippetSection section)
     {
+        // Expand only if user previously saved a selection for this section
+        bool hasStoredState = section.AllowMultiple
+            ? (_initialState.ListValues.TryGetValue(SnippetControlNaming.GetListName(section, 0), out var vals) && vals?.Count > 0)
+            : _initialState.ComboValues.ContainsKey(SnippetControlNaming.GetComboName(section, 0));
+
+        // Live summary shown in the header while collapsed
+        var summaryLabel = new TextBlock
+        {
+            Text = "—",
+            FontSize = 12,
+            Foreground = App.ThemeBrush("TextFillColorSecondaryBrush"),
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(8, 0, 0, 0)
+        };
+
+        // Type pill: MULTI / SINGLE
+        var pill = new Border
+        {
+            Background = section.AllowMultiple
+                ? App.ThemeBrush("AccentFillColorDefaultBrush")
+                : App.ThemeBrush("SubtleFillColorSecondaryBrush"),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(6, 1, 6, 1),
+            Margin = new Thickness(8, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new TextBlock
+            {
+                Text = section.AllowMultiple ? "MULTI" : "SINGLE",
+                FontSize = 10,
+                FontWeight = FontWeights.SemiBold
+            }
+        };
+
+        var headerPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        headerPanel.Children.Add(new TextBlock
+        {
+            Text = string.IsNullOrWhiteSpace(section.Display) ? "Section" : section.Display,
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        headerPanel.Children.Add(pill);
+        headerPanel.Children.Add(summaryLabel);
+
         var expander = new Expander
         {
-            Header = string.IsNullOrWhiteSpace(section.Display) ? "Section" : section.Display,
-            IsExpanded = false,
-            Margin = new Thickness(12, 8, 12, 0),
+            Header = headerPanel,
+            IsExpanded = hasStoredState,
+            Margin = new Thickness(12, 6, 12, 0),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch
         };
@@ -258,11 +324,12 @@ public sealed class TemplateOptionsWindow
         var body = new StackPanel
         {
             Orientation = Orientation.Vertical,
-            Margin = new Thickness(0, 4, 0, 0)
+            Spacing = 4,
+            Margin = new Thickness(0, 4, 0, 8)
         };
 
         AddInputs(body, section, SnippetInputPlacement.BeforeSelector);
-        AddSnippetSelector(body, section);
+        AddSnippetSelector(body, section, summaryLabel);
         AddInputs(body, section, SnippetInputPlacement.AfterSelector);
 
         if (body.Children.Count == 0)
@@ -270,13 +337,12 @@ public sealed class TemplateOptionsWindow
             body.Children.Add(new TextBlock
             {
                 Text = "No options available.",
-                Foreground = App.ThemeBrush("TextFillColorSecondaryBrush"),
-                Margin = new Thickness(0, 4, 0, 0)
+                Foreground = App.ThemeBrush("TextFillColorSecondaryBrush")
             });
         }
 
         expander.Content = body;
-        return new SectionUi(section, expander, body);
+        return new SectionUi(section, expander, body, summaryLabel);
     }
 
     private void AddInputs(Panel host, CodeSnippetSection section, SnippetInputPlacement placement)
@@ -287,56 +353,65 @@ public sealed class TemplateOptionsWindow
 
     private void AddInputRow(Panel host, CodeSnippetInput input)
     {
-        var row = CreateRow();
-
         string labelText = BuildInputLabel(input);
         if (!string.IsNullOrWhiteSpace(labelText))
         {
-            row.Children.Add(new TextBlock
+            host.Children.Add(new TextBlock
             {
                 Text = labelText,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0)
+                FontSize = 12,
+                Foreground = App.ThemeBrush("TextFillColorSecondaryBrush"),
+                Margin = new Thickness(0, 4, 0, 2)
             });
         }
+
+        var inputRow = new Grid();
+        inputRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         string key = input.Id ?? string.Empty;
         var textBox = new TextBox
         {
             Width = input.Width.HasValue && input.Width.Value > 0 ? input.Width.Value : DefaultInputWidth,
-            Margin = new Thickness(0, 0, 8, 0),
+            HorizontalAlignment = HorizontalAlignment.Left,
             Text = GetInitialTextValue(key),
             PlaceholderText = input.Placeholder ?? string.Empty
         };
-
-        row.Children.Add(textBox);
+        Grid.SetColumn(textBox, 0);
+        inputRow.Children.Add(textBox);
 
         if (!string.IsNullOrWhiteSpace(input.InfoAction))
         {
+            inputRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var infoButton = new Button
             {
-                Content = string.IsNullOrWhiteSpace(input.InfoButtonLabel) ? "Info" : input.InfoButtonLabel,
-                MinWidth = 64
+                Content = new FontIcon { Glyph = "\uE946", FontSize = 14 },
+                Padding = new Thickness(8, 4, 8, 4),
+                Margin = new Thickness(6, 0, 0, 0)
             };
+            ToolTipService.SetToolTip(infoButton, string.IsNullOrWhiteSpace(input.InfoButtonLabel) ? "See format examples" : input.InfoButtonLabel);
             infoButton.Click += (_, _) => _infoAction?.Invoke(input.InfoAction);
-            row.Children.Add(infoButton);
+            Grid.SetColumn(infoButton, 1);
+            inputRow.Children.Add(infoButton);
         }
 
         if (!string.IsNullOrWhiteSpace(key))
             _bindings.Add(new FieldBinding(key, FieldKind.Text, textBox));
 
-        host.Children.Add(row);
+        host.Children.Add(inputRow);
     }
 
-    private void AddSnippetSelector(Panel host, CodeSnippetSection section)
+    private void AddSnippetSelector(Panel host, CodeSnippetSection section, TextBlock? summaryLabel)
     {
-        var row = CreateRow();
-        row.Children.Add(new TextBlock
+        host.Children.Add(new TextBlock
         {
-            Text = section.AllowMultiple ? "Techniques" : "Technique",
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 8, 0)
+            Text = section.AllowMultiple ? "Techniques:" : "Technique:",
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 8, 0, 4)
         });
+
+        var itemById = section.Items
+            .Where(it => it != null && !string.IsNullOrWhiteSpace(it.Id))
+            .ToDictionary(it => it.Id, StringComparer.OrdinalIgnoreCase);
 
         if (section.AllowMultiple)
         {
@@ -347,27 +422,21 @@ public sealed class TemplateOptionsWindow
 
             if (options.Count == 0)
             {
-                row.Children.Add(new TextBlock
+                host.Children.Add(new TextBlock
                 {
-                    Text = "No snippets defined.",
-                    Foreground = App.ThemeBrush("TextFillColorSecondaryBrush"),
-                    VerticalAlignment = VerticalAlignment.Center
+                    Text = "No techniques defined.",
+                    Foreground = App.ThemeBrush("TextFillColorSecondaryBrush")
                 });
-                host.Children.Add(row);
+                UpdateSummary(summaryLabel, "None");
                 return;
             }
 
             var selectedIds = new HashSet<string>(resolved, StringComparer.OrdinalIgnoreCase);
             var checkPanel = new StackPanel { Orientation = Orientation.Vertical };
 
-            // Map item IDs to their CodeSnippetItem for input lookup
-            var itemById = section.Items
-                .Where(it => it != null && !string.IsNullOrWhiteSpace(it.Id))
-                .ToDictionary(it => it.Id, StringComparer.OrdinalIgnoreCase);
-
             foreach (var option in options)
             {
-                var isChecked = !string.IsNullOrWhiteSpace(option.Id) && selectedIds.Contains(option.Id);
+                bool isChecked = !string.IsNullOrWhiteSpace(option.Id) && selectedIds.Contains(option.Id);
                 var cb = new CheckBox
                 {
                     Content = option.Display,
@@ -377,43 +446,46 @@ public sealed class TemplateOptionsWindow
                 };
                 checkPanel.Children.Add(cb);
 
-                // Per-snippet inputs (show inline below checkbox when checked)
                 if (!string.IsNullOrWhiteSpace(option.Id)
                     && itemById.TryGetValue(option.Id, out var snippetItem)
                     && snippetItem.Inputs.Count > 0)
                 {
-                    var inputPanel = BuildSnippetItemInputPanel(section, snippetItem);
-                    inputPanel.Visibility = isChecked ? Visibility.Visible : Visibility.Collapsed;
-                    checkPanel.Children.Add(inputPanel);
+                    var inputCard = BuildSnippetItemInputPanel(section, snippetItem);
+                    inputCard.Visibility = isChecked ? Visibility.Visible : Visibility.Collapsed;
+                    checkPanel.Children.Add(inputCard);
 
-                    cb.Checked += (_, _) => inputPanel.Visibility = Visibility.Visible;
+                    cb.Checked += (_, _) =>
+                    {
+                        inputCard.Visibility = Visibility.Visible;
+                        UpdateSummary(summaryLabel, ComputeMultiSummary(checkPanel));
+                    };
                     cb.Unchecked += (_, _) =>
                     {
-                        inputPanel.Visibility = Visibility.Collapsed;
-                        // Clear stale values from the textboxes
-                        foreach (var child in inputPanel.Children.OfType<StackPanel>())
-                            foreach (var tb in child.Children.OfType<TextBox>())
-                                tb.Text = tb.PlaceholderText ?? string.Empty;
+                        inputCard.Visibility = Visibility.Collapsed;
+                        ClearInputCard(inputCard);
+                        UpdateSummary(summaryLabel, ComputeMultiSummary(checkPanel));
                     };
+                }
+                else
+                {
+                    cb.Checked += (_, _) => UpdateSummary(summaryLabel, ComputeMultiSummary(checkPanel));
+                    cb.Unchecked += (_, _) => UpdateSummary(summaryLabel, ComputeMultiSummary(checkPanel));
                 }
             }
 
-            int height = Math.Clamp(options.Count * 30, MinSelectorHeight, MaxSelectorHeight);
-            // Expand height when items have inputs
-            bool hasInputs = section.Items.Any(it => it.Inputs.Count > 0);
-            if (hasInputs)
-                height = Math.Min(height + 120, MaxSelectorHeight + 120);
-
+            bool hasInputItems = section.Items.Any(it => it.Inputs.Count > 0);
+            int baseH = Math.Clamp(options.Count * 32, 80, MaxSelectorHeight);
             var sv = new ScrollViewer
             {
                 Content = checkPanel,
-                Width = DefaultSelectorWidth,
-                Height = height,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                MaxHeight = hasInputItems ? baseH + 120 : baseH,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto
             };
 
-            row.Children.Add(sv);
+            host.Children.Add(sv);
             _bindings.Add(new FieldBinding(key, FieldKind.MultiSelect, checkPanel));
+            UpdateSummary(summaryLabel, ComputeMultiSummary(checkPanel));
         }
         else
         {
@@ -425,78 +497,72 @@ public sealed class TemplateOptionsWindow
                 string.IsNullOrWhiteSpace(resolved) ? Array.Empty<string>() : new[] { resolved },
                 includeNone: true);
 
-            var combo = new ComboBox { Width = DefaultSelectorWidth, IsEditable = false };
+            var combo = new ComboBox
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                IsEditable = false,
+                Margin = new Thickness(0, 0, 0, 4)
+            };
             foreach (var option in options)
                 combo.Items.Add(option);
 
             SelectComboItem(combo, options, resolved);
-            row.Children.Add(combo);
+            host.Children.Add(combo);
             _bindings.Add(new FieldBinding(key, FieldKind.SingleSelect, combo));
 
-            // Per-snippet inputs for single-select: show inputs for selected item
-            var itemById = section.Items
-                .Where(it => it != null && !string.IsNullOrWhiteSpace(it.Id))
-                .ToDictionary(it => it.Id, StringComparer.OrdinalIgnoreCase);
-
-            var inputHost = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(0, 4, 0, 0) };
+            var inputHost = new StackPanel { Orientation = Orientation.Vertical };
             var currentItemInputPanel = new StackPanel { Orientation = Orientation.Vertical };
             inputHost.Children.Add(currentItemInputPanel);
 
             void UpdateComboInputs()
             {
                 currentItemInputPanel.Children.Clear();
-                // Remove old bindings for scoped text keys of this section
                 _bindings.RemoveAll(b => b.Kind == FieldKind.Text && b.Key.StartsWith(section.Template + "_", StringComparison.Ordinal));
 
                 if (combo.SelectedItem is OptionItem sel && !string.IsNullOrWhiteSpace(sel.Id)
                     && itemById.TryGetValue(sel.Id, out var snippetItem) && snippetItem.Inputs.Count > 0)
                 {
-                    var panel = BuildSnippetItemInputPanel(section, snippetItem);
-                    currentItemInputPanel.Children.Add(panel);
+                    currentItemInputPanel.Children.Add(BuildSnippetItemInputPanel(section, snippetItem));
                 }
+
+                UpdateSummary(summaryLabel, ComputeComboSummary(combo));
             }
 
             combo.SelectionChanged += (_, _) => UpdateComboInputs();
             UpdateComboInputs();
 
-            // Only add host if any items actually have inputs
             if (section.Items.Any(it => it.Inputs.Count > 0))
                 host.Children.Add(inputHost);
         }
-
-        host.Children.Add(row);
     }
 
     /// <summary>
-    /// Builds a panel of inline text inputs for a specific snippet item.
+    /// Builds a card-style panel of inline text inputs for a specific technique item.
     /// Uses scoped keys: {sectionTemplate}_{itemId}_{inputId}.
     /// </summary>
-    private StackPanel BuildSnippetItemInputPanel(CodeSnippetSection section, CodeSnippetItem item)
+    private Border BuildSnippetItemInputPanel(CodeSnippetSection section, CodeSnippetItem item)
     {
-        var panel = new StackPanel
+        var innerPanel = new StackPanel
         {
             Orientation = Orientation.Vertical,
-            Margin = new Thickness(24, 2, 0, 4),
-            Padding = new Thickness(8, 4, 8, 4),
-            BorderBrush = App.ThemeBrush("DraculaCurrentLineBrush"),
-            BorderThickness = new Thickness(1, 0, 0, 0)
+            Spacing = 6
         };
 
         foreach (var input in item.Inputs)
         {
-            var scopedKey = Washmachine.Services.CompilerService.BuildScopedInputKey(
-                section.Template, item.Id, input.Id);
-
-            var inputRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
+            var scopedKey = CompilerService.BuildScopedInputKey(section.Template, item.Id, input.Id);
 
             string labelText = string.IsNullOrWhiteSpace(input.Label) ? input.Id : input.Label;
-            inputRow.Children.Add(new TextBlock
+            innerPanel.Children.Add(new TextBlock
             {
                 Text = labelText,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0),
-                MinWidth = 100
+                FontSize = 12,
+                Foreground = App.ThemeBrush("TextFillColorSecondaryBrush"),
+                Margin = new Thickness(0, 0, 0, 2)
             });
+
+            var inputRow = new Grid();
+            inputRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             string initial = GetInitialTextValue(scopedKey);
             if (string.IsNullOrWhiteSpace(initial) && !string.IsNullOrWhiteSpace(input.DefaultValue))
@@ -504,36 +570,73 @@ public sealed class TemplateOptionsWindow
 
             var textBox = new TextBox
             {
-                Width = 120,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
                 Text = initial,
-                PlaceholderText = input.Placeholder ?? input.DefaultValue ?? string.Empty,
-                Margin = new Thickness(0, 0, 4, 0)
+                PlaceholderText = input.Placeholder ?? input.DefaultValue ?? string.Empty
             };
-
+            Grid.SetColumn(textBox, 0);
             inputRow.Children.Add(textBox);
 
             if (!string.IsNullOrWhiteSpace(input.InfoAction))
             {
-                var infoButton = new Button
+                inputRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                var infoBtn = new Button
                 {
-                    Content = string.IsNullOrWhiteSpace(input.InfoButtonLabel) ? "Info" : input.InfoButtonLabel,
-                    MinWidth = 64,
-                    Margin = new Thickness(4, 0, 0, 0)
+                    Content = new FontIcon { Glyph = "\uE946", FontSize = 14 },
+                    Padding = new Thickness(8, 4, 8, 4),
+                    Margin = new Thickness(6, 0, 0, 0)
                 };
-                infoButton.Click += (_, _) => _infoAction?.Invoke(input.InfoAction);
-                inputRow.Children.Add(infoButton);
+                ToolTipService.SetToolTip(infoBtn, string.IsNullOrWhiteSpace(input.InfoButtonLabel) ? "See format examples" : input.InfoButtonLabel);
+                infoBtn.Click += (_, _) => _infoAction?.Invoke(input.InfoAction);
+                Grid.SetColumn(infoBtn, 1);
+                inputRow.Children.Add(infoBtn);
             }
 
-            panel.Children.Add(inputRow);
-
+            innerPanel.Children.Add(inputRow);
             _bindings.Add(new FieldBinding(scopedKey, FieldKind.Text, textBox));
         }
 
-        return panel;
+        return new Border
+        {
+            Child = innerPanel,
+            Background = App.ThemeBrush("SubtleFillColorSecondaryBrush"),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(12, 8, 12, 8),
+            Margin = new Thickness(24, 4, 0, 4)
+        };
     }
 
-    private static StackPanel CreateRow()
-        => new() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+    /// <summary>Clears all TextBoxes inside a technique input card so BuildResultState ignores them.</summary>
+    private static void ClearInputCard(Border card)
+    {
+        if (card.Child is not StackPanel panel) return;
+        foreach (var child in panel.Children)
+        {
+            if (child is Grid grid)
+                foreach (var tb in grid.Children.OfType<TextBox>())
+                    tb.Text = string.Empty;
+        }
+    }
+
+    private static string ComputeMultiSummary(StackPanel checkPanel)
+    {
+        var selected = checkPanel.Children.OfType<CheckBox>()
+            .Where(cb => cb.IsChecked == true && cb.Tag is string s && !string.IsNullOrWhiteSpace(s))
+            .Select(cb => cb.Content?.ToString() ?? (string)cb.Tag!)
+            .ToList();
+        if (selected.Count == 0) return "None";
+        if (selected.Count == 1) return selected[0];
+        if (selected.Count == 2) return $"{selected[0]} · {selected[1]}";
+        return $"{selected[0]} · +{selected.Count - 1} more";
+    }
+
+    private static string ComputeComboSummary(ComboBox combo)
+        => combo.SelectedItem is OptionItem opt && !string.IsNullOrWhiteSpace(opt.Id) ? opt.Display : "None";
+
+    private static void UpdateSummary(TextBlock? label, string text)
+    {
+        if (label != null) label.Text = text;
+    }
 
     private TemplateOptionsState BuildResultState()
     {
@@ -706,14 +809,15 @@ public sealed class TemplateOptionsWindow
 
     private sealed class SectionUi
     {
-        public SectionUi(CodeSnippetSection section, Expander container, StackPanel body)
+        public SectionUi(CodeSnippetSection section, Expander container, StackPanel body, TextBlock? summaryLabel)
         {
-            Section = section; Container = container; Body = body;
+            Section = section; Container = container; Body = body; SummaryLabel = summaryLabel;
         }
 
         public CodeSnippetSection Section { get; }
         public Expander Container { get; }
         public StackPanel Body { get; }
+        public TextBlock? SummaryLabel { get; }
     }
 
     private sealed class FieldBinding

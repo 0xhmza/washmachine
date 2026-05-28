@@ -87,16 +87,66 @@ public sealed class PayloadHistoryEntry
     public string SourceFileName => Path.GetFileName(SourceFilePath ?? string.Empty);
 
     [JsonIgnore]
+    public string DisplaySourceName =>
+        string.IsNullOrWhiteSpace(SourceFileName) ? "(unknown source)" : SourceFileName;
+
+    [JsonIgnore]
     public string DisplayTimestamp => GeneratedAtUtc == default
         ? "unknown time"
         : GeneratedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
     [JsonIgnore]
+    public string DayText => GeneratedAtUtc == default
+        ? "—"
+        : GeneratedAtUtc.ToLocalTime().Day.ToString();
+
+    [JsonIgnore]
+    public string MonthText => GeneratedAtUtc == default
+        ? "—"
+        : GeneratedAtUtc.ToLocalTime().ToString("MMM").ToUpper();
+
+    [JsonIgnore]
+    public string TimeText => GeneratedAtUtc == default
+        ? ""
+        : GeneratedAtUtc.ToLocalTime().ToString("HH:mm");
+
+    [JsonIgnore]
+    public string EncoderTag => string.IsNullOrWhiteSpace(EncoderName)
+        ? $"enc:{EncoderIndex}"
+        : EncoderName;
+
+    [JsonIgnore]
+    public string EnvelopeTag => string.IsNullOrWhiteSpace(EnvelopeName)
+        ? $"env:{EnvelopeIndex}"
+        : EnvelopeName;
+
+    [JsonIgnore]
+    public string WebHelperTag => string.IsNullOrWhiteSpace(WebHelperName)
+        ? $"wh:{WebHelperIndex}"
+        : WebHelperName;
+
+    [JsonIgnore]
+    public string SourceSizeDisplay => SourceFileSizeBytes > 0
+        ? FormatBytes(SourceFileSizeBytes)
+        : string.Empty;
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes:N0} B";
+        double v = bytes;
+        string[] units = ["B", "KB", "MB", "GB"];
+        int i = 0;
+        while (v >= 1024 && i < units.Length - 1) { v /= 1024; i++; }
+        return $"{v:N1} {units[i]}";
+    }
+
+    // Legacy display helpers kept for backwards compat with any serialised references
+    [JsonIgnore]
     public string DisplayTitle => $"{DisplayTimestamp}  |  {PayloadUrl}";
 
     [JsonIgnore]
     public string DisplaySubtitle =>
-        $"{(string.IsNullOrWhiteSpace(SourceFileName) ? "(source missing)" : SourceFileName)}  •  enc {EncoderIndex} / env {EnvelopeIndex} / wh {WebHelperIndex}";
+        $"{DisplaySourceName}  •  enc {EncoderIndex} / env {EnvelopeIndex} / wh {WebHelperIndex}";
 }
 
 public static class PayloadHistoryStore

@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using Washmachine.Services;
+using Windows.ApplicationModel.DataTransfer;
 
 namespace Washmachine.Views;
 
@@ -44,8 +45,7 @@ public sealed partial class PayloadHistoryPage : Page
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = this.XamlRoot
         };
-        var choice = await dialog.ShowAsync();
-        if (choice != ContentDialogResult.Primary)
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
             return;
 
         PayloadHistoryStore.Delete(entry.Id);
@@ -63,8 +63,7 @@ public sealed partial class PayloadHistoryPage : Page
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = this.XamlRoot
         };
-        var choice = await dialog.ShowAsync();
-        if (choice != ContentDialogResult.Primary)
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
             return;
 
         PayloadHistoryStore.Clear();
@@ -73,55 +72,53 @@ public sealed partial class PayloadHistoryPage : Page
 
     private void LoadHistory()
     {
-        HistoryPathValue.Text = PayloadHistoryStore.FilePath;
-
         try
         {
             _entries = PayloadHistoryStore.Load().ToList();
+
+            bool hasEntries = _entries.Count > 0;
+            EmptyStateBorder.Visibility = hasEntries ? Visibility.Collapsed : Visibility.Visible;
+            HistoryList.Visibility = hasEntries ? Visibility.Visible : Visibility.Collapsed;
+
             HistoryList.ItemsSource = _entries;
+            StatusText.Text = _entries.Count == 1 ? "1 entry" : $"{_entries.Count} entries";
 
-            EmptyStateText.Visibility = _entries.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            StatusText.Text = $"Entries: {_entries.Count}";
-
-            if (_entries.Count > 0)
-            {
+            if (hasEntries)
                 HistoryList.SelectedIndex = 0;
-            }
             else
-            {
                 ShowSelectedEntry(null);
-            }
         }
         catch (JsonException ex)
         {
             StatusText.Text = $"History file is malformed: {ex.Message}";
-            EmptyStateText.Visibility = Visibility.Visible;
-            HistoryList.ItemsSource = null;
-            ShowSelectedEntry(null);
+            ShowEmptyState();
         }
         catch (IOException ex)
         {
             StatusText.Text = $"Failed to load history file: {ex.Message}";
-            EmptyStateText.Visibility = Visibility.Visible;
-            HistoryList.ItemsSource = null;
-            ShowSelectedEntry(null);
+            ShowEmptyState();
         }
         catch (UnauthorizedAccessException ex)
         {
             StatusText.Text = $"Access denied while reading history: {ex.Message}";
-            EmptyStateText.Visibility = Visibility.Visible;
-            HistoryList.ItemsSource = null;
-            ShowSelectedEntry(null);
+            ShowEmptyState();
         }
+    }
+
+    private void ShowEmptyState()
+    {
+        EmptyStateBorder.Visibility = Visibility.Visible;
+        HistoryList.Visibility = Visibility.Collapsed;
+        HistoryList.ItemsSource = null;
+        ShowSelectedEntry(null);
     }
 
     private void ShowSelectedEntry(PayloadHistoryEntry? entry)
     {
         if (entry == null)
         {
-            NoSelectionText.Visibility = Visibility.Visible;
             DetailsHost.Visibility = Visibility.Collapsed;
-            SetAllDetailText("—");
+            NoSelectionText.Visibility = _entries.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             return;
         }
 
@@ -131,10 +128,11 @@ public sealed partial class PayloadHistoryPage : Page
         GeneratedAtValue.Text = entry.GeneratedAtUtc == default
             ? "—"
             : entry.GeneratedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+
         PayloadUrlValue.Text = TextOrDash(entry.PayloadUrl);
         SourcePathValue.Text = TextOrDash(entry.SourceFilePath);
         SourceSizeValue.Text = entry.SourceFileSizeBytes > 0
-            ? $"{entry.SourceFileSizeBytes:N0} bytes ({FormatBytes(entry.SourceFileSizeBytes)})"
+            ? $"{entry.SourceFileSizeBytes:N0} bytes  ({FormatBytes(entry.SourceFileSizeBytes)})"
             : "—";
         SourceHashValue.Text = TextOrDash(entry.SourceFileSha256);
         EncoderValue.Text = FormatCodecValue(entry.EncoderIndex, entry.EncoderName, entry.EncoderDescription);
@@ -146,38 +144,21 @@ public sealed partial class PayloadHistoryPage : Page
 
         CommandLineTextBox.Text = TextOrDash(entry.Bin2ShellCommandLine);
         PayloadTextBox.Text = TextOrDash(entry.Payload);
-        CppIncludesTextBox.Text = TextOrDash(entry.CppIncludes);
-        CppDeclarationsTextBox.Text = TextOrDash(entry.CppDeclarations);
-        CppWebFetchTextBox.Text = TextOrDash(entry.CppWebFetch);
-        CppPayloadInitTextBox.Text = TextOrDash(entry.CppPayloadInit);
-        CppDecodeTextBox.Text = TextOrDash(entry.CppDecode);
-        CppPreambleTextBox.Text = TextOrDash(entry.CppPreamble);
-        CppBodyTextBox.Text = TextOrDash(entry.CppBody);
     }
 
-    private void SetAllDetailText(string value)
-    {
-        GeneratedAtValue.Text = value;
-        PayloadUrlValue.Text = value;
-        SourcePathValue.Text = value;
-        SourceSizeValue.Text = value;
-        SourceHashValue.Text = value;
-        EncoderValue.Text = value;
-        EnvelopeValue.Text = value;
-        WebHelperValue.Text = value;
-        PayloadBytesValue.Text = value;
-        PayloadChecksumValue.Text = value;
-        HistoryPathValue.Text = PayloadHistoryStore.FilePath;
+    // Copy handlers
+    private void CopyUrl_Click(object sender, RoutedEventArgs e) => CopyText(PayloadUrlValue.Text);
+    private void CopyHash_Click(object sender, RoutedEventArgs e) => CopyText(SourceHashValue.Text);
+    private void CopyChecksum_Click(object sender, RoutedEventArgs e) => CopyText(PayloadChecksumValue.Text);
+    private void CopyCommandLine_Click(object sender, RoutedEventArgs e) => CopyText(CommandLineTextBox.Text);
+    private void CopyPayload_Click(object sender, RoutedEventArgs e) => CopyText(PayloadTextBox.Text);
 
-        CommandLineTextBox.Text = value;
-        PayloadTextBox.Text = value;
-        CppIncludesTextBox.Text = value;
-        CppDeclarationsTextBox.Text = value;
-        CppWebFetchTextBox.Text = value;
-        CppPayloadInitTextBox.Text = value;
-        CppDecodeTextBox.Text = value;
-        CppPreambleTextBox.Text = value;
-        CppBodyTextBox.Text = value;
+    private static void CopyText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || text == "—") return;
+        var dp = new DataPackage();
+        dp.SetText(text);
+        Clipboard.SetContent(dp);
     }
 
     private static string TextOrDash(string? value) =>
@@ -185,27 +166,22 @@ public sealed partial class PayloadHistoryPage : Page
 
     private static string FormatCodecValue(int index, string name, string description)
     {
-        var baseText = $"{index} - {TextOrDash(name)}";
-        if (string.IsNullOrWhiteSpace(description))
-            return baseText;
-
-        return $"{baseText} ({description})";
+        var baseText = string.IsNullOrWhiteSpace(name) ? $"{index}" : $"{index} — {name}";
+        return string.IsNullOrWhiteSpace(description) ? baseText : $"{baseText}  ({description})";
     }
 
     private static string FormatBytes(long bytes)
     {
-        if (bytes < 1024)
-            return $"{bytes:N0} B";
-
+        if (bytes < 1024) return $"{bytes:N0} B";
         double value = bytes;
-        string[] units = { "B", "KB", "MB", "GB", "TB" };
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
         int unitIndex = 0;
         while (value >= 1024 && unitIndex < units.Length - 1)
         {
             value /= 1024;
             unitIndex++;
         }
-
         return $"{value:N2} {units[unitIndex]}";
     }
 }
+
