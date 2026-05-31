@@ -480,17 +480,22 @@ public sealed partial class BackdooringPage : Page
         var warnings = new List<string>();
         var hardBlocks = new List<string>();
 
-        if (SelectedCarrierInvoke == CarrierInvoke.EntryFunctionBackdoor || SelectedCarrierInvoke == CarrierInvoke.TlsCallback)
-        {
-            hardBlocks.Add("Only Entry Point Hijack and DllMain Hook carriers are currently implemented. Function Backdoor and TLS carriers are not available yet.");
-        }
-
         if (SelectedCarrierInvoke == CarrierInvoke.DllMain && !_analysisResult.IsDll)
         {
             hardBlocks.Add("DllMain Hook carrier is only applicable to DLL targets. Use Entry Point Hijack for EXE files.");
         }
 
-        if (!PreserveOriginalEntry)
+        if (SelectedCarrierInvoke == CarrierInvoke.EntryFunctionBackdoor && !_analysisResult.Is64Bit)
+        {
+            hardBlocks.Add("Entry Function Backdoor carrier requires an x64 target PE.");
+        }
+
+        if (SelectedCarrierInvoke == CarrierInvoke.TlsCallback && !_analysisResult.Is64Bit)
+        {
+            hardBlocks.Add("TLS Callback carrier requires an x64 target PE.");
+        }
+
+        if (!PreserveOriginalEntry && SelectedCarrierInvoke != CarrierInvoke.TlsCallback)
         {
             hardBlocks.Add("Disabling original entry-point preservation is not implemented. The current carrier always resumes the target's original entry point.");
         }

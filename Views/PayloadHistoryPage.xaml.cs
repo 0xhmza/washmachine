@@ -48,7 +48,11 @@ public sealed partial class PayloadHistoryPage : Page
         if (await dialog.ShowAsync() != ContentDialogResult.Primary)
             return;
 
-        PayloadHistoryStore.Delete(entry.Id);
+        if (entry.IsSessionEntry && entry.SessionDir != null)
+            PayloadHistoryStore.DeleteSession(entry.SessionDir);
+        else
+            PayloadHistoryStore.Delete(entry.Id);
+
         LoadHistory();
     }
 
@@ -57,7 +61,7 @@ public sealed partial class PayloadHistoryPage : Page
         var dialog = new ContentDialog
         {
             Title = "Clear all history",
-            Content = "This will permanently delete all payload history entries. Continue?",
+            Content = "This will permanently delete all payload history entries and session logs. Continue?",
             PrimaryButtonText = "Clear All",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
@@ -67,6 +71,7 @@ public sealed partial class PayloadHistoryPage : Page
             return;
 
         PayloadHistoryStore.Clear();
+        PayloadHistoryStore.ClearSessions();
         LoadHistory();
     }
 
@@ -74,7 +79,7 @@ public sealed partial class PayloadHistoryPage : Page
     {
         try
         {
-            _entries = PayloadHistoryStore.Load().ToList();
+            _entries = PayloadHistoryStore.LoadAll().ToList();
 
             bool hasEntries = _entries.Count > 0;
             EmptyStateBorder.Visibility = hasEntries ? Visibility.Collapsed : Visibility.Visible;
@@ -129,21 +134,50 @@ public sealed partial class PayloadHistoryPage : Page
             ? "—"
             : entry.GeneratedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
-        PayloadUrlValue.Text = TextOrDash(entry.PayloadUrl);
-        SourcePathValue.Text = TextOrDash(entry.SourceFilePath);
-        SourceSizeValue.Text = entry.SourceFileSizeBytes > 0
-            ? $"{entry.SourceFileSizeBytes:N0} bytes  ({FormatBytes(entry.SourceFileSizeBytes)})"
-            : "—";
-        SourceHashValue.Text = TextOrDash(entry.SourceFileSha256);
-        EncoderValue.Text = FormatCodecValue(entry.EncoderIndex, entry.EncoderName, entry.EncoderDescription);
-        EnvelopeValue.Text = FormatCodecValue(entry.EnvelopeIndex, entry.EnvelopeName, entry.EnvelopeDescription);
-        WebHelperValue.Text = FormatCodecValue(entry.WebHelperIndex, entry.WebHelperName, entry.WebHelperDescription);
-        PayloadBytesValue.Text = entry.PayloadLengthBytes > 0 ? $"{entry.PayloadLengthBytes:N0} bytes" : "—";
-        PayloadChecksumValue.Text = TextOrDash(entry.PayloadChecksum);
-        HistoryPathValue.Text = PayloadHistoryStore.FilePath;
+        // Never display raw encoded payload — it can be megabytes and will crash the UI.
+        PayloadTextBox.Text = string.Empty;
 
-        CommandLineTextBox.Text = TextOrDash(entry.Bin2ShellCommandLine);
-        PayloadTextBox.Text = TextOrDash(entry.Payload);
+        if (entry.IsSessionEntry)
+        {
+            // Session folder entry (compilation or backdoor)
+            var typeLabel = entry.SessionTypeDisplay;
+            var successLabel = entry.SessionSuccess == true ? "✓ Success" : entry.SessionSuccess == false ? "✗ Failed" : "Unknown";
+
+            PayloadUrlValue.Text = $"{typeLabel}  —  {successLabel}";
+            SourcePathValue.Text = !string.IsNullOrWhiteSpace(entry.SessionShellcodeSource)
+                ? entry.SessionShellcodeSource
+                : TextOrDash(entry.SourceFilePath);
+            SourceSizeValue.Text = entry.SourceFileSizeBytes > 0
+                ? $"{entry.SourceFileSizeBytes:N0} bytes  ({FormatBytes(entry.SourceFileSizeBytes)})"
+                : "—";
+            SourceHashValue.Text = "—";
+            EncoderValue.Text = TextOrDash(entry.EncoderName);
+            EnvelopeValue.Text = TextOrDash(entry.EnvelopeName);
+            WebHelperValue.Text = "—";
+            PayloadBytesValue.Text = "—";
+            PayloadChecksumValue.Text = "—";
+            HistoryPathValue.Text = entry.SessionDir ?? PayloadHistoryStore.LoggingPath;
+            CommandLineTextBox.Text = !string.IsNullOrWhiteSpace(entry.SessionOutputPath)
+                ? $"Output: {entry.SessionOutputPath}"
+                : "—";
+        }
+        else
+        {
+            // Legacy JSON-stored web payload entry
+            PayloadUrlValue.Text = TextOrDash(entry.PayloadUrl);
+            SourcePathValue.Text = TextOrDash(entry.SourceFilePath);
+            SourceSizeValue.Text = entry.SourceFileSizeBytes > 0
+                ? $"{entry.SourceFileSizeBytes:N0} bytes  ({FormatBytes(entry.SourceFileSizeBytes)})"
+                : "—";
+            SourceHashValue.Text = TextOrDash(entry.SourceFileSha256);
+            EncoderValue.Text = FormatCodecValue(entry.EncoderIndex, entry.EncoderName, entry.EncoderDescription);
+            EnvelopeValue.Text = FormatCodecValue(entry.EnvelopeIndex, entry.EnvelopeName, entry.EnvelopeDescription);
+            WebHelperValue.Text = FormatCodecValue(entry.WebHelperIndex, entry.WebHelperName, entry.WebHelperDescription);
+            PayloadBytesValue.Text = entry.PayloadLengthBytes > 0 ? $"{entry.PayloadLengthBytes:N0} bytes" : "—";
+            PayloadChecksumValue.Text = TextOrDash(entry.PayloadChecksum);
+            HistoryPathValue.Text = PayloadHistoryStore.FilePath;
+            CommandLineTextBox.Text = TextOrDash(entry.Bin2ShellCommandLine);
+        }
     }
 
     // Copy handlers

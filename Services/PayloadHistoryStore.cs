@@ -83,12 +83,63 @@ public sealed class PayloadHistoryEntry
     [JsonPropertyName("cppBody")]
     public string CppBody { get; set; } = string.Empty;
 
+    // ── Session-folder fields (not serialised, populated at load time) ──────────
+
+    /// <summary>Full path to the session directory (set when loaded from logging folder).</summary>
+    [JsonIgnore]
+    public string? SessionDir { get; set; }
+
+    /// <summary>"session" for compilation sessions, "backdoor" for backdoor sessions, "" for JSON history.</summary>
+    [JsonIgnore]
+    public string SessionType { get; set; } = string.Empty;
+
+    /// <summary>Success flag read from session_summary.json.</summary>
+    [JsonIgnore]
+    public bool? SessionSuccess { get; set; }
+
+    /// <summary>Template display name from session_summary.json (compilation sessions only).</summary>
+    [JsonIgnore]
+    public string TemplateName { get; set; } = string.Empty;
+
+    /// <summary>Output path from session_summary.json.</summary>
+    [JsonIgnore]
+    public string SessionOutputPath { get; set; } = string.Empty;
+
+    /// <summary>Shellcode / source path from session_summary.json.</summary>
+    [JsonIgnore]
+    public string SessionShellcodeSource { get; set; } = string.Empty;
+
+    /// <summary>True when this entry was loaded from a session folder rather than the legacy JSON history.</summary>
+    [JsonIgnore]
+    public bool IsSessionEntry => !string.IsNullOrEmpty(SessionDir);
+
+    /// <summary>"Compilation", "Backdoor", or "" for legacy entries.</summary>
+    [JsonIgnore]
+    public string SessionTypeDisplay => SessionType switch
+    {
+        "session"  => "Compilation",
+        "backdoor" => "Backdoor",
+        _          => string.Empty,
+    };
+
     [JsonIgnore]
     public string SourceFileName => Path.GetFileName(SourceFilePath ?? string.Empty);
 
     [JsonIgnore]
-    public string DisplaySourceName =>
-        string.IsNullOrWhiteSpace(SourceFileName) ? "(unknown source)" : SourceFileName;
+    public string DisplaySourceName
+    {
+        get
+        {
+            if (IsSessionEntry)
+            {
+                if (!string.IsNullOrWhiteSpace(TemplateName)) return TemplateName;
+                var src = Path.GetFileName(SessionShellcodeSource);
+                if (!string.IsNullOrWhiteSpace(src)) return src;
+                return SessionTypeDisplay;
+            }
+            return string.IsNullOrWhiteSpace(SourceFileName) ? "(unknown source)" : SourceFileName;
+        }
+    }
 
     [JsonIgnore]
     public string DisplayTimestamp => GeneratedAtUtc == default
@@ -164,16 +215,166 @@ public static class PayloadHistoryStore
     private static readonly string HistoryFile =
         Path.Combine(HistoryDirectory, "payload-history.json");
 
-    public static string FilePath => HistoryFile;
+    // Session directories are under the app's executable directory
+    private static readonly string LoggingDirectory =
+        Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logging");
 
+    public static string FilePath => HistoryFile;
+    public static string LoggingPath => LoggingDirectory;
+
+    /// <summary>
+    /// Loads all history: session folders (newest-first) plus legacy JSON entries,
+    /// with duplicates removed (session entries take precedence over JSON entries
+    /// for the same timestamp).
+    /// </summary>
+    public static IReadOnlyList<PayloadHistoryEntry> LoadAll()
+    {
+        lock (SyncRoot)
+        {
+            var sessions = LoadFromSessions();
+            var json = LoadInternal();
+
+            // Merge: sessions + json (sessions take priority; no de-dup needed since they
+            // come from different sources)
+            var all = sessions.Concat(json)
+                .OrderByDescending(e => e.GeneratedAtUtc)
+                .ToList();
+
+            return all;
+        }
+    }
+
+    /// <summary>Legacy load — returns only JSON-stored entries (sorted newest-first).</summary>
     public static IReadOnlyList<PayloadHistoryEntry> Load()
     {
         lock (SyncRoot)
         {
-            var entries = LoadInternal();
-            return entries
+            return LoadInternal()
                 .OrderByDescending(entry => entry.GeneratedAtUtc)
                 .ToList();
+        }
+    }
+
+    /// <summary>Scans the logging/ directory and returns one entry per session folder.</summary>
+    private static List<PayloadHistoryEntry> LoadFromSessions()
+    {
+        var results = new List<PayloadHistoryEntry>();
+
+        if (!Directory.Exists(LoggingDirectory))
+            return results;
+
+        try
+        {
+            foreach (var dir in Directory.GetDirectories(LoggingDirectory))
+            {
+                var entry = ParseSessionFolder(dir);
+                if (entry != null)
+                    results.Add(entry);
+            }
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Parses a session folder into a <see cref="PayloadHistoryEntry"/>.
+    /// Returns null if the folder doesn't look like a washmachine session.
+    /// </summary>
+    private static PayloadHistoryEntry? ParseSessionFolder(string dir)
+    {
+        try
+        {
+            var folderName = Path.GetFileName(dir);
+            // Expected format: session_YYYYMMDD_HHMMSS_<slug>
+            //                  backdoor_YYYYMMDD_HHMMSS_<guid>
+            var parts = folderName.Split('_', 4);
+            if (parts.Length < 3) return null;
+
+            var sessionType = parts[0]; // "session" or "backdoor"
+            if (sessionType != "session" && sessionType != "backdoor") return null;
+
+            // Parse date + time from parts[1] and parts[2]
+            DateTime generatedAt = default;
+            if (parts[1].Length == 8 && parts[2].Length == 6 &&
+                DateTime.TryParseExact(
+                    parts[1] + parts[2],
+                    "yyyyMMddHHmmss",
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeLocal,
+                    out var parsed))
+            {
+                generatedAt = parsed.ToUniversalTime();
+            }
+
+            var entry = new PayloadHistoryEntry
+            {
+                Id = folderName,
+                GeneratedAtUtc = generatedAt,
+                SessionDir = dir,
+                SessionType = sessionType,
+            };
+
+            // Read session_summary.json (written by both CompilerService and CLI backdoor)
+            var summaryPath = Path.Combine(dir, "session_summary.json");
+            if (File.Exists(summaryPath))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(File.ReadAllText(summaryPath));
+                    var root = doc.RootElement;
+
+                    if (root.TryGetProperty("success", out var successProp))
+                        entry.SessionSuccess = successProp.GetBoolean();
+
+                    if (root.TryGetProperty("outputExe", out var outProp) && outProp.ValueKind == JsonValueKind.String)
+                        entry.SessionOutputPath = outProp.GetString() ?? string.Empty;
+
+                    // Compilation sessions
+                    if (root.TryGetProperty("template", out var tmplProp) && tmplProp.ValueKind == JsonValueKind.Object)
+                    {
+                        if (tmplProp.TryGetProperty("Display", out var dispProp))
+                            entry.TemplateName = dispProp.GetString() ?? string.Empty;
+                        else if (tmplProp.TryGetProperty("display", out var dispProp2))
+                            entry.TemplateName = dispProp2.GetString() ?? string.Empty;
+                    }
+
+                    if (root.TryGetProperty("shellcodeSource", out var srcProp) && srcProp.ValueKind == JsonValueKind.Object)
+                    {
+                        if (srcProp.TryGetProperty("Value", out var valProp))
+                            entry.SessionShellcodeSource = valProp.GetString() ?? string.Empty;
+                    }
+
+                    // Backdoor sessions (flat fields from CLI-written summary)
+                    if (root.TryGetProperty("targetPe", out var tpeProp) && string.IsNullOrEmpty(entry.SessionShellcodeSource))
+                        entry.SourceFilePath = tpeProp.GetString() ?? string.Empty;
+
+                    if (root.TryGetProperty("shellcode", out var scProp))
+                        entry.SessionShellcodeSource = scProp.GetString() ?? string.Empty;
+
+                    if (root.TryGetProperty("encoder", out var encProp))
+                        entry.EncoderName = encProp.GetString() ?? string.Empty;
+
+                    if (root.TryGetProperty("envelope", out var envProp))
+                        entry.EnvelopeName = envProp.GetString() ?? string.Empty;
+
+                    if (root.TryGetProperty("timestamp", out var tsProp) && tsProp.ValueKind == JsonValueKind.String)
+                    {
+                        if (DateTime.TryParse(tsProp.GetString(), System.Globalization.CultureInfo.InvariantCulture,
+                                System.Globalization.DateTimeStyles.RoundtripKind, out var ts))
+                            entry.GeneratedAtUtc = ts;
+                    }
+                }
+                catch (JsonException) { }
+                catch (IOException) { }
+            }
+
+            return entry;
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 
@@ -215,6 +416,19 @@ public static class PayloadHistoryStore
         }
     }
 
+    /// <summary>Delete a session folder from the logging directory.</summary>
+    public static bool DeleteSession(string sessionDir)
+    {
+        if (string.IsNullOrWhiteSpace(sessionDir) || !Directory.Exists(sessionDir)) return false;
+        try
+        {
+            Directory.Delete(sessionDir, recursive: true);
+            return true;
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+    }
+
     public static void Clear()
     {
         lock (SyncRoot)
@@ -222,6 +436,29 @@ public static class PayloadHistoryStore
             Directory.CreateDirectory(HistoryDirectory);
             File.WriteAllText(HistoryFile, "[]");
         }
+    }
+
+    /// <summary>Deletes all session_* and backdoor_* directories from the logging folder.</summary>
+    public static void ClearSessions()
+    {
+        if (!Directory.Exists(LoggingDirectory)) return;
+
+        try
+        {
+            foreach (var dir in Directory.GetDirectories(LoggingDirectory))
+            {
+                var name = Path.GetFileName(dir);
+                if (name.StartsWith("session_", StringComparison.OrdinalIgnoreCase) ||
+                    name.StartsWith("backdoor_", StringComparison.OrdinalIgnoreCase))
+                {
+                    try { Directory.Delete(dir, recursive: true); }
+                    catch (IOException) { }
+                    catch (UnauthorizedAccessException) { }
+                }
+            }
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     private static List<PayloadHistoryEntry> LoadInternal()

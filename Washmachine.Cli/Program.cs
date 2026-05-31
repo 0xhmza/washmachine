@@ -26,7 +26,7 @@ public static partial class Program
     private static readonly string[] ShowLegacyTargets = { "--templates", "--encoders", "--snippets", "--compilers" };
     private static readonly string[] BackdoorMethodValues = { "code-cave", "new-section", "section-ext", "text-pad", "tls-callback" };
     private static readonly string[] BackdoorEncryptionValues = { "none" };
-    private static readonly string[] BackdoorCarrierValues = { "entry-point", "dll-main" };
+    private static readonly string[] BackdoorCarrierValues = { "entry-point", "function-backdoor", "tls", "dll-main" };
     private static readonly string[] BackdoorModeValues = { "normal", "silence", "dropper" };
     private static readonly string[] StripModeValues = { "ep", "entry-point", "section" };
     private static readonly Dictionary<string, string[]> CommandOptionCompletions = new(StringComparer.OrdinalIgnoreCase)
@@ -1676,7 +1676,7 @@ public static partial class Program
         var carrierInvoke = carrier switch
         {
             null or "entry-point" or "entrypoint" or "hijack" => CarrierInvoke.EntryPointHijack,
-            "dll-main" or "dllmain" or "dll-entry"            => CarrierInvoke.EntryPointHijack,
+            "dll-main" or "dllmain" or "dll-entry"            => CarrierInvoke.DllMain,
             "function-backdoor" or "function" => CarrierInvoke.EntryFunctionBackdoor,
             "tls" or "tls-callback" => CarrierInvoke.TlsCallback,
             _ => (CarrierInvoke?)null
@@ -1684,7 +1684,7 @@ public static partial class Program
 
         if (carrierInvoke is null)
         {
-            WriteStatus(StatusPrefix.Failure, $"Unknown carrier '{carrier}'. Expected: entry-point | dll-main. Example: -Carrier entry-point");
+            WriteStatus(StatusPrefix.Failure, $"Unknown carrier '{carrier}'. Expected: entry-point | dll-main | function-backdoor | tls. Example: -Carrier entry-point");
             return 1;
         }
 
@@ -1696,13 +1696,6 @@ public static partial class Program
         }
 
         var resolvedInjection = injectionMethod.Value;
-
-        if (carrierInvoke != CarrierInvoke.EntryPointHijack)
-        {
-            AnsiConsole.MarkupLine($"[red]Error:[/] Carrier [white]{Markup.Escape(carrier!)}[/] is not implemented for the backdoor command.");
-            AnsiConsole.MarkupLine("[grey]Supported carriers: [white]entry-point[/] (EXE/DLL), [white]dll-main[/] (DLL — same as entry-point).[/]");
-            return 1;
-        }
 
         var resolvedCarrier = carrierInvoke.Value;
         // Determine the display label for the carrier based on what the user specified and the target type
@@ -2254,6 +2247,22 @@ public static partial class Program
             sb.AppendLine("═══════════════════════════════════════════════════════════════");
 
             File.WriteAllText(Path.Combine(sessionDir, "report.txt"), sb.ToString());
+
+            // Write session_summary.json for the history scanner
+            var summary = new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["timestamp"]  = DateTime.UtcNow.ToString("O"),
+                ["type"]       = "backdoor",
+                ["targetPe"]   = peFile,
+                ["shellcode"]  = shellcodeFile,
+                ["outputExe"]  = result.OutputPath ?? outputFile ?? string.Empty,
+                ["success"]    = result.Success,
+                ["error"]      = result.ErrorMessage ?? string.Empty,
+            };
+            File.WriteAllText(
+                Path.Combine(sessionDir, "session_summary.json"),
+                System.Text.Json.JsonSerializer.Serialize(summary,
+                    new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
         }
         catch (Exception ex)
         {

@@ -1469,10 +1469,11 @@ public sealed partial class CompilePage : Page
         // Carrier invoke method
         var carrierStr = backdoorPage.SelectedCarrierInvoke switch
         {
-            CarrierInvoke.EntryPointHijack => "entry-point",
-            CarrierInvoke.EntryFunctionBackdoor => "function-backdoor",
-            CarrierInvoke.TlsCallback => "tls",
-            _ => "entry-point"
+            CarrierInvoke.EntryPointHijack       => "entry-point",
+            CarrierInvoke.EntryFunctionBackdoor  => "function-backdoor",
+            CarrierInvoke.TlsCallback            => "tls",
+            CarrierInvoke.DllMain                => "dll-main",
+            _                                    => "entry-point"
         };
         args.AddRange(new[] { "-Carrier", carrierStr });
 
