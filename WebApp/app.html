@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Washmachine</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://washmachine.local; style-src 'self' 'unsafe-inline' https://washmachine.local; font-src 'self' https://washmachine.local data:; img-src 'self' data:; script-src 'self' https://washmachine.local;">
+
+<link rel="stylesheet" href="system.css">
+<style>
+  /* SPA-specific overrides on top of system.css */
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--n-0);
+    -webkit-user-select: none;
+    user-select: none;
+    overscroll-behavior: none;
+  }
+  /* Re-enable selection on code/inputs only */
+  .code, .mono, input, textarea, .bytes, [data-selectable] { -webkit-user-select: text; user-select: text; }
+
+  /* ───── Layout defenses ──────────────────────────────────────
+     The design was authored at a fixed 1440x900 canvas. When run as a
+     resizable Windows app these become real bugs:
+       1. .main has explicit height:900px → status bar gets pushed off.
+       2. .main's grid 1fr row defaults to min-content as floor → grows
+          past viewport when content is long, hiding the status row.
+       3. .rail uses flex:1 spacer to push footer items down — without
+          explicit min-height:0, long primary lists can squeeze the
+          footer items out of view.
+  */
+  .app {
+    width: 100vw !important;
+    height: 100vh !important;
+    min-width: 0;
+    min-height: 0;
+  }
+  .main {
+    height: 100% !important;
+    min-height: 0 !important;
+    /* Replace the fixed 1fr with minmax(0, 1fr) so the row never grows
+       beyond its share. This is what keeps the status bar visible. */
+    grid-template-rows: 44px 64px minmax(0, 1fr) 28px !important;
+  }
+  .work {
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+  .cfg, .preview {
+    min-height: 0 !important;
+  }
+  .rail {
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden;
+  }
+  /* The flex-1 spacer between primary and footer nav can fail under tight
+     vertical space — give the footer a hard "stick to bottom" via margin-top:auto. */
+  .rail > .rail-nav:last-of-type {
+    margin-top: auto;
+  }
+
+  /* Rail items become clickable */
+  .rail-item, .pipe-stage, .list-item, .pe-row, .ptab, .seg > button, .tog, .btn {
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Smooth route transitions: opacity-only, no layout */
+  .route-host {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+  .route-frame {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 120ms ease-out;
+    pointer-events: none;
+  }
+  .route-frame.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* Loading screen — only shown until React paints first frame */
+  #boot {
+    position: fixed; inset: 0; background: var(--n-0);
+    display: grid; place-items: center; z-index: 9999;
+    transition: opacity 200ms ease-out 100ms;
+  }
+  #boot.hidden { opacity: 0; pointer-events: none; }
+  #boot .b-wrap { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+  #boot .b-logo {
+    width: 56px; height: 56px; border-radius: 12px;
+    background: linear-gradient(155deg, var(--acc), var(--acc-dim));
+    color: #003a5d; display: grid; place-items: center;
+    font-family: var(--f-disp); font-weight: 700; font-size: 24px;
+    box-shadow: 0 8px 28px rgba(96,205,255,0.25);
+  }
+  #boot .b-text { color: var(--n-7); font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.06em; }
+
+  /* Hard-coded design frame width was 1440 — wrap content to scroll horizontally if window narrower */
+  .work {
+    min-width: 0;
+  }
+
+  /* Make scrollbars look native to the dark theme */
+  ::-webkit-scrollbar { width: 10px; height: 10px; background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--n-4); border-radius: 99px; border: 2px solid var(--n-0); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--n-5); }
+  ::-webkit-scrollbar-corner { background: transparent; }
+</style>
+</head>
+<body>
+
+<div id="boot">
+  <div class="b-wrap">
+    <div class="b-logo">W</div>
+    <div class="b-text">loading washmachine…</div>
+  </div>
+</div>
+
+<div id="root"></div>
+
+<!-- Vendored React production -->
+<script src="vendor/react.production.min.js"></script>
+<script src="vendor/react-dom.production.min.js"></script>
+
+<!-- Pre-compiled JSX (no Babel runtime) -->
+<script src="dist/shell.js"></script>
+<script src="dist/frames/01-workspace.js"></script>
+<script src="dist/frames/02-encode.js"></script>
+<script src="dist/frames/03-template.js"></script>
+<script src="dist/frames/04-compile.js"></script>
+<script src="dist/frames/05-backdoor.js"></script>
+<script src="dist/frames/06-finalize.js"></script>
+<script src="dist/frames/06b-packing.js"></script>
+<script src="dist/frames/07-history.js"></script>
+<script src="dist/frames/08-webwizard.js"></script>
+<script src="dist/frames/09-startup.js"></script>
+<script src="dist/frames/10-pipeline.js"></script>
+<script src="dist/frames/11-settings.js"></script>
+
+<!-- App bootstrap (router + shell wiring) -->
+<script src="app.js"></script>
+</body>
+</html>

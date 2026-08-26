@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Washmachine · design reconception</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="system.css">
+<style>
+  /* Match the canvas bg to our dark surface */
+  body { background: oklch(0.13 0.005 250); }
+
+  /* Cover note styling */
+  .cover {
+    width: 1440px;
+    background: linear-gradient(180deg, oklch(0.13 0.005 250) 0%, oklch(0.165 0.006 250) 100%);
+    color: var(--n-9);
+    padding: 56px 64px 40px;
+    border-radius: 14px;
+    border: 1px solid var(--n-4);
+    font-family: var(--f-sans);
+  }
+  .cover h1 {
+    font-family: var(--f-disp);
+    font-size: 42px; font-weight: 600; letter-spacing: -0.022em;
+    color: var(--n-10);
+    margin: 16px 0 12px;
+    max-width: 880px;
+    line-height: 1.1;
+  }
+  .cover .lede {
+    font-size: 17px; color: var(--n-8); max-width: 720px; line-height: 1.55;
+    margin-bottom: 28px;
+  }
+  .cover .pillars {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 14px;
+  }
+  .cover .pillar {
+    border: 1px solid var(--n-4); border-radius: 12px; padding: 16px;
+    background: var(--n-1);
+  }
+  .cover .pillar h3 { font-size: 12px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--acc); margin: 0 0 8px; }
+  .cover .pillar p { margin: 0; font-size: 13px; color: var(--n-9); line-height: 1.55; }
+
+  .cover .changes {
+    margin-top: 32px; display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    border-top: 1px solid var(--n-4);
+  }
+  .cover .col2 { padding: 22px 26px; border-right: 1px solid var(--n-4); }
+  .cover .col2:last-child { border-right: none; }
+  .cover .col2 h2 { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--n-7); font-weight: 500; margin: 0 0 14px; }
+  .cover .col2 ul { margin: 0; padding: 0; list-style: none; }
+  .cover .col2 li {
+    display: grid; grid-template-columns: 16px 1fr; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid var(--n-3);
+    font-size: 13px; line-height: 1.5;
+  }
+  .cover .col2 li:last-child { border-bottom: none; }
+  .cover .col2 .from { color: var(--n-7); }
+  .cover .col2 .to { color: var(--n-9); }
+  .cover .arrow { color: var(--n-6); }
+
+  /* Force dark canvas background */
+  .design-canvas-root, [class*="DesignCanvas"] { background: oklch(0.13 0.005 250) !important; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- React + Babel -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<!-- Canvas + shared shell -->
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="shell.jsx"></script>
+
+<!-- Frames -->
+<script type="text/babel" src="frames/01-workspace.jsx"></script>
+<script type="text/babel" src="frames/02-encode.jsx"></script>
+<script type="text/babel" src="frames/03-template.jsx"></script>
+<script type="text/babel" src="frames/04-compile.jsx"></script>
+<script type="text/babel" src="frames/05-backdoor.jsx"></script>
+<script type="text/babel" src="frames/06-finalize.jsx"></script>
+<script type="text/babel" src="frames/06b-packing.jsx"></script>
+<script type="text/babel" src="frames/07-history.jsx"></script>
+<script type="text/babel" src="frames/08-webwizard.jsx"></script>
+<script type="text/babel" src="frames/09-startup.jsx"></script>
+<script type="text/babel" src="frames/10-pipeline.jsx"></script>
+
+<!-- App -->
+<script type="text/babel">
+function Cover() {
+  return (
+    <div className="cover" data-screen-label="00 Cover">
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: 10,
+          background: "linear-gradient(155deg, var(--acc), var(--acc-dim))",
+          color: "var(--n-0)", display: "grid", placeItems: "center",
+          fontFamily: "var(--f-mono)", fontWeight: 700, fontSize: 18,
+        }}>W</div>
+        <div className="mono" style={{ fontSize: 12, color: "var(--n-7)", letterSpacing: 0.06 }}>
+          washmachine · design reconception · 2026.05
+        </div>
+        <div style={{ flex: 1 }} />
+        <Chip kind="acc" dot>9 frames</Chip>
+        <Chip>1440 × 900</Chip>
+      </div>
+
+      <h1>The same Washmachine, with the build pipeline on screen.</h1>
+      <p className="lede">
+        Every page from the original NavigationView is still here — Payload, Backdooring, Packing, Finalize, Compile,
+        Pipeline, History. What changed is that the build is no longer hidden behind tab-flipping and an opaque
+        <span className="mono" style={{ color: "var(--n-10)" }}> Go </span>button: it's visible, streaming, reproducible.
+      </p>
+
+      <div className="pillars">
+        <div className="pillar">
+          <h3>Pipeline spine</h3>
+          <p>Source → encode → template → compile → backdoor → pack → finalize. Always visible, every stage shows state.</p>
+        </div>
+        <div className="pillar">
+          <h3>Live preview</h3>
+          <p>Right panel always shows what the current config produces — rendered C++, encoded bytes, PE map, log stream.</p>
+        </div>
+        <div className="pillar">
+          <h3>Composable snippets</h3>
+          <p>YAML playbook surfaces as grouped, multi-select cards with inline inputs and a render-diff next to them.</p>
+        </div>
+        <div className="pillar">
+          <h3>Session-first</h3>
+          <p>Every build is a session with hash, manifest, source, log. History is searchable. Presets are one click.</p>
+        </div>
+      </div>
+
+      <div className="changes">
+        <div className="col2">
+          <h2>What changed</h2>
+          <ul>
+            <li><span>·</span><span><span className="from">click “Go” and pray</span> <span className="arrow">→</span> <span className="to">live preview of source / bytes / PE map / log</span></span></li>
+            <li><span>·</span><span><span className="from">stacked Expanders inside each page</span> <span className="arrow">→</span> <span className="to">section cards with inline state &amp; counts</span></span></li>
+            <li><span>·</span><span><span className="from">tabbed dialog wizard</span> <span className="arrow">→</span> <span className="to">stepped modal with effect estimates</span></span></li>
+            <li><span>·</span><span><span className="from">build = one button</span> <span className="arrow">→</span> <span className="to">streaming step-by-step with timings</span></span></li>
+            <li><span>·</span><span><span className="from">history hidden in footer</span> <span className="arrow">→</span> <span className="to">first-class searchable browser</span></span></li>
+            <li><span>·</span><span><span className="from">flowchart on Pipeline page</span> <span className="arrow">→</span> <span className="to">live timeline with config + log per stage</span></span></li>
+          </ul>
+        </div>
+        <div className="col2">
+          <h2>Design system</h2>
+          <ul>
+            <li><span>·</span><span><span className="from">Type</span> <span className="arrow">→</span> <span className="to mono">Inter</span> + <span className="to mono">JetBrains Mono</span> for paths, hex, hashes</span></li>
+            <li><span>·</span><span><span className="from">Surface</span> <span className="arrow">→</span> <span className="to mono">oklch(0.13…0.98) c≤0.01</span> warm-cool neutrals</span></li>
+            <li><span>·</span><span><span className="from">Accent</span> <span className="arrow">→</span> <span className="to mono">oklch(0.74 0.13 235)</span> — desat electric blue</span></li>
+            <li><span>·</span><span><span className="from">Status</span> <span className="arrow">→</span> ok / warn / err sharing chroma 0.13</span></li>
+            <li><span>·</span><span><span className="from">Tech</span> <span className="arrow">→</span> React + Babel · zero build step · single static html</span></li>
+            <li><span>·</span><span><span className="from">Shortcuts</span> <span className="arrow">→</span> <span className="to mono">Ctrl+K, Ctrl+B, Esc</span></span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <DesignCanvas>
+      <DCSection id="intro" title="Reconception" subtitle="Direction & design system">
+        <DCArtboard id="cover" label="Cover" width={1440} height={760}>
+          <Cover />
+        </DCArtboard>
+        <DCArtboard id="startup" label="Startup" width={1440} height={900}>
+          <FrameStartup />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="pages" title="Pages" subtitle="One artboard per page in the app's left navigation">
+        <DCArtboard id="payload" label="Payload" width={1440} height={900}>
+          <FrameWorkspace />
+        </DCArtboard>
+        <DCArtboard id="encoding" label="Payload · Encoding" width={1440} height={900}>
+          <FrameEncode />
+        </DCArtboard>
+        <DCArtboard id="template" label="Payload · Template options" width={1440} height={900}>
+          <FrameTemplate />
+        </DCArtboard>
+        <DCArtboard id="compile" label="Compile" width={1440} height={900}>
+          <FrameCompile />
+        </DCArtboard>
+        <DCArtboard id="backdooring" label="Backdooring" width={1440} height={900}>
+          <FrameBackdoor />
+        </DCArtboard>
+        <DCArtboard id="packing" label="Packing" width={1440} height={900}>
+          <FramePacking />
+        </DCArtboard>
+        <DCArtboard id="finalize" label="Finalize" width={1440} height={900}>
+          <FrameFinalize />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="crosscut" title="Cross-app" subtitle="Footer navigation + flows that span pages">
+        <DCArtboard id="pipeline" label="Pipeline" width={1440} height={900}>
+          <FramePipeline />
+        </DCArtboard>
+        <DCArtboard id="history" label="History" width={1440} height={900}>
+          <FrameHistory />
+        </DCArtboard>
+        <DCArtboard id="webwiz" label="Web payload wizard" width={1440} height={900}>
+          <FrameWebWizard />
+        </DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

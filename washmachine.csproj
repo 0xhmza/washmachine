@@ -8,7 +8,11 @@
   </PropertyGroup>
 
   <PropertyGroup>
+<<<<<<< Updated upstream
     <DefaultItemExcludes>$(DefaultItemExcludes);Washmachine.Core\**;Washmachine.Cli\**;Output\**;Testing\**;Icon\**</DefaultItemExcludes>
+=======
+    <DefaultItemExcludes>$(DefaultItemExcludes);Washmachine.Core\**;Washmachine.Cli\**;Output\**;Testing\**;Icon\**;metasploit-framework-master\**;WebApp\node_modules\**;WebApp\package*.json;WebApp\build.cjs;.design-reference\**;.design-reference-v2\**</DefaultItemExcludes>
+>>>>>>> Stashed changes
   </PropertyGroup>
 
   <PropertyGroup>
@@ -98,6 +102,16 @@
     <Content Include="Assets\llvm-passes\README.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Assets\llvm-passes\build-all.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Assets\llvm-passes\test-passes.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- WebApp static assets — served via WebView2 virtual host -->
+  <ItemGroup>
+    <Content Include="WebApp\app.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="WebApp\app.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="WebApp\system.css" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="WebApp\vendor\*.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="WebApp\dist\*.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="WebApp\dist\frames\*.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Bundled LLVM tools for LlvmPipelineService -->

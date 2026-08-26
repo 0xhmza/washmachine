@@ -31,6 +31,16 @@ public partial class App : Application
     internal static Window? ActiveWindow { get; private set; }
     internal static StartupOutcome? StartupOutcome { get; private set; }
 
+    /// <summary>
+    /// Pre-warming task for the WebView2 environment. Started in
+    /// <see cref="OnLaunched"/> so the Chromium browser process spawns in
+    /// parallel with the (visible) startup provisioning. By the time the user
+    /// finishes downloading requirements, the environment is hot and the
+    /// web shell paints almost immediately. Result is awaited by
+    /// <see cref="Views.WebShellWindow"/>.
+    /// </summary>
+    internal static Task<Microsoft.Web.WebView2.Core.CoreWebView2Environment?>? WebView2EnvPrewarm { get; private set; }
+
     internal static SolidColorBrush ThemeBrush(string key)
     {
         if (DraculaAliases.TryGetValue(key, out var alias))
@@ -63,6 +73,13 @@ public partial class App : Application
     {
         try
         {
+            // Kick off WebView2 environment creation in parallel with provisioning.
+            // CoreWebView2 cold-start takes ~1-2 s on first run; doing it now means
+            // the web shell can navigate immediately once StartupWindow closes.
+            bool useWebShell = Environment.GetEnvironmentVariable("USE_WEB_SHELL") != "0";
+            if (useWebShell)
+                WebView2EnvPrewarm = PrewarmWebViewAsync();
+
             var startup = new StartupWindow();
             startup.Show();
             _ = RunStartupAsync(startup);
@@ -74,6 +91,30 @@ public partial class App : Application
         }
     }
 
+    private static async Task<Microsoft.Web.WebView2.Core.CoreWebView2Environment?> PrewarmWebViewAsync()
+    {
+        try
+        {
+            var userData = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Washmachine", "WebView2");
+            System.IO.Directory.CreateDirectory(userData);
+
+            var envOptions = new Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions
+            {
+                AdditionalBrowserArguments = "--disable-features=msSmartScreenProtection",
+            };
+
+            return await Microsoft.Web.WebView2.Core.CoreWebView2Environment
+                .CreateWithOptionsAsync(null, userData, envOptions);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[WebView2 prewarm] {ex}");
+            return null;
+        }
+    }
+
     private static async Task RunStartupAsync(StartupWindow startup)
     {
         try
@@ -82,8 +123,15 @@ public partial class App : Application
 
             // Open the main window BEFORE closing the startup window — otherwise
             // the last-window-closed heuristic begins app shutdown and the new
-            // MainWindow gets activated into a dying process.
-            ActiveWindow = new MainWindow();
+            // window gets activated into a dying process.
+            //
+            // Primary shell is now the WebView2-hosted web app (VS Code-style).
+            // The legacy XAML MainWindow is kept reachable via Settings ▸ "Use
+            // classic UI" for now — set USE_WEB_SHELL=0 to fall back.
+            bool useWebShell = Environment.GetEnvironmentVariable("USE_WEB_SHELL") != "0";
+            ActiveWindow = useWebShell
+                ? (Window)new WebShellWindow()
+                : new MainWindow();
             ActiveWindow.Activate();
             startup.Close();
         }

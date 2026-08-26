@@ -1,0 +1,81 @@
+<Window
+    x:Class="Washmachine.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Washmachine"
+    xmlns:views="using:Washmachine.Views"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Washmachine - Loader Builder"
+    >
+
+    <Grid>
+        <NavigationView x:Name="mainNavigationView"
+                        PaneDisplayMode="Left"
+                        IsPaneOpen="True"
+                        IsBackButtonVisible="Collapsed"
+                        OpenPaneLength="240"
+                        CompactPaneLength="56"
+                        IsSettingsVisible="True"
+                        IsDoubleTapEnabled="False"
+                        SelectionChanged="NavView_SelectionChanged">
+
+        <NavigationView.PaneHeader>
+            <StackPanel Orientation="Horizontal" Margin="-100,70,0,20" HorizontalAlignment="Center" >
+                <FontIcon Glyph="&#xE943;" FontSize="20" VerticalAlignment="Center" />
+                <StackPanel Margin="20,0,0,0">
+                    <TextBlock Text="Washmachine" FontSize="16" FontWeight="SemiBold" />
+                    <TextBlock Text="Loader Builder" FontSize="12"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </StackPanel>
+        </NavigationView.PaneHeader>
+
+
+
+        <NavigationView.MenuItems>
+            <NavigationViewItem Content="Payload" Tag="MainPage">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE943;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="Backdooring" Tag="BackdooringPage">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE72E;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="Packing" Tag="PackingPage">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE7B8;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="Finalize" Tag="FinalizePage">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE73E;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="Compile" Tag="CompilePage">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE90F;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+        </NavigationView.MenuItems>
+
+        <NavigationView.FooterMenuItems>
+            <NavigationViewItem Content="Pipeline" Tag="PipelinePage">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE9D9;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="History" Tag="PayloadHistoryPage">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE81C;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+        </NavigationView.FooterMenuItems>
+
+            <Frame x:Name="ContentFrame" />
+        </NavigationView>
+    </Grid>
+</Window>

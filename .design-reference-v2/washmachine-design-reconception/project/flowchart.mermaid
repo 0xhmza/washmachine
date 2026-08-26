@@ -1,0 +1,52 @@
+flowchart TD
+
+&#x20;   %% Inputs
+
+&#x20;   A1\[.bin] --> SGN\[Shikata Ga Nai]
+
+&#x20;   A2\[.exe] -->|COFF/PE Format| S1\[Strip]
+
+&#x20;   S1 -->|.bin| SGN
+
+
+
+&#x20;   %% Encoding pipeline
+
+&#x20;    
+
+&#x20;   SGN --> B2S\[Encoding using Bin2Shell]
+
+&#x20; 
+
+
+
+&#x20;   %% Build pipeline
+
+&#x20;   B2S -->|C Source Code| TE\[Template Engine]
+
+&#x20;   TE -->|C Source Code| CP\[Compiling]
+
+&#x20;   CP .-> |.exe| BD\[Backdooring]
+
+
+
+&#x20;   %% Optional stages
+
+&#x20;   subgraph Optional Stages
+
+&#x20;   BD .-> PK\[Packing]
+
+&#x20;   PK .-> FN\[Finalization]
+
+&#x20;   end
+
+
+
+&#x20;   FN --> FP\[Payload]
+
+
+
+
+
+&#x20; 
+
