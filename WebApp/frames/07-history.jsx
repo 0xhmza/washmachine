@@ -25,12 +25,25 @@ function FrameHistory() {
   }, [meta.history_sessions]);
 
   function deleteSession(id) {
+    if (!window.confirm('Delete this history entry and its session files?')) return;
     window.wash.invoke('history-delete', { id })
       .then(r => {
         if (r && r.ok) {
           const next = sessions.filter(s => s.id !== id);
           setSessions(next);
           window.washState.update({ history_sessions: next });
+        }
+      })
+      .catch(() => {});
+  }
+
+  function clearHistory() {
+    if (!window.confirm('Clear all payload history and session logs? This cannot be undone.')) return;
+    window.wash.invoke('history-clear', {})
+      .then(r => {
+        if (r && r.ok) {
+          setSessions([]);
+          window.washState.update({ history_sessions: [] });
         }
       })
       .catch(() => {});
@@ -54,6 +67,7 @@ function FrameHistory() {
           <h1 className="h1" style={{ marginRight: 14 }}>History</h1>
           <span className="sub">Every build leaves a session — source, log, manifest, and the artifact itself.</span>
           <div style={{ flex: 1 }} />
+          {totalCount > 0 && <button className="btn" onClick={clearHistory}><Icon name="x" size={12} />Clear all</button>}
           <div className="row" style={{ gap: 8 }}>
             <div className="input-wrap" style={{ width: 240 }}>
               <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--n-6)" }}>
@@ -109,11 +123,11 @@ function SessionRow({ id, timestamp, date, templateId, encoderName, sourceName, 
   }
 
   return (
-    <div style={{
+    <div onClick={reveal} title={outputPath ? 'Reveal output in Explorer' : ''} style={{
       display: "grid",
       gridTemplateColumns: "100px 220px 140px 120px 100px 80px 24px",
       padding: "12px 16px", borderBottom: "1px solid var(--n-3)",
-      alignItems: "center", cursor: "pointer",
+      alignItems: "center", cursor: outputPath ? "pointer" : "default",
     }}>
       <div className="mono" style={{ fontSize: 11, color: "var(--n-8)" }}>{timeStr}</div>
       <div>
@@ -132,4 +146,3 @@ function SessionRow({ id, timestamp, date, templateId, encoderName, sourceName, 
 }
 
 window.FrameHistory = FrameHistory;
-

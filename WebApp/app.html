@@ -61,7 +61,7 @@
   }
 
   /* Rail items become clickable */
-  .rail-item, .pipe-stage, .list-item, .pe-row, .ptab, .seg > button, .tog, .btn {
+  .rail-item, .pipe-stage, .list-item, .pe-row, .seg > button, .tog, .btn {
     cursor: pointer;
     -webkit-user-select: none;
     user-select: none;
@@ -129,6 +129,7 @@
 <!-- Vendored React production -->
 <script src="vendor/react.production.min.js"></script>
 <script src="vendor/react-dom.production.min.js"></script>
+<script src="state.js"></script>
 
 <!-- Pre-compiled JSX (no Babel runtime) -->
 <script src="dist/shell.js"></script>
@@ -137,11 +138,10 @@
 <script src="dist/frames/03-template.js"></script>
 <script src="dist/frames/04-compile.js"></script>
 <script src="dist/frames/05-backdoor.js"></script>
+<script src="dist/frames/05a-pe-scanner.js"></script>
 <script src="dist/frames/06-finalize.js"></script>
 <script src="dist/frames/06b-packing.js"></script>
 <script src="dist/frames/07-history.js"></script>
-<script src="dist/frames/08-webwizard.js"></script>
-<script src="dist/frames/09-startup.js"></script>
 <script src="dist/frames/10-pipeline.js"></script>
 <script src="dist/frames/11-settings.js"></script>
 

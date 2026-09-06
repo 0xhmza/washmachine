@@ -3,16 +3,18 @@ using System.Diagnostics;
 namespace Washmachine.Services;
 
 /// <summary>
-/// Locates and invokes washmachine-cli.exe, streaming its output line-by-line.
+/// Invokes the CLI command host, streaming its output line-by-line.
 /// </summary>
 public sealed class CliExecutor
 {
+    private readonly string[] _argumentPrefix;
+
     public string CliPath { get; }
     public bool IsAvailable => File.Exists(CliPath);
 
     public CliExecutor()
     {
-        CliPath = FindCliExecutable();
+        (CliPath, _argumentPrefix) = FindCliExecutable();
     }
 
     /// <summary>
@@ -35,34 +37,64 @@ public sealed class CliExecutor
             UseShellExecute        = false,
             CreateNoWindow         = true,
         };
-        foreach (var arg in args)
+        foreach (var arg in _argumentPrefix.Concat(args))
             psi.ArgumentList.Add(arg);
 
         var lines = new List<string>();
+        var linesGate = new object();
 
         using var proc = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start washmachine-cli.exe");
+            ?? throw new InvalidOperationException("Failed to start the Washmachine CLI command host.");
 
         proc.OutputDataReceived += (_, e) =>
         {
-            if (e.Data is not null) { lines.Add(e.Data); onOutput?.Invoke(e.Data); }
+            if (e.Data is not null)
+            {
+                lock (linesGate) lines.Add(e.Data);
+                onOutput?.Invoke(e.Data);
+            }
         };
         proc.ErrorDataReceived += (_, e) =>
         {
-            if (e.Data is not null) { lines.Add(e.Data); onOutput?.Invoke(e.Data); }
+            if (e.Data is not null)
+            {
+                lock (linesGate) lines.Add(e.Data);
+                onOutput?.Invoke(e.Data);
+            }
         };
 
         proc.BeginOutputReadLine();
         proc.BeginErrorReadLine();
 
-        await proc.WaitForExitAsync(ct);
+        using var cancelRegistration = ct.Register(() =>
+        {
+            try
+            {
+                if (!proc.HasExited)
+                    proc.Kill(entireProcessTree: true);
+            }
+            catch { }
+        });
 
-        return new CliResult(proc.ExitCode, lines.AsReadOnly());
+        await proc.WaitForExitAsync(ct);
+        proc.WaitForExit(); // flush the asynchronous output handlers
+
+        lock (linesGate)
+            return new CliResult(proc.ExitCode, lines.ToArray());
     }
 
-    private static string FindCliExecutable()
+    private static (string Path, string[] Prefix) FindCliExecutable()
     {
         var appDir = AppDomain.CurrentDomain.BaseDirectory;
+
+        // The launcher hosts the CLI in a child instance of itself. This keeps
+        // redirected output isolated without requiring a second executable.
+        var currentExe = Environment.ProcessPath;
+        if (!string.IsNullOrWhiteSpace(currentExe) &&
+            Path.GetFileName(currentExe).Equals("washmachine.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            return (currentExe, ["--cli-mode"]);
+        }
 
         static string? FindRepoRoot(string dir)
         {
@@ -93,11 +125,12 @@ public sealed class CliExecutor
                 : null,
         ];
 
-        return candidates
+        var standalone = candidates
             .Where(p => p is not null)
             .Cast<string>()
             .FirstOrDefault(File.Exists)
                ?? Path.Combine(appDir, "washmachine-cli.exe");
+        return (standalone, Array.Empty<string>());
     }
 }
 

@@ -6,29 +6,62 @@ function FrameBackdoor() {
   const [targetPath, setTargetPath] = useField('TargetPePath');
   const [injMethod, setInjMethod] = useField('InjectionMethodCombo');
   const [carrierInvoke, setCarrierInvoke] = useField('CarrierInvokeCombo');
-  const meta = useFields('pe_analysis', 'pe_caves', 'pe_imports');
+  const [patchIat, setPatchIat] = useField('PatchIatCheck');
+  const [removeSignature, setRemoveSignature] = useField('RemoveSignatureCheck');
+  const [patchSubsystem, setPatchSubsystem] = useField('PatchSubsystemCheck');
+  const [patchExit, setPatchExit] = useField('PatchExitCheck');
+  const [sectionName, setSectionName] = useField('SectionNameInput');
+  const [caveMin, setCaveMin] = useField('CaveMinSizeBox');
+  const [analysisNonce, setAnalysisNonce] = React.useState(0);
+  const meta = useFields('pe_analysis', 'pe_analysis_running', 'pe_analysis_error', 'pe_caves', 'pe_imports');
 
   const peInfo = meta.pe_analysis || null;
   const caves  = meta.pe_caves   || [];
   const bdOn = bdEnabled === 'True';
+  const hasTarget = !!(targetPath || '').trim();
 
   React.useEffect(() => {
-    if (!targetPath || !bdOn) return;
-    window.wash.invoke('analyze-pe', { path: targetPath })
+    if (peInfo && !peInfo.isDll && carrierInvoke === 'dll-main')
+      setCarrierInvoke('entry-point');
+  }, [peInfo, carrierInvoke]);
+
+  React.useEffect(() => {
+    let active = true;
+    window.washState.set('PreserveEntryCheck', 'True');
+    if (!hasTarget) {
+      window.washState.update({ pe_analysis: null, pe_analysis_running: false, pe_analysis_error: '', pe_caves: [], pe_imports: [] });
+      return () => { active = false; };
+    }
+    const timer = setTimeout(() => {
+      window.washState.update({ pe_analysis: null, pe_analysis_running: true, pe_analysis_error: '', pe_caves: [], pe_imports: [] });
+      window.wash.invoke('analyze-pe', { path: targetPath })
       .then(r => {
-        if (!r || !r.ok) return;
+        if (!active) return;
+        if (!r || !r.ok) {
+          window.washState.update({ pe_analysis_running: false, pe_analysis_error: r?.message || 'PE analysis failed.' });
+          return;
+        }
         window.washState.update({
           pe_analysis: r,
+          pe_analysis_running: false,
+          pe_analysis_error: '',
           pe_caves:    r.caves  || [],
           pe_imports:  r.imports || [],
         });
       })
-      .catch(() => {});
-  }, [targetPath, bdOn]);
+      .catch(e => {
+        if (active) window.washState.update({ pe_analysis_running: false, pe_analysis_error: e.message || 'PE analysis failed.' });
+      });
+    }, 300);
+    return () => { active = false; clearTimeout(timer); };
+  }, [targetPath, analysisNonce]);
 
   function browsePe() {
     window.wash.invoke('browse-file', { filters: [{ name: 'PE files', patterns: ['.exe', '.dll'] }] })
-      .then(r => { if (r && r.ok && r.path) setTargetPath(r.path); })
+      .then(r => {
+        if (r && r.ok && r.path) setTargetPath(r.path);
+        else if (r && !r.cancelled && r.message) window.wash.notify(r.message, 'err');
+      })
       .catch(() => {});
   }
 
@@ -50,7 +83,7 @@ function FrameBackdoor() {
           <span style={{ fontSize: 12, color: bdOn ? "var(--n-9)" : "var(--n-6)" }}>Enable</span>
         </div>
 
-        <div style={{ opacity: bdOn ? 1 : 0.4, pointerEvents: bdOn ? 'auto' : 'none' }}>
+        <div>
           {/* Target picker */}
           <Sec title="Target" action={peInfo && <Chip kind={peInfo.hasAuthenticode ? "warn" : "ok"} dot>{peInfo.is64Bit ? "PE64" : "PE32"}</Chip>}>
             <div className="card">
@@ -63,7 +96,7 @@ function FrameBackdoor() {
                   </Field>
                   <div className="row" style={{ marginTop: 10, gap: 8 }}>
                     <button className="btn" onClick={browsePe}><Icon name="upload" size={12} />Browse…</button>
-                    <button className="btn ghost" onClick={() => targetPath && setTargetPath(targetPath + '')}><Icon name="info" size={12} />Re-analyze</button>
+                    <button className="btn ghost" disabled={!hasTarget || meta.pe_analysis_running} onClick={() => hasTarget && setAnalysisNonce(n => n + 1)}><Icon name="info" size={12} />{meta.pe_analysis_running ? 'Analysing…' : 'Re-analyze'}</button>
                   </div>
                 </div>
                 {peInfo ? (
@@ -77,7 +110,7 @@ function FrameBackdoor() {
                   </div>
                 ) : (
                   <div style={{ borderLeft: "1px solid var(--n-4)", paddingLeft: 18, color: "var(--n-6)", fontSize: 12, minWidth: 180 }}>
-                    {targetPath ? 'Analysing…' : 'Select a target PE'}
+                    {meta.pe_analysis_error || (meta.pe_analysis_running ? 'Analysing…' : (hasTarget ? 'Waiting for analysis' : 'Select a target PE'))}
                   </div>
                 )}
               </div>
@@ -88,13 +121,42 @@ function FrameBackdoor() {
           <Sec title="Injection method">
             <div className="card" style={{ padding: 0, overflow: "hidden" }}>
               {[
-                { id: "CodeCave",         name: "Code cave",         sub: "Reuse padding inside existing sections", trait: "zero growth",         traitTone: "ok",   capacity: caves.length > 0 ? `≤ ${Math.max(...caves.map(c => c.size))} B` : "—" },
-                { id: "NewSection",       name: "New section",       sub: "Append .wm section with payload",        trait: "unlimited capacity",   traitTone: "acc",  capacity: "any" },
-                { id: "SectionExtend",    name: "Section extension", sub: "Extend .text by aligned amount",          trait: "grows file size",       traitTone: "",     capacity: "≤ 64 KB" },
-                { id: "TlsCallback",      name: "TLS callback",      sub: "Pre-main execution · x64 only",           trait: "silent execution",     traitTone: "acc",  capacity: "N/A" },
+                { id: "code-cave",        name: "Code cave",         sub: "Reuse padding inside existing sections", trait: "zero growth",         traitTone: "ok",   capacity: caves.length > 0 ? `≤ ${Math.max(...caves.map(c => c.size))} B` : "—" },
+                { id: "new-section",      name: "New section",       sub: "Append a section with the payload",       trait: "predictable capacity", traitTone: "acc",  capacity: "any" },
+                { id: "section-ext",      name: "Section extension", sub: "Extend an existing section",              trait: "grows file size",      traitTone: "",     capacity: "≤ 64 KB" },
+                { id: "text-pad",         name: "Text padding",      sub: "Use padding at the end of .text",          trait: "limited capacity",     traitTone: "warn", capacity: "target dependent" },
+                { id: "tls-callback",     name: "TLS callback",      sub: "Execute through a TLS callback",           trait: "target dependent",     traitTone: "acc",  capacity: "target dependent" },
               ].map(m => (
                 <MethodRow key={m.id} {...m} selected={injMethod === m.id} onClick={() => setInjMethod(m.id)} />
               ))}
+            </div>
+          </Sec>
+
+          <Sec title="Invocation and patching">
+            <div className="card">
+              <div className="row" style={{ gap: 18, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <Field label="Carrier invocation">
+                  <Seg value={carrierInvoke || 'entry-point'} onChange={setCarrierInvoke} options={[
+                    { v: 'entry-point', l: 'Entry point' },
+                    ...(peInfo?.isDll ? [{ v: 'dll-main', l: 'DLL main' }] : []),
+                  ]} />
+                </Field>
+                <Field label="Section name">
+                  <input className="input mono" value={sectionName || '.extra'}
+                    onChange={e => setSectionName(e.target.value)} style={{ width: 130 }} />
+                </Field>
+                <Field label="Minimum cave bytes">
+                  <input className="input mono" value={caveMin || '64'}
+                    onChange={e => setCaveMin(e.target.value)} style={{ width: 130 }} />
+                </Field>
+              </div>
+              <div className="div" />
+              <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
+                <BackdoorOption label="Patch missing imports" value={patchIat} setValue={setPatchIat} />
+                <BackdoorOption label="Remove invalid signature" value={removeSignature} setValue={setRemoveSignature} />
+                <BackdoorOption label="Use GUI subsystem" value={patchSubsystem} setValue={setPatchSubsystem} />
+                <BackdoorOption label="Redirect process exit" value={patchExit} setValue={setPatchExit} />
+              </div>
             </div>
           </Sec>
 
@@ -113,6 +175,14 @@ function FrameBackdoor() {
       <PeMapPreview peInfo={peInfo} caves={caves} />
     </Shell>
   );
+}
+
+function BackdoorOption({ label, value, setValue }) {
+  const on = value !== 'False';
+  return <div className="row" style={{ gap: 8, cursor: 'pointer' }} onClick={() => setValue(on ? 'False' : 'True')}>
+    <Toggle on={on} onChange={v => setValue(v ? 'True' : 'False')} />
+    <span style={{ fontSize: 12 }}>{label}</span>
+  </div>;
 }
 
 function MethodRow({ name, sub, trait, traitTone, capacity, selected, onClick }) {
@@ -194,4 +264,3 @@ function PeMapPreview({ peInfo, caves }) {
 }
 
 window.FrameBackdoor = FrameBackdoor;
-

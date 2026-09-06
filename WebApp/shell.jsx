@@ -58,6 +58,7 @@ function Icon({ name, size, sw }) {
 
 const NAV_PRIMARY = [
   { id: "payload",     name: "Payload",     icon: "bolt" },
+  { id: "scanner",     name: "PE scanner",  icon: "search" },
   { id: "backdooring", name: "Backdooring", icon: "inject" },
   { id: "packing",     name: "Packing",     icon: "pkg" },
   { id: "finalize",    name: "Finalize",    icon: "finish" },
@@ -70,6 +71,8 @@ const NAV_FOOTER = [
 ];
 
 function Rail({ active = "payload" }) {
+  const info = window.washState ? window.washState.useFields('app_info').app_info : null;
+  const connected = !!(info && info.version);
   return (
     <aside className="rail">
       <div className="rail-brand">
@@ -78,11 +81,6 @@ function Rail({ active = "payload" }) {
           <div className="nm">Washmachine</div>
           <div className="sb">Loader builder</div>
         </div>
-      </div>
-      <div className="rail-search">
-        <Icon name="search" size={13} />
-        <span style={{ flex: 1 }}>Search</span>
-        <span className="kbd">Ctrl K</span>
       </div>
       <div className="rail-nav">
         {NAV_PRIMARY.map(n => (
@@ -102,9 +100,9 @@ function Rail({ active = "payload" }) {
         ))}
       </div>
       <div className="rail-status">
-        <span className="rail-dot" title="all systems ready" />
-        <span>All systems ready</span>
-        <span style={{ color: "var(--n-7)", fontFamily: "var(--f-mono)", fontSize: 10 }}>v2.1.0</span>
+        <span className="rail-dot" style={{ opacity: connected ? 1 : 0.45 }} title={connected ? "native bridge connected" : "connecting to native bridge"} />
+        <span>{connected ? "Local core connected" : "Connecting to local core…"}</span>
+        <span style={{ color: "var(--n-7)", fontFamily: "var(--f-mono)", fontSize: 10 }}>{info && info.version ? `v${info.version}` : ''}</span>
       </div>
     </aside>
   );
@@ -123,6 +121,13 @@ const PIPELINE = [
 ];
 
 function Pipeline({ active = "src", states = {}, runEnabled = true, running = false }) {
+  const recipeSource = window.washState.useFields('sourceKind', 'shellcodeFileInput', 'shellcodeRawInput', 'shellcodeUrlValue');
+  const hasSource = recipeSource.sourceKind === 'raw'
+    ? !!(recipeSource.shellcodeRawInput || '').trim()
+    : recipeSource.sourceKind === 'url'
+      ? !!(recipeSource.shellcodeUrlValue || '').trim()
+      : !!(recipeSource.shellcodeFileInput || '').trim();
+  const canBuild = runEnabled && hasSource;
   return (
     <div className="pipe">
       {PIPELINE.map((s, i) => {
@@ -155,7 +160,7 @@ function Pipeline({ active = "src", states = {}, runEnabled = true, running = fa
         ) : (
           <>
             <button className="btn">Dry run</button>
-            <button className="btn primary" disabled={!runEnabled}>
+            <button className="btn primary" disabled={!canBuild} title={canBuild ? 'Build current recipe' : 'Select a payload source first'}>
               <Icon name="play" size={12} sw={2} fill="currentColor" /> Build <span className="sk">Ctrl B</span>
             </button>
           </>
@@ -165,7 +170,9 @@ function Pipeline({ active = "src", states = {}, runEnabled = true, running = fa
   );
 }
 
-function TitleBar({ crumbs = [], session = "session_20260519_001a" }) {
+function TitleBar({ crumbs = [] }) {
+  const result = window.washState ? window.washState.useFields('build_lastResult').build_lastResult : null;
+  const session = result && result.sessionId ? result.sessionId : 'no active session';
   return (
     <div className="tbar">
       <div className="tbar-crumbs">
@@ -182,17 +189,12 @@ function TitleBar({ crumbs = [], session = "session_20260519_001a" }) {
         <Icon name="history" size={13} />
         <span>Session</span><b className="mono" style={{ color: "var(--n-10)" }}>{session}</b>
       </div>
-      <button className="btn ghost" style={{ height: 28 }}>
-        <Icon name="copy" size={13} />
-      </button>
-      <button className="btn ghost" style={{ height: 28 }}>
-        <Icon name="info" size={13} />
-      </button>
     </div>
   );
 }
 
 function StatusBar({ items = [] }) {
+  const info = window.washState ? window.washState.useFields('app_info').app_info : null;
   return (
     <div className="sbar">
       {items.map((it, i) => (
@@ -202,25 +204,51 @@ function StatusBar({ items = [] }) {
         </div>
       ))}
       <div className="spacer" />
-      <div className="grp mono"><span>cl.exe</span><b>19.39.33523</b></div>
-      <div className="grp mono"><span>x64</span></div>
-      <div className="grp mono"><span>UTC</span><b>14:22:08</b></div>
+      <div className="grp mono"><span>local</span><b>{info && info.version ? `v${info.version}` : 'connecting'}</b></div>
     </div>
   );
 }
 
 /* ─── Generic Shell wrapper ─── */
-function Shell({ active = "payload", crumbs, pipeActive = "src", pipeStates = {}, running = false, status = [], wide = false, children, modal = null }) {
+function Shell({ active = "payload", crumbs, pipeActive = "src", pipeStates = {}, running = false, status = [], wide = false, readOnly = false, children, modal = null }) {
   return (
     <div className="app">
       <Rail active={active} />
       <div className="main">
         <TitleBar crumbs={crumbs} />
-        <Pipeline active={pipeActive} states={pipeStates} running={running} />
+        {readOnly
+          ? <div className="row" style={{ padding: '0 28px', color: 'var(--n-7)' }}>Read-only analysis · selected files are never executed or modified</div>
+          : <Pipeline active={pipeActive} states={pipeStates} running={running} />}
         <div className={"work" + (wide ? " wide" : "")}>{children}</div>
         <StatusBar items={status} />
       </div>
       {modal}
+    </div>
+  );
+}
+
+function NoticeHost() {
+  const [notice, setNotice] = React.useState(null);
+  React.useEffect(() => {
+    let timer;
+    const receive = ev => {
+      const next = ev.detail || null;
+      setNotice(next);
+      clearTimeout(timer);
+      timer = setTimeout(() => setNotice(null), next && next.kind === 'err' ? 9000 : 4500);
+    };
+    window.addEventListener('wash:notice', receive);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('wash:notice', receive);
+    };
+  }, []);
+  if (!notice) return null;
+  return (
+    <div className={'notice ' + (notice.kind || 'err')} role="status">
+      <Icon name={notice.kind === 'ok' ? 'check' : 'alert'} size={14} />
+      <span>{notice.message}</span>
+      <button type="button" aria-label="Dismiss notification" onClick={() => setNotice(null)}><Icon name="x" size={12} /></button>
     </div>
   );
 }
@@ -251,11 +279,30 @@ function Field({ label, hint, children }) {
 function Chip({ kind = "", dot = false, children }) {
   return <span className={"chip " + (kind ? kind : "") + (dot ? " dot" : "")}>{children}</span>;
 }
-function Toggle({ on }) { return <span className={"tog" + (on ? " on" : "")} />; }
-function Seg({ value, options }) {
+function Toggle({ on, onChange, disabled = false }) {
+  return <span
+    className={"tog" + (on ? " on" : "")}
+    data-wired="true"
+    role="switch"
+    aria-checked={!!on}
+    aria-disabled={disabled}
+    tabIndex={disabled ? -1 : 0}
+    onClick={e => { e.stopPropagation(); if (!disabled && onChange) onChange(!on); }}
+    onKeyDown={e => {
+      if (!disabled && onChange && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        onChange(!on);
+      }
+    }}
+  />;
+}
+function Seg({ value, options, onChange }) {
   return (
-    <div className="seg">
-      {options.map(o => <button key={o.v} className={o.v === value ? "on" : ""}>{o.icon && <Icon name={o.icon} size={11} />}{o.l}</button>)}
+    <div className="seg" data-wired="true">
+      {options.map(o => <button key={o.v} className={o.v === value ? "on" : ""}
+        onClick={e => { e.stopPropagation(); if (onChange) onChange(o.v); }}>
+        {o.icon && <Icon name={o.icon} size={11} />}{o.l}
+      </button>)}
     </div>
   );
 }
@@ -279,4 +326,4 @@ function CodeBlock({ lines, startLine = 1, highlight = [] }) {
   );
 }
 
-Object.assign(window, { Icon, Shell, Rail, Pipeline, TitleBar, StatusBar, Sec, Field, Chip, Toggle, Seg, CodeBlock, H3, PIPELINE });
+Object.assign(window, { Icon, Shell, Rail, Pipeline, TitleBar, StatusBar, Sec, Field, Chip, Toggle, Seg, CodeBlock, H3, NoticeHost, PIPELINE });

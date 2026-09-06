@@ -1,5 +1,10 @@
 function FrameSettings() {
+  const {
+    useField
+  } = window.washState;
   const [info, setInfo] = React.useState(null);
+  const [verboseBuild, setVerboseBuild] = useField('VerboseBuildCheck');
+  const [openAfter, setOpenAfter] = useField('OpenFolderAfterCompile');
   React.useEffect(() => {
     if (window.wash && window.wash.invoke) {
       window.wash.invoke('app-info', {}).then(setInfo).catch(() => setInfo({
@@ -14,11 +19,11 @@ function FrameSettings() {
     crumbs: ["settings"],
     pipeActive: "",
     wide: true,
-    pipeStates: Object.fromEntries(PIPELINE.map(p => [p.id, "skipped"])),
+    pipeStates: Object.fromEntries((typeof PIPELINE !== 'undefined' ? PIPELINE : []).map(p => [p.id, "skipped"])),
     status: [{
       icon: "info",
-      k: "config",
-      v: "~/.washmachine"
+      k: "mode",
+      v: "local WebView2"
     }]
   }, React.createElement("div", {
     className: "cfg",
@@ -53,40 +58,7 @@ function FrameSettings() {
   }, "Washmachine ships with a single dark theme tuned for long sessions.")), React.createElement(Chip, {
     kind: "acc",
     dot: true
-  }, "dark \xB7 locked")), React.createElement("div", {
-    className: "div"
-  }), React.createElement("div", {
-    className: "row",
-    style: {
-      gap: 16
-    }
-  }, React.createElement(Field, {
-    label: "Accent"
-  }, React.createElement("input", {
-    className: "input mono",
-    defaultValue: "#60CDFF",
-    style: {
-      width: 140
-    }
-  })), React.createElement(Field, {
-    label: "UI scale",
-    hint: "restart required"
-  }, React.createElement(Seg, {
-    value: "100",
-    options: [{
-      v: "90",
-      l: "90%"
-    }, {
-      v: "100",
-      l: "100%"
-    }, {
-      v: "110",
-      l: "110%"
-    }, {
-      v: "125",
-      l: "125%"
-    }]
-  }))))), React.createElement(Sec, {
+  }, "dark \xB7 locked")))), React.createElement(Sec, {
     title: "Paths"
   }, React.createElement("div", {
     className: "card"
@@ -95,10 +67,11 @@ function FrameSettings() {
     hint: "where built artifacts and session manifests are written"
   }, React.createElement("input", {
     className: "input mono",
-    defaultValue: i.executableDirectory || "(loading…)",
+    value: i.executableDirectory || "(loading…)",
     style: {
       width: "100%"
-    }
+    },
+    readOnly: true
   })), React.createElement("div", {
     style: {
       height: 12
@@ -108,10 +81,11 @@ function FrameSettings() {
     hint: "YAML catalog used to compose snippets"
   }, React.createElement("input", {
     className: "input mono",
-    defaultValue: i.playbookPath || "(loading…)",
+    value: i.playbookPath || "(loading…)",
     style: {
       width: "100%"
-    }
+    },
+    readOnly: true
   })), React.createElement("div", {
     style: {
       height: 12
@@ -120,10 +94,11 @@ function FrameSettings() {
     label: "Assets directory"
   }, React.createElement("input", {
     className: "input mono",
-    defaultValue: i.assetsDirectory || "(loading…)",
+    value: i.assetsDirectory || "(loading…)",
     style: {
       width: "100%"
-    }
+    },
+    readOnly: true
   })))), React.createElement(Sec, {
     title: "Build pipeline"
   }, React.createElement("div", {
@@ -154,18 +129,20 @@ function FrameSettings() {
   }), React.createElement("div", {
     className: "row",
     style: {
-      gap: 16
+      gap: 24
     }
   }, React.createElement(Field, {
-    label: "Auto-save sessions"
+    label: "Verbose CLI output",
+    hint: "Include debug-level log lines in the build panel"
   }, React.createElement(Toggle, {
-    on: true
+    on: verboseBuild === 'True',
+    onChange: v => setVerboseBuild(v ? 'True' : 'False')
   })), React.createElement(Field, {
-    label: "Verbose CLI output"
-  }, React.createElement(Toggle, null)), React.createElement(Field, {
-    label: "Auto-open artifact on success"
+    label: "Auto-open artifact on success",
+    hint: "Reveal output file in Explorer after a successful build"
   }, React.createElement(Toggle, {
-    on: true
+    on: openAfter !== 'False',
+    onChange: v => setOpenAfter(v ? 'True' : 'False')
   }))))), React.createElement(Sec, {
     title: "Keyboard shortcuts"
   }, React.createElement("div", {
@@ -176,9 +153,6 @@ function FrameSettings() {
       gap: 8
     }
   }, React.createElement(ShortcutRow, {
-    keys: "Ctrl K",
-    label: "Open command palette / search"
-  }), React.createElement(ShortcutRow, {
     keys: "Ctrl B",
     label: "Trigger build on the current configuration"
   }), React.createElement(ShortcutRow, {
@@ -222,14 +196,12 @@ function FrameSettings() {
     style: {
       marginTop: 8
     }
-  }, "For authorized security research only. All builds are logged under ", React.createElement("span", {
+  }, "For authorized security research only. Build and backdoor sessions are logged under the application's ", React.createElement("span", {
     className: "mono",
     style: {
       color: "var(--n-9)"
     }
-  }, "~/.washmachine/sessions"), ".")), React.createElement("button", {
-    className: "btn"
-  }, "Check for updates")))));
+  }, "logging"), " directory."))))));
 }
 function ShortcutRow({
   keys,

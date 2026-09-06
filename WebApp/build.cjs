@@ -10,6 +10,7 @@ const path = require('path');
 
 const SRC = __dirname;
 const DIST = path.join(__dirname, 'dist');
+const CHECK = process.argv.includes('--check');
 
 const SOURCES = [
   'shell.jsx',
@@ -18,11 +19,10 @@ const SOURCES = [
   'frames/03-template.jsx',
   'frames/04-compile.jsx',
   'frames/05-backdoor.jsx',
+  'frames/05a-pe-scanner.jsx',
   'frames/06-finalize.jsx',
   'frames/06b-packing.jsx',
   'frames/07-history.jsx',
-  'frames/08-webwizard.jsx',
-  'frames/09-startup.jsx',
   'frames/10-pipeline.jsx',
   'frames/11-settings.jsx',
 ];
@@ -34,7 +34,6 @@ function ensureDir(p) {
 function compileOne(rel) {
   const inPath = path.join(SRC, rel);
   const outPath = path.join(DIST, rel.replace(/\.jsx$/, '.js'));
-  ensureDir(path.dirname(outPath));
 
   const code = fs.readFileSync(inPath, 'utf8');
   const result = babel.transformSync(code, {
@@ -48,17 +47,25 @@ function compileOne(rel) {
     comments: false,
   });
 
-  fs.writeFileSync(outPath, result.code, 'utf8');
+  if (CHECK) {
+    if (!fs.existsSync(outPath) || fs.readFileSync(outPath, 'utf8') !== result.code)
+      throw new Error('Generated JavaScript is missing or stale; run npm run build.');
+  } else {
+    ensureDir(path.dirname(outPath));
+    fs.writeFileSync(outPath, result.code, 'utf8');
+  }
   return { rel, bytes: Buffer.byteLength(result.code, 'utf8') };
 }
 
-ensureDir(DIST);
+if (!CHECK) ensureDir(DIST);
 
 let total = 0;
+let succeeded = 0;
 for (const rel of SOURCES) {
   try {
     const { bytes } = compileOne(rel);
     total += bytes;
+    succeeded++;
     console.log(`  ok  ${rel}  (${bytes} bytes)`);
   } catch (e) {
     console.error(`  err ${rel}: ${e.message}`);
@@ -66,4 +73,4 @@ for (const rel of SOURCES) {
   }
 }
 
-console.log(`\nCompiled ${SOURCES.length} files · ${total} bytes total`);
+console.log(`\n${CHECK ? 'Verified' : 'Compiled'} ${succeeded}/${SOURCES.length} files · ${total} bytes total`);

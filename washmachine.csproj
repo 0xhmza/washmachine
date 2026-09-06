@@ -8,11 +8,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-<<<<<<< Updated upstream
-    <DefaultItemExcludes>$(DefaultItemExcludes);Washmachine.Core\**;Washmachine.Cli\**;Output\**;Testing\**;Icon\**</DefaultItemExcludes>
-=======
-    <DefaultItemExcludes>$(DefaultItemExcludes);Washmachine.Core\**;Washmachine.Cli\**;Output\**;Testing\**;Icon\**;metasploit-framework-master\**;WebApp\node_modules\**;WebApp\package*.json;WebApp\build.cjs;.design-reference\**;.design-reference-v2\**</DefaultItemExcludes>
->>>>>>> Stashed changes
+    <DefaultItemExcludes>$(DefaultItemExcludes);Washmachine.Core\**;Washmachine.Cli\**;Output\**;Testing\**;Icon\**;WebApp\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -76,6 +72,18 @@
 
   <ItemGroup>
     <ProjectReference Include="Washmachine.Core\Washmachine.Core.csproj" />
+    <ProjectReference Include="Washmachine.Cli\Washmachine.Cli.csproj" />
+  </ItemGroup>
+
+  <!-- WebView2 shell assets. JSX and build tooling remain development-only. -->
+  <ItemGroup>
+    <Content Include="WebApp\app.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="WebApp\app.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="WebApp\state.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="WebApp\system.css" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="WebApp\vendor\*.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="WebApp\dist\*.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="WebApp\dist\frames\*.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Copy Assets (playbooks + C++ runtime headers + JSON schema) to publish output so AppPaths can locate them -->
@@ -102,16 +110,6 @@
     <Content Include="Assets\llvm-passes\README.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Assets\llvm-passes\build-all.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Assets\llvm-passes\test-passes.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-  </ItemGroup>
-
-  <!-- WebApp static assets — served via WebView2 virtual host -->
-  <ItemGroup>
-    <Content Include="WebApp\app.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="WebApp\app.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="WebApp\system.css" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="WebApp\vendor\*.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="WebApp\dist\*.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="WebApp\dist\frames\*.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Bundled LLVM tools for LlvmPipelineService -->
@@ -143,6 +141,18 @@
     </ItemGroup>
     <Delete Files="@(_AIProjectionDlls)" ContinueOnError="true" />
     <Delete Files="@(_AIProjectionPublishDlls)" ContinueOnError="true" />
+  </Target>
+
+  <!-- Washmachine.Cli remains an executable project for developer/test use, but
+       the shipped product is entered exclusively through washmachine.exe. -->
+  <Target Name="RemoveStandaloneCliHostFromProductPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_StandaloneCliHost Include="$(PublishDir)washmachine-cli.exe" />
+      <_StandaloneCliHost Include="$(PublishDir)washmachine-cli.deps.json" />
+      <_StandaloneCliHost Include="$(PublishDir)washmachine-cli.runtimeconfig.json" />
+      <_StandaloneCliHost Include="$(PublishDir)washmachine-cli.pdb" />
+    </ItemGroup>
+    <Delete Files="@(_StandaloneCliHost)" ContinueOnError="true" />
   </Target>
 
 </Project>

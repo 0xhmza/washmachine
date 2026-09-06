@@ -1,4 +1,56 @@
 function FrameTemplate() {
+  const {
+    useField,
+    useFields
+  } = window.washState;
+  const [templateId, setTemplateId] = useField('templateCombo');
+  const [activePlaybook, setActivePlaybook] = useField('activePlaybook');
+  const [snippetSelections, setSnippetSelections] = useField('snippetSelections');
+  const [snippetInputs, setSnippetInputs] = useField('snippetInputs');
+  const meta = useFields('catalog_templates', 'catalog_snippets', 'catalog_playbooks');
+  const templates = meta.catalog_templates || [];
+  const sections = meta.catalog_snippets || [];
+  const playbooks = meta.catalog_playbooks || [];
+  const selections = snippetSelections || {};
+  const inputs = snippetInputs || {};
+  const activeSnippetCount = Object.values(selections).flat().length;
+  function toggleSnippet(sectionTemplate, itemId, allowMultiple) {
+    const current = selections[sectionTemplate] || [];
+    let next;
+    if (allowMultiple) {
+      next = current.includes(itemId) ? current.filter(x => x !== itemId) : [...current, itemId];
+    } else {
+      next = current.includes(itemId) ? [] : [itemId];
+    }
+    setSnippetSelections({
+      ...selections,
+      [sectionTemplate]: next
+    });
+  }
+  function setSnippetInput(key, value) {
+    setSnippetInputs({
+      ...inputs,
+      [key]: value
+    });
+  }
+  function openPlaybook() {
+    if (activePlaybook) window.wash.invoke('open-file', {
+      path: activePlaybook
+    }).catch(() => {});
+  }
+  function reloadPlaybook() {
+    if (window.washState) window.washState.loadCatalogs();
+  }
+  const selTpl = templates.find(t => t.id === templateId);
+  const status = [{
+    icon: "info",
+    k: "template",
+    v: templateId || 'none'
+  }, {
+    icon: "info",
+    k: "snippets",
+    v: `${activeSnippetCount} selected`
+  }];
   return React.createElement(Shell, {
     active: "payload",
     crumbs: ["Payload", "Template options"],
@@ -9,15 +61,7 @@ function FrameTemplate() {
       enc: "done",
       tpl: "active"
     },
-    status: [{
-      icon: "info",
-      k: "template",
-      v: "full-loader"
-    }, {
-      icon: "info",
-      k: "snippets",
-      v: "5 selected"
-    }]
+    status: status
   }, React.createElement("div", {
     className: "cfg"
   }, React.createElement("div", {
@@ -31,15 +75,12 @@ function FrameTemplate() {
     className: "h1"
   }, "Template & snippets"), React.createElement("span", {
     className: "sub"
-  }, "Composed at render time from ", React.createElement("span", {
-    className: "mono",
-    style: {
-      color: "var(--n-9)"
-    }
-  }, "vx_api_snippets.yaml"))), React.createElement(Sec, {
+  }, "Composed at render time from the active playbook YAML.")), React.createElement(Sec, {
     title: "Playbook",
     action: React.createElement("button", {
-      className: "btn ghost"
+      className: "btn ghost",
+      disabled: !activePlaybook,
+      onClick: openPlaybook
     }, React.createElement(Icon, {
       name: "dl",
       size: 12
@@ -68,13 +109,13 @@ function FrameTemplate() {
     size: 16
   })), React.createElement("div", null, React.createElement("div", {
     className: "h2"
-  }, "vx_api_snippets.yaml"), React.createElement("div", {
+  }, activePlaybook ? activePlaybook.split('\\').pop() : 'default.yaml'), React.createElement("div", {
     className: "mono",
     style: {
       fontSize: 11,
       color: "var(--n-7)"
     }
-  }, "89 snippets \xB7 10 categories \xB7 6 templates"))), React.createElement("div", {
+  }, templates.length, " templates \xB7 ", sections.length, " sections"))), React.createElement("div", {
     className: "row",
     style: {
       gap: 8
@@ -82,10 +123,32 @@ function FrameTemplate() {
   }, React.createElement("select", {
     className: "select",
     style: {
-      width: 220
+      width: 260
+    },
+    value: activePlaybook,
+    onChange: async e => {
+      const nextPath = e.target.value;
+      try {
+        const r = await window.wash.invoke('set-playbook', {
+          path: nextPath
+        });
+        if (!r || !r.ok) {
+          window.wash.notify(r?.message || 'Could not activate that playbook.', 'err');
+          return;
+        }
+        setActivePlaybook(r.active || nextPath);
+        await window.washState.loadCatalogs();
+        window.wash.notify('Playbook activated and catalogs reloaded.', 'ok');
+      } catch {}
     }
-  }, React.createElement("option", null, "Assets/vx_api_snippets.yaml")), React.createElement("button", {
-    className: "btn"
+  }, playbooks.map(p => React.createElement("option", {
+    key: p,
+    value: p
+  }, p)), playbooks.length === 0 && React.createElement("option", {
+    value: activePlaybook || ''
+  }, activePlaybook || 'default.yaml')), React.createElement("button", {
+    className: "btn",
+    onClick: reloadPlaybook
   }, React.createElement(Icon, {
     name: "refresh",
     size: 12
@@ -96,133 +159,68 @@ function FrameTemplate() {
     style: {
       padding: 0
     }
-  }, React.createElement(TplRow, {
-    name: "full-loader",
-    desc: "All feature placeholders wired",
-    selected: true
-  }), React.createElement(TplRow, {
-    name: "minimal",
-    desc: "Shellcode source + one execution snippet"
-  }), React.createElement(TplRow, {
-    name: "reflective",
-    desc: "Reflective DLL injection scaffold"
-  }), React.createElement(TplRow, {
-    name: "staged-http",
-    desc: "HTTPS stager with cert-pin envelope"
-  }), React.createElement(TplRow, {
-    name: "cobalt-compat",
-    desc: "Cobalt-strike beacon-shaped"
-  }), React.createElement(TplRow, {
-    name: "tls-callback",
-    desc: "Pre-main execution via TLS callback"
-  }))), React.createElement(Sec, {
+  }, templates.length === 0 ? React.createElement("div", {
+    style: {
+      padding: "14px 16px",
+      color: "var(--n-6)",
+      fontSize: 12
+    }
+  }, "Loading templates\u2026") : templates.map(tpl => React.createElement(TplRow, {
+    key: tpl.id,
+    name: tpl.id,
+    desc: tpl.description || '',
+    placeholders: tpl.placeholderCount,
+    selected: templateId === tpl.id,
+    onClick: () => setTemplateId(tpl.id)
+  })))), React.createElement(Sec, {
     title: "Snippets",
     action: React.createElement("div", {
       className: "row",
       style: {
         gap: 8
       }
-    }, React.createElement(Chip, {
+    }, activeSnippetCount > 0 && React.createElement(Chip, {
       kind: "acc",
       dot: true
-    }, "5 active"), React.createElement("button", {
-      className: "btn ghost"
-    }, React.createElement(Icon, {
-      name: "filter",
-      size: 12
-    }), "Filter"))
+    }, activeSnippetCount, " active"))
   }, React.createElement("div", {
     className: "card",
     style: {
       padding: 0
     }
-  }, React.createElement(SnipGroup, {
-    name: "Anti-debugging",
-    template: "ANTIDEBUGGING",
-    stack: true,
-    items: [{
-      name: "CloseHandle on invalid address",
-      id: "CloseHandleAntiDebug",
-      on: true,
-      inputs: []
-    }, {
-      name: "IsDebuggerPresent",
-      id: "IsDebuggerPresentCheck",
-      on: true
-    }, {
-      name: "NtQueryInformationProcess · ProcessDebugPort",
-      id: "NtQueryDebugPort",
-      on: false
-    }, {
-      name: "RDTSC timing delta",
-      id: "RdtscTiming",
-      on: false
-    }]
-  }), React.createElement(SnipGroup, {
-    name: "Guardrail",
-    template: "GUARDRAIL",
-    items: [{
-      name: "Require environment variable",
-      id: "EnvVarGuardrail",
-      on: true,
-      input: {
-        label: "Condition",
-        value: "USERDOMAIN#equals#CORP"
-      }
-    }, {
-      name: "Require domain join",
-      id: "DomainGuardrail",
-      on: false
-    }]
-  }), React.createElement(SnipGroup, {
-    name: "Process injection",
-    template: "PSINJECTION",
-    items: [{
-      name: "WriteProcessMemory + CreateRemoteThread",
-      id: "WPMCRT",
-      on: true,
-      input: {
-        label: "Target process",
-        value: "explorer.exe"
-      }
-    }, {
-      name: "QueueUserAPC into ALERTABLE thread",
-      id: "QueueAPC",
-      on: false
-    }, {
-      name: "Map → SetThreadContext (Ghosting)",
-      id: "Ghost",
-      on: false
-    }]
-  }), React.createElement(SnipGroup, {
-    name: "Shellcode execution",
-    template: "SHELLCODEEXECUTION",
-    items: [{
-      name: "VirtualAlloc + function pointer",
-      id: "VirtualAllocFuncPtr",
-      on: true
-    }, {
-      name: "CreateThread",
-      id: "CreateThreadExec",
-      on: false
-    }, {
-      name: "EnumWindows callback",
-      id: "EnumWindowsExec",
-      on: false
-    }]
-  })))), React.createElement(SnippetDiffPreview, null));
+  }, sections.length === 0 ? React.createElement("div", {
+    style: {
+      padding: "14px 16px",
+      color: "var(--n-6)",
+      fontSize: 12
+    }
+  }, "Loading snippets\u2026") : sections.map(sec => React.createElement(SnipGroup, {
+    key: sec.template,
+    name: sec.name,
+    template: sec.template,
+    allowMultiple: sec.allowMultiple,
+    items: sec.items || [],
+    selected: selections[sec.template] || [],
+    inputs: inputs,
+    onToggle: id => toggleSnippet(sec.template, id, sec.allowMultiple),
+    onInput: setSnippetInput
+  }))))), React.createElement(SnippetDiffPreview, null));
 }
 function TplRow({
   name,
   desc,
-  selected
+  placeholders,
+  selected,
+  onClick
 }) {
   return React.createElement("div", {
     className: "list-item",
+    onClick: onClick,
     style: {
       gridTemplateColumns: "20px 1fr auto auto",
       padding: "12px 16px",
       borderBottom: "1px solid var(--n-3)",
+      cursor: "pointer",
       ...(selected ? {
         background: "var(--acc-bg)",
         boxShadow: "inset 2px 0 0 var(--acc)"
@@ -248,7 +246,7 @@ function TplRow({
       color: "var(--n-7)",
       marginTop: 2
     }
-  }, desc)), React.createElement(Chip, null, name === "full-loader" ? "5 placeholders" : name === "minimal" ? "2 placeholders" : "4 placeholders"), React.createElement(Icon, {
+  }, desc)), placeholders != null && React.createElement(Chip, null, placeholders, " placeholders"), React.createElement(Icon, {
     name: "chev",
     size: 12
   }));
@@ -256,10 +254,15 @@ function TplRow({
 function SnipGroup({
   name,
   template,
-  stack,
-  items
+  allowMultiple,
+  items,
+  selected,
+  inputs,
+  onToggle,
+  onInput
 }) {
-  const activeCount = items.filter(i => i.on).length;
+  const [open, setOpen] = React.useState(true);
+  const activeCount = selected.length;
   return React.createElement("div", {
     style: {
       borderBottom: "1px solid var(--n-3)"
@@ -269,12 +272,18 @@ function SnipGroup({
     style: {
       padding: "12px 16px",
       background: "var(--n-1)",
-      gap: 10
-    }
+      gap: 10,
+      cursor: "pointer"
+    },
+    onClick: () => setOpen(o => !o)
   }, React.createElement(Icon, {
     name: "chev",
     size: 11,
-    sw: 2
+    sw: 2,
+    style: {
+      transform: open ? "none" : "rotate(-90deg)",
+      transition: "0.15s"
+    }
   }), React.createElement("div", null, React.createElement("div", {
     className: "h2"
   }, name), React.createElement("div", {
@@ -283,67 +292,82 @@ function SnipGroup({
       fontSize: 10,
       color: "var(--n-7)"
     }
-  }, "template: ", template, stack ? "  ·  allowMultiple" : "")), React.createElement("div", {
+  }, "template: ", template, allowMultiple ? "  ·  allowMultiple" : "")), React.createElement("div", {
     style: {
       flex: 1
     }
   }), activeCount > 0 && React.createElement(Chip, {
     kind: "acc"
-  }, activeCount, " active")), React.createElement("div", {
+  }, activeCount, " active")), open && React.createElement("div", {
     style: {
       padding: "6px 8px"
     }
-  }, items.map((it, i) => React.createElement("div", {
-    key: i,
-    className: "list-item" + (it.on ? " sel" : ""),
-    style: {
-      gridTemplateColumns: "16px 1fr auto"
-    }
-  }, React.createElement("div", {
-    style: {
-      width: 12,
-      height: 12,
-      borderRadius: 3,
-      border: "1px solid " + (it.on ? "var(--acc)" : "var(--n-5)"),
-      background: it.on ? "var(--acc)" : "transparent",
-      display: "grid",
-      placeItems: "center"
-    }
-  }, it.on && React.createElement(Icon, {
-    name: "check",
-    size: 9,
-    sw: 3
-  })), React.createElement("div", null, React.createElement("div", {
-    className: "ttl"
-  }, it.name), React.createElement("div", {
-    className: "meta"
-  }, "id ", React.createElement("span", {
-    style: {
-      color: "var(--n-8)"
-    }
-  }, it.id)), it.input && it.on && React.createElement("div", {
-    className: "row",
-    style: {
-      marginTop: 6,
-      gap: 8
-    }
-  }, React.createElement("span", {
-    className: "hint mono",
-    style: {
-      fontSize: 10
-    }
-  }, it.input.label), React.createElement("input", {
-    className: "input mono",
-    style: {
-      padding: "4px 8px",
-      fontSize: 11,
-      width: 260
-    },
-    defaultValue: it.input.value
-  }))), React.createElement(Icon, {
-    name: "more",
-    size: 12
-  })))));
+  }, items.map(it => {
+    const isOn = selected.includes(it.id);
+    return React.createElement("div", {
+      key: it.id,
+      className: "list-item" + (isOn ? " sel" : ""),
+      style: {
+        gridTemplateColumns: "16px 1fr"
+      }
+    }, React.createElement("div", {
+      onClick: () => onToggle(it.id),
+      style: {
+        width: 12,
+        height: 12,
+        borderRadius: 3,
+        cursor: "pointer",
+        flexShrink: 0,
+        border: "1px solid " + (isOn ? "var(--acc)" : "var(--n-5)"),
+        background: isOn ? "var(--acc)" : "transparent",
+        display: "grid",
+        placeItems: "center"
+      }
+    }, isOn && React.createElement(Icon, {
+      name: "check",
+      size: 9,
+      sw: 3
+    })), React.createElement("div", {
+      onClick: () => onToggle(it.id),
+      style: {
+        cursor: "pointer"
+      }
+    }, React.createElement("div", {
+      className: "ttl"
+    }, it.display || it.id), React.createElement("div", {
+      className: "meta"
+    }, "id ", React.createElement("span", {
+      style: {
+        color: "var(--n-8)"
+      }
+    }, it.id)), isOn && (it.inputs || []).map(inp => {
+      const inputKey = `${template}_${it.id}_${inp.id}`;
+      return React.createElement("div", {
+        key: inp.id,
+        className: "row",
+        style: {
+          marginTop: 6,
+          gap: 8
+        },
+        onClick: e => e.stopPropagation()
+      }, React.createElement("span", {
+        className: "hint mono",
+        style: {
+          fontSize: 10
+        }
+      }, inp.label || inp.id), React.createElement("input", {
+        className: "input mono",
+        style: {
+          padding: "4px 8px",
+          fontSize: 11,
+          width: 260
+        },
+        value: inputs[inputKey] != null ? inputs[inputKey] : inp.defaultValue || '',
+        onChange: e => onInput(inputKey, e.target.value),
+        placeholder: inp.placeholder || ''
+      }));
+    })));
+  })));
 }
 function SnippetDiffPreview() {
   return React.createElement("div", {
@@ -356,26 +380,17 @@ function SnippetDiffPreview() {
     name: "doc",
     size: 11
   }), "render diff"), React.createElement("div", {
-    className: "ptab"
-  }, React.createElement(Icon, {
-    name: "layers",
-    size: 11
-  }), "placeholders"), React.createElement("div", {
-    className: "ptab"
-  }, React.createElement(Icon, {
-    name: "doc",
-    size: 11
-  }), "yaml")), React.createElement("div", {
-    className: "pbody"
-  }, React.createElement("div", {
-    className: "ppad",
     style: {
-      paddingBottom: 0
+      flex: 1
     }
-  }, React.createElement(H3, null, "What this composition expands into")), React.createElement(CodeBlock, {
-    startLine: 42,
-    highlight: [],
-    lines: [[["cm", "// {{SNIPPET_INCLUDES}}"]], [["ins", "#include <intrin.h>"]], [["ins", "#include <tlhelp32.h>"]], [["", ""]], [["cm", "// {{SNIPPET_IMPLEMENTATIONS}}"]], [["ins", "static BOOL AntiDbg_CloseHandle() { /* ... */ }"]], [["ins", "static BOOL InjectWPMCRT(PBYTE, DWORD, DWORD) { /* ... */ }"]], [["ins", "static DWORD GetProcessOrThreadId(LPCWSTR, BOOL) { /* ... */ }"]], [["", ""]], [["cm", "// — in main() —"]], [["", ""]], [["cm", "// {{GUARDRAILS}}"]], [["ins", "if (GetEnvironmentVariableW(L\"USERDOMAIN\", buf, ...)"]], [["ins", "    || wcscmp(buf, L\"CORP\") != 0) return 0;"]], [["", ""]], [["cm", "// {{ANTI_DEBUGGING}}"]], [["ins", "if (AntiDbg_CloseHandle()) return 0;"]], [["ins", "if (IsDebuggerPresent()) return 0;"]], [["", ""]], [["cm", "// {{PROCESS_INJECTION}}"]], [["ins", "if (InjectWPMCRT((PBYTE)code_blob, dwSize,"]], [["ins", "    GetProcessOrThreadId(L\"explorer.exe\", true))) return 1;"]], [["", ""]], [["cm", "// {{SHELLCODE_EXECUTION}}"]], [["del", "// CreateThread((LPTHREAD_START_ROUTINE)mem, ...);"]], [["ins", "void* mem = VirtualAlloc(NULL, dwSize, MEM_COMMIT|MEM_RESERVE, PAGE_RW);"]], [["ins", "memcpy(mem, code_blob, dwSize); ((void(*)())mem)();"]]]
-  })));
+  })), React.createElement("div", {
+    className: "pbody ppad"
+  }, React.createElement("div", {
+    style: {
+      color: "var(--n-6)",
+      fontSize: 12,
+      fontFamily: "var(--f-mono)"
+    }
+  }, "Selected snippets and their scoped input values are passed to the active playbook during Build.")));
 }
 window.FrameTemplate = FrameTemplate;

@@ -6,12 +6,18 @@ Washmachine is a friendly little toolbox for red teamers, malware researchers an
 
 If you've ever spent a Saturday afternoon copy-pasting the same loader template, swapping out one anti-debug trick for another, recompiling, and wondering why this isn't automated yet, this tool is for you.
 
-It comes in two flavours that do the exact same thing:
+It comes with three interfaces over the same core:
 
-* a desktop app with buttons and dropdowns, for when you just want to click around
+* a local web app hosted by the desktop executable
+* a WinUI desktop app with buttons and dropdowns
 * a CLI with an interactive shell (think `msfconsole` vibes), for when you want to script things or work over SSH
 
 📖 [Full documentation lives here](https://0xhmza.github.io/washmachine-docs/)
+
+Local development: [project map](docs/README.md), [web UI build and tests](WebApp/README.md),
+and [operability verification and limitations](docs/verification.md).
+Repository layout, retained local data, and cleanup recovery are documented in
+[repository cleanup](docs/repository-cleanup.md).
 
 ---
 
@@ -42,17 +48,20 @@ That's the whole pitch.
 # Build it
 .\build.ps1 -Release
 
+# Start the launcher and choose Web app, CLI, or WinUI GUI
+.\Output\Release\washmachine.exe
+
 # First time only: download bin2shell + sgn
-.\Output\Release\washmachine-cli.exe provision
+.\Output\Release\washmachine.exe --cli-mode provision
 
 # Encode some shellcode into a loader exe
-.\Output\Release\washmachine-cli.exe encode -s Testing\binary\shellcodes\messagebox.bin
+.\Output\Release\washmachine.exe --cli-mode encode -s Testing\binary\shellcodes\messagebox.bin
 
 # Drop into the interactive shell instead
-.\Output\Release\washmachine-cli.exe
+.\Output\Release\washmachine.exe --cli-mode
 ```
 
-Prefer the GUI? Same thing, just double-click `washmachine.exe`.
+Double-clicking `washmachine.exe` opens the three-interface launcher.
 
 ---
 
@@ -77,22 +86,22 @@ You can also paste a flag-less command (just `encode` on its own) and the CLI dr
 
 ```powershell
 # Encode with all the defaults
-washmachine-cli encode -s payload.bin
+washmachine.exe --cli-mode encode -s payload.bin
 
 # Pick an encoder and an envelope
-washmachine-cli encode -s payload.bin -e 1 -v 1
+washmachine.exe --cli-mode encode -s payload.bin -e 1 -v 1
 
 # Add Shikata Ga Nai on top of bin2shell
-washmachine-cli encode -s payload.bin --sgn --shikata-enc 2 --shikata-max 64
+washmachine.exe --cli-mode encode -s payload.bin --sgn --shikata-enc 2 --shikata-max 64
 
 # Clone an icon and metadata off a donor exe, and pad the result with 1 MB of NOPs
-washmachine-cli encode -s payload.bin --clone-from "C:\path\to\7z.exe" --pad-nops 1048576
+washmachine.exe --cli-mode encode -s payload.bin --clone-from "C:\path\to\7z.exe" --pad-nops 1048576
 
 # Backdoor an existing binary using the code-cave method
-washmachine-cli backdoor --pe target.exe -s payload.bin -o patched.exe --method code-cave
+washmachine.exe --cli-mode backdoor --pe target.exe -s payload.bin -o patched.exe --method code-cave
 
 # Quick PE analysis
-washmachine-cli analyze target.exe
+washmachine.exe --cli-mode analyze target.exe
 ```
 
 ---
@@ -121,14 +130,14 @@ washmachine-cli analyze target.exe
 
 ## Requirements
 
-For the CLI:
+For all three interfaces:
 
 * Windows 10 (1809 or later) or Windows 11
 * .NET 8 Runtime (x64)
 * A C++ compiler somewhere on `PATH` (MSVC, MinGW or Clang). If you don't have one, MinGW gets fetched automatically on first run.
 * Python 3.10+ if you want the encoding features (used by bin2shell).
 
-For the desktop app, same as above plus the Windows App SDK 1.8 Runtime.
+The Web and WinUI interfaces also require the Windows App SDK 1.8 Runtime and the Web interface requires the WebView2 Runtime (normally installed with Windows).
 
 That's it.
 
@@ -162,13 +171,14 @@ Results land in `Testing\test_results.*.json` and `Testing\param_test_results.js
 washmachine/
 ├── Assets/default.yaml           the playbook: templates + snippets
 ├── Washmachine.Core/             the brains (shared library)
-├── Washmachine.Cli/              the CLI app
-├── Views/  Controllers/  ...     the desktop app (WinUI 3)
+├── Washmachine.Cli/              the CLI command host used by washmachine.exe
+├── WebApp/                       the local WebView2 interface
+├── Views/  Controllers/  ...     the launcher and WinUI interfaces
 ├── Testing/                      shellcodes, injectables, test scripts
 └── Output/                       build artefacts (gitignored)
 ```
 
-The CLI and the desktop app both sit on top of `Washmachine.Core`. No business logic in either UI layer, so anything you can do in one you can do in the other.
+The Web, CLI, and WinUI interfaces all sit on top of `Washmachine.Core`. `washmachine.exe` is the common entry point.
 
 ---
 

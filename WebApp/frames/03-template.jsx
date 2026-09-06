@@ -57,7 +57,7 @@ function FrameTemplate() {
           <span className="sub">Composed at render time from the active playbook YAML.</span>
         </div>
 
-        <Sec title="Playbook" action={<button className="btn ghost" onClick={openPlaybook}><Icon name="dl" size={12} />Open in editor</button>}>
+        <Sec title="Playbook" action={<button className="btn ghost" disabled={!activePlaybook} onClick={openPlaybook}><Icon name="dl" size={12} />Open in editor</button>}>
           <div className="card row" style={{ justifyContent: "space-between" }}>
             <div className="row" style={{ gap: 12 }}>
               <div style={{ width: 36, height: 36, borderRadius: 8, background: "var(--n-3)", display: "grid", placeItems: "center" }}>
@@ -73,9 +73,18 @@ function FrameTemplate() {
             <div className="row" style={{ gap: 8 }}>
               <select className="select" style={{ width: 260 }}
                 value={activePlaybook}
-                onChange={e => {
-                  setActivePlaybook(e.target.value);
-                  window.wash.invoke('set-playbook', { path: e.target.value }).catch(() => {});
+                onChange={async e => {
+                  const nextPath = e.target.value;
+                  try {
+                    const r = await window.wash.invoke('set-playbook', { path: nextPath });
+                    if (!r || !r.ok) {
+                      window.wash.notify(r?.message || 'Could not activate that playbook.', 'err');
+                      return;
+                    }
+                    setActivePlaybook(r.active || nextPath);
+                    await window.washState.loadCatalogs();
+                    window.wash.notify('Playbook activated and catalogs reloaded.', 'ok');
+                  } catch {}
                 }}>
                 {playbooks.map(p => <option key={p} value={p}>{p}</option>)}
                 {playbooks.length === 0 && <option value={activePlaybook || ''}>{activePlaybook || 'default.yaml'}</option>}
@@ -168,7 +177,6 @@ function SnipGroup({ name, template, allowMultiple, items, selected, inputs, onT
         <div style={{ padding: "6px 8px" }}>
           {items.map(it => {
             const isOn = selected.includes(it.id);
-            const inputKey = `${template}:${it.id}`;
             return (
               <div key={it.id} className={"list-item" + (isOn ? " sel" : "")}
                 style={{ gridTemplateColumns: "16px 1fr" }}>
@@ -183,16 +191,17 @@ function SnipGroup({ name, template, allowMultiple, items, selected, inputs, onT
                 <div onClick={() => onToggle(it.id)} style={{ cursor: "pointer" }}>
                   <div className="ttl">{it.display || it.id}</div>
                   <div className="meta">id <span style={{ color: "var(--n-8)" }}>{it.id}</span></div>
-                  {it.hasTextInput && isOn && (
-                    <div className="row" style={{ marginTop: 6, gap: 8 }} onClick={e => e.stopPropagation()}>
-                      <span className="hint mono" style={{ fontSize: 10 }}>{it.textInputLabel || 'Value'}</span>
+                  {isOn && (it.inputs || []).map(inp => {
+                    const inputKey = `${template}_${it.id}_${inp.id}`;
+                    return <div key={inp.id} className="row" style={{ marginTop: 6, gap: 8 }} onClick={e => e.stopPropagation()}>
+                      <span className="hint mono" style={{ fontSize: 10 }}>{inp.label || inp.id}</span>
                       <input className="input mono"
                         style={{ padding: "4px 8px", fontSize: 11, width: 260 }}
-                        value={inputs[inputKey] || ''}
+                        value={inputs[inputKey] != null ? inputs[inputKey] : (inp.defaultValue || '')}
                         onChange={e => onInput(inputKey, e.target.value)}
-                        placeholder={it.textInputPlaceholder || ''} />
-                    </div>
-                  )}
+                        placeholder={inp.placeholder || ''} />
+                    </div>;
+                  })}
                 </div>
               </div>
             );
@@ -212,7 +221,7 @@ function SnippetDiffPreview() {
       </div>
       <div className="pbody ppad">
         <div style={{ color: "var(--n-6)", fontSize: 12, fontFamily: "var(--f-mono)" }}>
-          Snippet expansion preview appears after a build.
+          Selected snippets and their scoped input values are passed to the active playbook during Build.
         </div>
       </div>
     </div>
@@ -220,4 +229,3 @@ function SnippetDiffPreview() {
 }
 
 window.FrameTemplate = FrameTemplate;
-

@@ -46,7 +46,7 @@ public static partial class Program
             "-Json", "--json",
             "-Backend", "--backend", "-LlvmPass", "--llvm-pass"
         },
-        ["analyze"] = new[] { "-Pe", "--pe", "-Json", "--json" },
+        ["analyze"] = new[] { "--pe", "--details", "--json", "--interactive", "--help" },
         ["backdoor"] = new[]
         {
             "-Pe", "--pe", "-Shellcode", "--shellcode", "-s", "-Output", "--output", "-o",
@@ -85,8 +85,16 @@ public static partial class Program
 
     public static async Task<int> Main(string[] args)
     {
-        Console.OutputEncoding = System.Text.Encoding.UTF8;
-        Console.InputEncoding = System.Text.Encoding.UTF8;
+        try
+        {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.InputEncoding = System.Text.Encoding.UTF8;
+        }
+        catch (IOException)
+        {
+            // The unified WinExe host can provide redirected standard streams
+            // without an attached console. The streams are already UTF-8 there.
+        }
 
         ApplySchemeFromEnvironment();
 
@@ -110,7 +118,7 @@ public static partial class Program
     {
         // NO_COLOR (https://no-color.org) — strip all ANSI styling so plain-text
         // consumers (CI, log files, accessibility tools) receive clean output.
-        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NO_COLOR")))
+        if (Console.IsOutputRedirected || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NO_COLOR")))
         {
             AnsiConsole.Profile.Capabilities.ColorSystem = ColorSystem.NoColors;
             AnsiConsole.Profile.Capabilities.Ansi = false;
@@ -340,11 +348,28 @@ public static partial class Program
         if (Console.IsInputRedirected || Console.IsOutputRedirected)
             return Console.ReadLine();
 
-        AnsiConsole.Markup(promptMarkup);
+        void WriteEditorPrompt()
+        {
+            int available = TerminalLayout.Width();
+            if (available <= 3) Console.Write(available > 1 ? ">" : "");
+            else if (Markup.Remove(promptMarkup).Length >= available - 2) Console.Write("> ");
+            else AnsiConsole.Markup(promptMarkup);
+        }
 
-        int originLeft = Console.CursorLeft;
-        int originTop = Console.CursorTop;
-        int previousRenderLines = 1;
+        int originLeft, originTop, lastWidth, lastHeight;
+        try
+        {
+            WriteEditorPrompt();
+            originLeft = Console.CursorLeft;
+            originTop = Console.CursorTop;
+            lastWidth = Math.Min(TerminalLayout.Width(), Console.BufferWidth);
+            lastHeight = Console.BufferHeight;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentOutOfRangeException)
+        {
+            return Console.ReadLine();
+        }
+        bool reanchor = false;
         int cursorIndex = 0;
         var buffer = new StringBuilder();
         var history = GetHistoryBucket(historyScope);
@@ -358,56 +383,62 @@ public static partial class Program
             cursorIndex = buffer.Length;
         }
 
-        void Render()
+        void Render(bool force = false)
         {
             try
             {
-                int width = Math.Max(Console.BufferWidth, 1);
+                // Drain pasted/type-ahead input before repainting, rather than
+                // clearing the screen once per character in a long paste.
+                if (!force && Console.KeyAvailable) return;
+                int width = Math.Max(1, Math.Min(TerminalLayout.Width(), Console.BufferWidth));
                 int bufferHeight = Math.Max(Console.BufferHeight, 1);
-
-                // Clamp origin if console was resized (zoom in/out)
+                if (reanchor || width != lastWidth || bufferHeight != lastHeight)
+                {
+                    // Reflow invalidates old coordinates. Start a fresh prompt,
+                    // preserving scrollback and the complete logical input.
+                    Console.WriteLine();
+                    WriteEditorPrompt();
+                    originLeft = Console.CursorLeft;
+                    originTop = Console.CursorTop;
+                    lastWidth = width;
+                    lastHeight = bufferHeight;
+                    reanchor = false;
+                }
                 originTop = Math.Clamp(originTop, 0, bufferHeight - 1);
                 originLeft = Math.Clamp(originLeft, 0, width - 1);
-
-                int currentRenderLines = GetWrappedLineCount(originLeft, buffer.Length, width);
-                int linesToClear = Math.Max(previousRenderLines, currentRenderLines);
-
-                for (int i = 0; i < linesToClear; i++)
-                {
-                    int row = originTop + i;
-                    if (row >= bufferHeight) break;
-                    int left = i == 0 ? originLeft : 0;
-                    Console.SetCursorPosition(left, row);
-                    Console.Write(new string(' ', Math.Max(1, width - left)));
-                }
-
+                int columns = Math.Max(0, width - originLeft - 1);
+                var view = TerminalLayout.View(buffer.ToString(), cursorIndex, columns);
                 Console.SetCursorPosition(originLeft, originTop);
-                Console.Write(buffer.ToString());
-
-                previousRenderLines = currentRenderLines;
-
-                int absoluteIndex = originLeft + cursorIndex;
-                int cursorTop = Math.Min(originTop + (absoluteIndex / width), bufferHeight - 1);
-                int cursorLeft = Math.Clamp(absoluteIndex % width, 0, width - 1);
-                Console.SetCursorPosition(cursorLeft, cursorTop);
+                Console.Write(new string(' ', columns));
+                Console.SetCursorPosition(originLeft, originTop);
+                Console.Write(view.Text);
+                Console.SetCursorPosition(originLeft + view.CursorColumn, originTop);
             }
-            catch (ArgumentOutOfRangeException)
+            catch (Exception ex) when (ex is ArgumentOutOfRangeException or IOException or InvalidOperationException)
             {
-                // Console was resized mid-render; safe to ignore
+                // A resize can race any read/write. Retry from fresh coordinates
+                // on the next key rather than dispatching incomplete input.
+                reanchor = true;
             }
         }
 
         void ShowCompletionChoices(IReadOnlyList<string> matches)
         {
-            AnsiConsole.WriteLine();
-            foreach (var chunk in matches.Chunk(6))
-                AnsiConsole.MarkupLine($"[dim]  {string.Join("  ", chunk.Select(Markup.Escape))}[/]");
+            try
+            {
+                AnsiConsole.WriteLine();
+                foreach (var chunk in matches.Chunk(6))
+                    AnsiConsole.MarkupLine($"[dim]  {string.Join("  ", chunk.Select(Markup.Escape))}[/]");
 
-            AnsiConsole.Markup(promptMarkup);
-            originLeft = Console.CursorLeft;
-            originTop = Console.CursorTop;
-            previousRenderLines = 1;
-            Render();
+                WriteEditorPrompt();
+                originLeft = Console.CursorLeft;
+                originTop = Console.CursorTop;
+                Render(force: true);
+            }
+            catch (Exception ex) when (ex is ArgumentOutOfRangeException or IOException or InvalidOperationException)
+            {
+                reanchor = true;
+            }
         }
 
         while (true)
@@ -417,16 +448,17 @@ public static partial class Program
             {
                 key = Console.ReadKey(intercept: true);
             }
-            catch (InvalidOperationException)
+            catch (Exception ex) when (ex is InvalidOperationException or IOException)
             {
-                Console.WriteLine();
-                return buffer.ToString();
+                return null;
             }
 
             switch (key.Key)
             {
                 case ConsoleKey.Enter:
                 {
+                    cursorIndex = buffer.Length;
+                    Render(force: true);
                     Console.WriteLine();
                     var line = buffer.ToString();
                     AddHistoryEntry(historyScope, line);
@@ -539,7 +571,24 @@ public static partial class Program
                     break;
                 }
                 default:
-                    if (key.Modifiers.HasFlag(ConsoleModifiers.Control) && key.Key == ConsoleKey.A)
+                    if (key.Modifiers.HasFlag(ConsoleModifiers.Control) && key.Key == ConsoleKey.D && buffer.Length == 0)
+                    {
+                        Console.WriteLine();
+                        return null;
+                    }
+                    else if (key.Modifiers.HasFlag(ConsoleModifiers.Control) && key.Key == ConsoleKey.U)
+                    {
+                        ReplaceBuffer(string.Empty);
+                        historyIndex = history.Count;
+                        Render();
+                    }
+                    else if (key.Modifiers.HasFlag(ConsoleModifiers.Control) && key.Key == ConsoleKey.K)
+                    {
+                        buffer.Remove(cursorIndex, buffer.Length - cursorIndex);
+                        historyIndex = history.Count;
+                        Render();
+                    }
+                    else if (key.Modifiers.HasFlag(ConsoleModifiers.Control) && key.Key == ConsoleKey.A)
                     {
                         if (cursorIndex != 0)
                         {
@@ -705,17 +754,6 @@ public static partial class Program
             end++;
     }
 
-    private static int GetWrappedLineCount(int originLeft, int textLength, int consoleWidth)
-    {
-        if (consoleWidth <= 0)
-            return 1;
-
-        if (textLength == 0)
-            return 1;
-
-        return ((originLeft + textLength) / consoleWidth) + 1;
-    }
-
     private static string GetCommonPrefix(IReadOnlyList<string> values)
     {
         if (values.Count == 0)
@@ -827,666 +865,18 @@ public static partial class Program
     //  analyze
     // ═══════════════════════════════════════════════════════════════════════
 
-    private static async Task<int> RunAnalyzeAsync(string[] args)
+    private static Task<int> RunAnalyzeAsync(string[] args)
     {
-        if (args.Length == 0)
-            return await RunSubMode("analyze", RunAnalyzeAsync, PrintAnalyzeUsage);
-
-        if (IsHelpToken(args[0]))
+        if (args.Length == 1 && args[0] == "--interactive")
         {
-            PrintAnalyzeUsage();
-            return 0;
+            if (Console.IsInputRedirected)
+            {
+                Console.Error.WriteLine("error: --interactive requires a terminal. Use analyze FILE --json in scripts.");
+                return Task.FromResult(2);
+            }
+            return AnalysisSession.RunAsync(Console.In, Console.Out, Console.Error);
         }
-
-        string? peFile = null;
-        bool jsonOutput = false;
-
-        // First arg can be positional PE file (does not start with '-')
-        int startIndex = 0;
-        if (!args[0].StartsWith("-", StringComparison.Ordinal))
-        {
-            peFile = args[0];
-            startIndex = 1;
-        }
-
-        for (int i = startIndex; i < args.Length; i++)
-        {
-            switch (args[i])
-            {
-                case "-Pe" or "--pe" when i + 1 < args.Length:
-                    peFile = args[++i];
-                    break;
-                case "-Json" or "--json":
-                    jsonOutput = true;
-                    break;
-            }
-        }
-
-        if (peFile is null)
-        {
-            WriteStatus(StatusPrefix.Failure, "No PE file specified. Pass a path positionally or use '-Pe <file>'. Example: analyze .\\target.exe");
-            return 1;
-        }
-
-        if (!File.Exists(peFile))
-        {
-            WriteStatus(StatusPrefix.Failure, $"PE file not found: '{peFile}'. Check the path or run 'analyze --help' for usage.");
-            return 1;
-        }
-        var logger = new ConsoleLogger();
-        var analyzer = new PeAnalyzerService(logger);
-
-        try
-        {
-            var result = await analyzer.AnalyzeAsync(peFile);
-
-            if (jsonOutput)
-            {
-                Console.WriteLine(JsonSerializer.Serialize(result, JsonPrint));
-                return 0;
-            }
-
-            // ══════════════════════════════════════════════════════════
-            //  DASHBOARD HEADER
-            // ══════════════════════════════════════════════════════════
-            string peTypeStr = result.IsDriver ? "Driver" : result.IsDll ? "DLL" : "EXE";
-            string archShort = result.Is64Bit ? "x64" : "x86";
-
-            var headerMarkup = new Markup(
-                $"[bold {UiColors.Header}]\U0001f52c PE ANALYSIS REPORT[/]\n" +
-                $"[{UiColors.Muted}]{new string('\u2500', 60)}[/]\n" +
-                $"[{UiColors.Accent}]File:[/] [{UiColors.Value}]{Markup.Escape(result.FileName ?? Path.GetFileName(peFile))}[/]     " +
-                $"[{UiColors.Accent}]Size:[/] [{UiColors.Value}]{Markup.Escape(result.FileSizeFormatted ?? $"{result.FileSize:N0} bytes")}[/]     " +
-                $"[{UiColors.Accent}]Type:[/] [{UiColors.Value}]{peTypeStr} {archShort}[/]");
-
-            AnsiConsole.Write(new Panel(headerMarkup)
-                .Border(BoxBorder.Heavy)
-                .BorderColor(Color.DarkViolet)
-                .Expand());
-            AnsiConsole.WriteLine();
-
-            // ══════════════════════════════════════════════════════════
-            //  FILE OVERVIEW + SECURITY SIDE-BY-SIDE
-            // ══════════════════════════════════════════════════════════
-            var overviewLines = new List<string>
-            {
-                $"[{UiColors.Accent}]File Name:[/]     [{UiColors.Value}]{Markup.Escape(result.FileName ?? "")}[/]",
-                $"[{UiColors.Accent}]Size:[/]          [{UiColors.Value}]{Markup.Escape(result.FileSizeFormatted ?? $"{result.FileSize:N0} bytes")}[/]",
-                $"[{UiColors.Accent}]SHA-256:[/]       [{UiColors.Muted}]{Markup.Escape(result.FileHash ?? "N/A")}[/]",
-                $"[{UiColors.Accent}]Architecture:[/]  [{UiColors.Value}]{Markup.Escape(result.Architecture)}[/]",
-                $"[{UiColors.Accent}]Subsystem:[/]     [{UiColors.Value}]{Markup.Escape(result.OptionalHeader?.SubsystemString ?? "N/A")}[/]",
-                $"[{UiColors.Accent}]Compiled:[/]      [{UiColors.Value}]{Markup.Escape(result.CompileTimeFormatted ?? "N/A")}[/]",
-                $"[{UiColors.Accent}]Linker:[/]        [{UiColors.Value}]{Markup.Escape(result.OptionalHeader?.LinkerVersion ?? "N/A")}[/]",
-                $"[{UiColors.Accent}].NET:[/]          {(result.IsDotNet ? $"[{UiColors.Warning}]Yes[/]" : $"[{UiColors.Value}]No[/]")}",
-            };
-
-            var overviewPanel = new Panel(new Markup(string.Join("\n", overviewLines)))
-                .Header($"[bold {UiColors.Header}]File Overview[/]")
-                .Border(BoxBorder.Rounded)
-                .BorderColor(UiColors.BoxBorderColor)
-                .Expand();
-
-            // Security panel
-            var secContent = new List<string>();
-            if (result.Security != null)
-            {
-                var sec = result.Security;
-                string scoreColor = sec.SecurityScore < 40 ? "red1" : sec.SecurityScore < 70 ? "gold1" : "green3_1";
-                string scoreBar = BuildUsageBar(sec.SecurityScore);
-                secContent.Add($"[{UiColors.Accent}]Score:[/] {scoreBar} [{scoreColor}]{sec.SecurityScore}/100[/]");
-                if (!string.IsNullOrEmpty(sec.SecurityAssessment))
-                    secContent.Add($"[{UiColors.Accent}]Assessment:[/] [{scoreColor}]{Markup.Escape(sec.SecurityAssessment)}[/]");
-                secContent.Add("");
-
-                static string FlagL(bool on, string name)
-                {
-                    string padded = name.PadRight(16);
-                    return on ? $"[green3_1]\u2713[/] {padded}" : $"[red1]\u2717[/] [grey63]{padded}[/]";
-                }
-                static string FlagR(bool on, string name)
-                {
-                    return on ? $"[green3_1]\u2713[/] {name}" : $"[red1]\u2717[/] [grey63]{name}[/]";
-                }
-
-                secContent.Add($"{FlagL(sec.HasAslr, "ASLR")}{FlagR(sec.HasDep, "DEP/NX")}");
-                secContent.Add($"{FlagL(sec.HasHighEntropyVa, "High Entropy")}{FlagR(sec.HasCfg, "CFG")}");
-                secContent.Add($"{FlagL(sec.HasSeh, "SEH")}{FlagR(sec.HasSafeSeh, "SafeSEH")}");
-                secContent.Add($"{FlagL(sec.HasRfg, "RFG")}{FlagR(sec.HasAuthenticode, "Authenticode")}");
-            }
-            else
-            {
-                secContent.Add("[grey63]No security data available[/]");
-            }
-
-            var securityPanel = new Panel(new Markup(string.Join("\n", secContent)))
-                .Header($"[bold {UiColors.Header}]Security[/]")
-                .Border(BoxBorder.Rounded)
-                .BorderColor(UiColors.BoxBorderColor)
-                .Expand();
-
-            AnsiConsole.Write(new Columns(overviewPanel, securityPanel));
-            AnsiConsole.WriteLine();
-
-            // ══════════════════════════════════════════════════════════
-            //  PE HEADERS
-            // ══════════════════════════════════════════════════════════
-            {
-                var headerLines = new List<string>();
-
-                if (result.OptionalHeader != null)
-                {
-                    var oh = result.OptionalHeader;
-                    headerLines.Add(
-                        $"[{UiColors.Accent}]Entry Point:[/] [mediumpurple1]0x{oh.AddressOfEntryPoint:X8}[/]    " +
-                        $"[{UiColors.Accent}]Image Base:[/] [mediumpurple1]0x{oh.ImageBase:X}[/]    " +
-                        $"[{UiColors.Accent}]Checksum:[/] [mediumpurple1]0x{oh.Checksum:X8}[/]");
-                    headerLines.Add(
-                        $"[{UiColors.Accent}]Section Align:[/] [mediumpurple1]0x{oh.SectionAlignment:X}[/]    " +
-                        $"[{UiColors.Accent}]File Align:[/] [mediumpurple1]0x{oh.FileAlignment:X}[/]    " +
-                        $"[{UiColors.Accent}]Size of Image:[/] [mediumpurple1]0x{oh.SizeOfImage:X}[/]");
-
-                    if (oh.DllCharacteristicsList.Count > 0)
-                        headerLines.Add($"[{UiColors.Accent}]DLL Chars:[/] [grey63]{Markup.Escape(string.Join(", ", oh.DllCharacteristicsList))}[/]");
-                }
-
-                if (result.FileHeader != null)
-                {
-                    headerLines.Add(
-                        $"[{UiColors.Accent}]Machine:[/] [white]{Markup.Escape(result.FileHeader.MachineString)}[/]    " +
-                        $"[{UiColors.Accent}]Timestamp:[/] [white]{result.FileHeader.TimeDateStampUtc:yyyy-MM-dd HH:mm:ss} UTC[/]");
-
-                    if (result.FileHeader.CharacteristicsList.Count > 0)
-                        headerLines.Add($"[{UiColors.Accent}]Characteristics:[/] [grey63]{Markup.Escape(string.Join(", ", result.FileHeader.CharacteristicsList))}[/]");
-                }
-
-                if (headerLines.Count > 0)
-                {
-                    AnsiConsole.Write(new Panel(new Markup(string.Join("\n", headerLines)))
-                        .Header("[bold dodgerblue2]PE Headers[/]")
-                        .Border(BoxBorder.Rounded)
-                        .BorderColor(UiColors.BoxBorderColor)
-                        .Expand());
-                    AnsiConsole.WriteLine();
-                }
-            }
-
-            // ══════════════════════════════════════════════════════════
-            //  SECTIONS TABLE
-            // ══════════════════════════════════════════════════════════
-            {
-                var sectionTable = new Table()
-                    .Border(TableBorder.Simple)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Section[/]").LeftAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]VirtAddr[/]").RightAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]VirtSize[/]").RightAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]RawAddr[/]").RightAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]RawSize[/]").RightAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Perms[/]").Centered())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Entropy[/]").RightAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Bar[/]").LeftAligned());
-
-                foreach (var sec in result.Sections)
-                {
-                    string entropyColor = sec.Entropy < 6.0 ? "green3_1" : sec.Entropy < 7.0 ? "gold1" : "red1";
-                    string nameColor = sec.IsExecutable ? "red1" : "white";
-                    string entropyBar = BuildEntropyBar(sec.Entropy);
-
-                    sectionTable.AddRow(
-                        $"[{nameColor}]{Markup.Escape(sec.Name)}[/]",
-                        $"[mediumpurple1]0x{sec.VirtualAddress:X8}[/]",
-                        $"[mediumpurple1]0x{sec.VirtualSize:X8}[/]",
-                        $"[mediumpurple1]0x{sec.RawAddress:X8}[/]",
-                        $"[mediumpurple1]0x{sec.RawSize:X8}[/]",
-                        Markup.Escape(sec.PermissionsString),
-                        $"[{entropyColor}]{sec.Entropy:F2}[/]",
-                        entropyBar
-                    );
-                }
-
-                AnsiConsole.Write(new Panel(sectionTable)
-                    .Header("[bold dodgerblue2]Sections[/]")
-                    .Border(BoxBorder.Rounded)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .Expand());
-                AnsiConsole.WriteLine();
-            }
-
-            // ══════════════════════════════════════════════════════════
-            //  SECURITY ASSESSMENT (detailed)
-            // ══════════════════════════════════════════════════════════
-            if (result.Security != null)
-            {
-                var secDetail = result.Security;
-
-                var protTable = new Table()
-                    .Border(TableBorder.Simple)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Protection[/]").LeftAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Status[/]").Centered())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Protection[/]").LeftAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Status[/]").Centered());
-
-                var allFlags = new List<(string name, bool enabled)>
-                {
-                    ("ASLR", secDetail.HasAslr),
-                    ("DEP / NX", secDetail.HasDep),
-                    ("CFG (Control Flow Guard)", secDetail.HasCfg),
-                    ("High Entropy VA", secDetail.HasHighEntropyVa),
-                    ("SEH", secDetail.HasSeh),
-                    ("SafeSEH", secDetail.HasSafeSeh),
-                    ("RFG", secDetail.HasRfg),
-                    ("Force Integrity", secDetail.ForceIntegrity),
-                    ("NX Compat", secDetail.NxCompat),
-                    ("Authenticode", secDetail.HasAuthenticode),
-                    ("AppContainer", secDetail.AppContainer),
-                    ("Terminal Server Aware", secDetail.TerminalServerAware),
-                };
-
-                for (int fi = 0; fi < allFlags.Count; fi += 2)
-                {
-                    var left = allFlags[fi];
-                    string leftIcon = left.enabled ? "[green3_1]\u2713[/]" : "[red1]\u2717[/]";
-
-                    if (fi + 1 < allFlags.Count)
-                    {
-                        var right = allFlags[fi + 1];
-                        string rightIcon = right.enabled ? "[green3_1]\u2713[/]" : "[red1]\u2717[/]";
-                        protTable.AddRow(
-                            $"[white]{Markup.Escape(left.name)}[/]", leftIcon,
-                            $"[white]{Markup.Escape(right.name)}[/]", rightIcon);
-                    }
-                    else
-                    {
-                        protTable.AddRow(
-                            $"[white]{Markup.Escape(left.name)}[/]", leftIcon,
-                            "", "");
-                    }
-                }
-
-                AnsiConsole.Write(new Panel(protTable)
-                    .Header("[bold dodgerblue2]Security Assessment[/]")
-                    .Border(BoxBorder.Rounded)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .Expand());
-                AnsiConsole.WriteLine();
-            }
-
-            // ══════════════════════════════════════════════════════════
-            //  IMPORTS
-            // ══════════════════════════════════════════════════════════
-            if (result.Imports.Count > 0)
-            {
-                int totalFuncs = result.TotalImports;
-
-                var importTable = new Table()
-                    .Border(TableBorder.Simple)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]DLL[/]").LeftAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Functions[/]").RightAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Delay[/]").Centered())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]DLL[/]").LeftAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Functions[/]").RightAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Delay[/]").Centered());
-
-                var importList = result.Imports.Take(20).ToList();
-                for (int ii = 0; ii < importList.Count; ii += 2)
-                {
-                    var left = importList[ii];
-                    string leftDelay = left.IsDelayLoaded ? "[gold1]Yes[/]" : "[grey63]No[/]";
-
-                    if (ii + 1 < importList.Count)
-                    {
-                        var right = importList[ii + 1];
-                        string rightDelay = right.IsDelayLoaded ? "[gold1]Yes[/]" : "[grey63]No[/]";
-                        importTable.AddRow(
-                            $"[white]{Markup.Escape(left.Name)}[/]", $"[white]{left.Functions.Count}[/]", leftDelay,
-                            $"[white]{Markup.Escape(right.Name)}[/]", $"[white]{right.Functions.Count}[/]", rightDelay);
-                    }
-                    else
-                    {
-                        importTable.AddRow(
-                            $"[white]{Markup.Escape(left.Name)}[/]", $"[white]{left.Functions.Count}[/]", leftDelay,
-                            "", "", "");
-                    }
-                }
-
-                var importContent = new List<IRenderable> { importTable };
-
-                if (result.Imports.Count > 20)
-                    importContent.Add(new Markup($"[grey63]... and {result.Imports.Count - 20} more DLLs[/]"));
-
-                // Suspicious imports
-                var suspicious = result.Imports
-                    .SelectMany(d => d.Functions.Where(f => f.IsSuspicious)
-                        .Select(f => new { Dll = d.Name, f.Name, f.SuspiciousReason }))
-                    .ToList();
-
-                if (suspicious.Count > 0)
-                {
-                    importContent.Add(new Text(""));
-                    importContent.Add(new Markup($"[red1]\u26a0 Suspicious Imports ({suspicious.Count}):[/]"));
-
-                    var suspTable = new Table()
-                        .Border(TableBorder.Simple)
-                        .BorderColor(Color.Red)
-                        .AddColumn(new TableColumn("[red1]DLL[/]").LeftAligned())
-                        .AddColumn(new TableColumn("[red1]Function[/]").LeftAligned())
-                        .AddColumn(new TableColumn("[red1]Reason[/]").LeftAligned());
-
-                    foreach (var s in suspicious)
-                    {
-                        suspTable.AddRow(
-                            $"[gold1]{Markup.Escape(s.Dll)}[/]",
-                            $"[red1]{Markup.Escape(s.Name)}[/]",
-                            $"[grey63]{Markup.Escape(s.SuspiciousReason)}[/]"
-                        );
-                    }
-
-                    importContent.Add(suspTable);
-                }
-
-                var importRows = new Rows(importContent);
-                AnsiConsole.Write(new Panel(importRows)
-                    .Header($"[bold dodgerblue2]Imports ({result.Imports.Count} DLLs, {totalFuncs} functions)[/]")
-                    .Border(BoxBorder.Rounded)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .Expand());
-                AnsiConsole.WriteLine();
-            }
-
-            // ══════════════════════════════════════════════════════════
-            //  EXPORTS
-            // ══════════════════════════════════════════════════════════
-            if (result.TotalExports > 0)
-            {
-                var exportTable = new Table()
-                    .Border(TableBorder.Simple)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Name[/]").LeftAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Ordinal[/]").RightAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]RVA[/]").RightAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Forwarded[/]").LeftAligned());
-
-                foreach (var exp in result.Exports)
-                {
-                    exportTable.AddRow(
-                        $"[white]{Markup.Escape(exp.Name)}[/]",
-                        $"[white]{exp.Ordinal}[/]",
-                        $"[mediumpurple1]0x{exp.Rva:X8}[/]",
-                        exp.IsForwarded
-                            ? $"[gold1]{Markup.Escape(exp.ForwardedTo)}[/]"
-                            : "[grey63]No[/]"
-                    );
-                }
-
-                AnsiConsole.Write(new Panel(exportTable)
-                    .Header($"[bold dodgerblue2]Exports ({result.TotalExports})[/]")
-                    .Border(BoxBorder.Rounded)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .Expand());
-                AnsiConsole.WriteLine();
-            }
-
-            // ══════════════════════════════════════════════════════════
-            //  RESOURCES
-            // ══════════════════════════════════════════════════════════
-            if (result.Resources?.Count > 0)
-            {
-                var resContent = new List<IRenderable>();
-
-                var resFlags = new List<string>();
-                if (result.HasManifest) resFlags.Add("[green3_1]\u2713 Manifest[/]");
-                if (result.HasIcon) resFlags.Add("[green3_1]\u2713 Icon[/]");
-                if (result.HasVersionInfo) resFlags.Add("[green3_1]\u2713 VersionInfo[/]");
-                if (resFlags.Count > 0)
-                    resContent.Add(new Markup(string.Join("  ", resFlags)));
-
-                var resTable = new Table()
-                    .Border(TableBorder.Simple)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Type[/]").LeftAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Name[/]").LeftAligned())
-                    .AddColumn(new TableColumn($"[{UiColors.Accent}]Size[/]").RightAligned());
-
-                foreach (var res in result.Resources)
-                {
-                    resTable.AddRow(
-                        $"[white]{Markup.Escape(res.Type)}[/]",
-                        $"[white]{Markup.Escape(res.Name)}[/]",
-                        $"[white]{res.Size:N0}[/]"
-                    );
-                }
-
-                resContent.Add(resTable);
-
-                AnsiConsole.Write(new Panel(new Rows(resContent))
-                    .Header($"[bold dodgerblue2]Resources ({result.Resources.Count})[/]")
-                    .Border(BoxBorder.Rounded)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .Expand());
-                AnsiConsole.WriteLine();
-            }
-
-            // ══════════════════════════════════════════════════════════
-            //  TLS
-            // ══════════════════════════════════════════════════════════
-            if (result.Tls != null)
-            {
-                var tlsLines = new List<string>();
-                tlsLines.Add($"[{UiColors.Accent}]Callbacks:[/] [white]{result.Tls.NumberOfCallbacks}[/]");
-
-                if (result.Tls.CallbackAddresses.Count > 0)
-                {
-                    foreach (var addr in result.Tls.CallbackAddresses)
-                        tlsLines.Add($"  [mediumpurple1]0x{addr:X}[/]");
-                }
-
-                AnsiConsole.Write(new Panel(new Markup(string.Join("\n", tlsLines)))
-                    .Header("[bold dodgerblue2]TLS (Thread Local Storage)[/]")
-                    .Border(BoxBorder.Rounded)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .Expand());
-                AnsiConsole.WriteLine();
-            }
-
-            // ══════════════════════════════════════════════════════════
-            //  CODE CAVES
-            // ══════════════════════════════════════════════════════════
-            {
-                var caveContent = new List<IRenderable>();
-
-                if (result.TotalCodeCaves > 0)
-                {
-                    caveContent.Add(new Markup($"[{UiColors.Accent}]Largest:[/] [white]{result.LargestCodeCave:N0} bytes[/]"));
-
-                    var caveTable = new Table()
-                        .Border(TableBorder.Simple)
-                        .BorderColor(UiColors.BoxBorderColor)
-                        .AddColumn($"[{UiColors.Accent}]Section[/]")
-                        .AddColumn($"[{UiColors.Accent}]Offset[/]")
-                        .AddColumn($"[{UiColors.Accent}]RVA[/]")
-                        .AddColumn($"[{UiColors.Accent}]Size[/]")
-                        .AddColumn($"[{UiColors.Accent}]Injectable[/]");
-
-                    foreach (var cave in result.CodeCaves.Take(10))
-                    {
-                        var injectIcon = cave.SuitableForInjection ? "[green3_1]\u2713[/]" : "[red1]\u2717[/]";
-                        caveTable.AddRow(
-                            Markup.Escape(cave.SectionName),
-                            $"[mediumpurple1]0x{cave.FileOffset:X8}[/]",
-                            $"[mediumpurple1]0x{cave.VirtualAddress:X8}[/]",
-                            $"[white]{cave.Size:N0} B[/]",
-                            injectIcon
-                        );
-                    }
-
-                    caveContent.Add(caveTable);
-
-                    if (result.TotalCodeCaves > 10)
-                        caveContent.Add(new Markup($"[grey63]... and {result.TotalCodeCaves - 10} more caves[/]"));
-                }
-                else
-                {
-                    caveContent.Add(new Markup("[grey63]No code caves found[/]"));
-                }
-
-                AnsiConsole.Write(new Panel(new Rows(caveContent))
-                    .Header($"[bold dodgerblue2]Code Caves ({result.TotalCodeCaves} found, {result.TotalCodeCaveSpace:N0} bytes total)[/]")
-                    .Border(BoxBorder.Rounded)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .Expand());
-                AnsiConsole.WriteLine();
-            }
-
-            // ══════════════════════════════════════════════════════════
-            //  PACKING / ENTROPY
-            // ══════════════════════════════════════════════════════════
-            {
-                string overallEntropyColor = result.OverallEntropy < 6.0 ? "green3_1" : result.OverallEntropy < 7.0 ? "gold1" : "red1";
-                var entropyLines = new List<string>();
-                entropyLines.Add($"[{UiColors.Accent}]Overall Entropy:[/]  [{overallEntropyColor}]{result.OverallEntropy:F4}[/]  {BuildEntropyBar(result.OverallEntropy, 15)}");
-                entropyLines.Add($"[{UiColors.Accent}]Possibly Packed:[/]  {(result.IsPossiblyPacked ? "[red1]Yes[/]" : "[green3_1]No[/]")}");
-
-                if (!string.IsNullOrEmpty(result.PackerDetection))
-                    entropyLines.Add($"[{UiColors.Accent}]Packer Detected:[/]  [gold1]{Markup.Escape(result.PackerDetection)}[/]");
-
-                AnsiConsole.Write(new Panel(new Markup(string.Join("\n", entropyLines)))
-                    .Header("[bold dodgerblue2]Packing / Entropy[/]")
-                    .Border(BoxBorder.Rounded)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .Expand());
-                AnsiConsole.WriteLine();
-            }
-
-            // ══════════════════════════════════════════════════════════
-            //  INJECTION FEASIBILITY
-            // ══════════════════════════════════════════════════════════
-            if (result.Feasibility != null)
-            {
-                var feas = result.Feasibility;
-
-                var feasLines = new List<string>();
-
-                void AddFeasMethod(string icon, string name, MethodFeasibility m)
-                {
-                    string statusColor = m.Status switch
-                    {
-                        "Available" => "green3_1",
-                        "Limited" => "gold1",
-                        _ => "red1"
-                    };
-                    string space = m.AvailableSpace > 0 ? $"  [white]{m.AvailableSpace:N0} B[/]" : "";
-                    feasLines.Add($"  {icon} [white]{name.PadRight(18)}[/] [{statusColor}]{Markup.Escape(m.Status).PadRight(12)}[/]{space}");
-                }
-
-                AddFeasMethod(feas.CodeCave.IsFeasible ? "[green3_1]\u2605[/]" : "[grey63]\u25cb[/]", "Code Cave", feas.CodeCave);
-                AddFeasMethod(feas.NewSection.IsFeasible ? "[green3_1]\u2713[/]" : "[red1]\u2717[/]", "New Section", feas.NewSection);
-                AddFeasMethod(feas.SectionExtension.IsFeasible ? "[green3_1]\u2713[/]" : "[red1]\u2717[/]", "Section Extension", feas.SectionExtension);
-                AddFeasMethod(feas.TlsCallback.IsFeasible ? "[green3_1]\u2713[/]" : "[red1]\u2717[/]", "TLS Callback", feas.TlsCallback);
-                AddFeasMethod(feas.EntryPointHijack.IsFeasible ? "[green3_1]\u2713[/]" : "[red1]\u2717[/]", "EP Hijack", feas.EntryPointHijack);
-
-                if (!string.IsNullOrEmpty(feas.RecommendedMethod))
-                {
-                    feasLines.Add("");
-                    feasLines.Add($"  [{UiColors.Accent}]Recommended:[/] [green3_1]{Markup.Escape(feas.RecommendedMethod)}[/]");
-                }
-
-                AnsiConsole.Write(new Panel(new Markup(string.Join("\n", feasLines)))
-                    .Header("[bold dodgerblue2]Injection Feasibility[/]")
-                    .Border(BoxBorder.Rounded)
-                    .BorderColor(Color.Cyan1)
-                    .Expand());
-                AnsiConsole.WriteLine();
-            }
-
-            // ══════════════════════════════════════════════════════════
-            //  SECTION MEMORY MAP
-            // ══════════════════════════════════════════════════════════
-            if (result.Sections.Count > 0)
-            {
-                var mapLines = new List<string>();
-                long totalVirt = result.Sections.Sum(s => (long)s.VirtualSize);
-                int mapBarWidth = 40;
-
-                foreach (var s in result.Sections)
-                {
-                    double pct = totalVirt > 0 ? (double)s.VirtualSize / totalVirt * 100.0 : 0;
-                    int filled = (int)Math.Round(pct / 100.0 * mapBarWidth);
-                    filled = Math.Clamp(filled, 1, mapBarWidth);
-                    string barColor = s.IsExecutable ? "red1" : s.IsWritable ? "gold1" : UiColors.Accent;
-                    string bar = $"[{barColor}]{new string('\u2588', filled)}[/][grey23]{new string('\u2591', mapBarWidth - filled)}[/]";
-
-                    string sizeStr = s.VirtualSize >= 1048576
-                        ? $"{s.VirtualSize / 1048576.0:F1} MB"
-                        : s.VirtualSize >= 1024
-                        ? $"{s.VirtualSize / 1024.0:F0} KB"
-                        : $"{s.VirtualSize} B";
-
-                    mapLines.Add(
-                        $"[white]{Markup.Escape(s.Name).PadRight(8)}[/]  {bar}  [white]{sizeStr,8}[/]  [grey63]{Markup.Escape(s.PermissionsString)}[/]  [grey63]{pct:F1}%[/]");
-                }
-
-                AnsiConsole.Write(new Panel(new Markup(string.Join("\n", mapLines)))
-                    .Header("[bold dodgerblue2]Section Memory Map[/]")
-                    .Border(BoxBorder.Rounded)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .Expand());
-                AnsiConsole.WriteLine();
-            }
-
-            // ══════════════════════════════════════════════════════════
-            //  VIRTUAL ADDRESS SPACE
-            // ══════════════════════════════════════════════════════════
-            if (result.Sections.Count > 0 && result.OptionalHeader != null)
-            {
-                var vaLines = new List<string>();
-                long totalImage = result.OptionalHeader.SizeOfImage;
-                int vaBarWidth = 30;
-
-                // PE Headers
-                if (result.Sections.Count > 0)
-                {
-                    uint headerEnd = result.Sections[0].VirtualAddress;
-                    vaLines.Add($"[mediumpurple1]0x{0:X8}[/] [grey63]\u252c\u2500\u2500[/] [dodgerblue2]PE Headers[/] [grey63]({headerEnd:N0} B)[/]");
-                }
-
-                for (int si = 0; si < result.Sections.Count; si++)
-                {
-                    var s = result.Sections[si];
-                    double pct = totalImage > 0 ? (double)s.VirtualSize / totalImage * 100.0 : 0;
-                    int filled = (int)Math.Round(pct / 100.0 * vaBarWidth);
-                    filled = Math.Clamp(filled, 1, vaBarWidth);
-                    string barColor = s.IsExecutable ? "red1" : s.IsWritable ? "gold1" : UiColors.Accent;
-                    string bar = $"[{barColor}]{new string('\u2588', filled)}[/]";
-                    string connector = si < result.Sections.Count - 1 ? "\u251c\u2500\u2500" : "\u2514\u2500\u2500";
-
-                    string sizeStr = s.VirtualSize >= 1048576
-                        ? $"{s.VirtualSize / 1048576.0:F1} MB"
-                        : s.VirtualSize >= 1024
-                        ? $"{s.VirtualSize / 1024.0:F0} KB"
-                        : $"{s.VirtualSize} B";
-
-                    vaLines.Add(
-                        $"[mediumpurple1]0x{s.VirtualAddress:X8}[/] [grey63]{connector}[/] {bar} [white]{Markup.Escape(s.Name)}[/] [grey63]{Markup.Escape(s.PermissionsString)}  {sizeStr}[/]");
-                }
-
-                AnsiConsole.Write(new Panel(new Markup(string.Join("\n", vaLines)))
-                    .Header("[bold dodgerblue2]Virtual Address Space[/]")
-                    .Border(BoxBorder.Rounded)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .Expand());
-                AnsiConsole.WriteLine();
-            }
-
-
-            return 0;
-        }
-        catch (Exception ex)
-        {
-            logger.Error($"Analysis failed: {ex.Message}");
-            return 1;
-        }
+        return AnalysisCommand.RunAsync(args, Console.Out, Console.Error);
     }
 
     /// <summary>Build a Spectre markup usage bar.</summary>
@@ -2383,11 +1773,11 @@ public static partial class Program
     private static CommandUsage BuildAnalyzeUsage() =>
         new(
             Name: "analyze",
-            Summary: "Inspect a PE file before stripping, patching, or troubleshooting it.",
-            Syntax: "washmachine-cli analyze <pe-file> [options]",
-            Description: "Shows the structural view of a PE so you can pick safer injection and extraction strategies.",
-            WhenToUse: "Use it for recon before backdoor, or when you need a quick read on architecture, sections, imports, entry point, and code caves.",
-            Output: "Prints a styled PE report or JSON.",
+            Summary: "Read-only PE inspection: concise summary, detailed inventories, or JSON.",
+            Syntax: "washmachine.exe --cli-mode analyze <file> [--details | --json]",
+            Description: "Inspect file identity, headers, sections, protections, and imports without executing or modifying the file.",
+            WhenToUse: "Use for binary triage and detection engineering, without downloading external tools.",
+            Output: "Concise plain text by default. Exit codes: 0 success, 1 analysis failure, 2 usage error.",
             OptionGroups:
             [
                 new UsageOptionGroup(
@@ -2395,7 +1785,8 @@ public static partial class Program
                     "Only the target PE is required.",
                     [
                         new UsageOption("<pe-file>  or  -Pe <file>", "Path to the PE file to inspect."),
-                        new UsageOption("-Json", "Emit machine-friendly JSON instead of the styled report."),
+                        new UsageOption("--details", "Include section and import inventories."),
+                        new UsageOption("--json, -Json", "Emit one machine-readable JSON document, including on failure."),
                     ]),
             ],
             Sections:
@@ -2404,20 +1795,19 @@ public static partial class Program
                     "Why it matters",
                     Bullets:
                     [
-                        "Use analyze first to confirm x86 vs x64 before choosing an injection method.",
-                        "Code cave output helps you decide whether code-cave or text-pad injection is realistic.",
-                        "The section view is also useful when picking strip modes and raw ranges.",
+                        "Quote paths containing spaces. Windows Copy-as-path quotes are accepted.",
+                        "Use -- before a filename beginning with a dash.",
+                        "Protection flags are observations, not a safety or trust verdict.",
                     ]),
             ],
             Examples:
             [
-                new UsageExample("washmachine-cli analyze .\\target.exe", "Inspect a PE interactively before patching it.", "PowerShell / pwsh"),
-                new UsageExample("washmachine-cli analyze -Pe ./target.exe -Json", "Feed PE analysis into another script or tool.", "Bash / Zsh"),
+                new UsageExample("washmachine.exe --cli-mode analyze .\\sample.exe", "Show a concise read-only summary.", "PowerShell / pwsh"),
+                new UsageExample("washmachine.exe --cli-mode analyze --json .\\sample.exe", "Consume machine-readable analysis.", "PowerShell / pwsh"),
             ],
             Related:
             [
-                new UsageNote("backdoor", "Patch the analyzed PE once you know which injection method fits."),
-                new UsageNote("strip", "Use the section and entry-point data to choose a better extraction mode."),
+                new UsageNote("analyze --help", "Show options, examples, and exit codes."),
             ]);
 
     private static CommandUsage BuildBackdoorUsage() =>
@@ -3156,7 +2546,7 @@ public static partial class Program
 
     private static int PrintAnalyzeUsage()
     {
-        UsageFormatter.Print(BuildAnalyzeUsage());
+        AnalysisCommand.WriteHelp(Console.Out);
         return 0;
     }
 

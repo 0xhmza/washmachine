@@ -1,4 +1,100 @@
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 function FrameBackdoor() {
+  const {
+    useField,
+    useFields
+  } = window.washState;
+  const [bdEnabled, setBdEnabled] = useField('EnableBackdooringToggle');
+  const [targetPath, setTargetPath] = useField('TargetPePath');
+  const [injMethod, setInjMethod] = useField('InjectionMethodCombo');
+  const [carrierInvoke, setCarrierInvoke] = useField('CarrierInvokeCombo');
+  const [patchIat, setPatchIat] = useField('PatchIatCheck');
+  const [removeSignature, setRemoveSignature] = useField('RemoveSignatureCheck');
+  const [patchSubsystem, setPatchSubsystem] = useField('PatchSubsystemCheck');
+  const [patchExit, setPatchExit] = useField('PatchExitCheck');
+  const [sectionName, setSectionName] = useField('SectionNameInput');
+  const [caveMin, setCaveMin] = useField('CaveMinSizeBox');
+  const [analysisNonce, setAnalysisNonce] = React.useState(0);
+  const meta = useFields('pe_analysis', 'pe_analysis_running', 'pe_analysis_error', 'pe_caves', 'pe_imports');
+  const peInfo = meta.pe_analysis || null;
+  const caves = meta.pe_caves || [];
+  const bdOn = bdEnabled === 'True';
+  const hasTarget = !!(targetPath || '').trim();
+  React.useEffect(() => {
+    if (peInfo && !peInfo.isDll && carrierInvoke === 'dll-main') setCarrierInvoke('entry-point');
+  }, [peInfo, carrierInvoke]);
+  React.useEffect(() => {
+    let active = true;
+    window.washState.set('PreserveEntryCheck', 'True');
+    if (!hasTarget) {
+      window.washState.update({
+        pe_analysis: null,
+        pe_analysis_running: false,
+        pe_analysis_error: '',
+        pe_caves: [],
+        pe_imports: []
+      });
+      return () => {
+        active = false;
+      };
+    }
+    const timer = setTimeout(() => {
+      window.washState.update({
+        pe_analysis: null,
+        pe_analysis_running: true,
+        pe_analysis_error: '',
+        pe_caves: [],
+        pe_imports: []
+      });
+      window.wash.invoke('analyze-pe', {
+        path: targetPath
+      }).then(r => {
+        if (!active) return;
+        if (!r || !r.ok) {
+          window.washState.update({
+            pe_analysis_running: false,
+            pe_analysis_error: r?.message || 'PE analysis failed.'
+          });
+          return;
+        }
+        window.washState.update({
+          pe_analysis: r,
+          pe_analysis_running: false,
+          pe_analysis_error: '',
+          pe_caves: r.caves || [],
+          pe_imports: r.imports || []
+        });
+      }).catch(e => {
+        if (active) window.washState.update({
+          pe_analysis_running: false,
+          pe_analysis_error: e.message || 'PE analysis failed.'
+        });
+      });
+    }, 300);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [targetPath, analysisNonce]);
+  function browsePe() {
+    window.wash.invoke('browse-file', {
+      filters: [{
+        name: 'PE files',
+        patterns: ['.exe', '.dll']
+      }]
+    }).then(r => {
+      if (r && r.ok && r.path) setTargetPath(r.path);else if (r && !r.cancelled && r.message) window.wash.notify(r.message, 'err');
+    }).catch(() => {});
+  }
+  const status = [{
+    icon: "info",
+    k: "target",
+    v: peInfo ? (peInfo.fileName || targetPath?.split('\\').pop() || 'none') + ' · ' + (peInfo.fileSizeText || '') : 'none'
+  }, {
+    icon: "info",
+    k: "method",
+    v: injMethod || 'none'
+  }];
   return React.createElement(Shell, {
     active: "backdooring",
     crumbs: ["Backdooring"],
@@ -11,15 +107,7 @@ function FrameBackdoor() {
       cmp: "done",
       bd: "active"
     },
-    status: [{
-      icon: "info",
-      k: "target",
-      v: "putty.exe · 1.2 MB"
-    }, {
-      icon: "info",
-      k: "method",
-      v: "code cave"
-    }]
+    status: status
   }, React.createElement("div", {
     className: "cfg"
   }, React.createElement("div", {
@@ -33,12 +121,24 @@ function FrameBackdoor() {
     className: "h1"
   }, "Backdoor PE"), React.createElement("span", {
     className: "sub"
-  }, "Inject the compiled loader into an existing executable.")), React.createElement(Sec, {
+  }, "Inject the compiled loader into an existing executable."), React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }), React.createElement(Toggle, {
+    on: bdOn,
+    onChange: v => setBdEnabled(v ? 'True' : 'False')
+  }), React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: bdOn ? "var(--n-9)" : "var(--n-6)"
+    }
+  }, "Enable")), React.createElement("div", null, React.createElement(Sec, {
     title: "Target",
-    action: React.createElement(Chip, {
-      kind: "ok",
+    action: peInfo && React.createElement(Chip, {
+      kind: peInfo.hasAuthenticode ? "warn" : "ok",
       dot: true
-    }, "verified PE32+")
+    }, peInfo.is64Bit ? "PE64" : "PE32")
   }, React.createElement("div", {
     className: "card"
   }, React.createElement("div", {
@@ -55,7 +155,9 @@ function FrameBackdoor() {
     label: "Donor executable"
   }, React.createElement("input", {
     className: "input mono",
-    defaultValue: "C:\\\\Tools\\\\PuTTY\\\\putty.exe"
+    value: targetPath,
+    onChange: e => setTargetPath(e.target.value),
+    placeholder: "C:\\Tools\\target.exe"
   })), React.createElement("div", {
     className: "row",
     style: {
@@ -63,16 +165,19 @@ function FrameBackdoor() {
       gap: 8
     }
   }, React.createElement("button", {
-    className: "btn"
+    className: "btn",
+    onClick: browsePe
   }, React.createElement(Icon, {
     name: "upload",
     size: 12
   }), "Browse\u2026"), React.createElement("button", {
-    className: "btn ghost"
+    className: "btn ghost",
+    disabled: !hasTarget || meta.pe_analysis_running,
+    onClick: () => hasTarget && setAnalysisNonce(n => n + 1)
   }, React.createElement(Icon, {
     name: "info",
     size: 12
-  }), "Re-analyze"))), React.createElement("div", {
+  }), meta.pe_analysis_running ? 'Analysing…' : 'Re-analyze'))), peInfo ? React.createElement("div", {
     className: "mono",
     style: {
       borderLeft: "1px solid var(--n-4)",
@@ -86,23 +191,31 @@ function FrameBackdoor() {
     style: {
       color: "var(--n-10)"
     }
-  }, "1.21 MB"), "\n", "machine    ", React.createElement("span", {
+  }, peInfo.fileSizeText), "\n", "machine    ", React.createElement("span", {
     style: {
       color: "var(--n-10)"
     }
-  }, "AMD64"), "\n", "signed     ", React.createElement("span", {
+  }, peInfo.architecture), "\n", "signed     ", React.createElement("span", {
     style: {
-      color: "var(--warn)"
+      color: peInfo.hasAuthenticode ? "var(--warn)" : "var(--ok)"
     }
-  }, "yes"), " \xB7 expires 2027", "\n", "sections   ", React.createElement("span", {
+  }, peInfo.hasAuthenticode ? "yes" : "no"), "\n", "sections   ", React.createElement("span", {
     style: {
       color: "var(--n-10)"
     }
-  }, "6"), "\n", "code caves ", React.createElement("span", {
+  }, peInfo.sectionCount), "\n", "code caves ", React.createElement("span", {
     style: {
       color: "var(--ok)"
     }
-  }, "14"), " \xB7 max 1,184 B")))), React.createElement(Sec, {
+  }, peInfo.codeCaveCount), peInfo.maxCaveSize ? ` · max ${peInfo.maxCaveSize} B` : '') : React.createElement("div", {
+    style: {
+      borderLeft: "1px solid var(--n-4)",
+      paddingLeft: 18,
+      color: "var(--n-6)",
+      fontSize: 12,
+      minWidth: 180
+    }
+  }, meta.pe_analysis_error || (meta.pe_analysis_running ? 'Analysing…' : hasTarget ? 'Waiting for analysis' : 'Select a target PE'))))), React.createElement(Sec, {
     title: "Injection method"
   }, React.createElement("div", {
     className: "card",
@@ -110,77 +223,150 @@ function FrameBackdoor() {
       padding: 0,
       overflow: "hidden"
     }
-  }, React.createElement(MethodRow, {
+  }, [{
+    id: "code-cave",
     name: "Code cave",
     sub: "Reuse padding inside existing sections",
     trait: "zero growth",
     traitTone: "ok",
-    capacity: "\u2264 1,184 B",
-    selected: true
-  }), React.createElement(MethodRow, {
+    capacity: caves.length > 0 ? `≤ ${Math.max(...caves.map(c => c.size))} B` : "—"
+  }, {
+    id: "new-section",
     name: "New section",
-    sub: "Append .wm section with payload",
-    trait: "unlimited capacity",
+    sub: "Append a section with the payload",
+    trait: "predictable capacity",
     traitTone: "acc",
     capacity: "any"
-  }), React.createElement(MethodRow, {
+  }, {
+    id: "section-ext",
     name: "Section extension",
-    sub: "Extend .text by aligned amount",
+    sub: "Extend an existing section",
     trait: "grows file size",
     traitTone: "",
-    capacity: "\u2264 64 KB"
-  }), React.createElement(MethodRow, {
+    capacity: "≤ 64 KB"
+  }, {
+    id: "text-pad",
     name: "Text padding",
-    sub: "Use .text alignment padding",
-    trait: "zero growth \xB7 fragile",
+    sub: "Use padding at the end of .text",
+    trait: "limited capacity",
     traitTone: "warn",
-    capacity: "\u2264 312 B"
-  }), React.createElement(MethodRow, {
+    capacity: "target dependent"
+  }, {
+    id: "tls-callback",
     name: "TLS callback",
-    sub: "Pre-main execution \xB7 x64 only",
-    trait: "silent execution",
+    sub: "Execute through a TLS callback",
+    trait: "target dependent",
     traitTone: "acc",
-    capacity: "N/A"
-  }))), React.createElement(Sec, {
-    title: "Hijack",
-    action: React.createElement(Chip, null, "entry-point patch")
+    capacity: "target dependent"
+  }].map(m => React.createElement(MethodRow, _extends({
+    key: m.id
+  }, m, {
+    selected: injMethod === m.id,
+    onClick: () => setInjMethod(m.id)
+  }))))), React.createElement(Sec, {
+    title: "Invocation and patching"
   }, React.createElement("div", {
-    className: "card row",
+    className: "card"
+  }, React.createElement("div", {
+    className: "row",
     style: {
-      gap: 16,
-      alignItems: "stretch"
+      gap: 18,
+      alignItems: 'flex-start',
+      flexWrap: 'wrap'
     }
   }, React.createElement(Field, {
-    label: "Patch strategy"
+    label: "Carrier invocation"
   }, React.createElement(Seg, {
-    value: "ep",
+    value: carrierInvoke || 'entry-point',
+    onChange: setCarrierInvoke,
     options: [{
-      v: "ep",
-      l: "Entry point"
-    }, {
-      v: "import",
-      l: "Import"
-    }, {
-      v: "tls",
-      l: "TLS"
-    }]
+      v: 'entry-point',
+      l: 'Entry point'
+    }, ...(peInfo?.isDll ? [{
+      v: 'dll-main',
+      l: 'DLL main'
+    }] : [])]
   })), React.createElement(Field, {
-    label: "Resume after exec"
-  }, React.createElement(Toggle, {
-    on: true
-  })), React.createElement("div", {
-    style: {
-      flex: 1
-    }
-  }), React.createElement(Field, {
-    label: "Output path"
+    label: "Section name"
   }, React.createElement("input", {
     className: "input mono",
-    defaultValue: "putty.patched.exe",
+    value: sectionName || '.extra',
+    onChange: e => setSectionName(e.target.value),
     style: {
-      width: 240
+      width: 130
     }
-  }))))), React.createElement(PeMapPreview, null));
+  })), React.createElement(Field, {
+    label: "Minimum cave bytes"
+  }, React.createElement("input", {
+    className: "input mono",
+    value: caveMin || '64',
+    onChange: e => setCaveMin(e.target.value),
+    style: {
+      width: 130
+    }
+  }))), React.createElement("div", {
+    className: "div"
+  }), React.createElement("div", {
+    className: "row",
+    style: {
+      gap: 12,
+      flexWrap: 'wrap'
+    }
+  }, React.createElement(BackdoorOption, {
+    label: "Patch missing imports",
+    value: patchIat,
+    setValue: setPatchIat
+  }), React.createElement(BackdoorOption, {
+    label: "Remove invalid signature",
+    value: removeSignature,
+    setValue: setRemoveSignature
+  }), React.createElement(BackdoorOption, {
+    label: "Use GUI subsystem",
+    value: patchSubsystem,
+    setValue: setPatchSubsystem
+  }), React.createElement(BackdoorOption, {
+    label: "Redirect process exit",
+    value: patchExit,
+    setValue: setPatchExit
+  })))), caves.length > 0 && React.createElement(Sec, {
+    title: "Code caves"
+  }, React.createElement("div", {
+    className: "card",
+    style: {
+      padding: 0
+    }
+  }, caves.slice(0, 6).map((c, i) => React.createElement(CaveRow, {
+    key: i,
+    rva: c.rvaHex || c.virtualAddress,
+    sec: c.sectionName,
+    sz: c.size,
+    suitable: c.suitableForInjection
+  })))))), React.createElement(PeMapPreview, {
+    peInfo: peInfo,
+    caves: caves
+  }));
+}
+function BackdoorOption({
+  label,
+  value,
+  setValue
+}) {
+  const on = value !== 'False';
+  return React.createElement("div", {
+    className: "row",
+    style: {
+      gap: 8,
+      cursor: 'pointer'
+    },
+    onClick: () => setValue(on ? 'False' : 'True')
+  }, React.createElement(Toggle, {
+    on: on,
+    onChange: v => setValue(v ? 'True' : 'False')
+  }), React.createElement("span", {
+    style: {
+      fontSize: 12
+    }
+  }, label));
 }
 function MethodRow({
   name,
@@ -188,7 +374,8 @@ function MethodRow({
   trait,
   traitTone,
   capacity,
-  selected
+  selected,
+  onClick
 }) {
   const toneColor = {
     ok: "var(--ok)",
@@ -197,6 +384,7 @@ function MethodRow({
     "": "var(--n-7)"
   }[traitTone || ""];
   return React.createElement("div", {
+    onClick: onClick,
     style: {
       display: "grid",
       gridTemplateColumns: "20px 1fr auto 14px",
@@ -273,7 +461,46 @@ function MethodRow({
     size: 12
   }));
 }
-function PeMapPreview() {
+function CaveRow({
+  rva,
+  sec,
+  sz,
+  suitable
+}) {
+  return React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr auto auto",
+      padding: "10px 16px",
+      borderBottom: "1px solid var(--n-3)",
+      alignItems: "center"
+    }
+  }, React.createElement("div", {
+    className: "mono",
+    style: {
+      fontSize: 11
+    }
+  }, typeof rva === 'number' ? '0x' + rva.toString(16).padStart(8, '0') : rva, " ", React.createElement("span", {
+    style: {
+      color: "var(--n-7)",
+      fontSize: 10
+    }
+  }, sec)), suitable && React.createElement(Chip, {
+    kind: "ok",
+    dot: true
+  }, "suitable"), React.createElement("span", {
+    className: "mono",
+    style: {
+      fontSize: 11,
+      color: "var(--n-8)",
+      marginLeft: 12
+    }
+  }, sz, " B"));
+}
+function PeMapPreview({
+  peInfo,
+  caves
+}) {
   return React.createElement("div", {
     className: "preview"
   }, React.createElement("div", {
@@ -284,23 +511,12 @@ function PeMapPreview() {
     name: "layers",
     size: 11
   }), "PE map"), React.createElement("div", {
-    className: "ptab"
-  }, React.createElement(Icon, {
-    name: "doc",
-    size: 11
-  }), "headers"), React.createElement("div", {
-    className: "ptab"
-  }, React.createElement(Icon, {
-    name: "term",
-    size: 11
-  }), "imports"), React.createElement("div", {
-    className: "ptab"
-  }, React.createElement(Icon, {
-    name: "bug",
-    size: 11
-  }), "diff")), React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  })), React.createElement("div", {
     className: "pbody ppad"
-  }, React.createElement("div", {
+  }, peInfo ? React.createElement(React.Fragment, null, React.createElement("div", {
     className: "row",
     style: {
       marginBottom: 14,
@@ -308,207 +524,25 @@ function PeMapPreview() {
     }
   }, React.createElement(Chip, {
     kind: "acc"
-  }, "putty.exe"), React.createElement(Chip, null, "6 sections"), React.createElement(Chip, {
+  }, peInfo.fileName || 'target.exe'), React.createElement(Chip, null, peInfo.sectionCount, " sections"), peInfo.codeCaveCount > 0 && React.createElement(Chip, {
     kind: "ok",
     dot: true
-  }, "14 code caves")), React.createElement("div", {
-    style: {
-      marginBottom: 14
-    }
-  }, React.createElement("div", {
-    style: {
-      display: "flex",
-      height: 32,
-      borderRadius: 6,
-      overflow: "hidden",
-      border: "1px solid var(--n-4)"
-    }
-  }, React.createElement(SecBar, {
-    w: 32,
-    name: ".text",
-    color: "var(--n-5)"
-  }), React.createElement(SecBar, {
-    w: 6,
-    name: ".rdata",
-    color: "var(--n-6)"
-  }), React.createElement(SecBar, {
-    w: 3,
-    name: ".data",
-    color: "var(--n-5)"
-  }), React.createElement(SecBar, {
-    w: 1,
-    name: ".pdata",
-    color: "var(--n-6)"
-  }), React.createElement(SecBar, {
-    w: 3,
-    name: ".rsrc",
-    color: "var(--n-5)"
-  }), React.createElement(SecBar, {
-    w: 1,
-    name: ".reloc",
-    color: "var(--n-6)"
-  })), React.createElement("div", {
-    className: "row",
-    style: {
-      marginTop: 8,
-      justifyContent: "space-between"
-    }
-  }, React.createElement("span", {
-    className: "mono",
-    style: {
-      fontSize: 10,
-      color: "var(--n-7)"
-    }
-  }, "0x00401000"), React.createElement("span", {
-    className: "mono",
-    style: {
-      fontSize: 10,
-      color: "var(--n-7)"
-    }
-  }, "0x0053c000"))), React.createElement(H3, null, "Candidate code caves"), React.createElement("div", {
-    className: "pemap",
+  }, peInfo.codeCaveCount, " code caves")), caves.length > 0 && React.createElement(React.Fragment, null, React.createElement(H3, null, "Candidate code caves"), React.createElement("div", {
     style: {
       marginTop: 8
     }
-  }, React.createElement(CaveRow, {
-    rva: "0x004f3a18",
-    sec: ".text",
-    sz: 1184,
-    fillPct: 92,
-    target: true
-  }), React.createElement(CaveRow, {
-    rva: "0x004e8c20",
-    sec: ".text",
-    sz: 812,
-    fillPct: 64
-  }), React.createElement(CaveRow, {
-    rva: "0x004a9b00",
-    sec: ".text",
-    sz: 640,
-    fillPct: 50
-  }), React.createElement(CaveRow, {
-    rva: "0x00521c40",
-    sec: ".rdata",
-    sz: 512,
-    fillPct: 40
-  }), React.createElement(CaveRow, {
-    rva: "0x004b1280",
-    sec: ".text",
-    sz: 384,
-    fillPct: 30
-  }), React.createElement(CaveRow, {
-    rva: "0x004f9100",
-    sec: ".text",
-    sz: 296,
-    fillPct: 23
-  })), React.createElement("div", {
-    className: "div"
-  }), React.createElement(H3, null, "Patch preview"), React.createElement("div", {
-    className: "mono",
+  }, caves.slice(0, 6).map((c, i) => React.createElement(CaveRow, {
+    key: i,
+    rva: c.rvaHex || c.virtualAddress,
+    sec: c.sectionName,
+    sz: c.size,
+    suitable: c.suitableForInjection
+  }))))) : React.createElement("div", {
     style: {
-      fontSize: 11,
-      lineHeight: 1.8,
-      color: "var(--n-8)",
-      marginTop: 8
+      color: "var(--n-6)",
+      fontSize: 12,
+      fontFamily: "var(--f-mono)"
     }
-  }, React.createElement("div", null, React.createElement("span", {
-    className: "o"
-  }, "0x004f3a18"), "  ", React.createElement("span", {
-    style: {
-      color: "var(--n-6)"
-    }
-  }, "cc cc cc cc cc cc cc cc"), "  ", React.createElement("span", {
-    style: {
-      color: "var(--n-6)"
-    }
-  }, "// before")), React.createElement("div", null, React.createElement("span", {
-    className: "o"
-  }, "0x004f3a18"), "  ", React.createElement("span", {
-    style: {
-      color: "var(--acc)"
-    }
-  }, "e8 a3 12 00 00 90 90 90"), "  ", React.createElement("span", {
-    style: {
-      color: "var(--n-6)"
-    }
-  }, "// after (call \u2192 cave)")), React.createElement("div", {
-    style: {
-      marginTop: 6
-    }
-  }, React.createElement("span", {
-    className: "o"
-  }, "EP"), "          ", React.createElement("span", {
-    style: {
-      color: "var(--n-6)"
-    }
-  }, "48 83 ec 28 e8 d7 04 00"), "  ", React.createElement("span", {
-    style: {
-      color: "var(--n-6)"
-    }
-  }, "// before")), React.createElement("div", null, React.createElement("span", {
-    className: "o"
-  }, "EP"), "          ", React.createElement("span", {
-    style: {
-      color: "var(--acc)"
-    }
-  }, "e9 13 3a 4f 00"), React.createElement("span", {
-    style: {
-      color: "var(--n-6)"
-    }
-  }, " 90 90 90"), "  ", React.createElement("span", {
-    style: {
-      color: "var(--n-6)"
-    }
-  }, "// after (jmp \u2192 loader)")))));
-}
-function SecBar({
-  w,
-  name,
-  color
-}) {
-  return React.createElement("div", {
-    style: {
-      flex: w,
-      background: color,
-      position: "relative",
-      borderRight: "1px solid var(--n-0)"
-    }
-  }, React.createElement("span", {
-    style: {
-      position: "absolute",
-      left: 6,
-      top: "50%",
-      transform: "translateY(-50%)",
-      fontFamily: "var(--f-mono)",
-      fontSize: 10,
-      color: "var(--n-0)",
-      fontWeight: 600
-    }
-  }, name));
-}
-function CaveRow({
-  rva,
-  sec,
-  sz,
-  fillPct,
-  target
-}) {
-  return React.createElement("div", {
-    className: "pe-row" + (target ? " tgt" : ""),
-    style: {
-      "--fill": fillPct + "%"
-    }
-  }, React.createElement("div", {
-    className: "nm"
-  }, rva, " ", React.createElement("span", {
-    style: {
-      color: "var(--n-7)",
-      fontSize: 10
-    }
-  }, sec)), React.createElement("div", {
-    className: "vis"
-  }), React.createElement("div", {
-    className: "sz"
-  }, sz, " B"));
+  }, "PE analysis appears here after selecting a target.")));
 }
 window.FrameBackdoor = FrameBackdoor;

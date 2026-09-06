@@ -76,7 +76,11 @@
 
     // ── Pack ────────────────────────────────────────────────────────────
     EnablePackingToggle:      'False',
-    PackerCombo:              'None',
+    PackerCombo:              'UPX',
+    UpxPathInput:             '',
+    UpxCompression:           'best',
+    UpxStripRelocs:           'False',
+    UpxKeepBackup:            'False',
 
     // ── Finalize ────────────────────────────────────────────────────────
     EnableFinalizeToggle:     'False',
@@ -93,12 +97,15 @@
   };
 
   const META_DEFAULTS = {
+    // Read-only scanner selection is not a build target and is not persisted.
+    scanner_path:       '',
     // catalogs (loaded once at startup)
     catalog_encoders:   [],        // [{ index, name, description }]
     catalog_envelopes:  [],
     catalog_templates:  [],        // [{ id, display, description }]
     catalog_snippets:   [],        // [{ header, template, display, items: [...] }]
     catalog_compilers:  [],        // [{ kind, path, version }]
+    catalog_llvmPasses: [],
     catalog_playbooks:  [],
 
     // current shellcode analysis (computed on file change)
@@ -108,8 +115,13 @@
     analysis_entropy:   '—',
     analysis_sha256:    '—',
     analysis_bytesPreview: '',
+    analysis_running:   false,
+    analysis_error:     '',
 
     // current PE target analysis
+    pe_analysis:        null,
+    pe_analysis_running:false,
+    pe_analysis_error:  '',
     pe_filename:        '',
     pe_arch:            '',
     pe_type:            '',
@@ -131,6 +143,7 @@
 
     // app info
     app_info:           null,      // populated by app-info
+    upx_info:           null,
   };
 
   // Persisted recipe keys (saved to localStorage so user state survives refresh)
@@ -145,7 +158,7 @@
     'EnableBackdooringToggle', 'TargetPePath', 'InjectionMethodCombo', 'CarrierInvokeCombo',
     'PreserveEntryCheck', 'PatchIatCheck', 'RemoveSignatureCheck', 'PatchSubsystemCheck', 'PatchExitCheck',
     'DryRunCheck', 'SectionNameInput', 'CaveMinSizeBox',
-    'EnablePackingToggle', 'PackerCombo',
+    'EnablePackingToggle', 'PackerCombo', 'UpxPathInput', 'UpxCompression', 'UpxStripRelocs', 'UpxKeepBackup',
     'EnableFinalizeToggle', 'DonorPathInput', 'CloneIcon', 'CloneVersionInfo',
     'CloneManifest', 'CloneRsrc', 'CloneAuthenticode', 'CloneOriginalFilename',
     'NopPaddingInput', 'NopPattern', 'AppendLocation',
@@ -247,13 +260,19 @@
     } catch {}
   }
   hydrate();
+  if (!['file', 'raw', 'url'].includes(recipe.sourceKind)) recipe.sourceKind = 'file';
 
   // ── React helpers ───────────────────────────────────────────────────────
 
   function useField(field) {
     const initial = get(field);
     const [v, setV] = React.useState(initial);
-    React.useEffect(() => subscribe(field, setV), [field]);
+    React.useEffect(() => {
+      const unsubscribe = subscribe(field, setV);
+      // A native response may arrive between render and effect subscription.
+      setV(get(field));
+      return unsubscribe;
+    }, [field]);
     return [v, (newVal) => set(field, newVal)];
   }
 
@@ -261,12 +280,12 @@
     const init = {}; fields.forEach(f => { init[f] = get(f); });
     const [v, setV] = React.useState(init);
     React.useEffect(() => {
-      const unsubs = fields.map(f => subscribe(f, () => {
-        setV(prev => {
-          const next = {}; fields.forEach(k => { next[k] = get(k); });
-          return next;
-        });
-      }));
+      const refresh = () => {
+        const next = {}; fields.forEach(k => { next[k] = get(k); });
+        setV(next);
+      };
+      const unsubs = fields.map(f => subscribe(f, refresh));
+      refresh();
       return () => unsubs.forEach(u => u && u());
     }, fields);
     return v;
@@ -277,23 +296,28 @@
   async function loadCatalogs() {
     if (!window.wash || !window.wash.invoke) return;
     try {
-      const [encs, envs, comps, snips, info, pbs] = await Promise.all([
+      const [encs, envs, comps, passes, snips, info, pbs, upx] = await Promise.all([
         window.wash.invoke('catalog-encoders',  {}).catch(_ => ({ items: [] })),
         window.wash.invoke('catalog-envelopes', {}).catch(_ => ({ items: [] })),
         window.wash.invoke('catalog-compilers', {}).catch(_ => ({ items: [] })),
+        window.wash.invoke('catalog-llvm-passes', {}).catch(_ => ({ items: [] })),
         window.wash.invoke('catalog-snippets',  {}).catch(_ => ({ templates: [], sections: [] })),
-        window.wash.invoke('app-info',          {}).catch(_ => ({})),
+        window.wash.invoke('app-info',          {}).catch(_ => null),
         window.wash.invoke('list-playbooks',    {}).catch(_ => ({ active: '', files: [] })),
+        window.wash.invoke('detect-upx',         {}).catch(_ => ({ ok: false, path: '' })),
       ]);
       update({
         catalog_encoders:  encs.items || [],
         catalog_envelopes: envs.items || [],
         catalog_compilers: comps.items || [],
+        catalog_llvmPasses: passes.items || [],
         catalog_templates: snips.templates || [],
         catalog_snippets:  snips.sections  || [],
         catalog_playbooks: pbs.files || [],
         app_info:          info || null,
+        upx_info:          upx || null,
         activePlaybook:    recipe.activePlaybook || pbs.active || '',
+        UpxPathInput:      recipe.UpxPathInput || upx.path || '',
       });
 
       // Auto-pick sensible defaults if nothing chosen yet

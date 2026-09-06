@@ -843,6 +843,7 @@ public static partial class Program
 
     private static async Task ShowBackdoorOptionValuesAsync(SessionOptionSpec spec)
     {
+        await Task.CompletedTask;
         switch (spec.Name)
         {
             case "METHOD":

@@ -14,7 +14,8 @@
         passes      Compile every Assets\llvm-passes\<id>\pass.dll plugin.
                     Auto-discovers an LLVM SDK; prompts (or exits) when absent.
         all         clean -> build -> passes -> publish -> installer.
-        clean       Wipe bin\, obj\, Output\ across all projects.
+        clean       Remove generated bin\, obj\, Output\ directories. Refuses
+                    running workspace instances and linked directories.
 
     Every run is mirrored to Logs\build\build_<timestamp>.log (survives `clean`).
 
@@ -32,7 +33,7 @@
     For the passes action: wipe each pass's build\ folder before cmake.
 
 .PARAMETER SkipProvision
-    For publish/installer: don't run washmachine-cli provision (Bin2Shell).
+    For publish/installer: don't run washmachine.exe --cli-mode provision (Bin2Shell).
 
 .PARAMETER Version
     Override the MSI product version (defaults to <Version> from washmachine.csproj).
@@ -84,11 +85,12 @@ $Script:LogDir      = Join-Path $Script:Root 'Logs\build'
 $Script:PassesRoot  = Join-Path $Script:Root 'Assets\llvm-passes'
 $Script:ToolsLlvm   = Join-Path $Script:Root 'Tools\LLVM'
 $Script:LogFile     = $null
+$Script:CleanCompleted = $false
 
 # ── Logging primitives ────────────────────────────────────────────────────
 function Initialize-Log {
     if (-not (Test-Path $Script:LogDir)) { New-Item -ItemType Directory -Force $Script:LogDir | Out-Null }
-    $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+    $stamp = '{0}_{1}' -f (Get-Date -Format 'yyyyMMdd_HHmmss_fff'), ([guid]::NewGuid().ToString('N'))
     $Script:LogFile = Join-Path $Script:LogDir "build_$stamp.log"
     "[$([DateTime]::Now.ToString('s'))] build.ps1 invoked (action=$Action, host=$($Host.Name), psver=$($PSVersionTable.PSVersion))" |
         Out-File -FilePath $Script:LogFile -Encoding UTF8
@@ -129,13 +131,48 @@ function Assert-Tool {
     }
 }
 
-function Stop-RunningInstances {
-    $procs = Get-Process -Name 'washmachine*' -ErrorAction SilentlyContinue
-    if ($procs) {
-        Note "Stopping $($procs.Count) running washmachine process(es)..."
-        $procs | ForEach-Object { try { $_ | Stop-Process -Force -ErrorAction Stop } catch { } }
-        Start-Sleep -Milliseconds 250
+function Assert-NoRunningWorkspaceInstances {
+    $rootPrefix = [IO.Path]::GetFullPath($Script:Root).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    foreach ($proc in @(Get-Process -Name 'washmachine*' -ErrorAction SilentlyContinue)) {
+        try { $processPath = $proc.Path }
+        catch { throw "Cannot inspect process $($proc.Id). Close it before cleaning; no process was stopped." }
+        if (-not $processPath) {
+            throw "Cannot inspect process $($proc.Id). Close it before cleaning; no process was stopped."
+        }
+        if ([IO.Path]::GetFullPath($processPath).StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Washmachine is running from this workspace (PID $($proc.Id)). Close it before cleaning; no process was stopped."
+        }
     }
+}
+
+function Assert-CleanTarget {
+    param([Parameter(Mandatory)][string]$Path)
+    $rootPath = [IO.Path]::GetFullPath($Script:Root).TrimEnd('\', '/')
+    $rootPrefix = $rootPath + [IO.Path]::DirectorySeparatorChar
+    $targetPath = [IO.Path]::GetFullPath($Path).TrimEnd('\', '/')
+    if (-not $targetPath.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to clean outside the workspace or its root: $targetPath"
+    }
+    # Check ancestors as well as the target; a linked parent can redirect a
+    # lexically safe path outside the workspace. Reject links, never follow them.
+    $currentPath = $targetPath
+    while ($true) {
+        if (Test-Path -LiteralPath $currentPath) {
+            $item = Get-Item -LiteralPath $currentPath -Force -ErrorAction Stop
+            if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw "Refusing to clean a file or linked directory: $currentPath"
+            }
+        }
+        $parentPath = Split-Path -Parent $currentPath
+        if (-not $parentPath -or $parentPath -eq $currentPath) { break }
+        $currentPath = $parentPath
+    }
+    if (Test-Path -LiteralPath $targetPath) {
+        $links = @(Get-ChildItem -LiteralPath $targetPath -Recurse -Force -ErrorAction Stop |
+            Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint })
+        if ($links.Count -gt 0) { throw "Refusing to clean a directory containing links: $targetPath" }
+    }
+    return $targetPath
 }
 
 # ── LLVM SDK discovery ────────────────────────────────────────────────────
@@ -237,8 +274,9 @@ function Resolve-ProductVersion {
 # ─────────────────────────────────────────────────────────────────────────
 
 function Invoke-Clean {
+    if ($Script:CleanCompleted) { return }
     Section "Clean"
-    Stop-RunningInstances
+    Assert-NoRunningWorkspaceInstances
     $targets = @(
         (Join-Path $Script:Root 'bin'),
         (Join-Path $Script:Root 'obj'),
@@ -248,9 +286,16 @@ function Invoke-Clean {
         (Join-Path $Script:Root 'Washmachine.Cli\obj'),
         $Script:OutputDir
     )
-    foreach ($t in $targets) {
-        if (Test-Path $t) { Note "rm $t"; Remove-Item -Recurse -Force $t -ErrorAction SilentlyContinue }
+    # Validate the entire list before deleting anything. Deletion failures are
+    # fatal: do not print success after a partial cleanup or a locked file.
+    $validatedTargets = @($targets | ForEach-Object { Assert-CleanTarget -Path $_ })
+    foreach ($t in $validatedTargets) {
+        if (Test-Path -LiteralPath $t) {
+            Note "Remove generated directory: $t"
+            Remove-Item -LiteralPath $t -Recurse -Force -ErrorAction Stop
+        }
     }
+    $Script:CleanCompleted = $true
     Ok "Clean complete."
 }
 
@@ -311,16 +356,13 @@ function Invoke-Publish {
     $guiPub = Join-Path $Script:OutputDir "$Script:Config\publish"
     if (-not (Test-Path $guiPub)) { Die "GUI publish dir not found: $guiPub" }
 
-    Invoke-External "dotnet publish Washmachine.Cli" {
-        dotnet publish (Join-Path $Script:Root 'Washmachine.Cli\Washmachine.Cli.csproj') `
-            -c $Script:Config -r win-x64 --self-contained false --nologo 2>&1 |
-            Tee-Object -Append -FilePath $Script:LogFile | Out-Host
-    }
-    $cliExe = Join-Path $guiPub 'washmachine-cli.exe'
-
-    if (-not $SkipProvision -and (Test-Path $cliExe)) {
+    # The product has one entry executable. Run provisioning through the
+    # published managed assembly so the WinExe console-subsystem behavior does
+    # not detach this build script from its output.
+    $appDll = Join-Path $guiPub 'washmachine.dll'
+    if (-not $SkipProvision -and (Test-Path $appDll)) {
         Section "Provision Bin2Shell"
-        & $cliExe provision 2>&1 | Tee-Object -Append -FilePath $Script:LogFile | Out-Host
+        & dotnet $appDll --cli-mode provision 2>&1 | Tee-Object -Append -FilePath $Script:LogFile | Out-Host
         if ($LASTEXITCODE -ne 0) { Warn "Provision failed (exit $LASTEXITCODE); installer ships without Bin2Shell." }
     }
 
@@ -422,6 +464,9 @@ function Show-Menu {
 }
 
 function Invoke-Menu {
+    if ($NonInteractive -or [Console]::IsInputRedirected -or -not [Environment]::UserInteractive) {
+        throw "An explicit -Action is required when input is redirected or -NonInteractive is set."
+    }
     while ($true) {
         Show-Menu
         Write-Host "Choose: " -ForegroundColor Yellow -NoNewline
@@ -444,8 +489,8 @@ function Invoke-Menu {
 #  Dispatch
 # ─────────────────────────────────────────────────────────────────────────
 
-Initialize-Log
 try {
+    Initialize-Log
     switch ($Action) {
         'menu'      { Invoke-Menu }
         'build'     { Invoke-Build     | Out-Null }
@@ -460,9 +505,17 @@ try {
     Ok "Done. Log: $Script:LogFile"
 }
 catch {
-    Write-Log ""
-    Write-Log "ERROR: $($_.Exception.Message)" 'Red'
-    if ($_.ScriptStackTrace) { Write-Log $_.ScriptStackTrace 'DarkGray' }
-    Write-Log "Log: $Script:LogFile" 'Yellow'
+    $failure = $_
+    try {
+        Write-Log ""
+        Write-Log "ERROR: $($failure.Exception.Message)" 'Red'
+        if ($failure.ScriptStackTrace) { Write-Log $failure.ScriptStackTrace 'DarkGray' }
+        Write-Log "Log: $Script:LogFile" 'Yellow'
+    }
+    catch {
+        # A missing/unwritable log must not hide the original error.
+        [Console]::Error.WriteLine("ERROR: $($failure.Exception.Message)")
+        [Console]::Error.WriteLine("Unable to write the build log: $($_.Exception.Message)")
+    }
     exit 1
 }

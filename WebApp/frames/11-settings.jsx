@@ -20,7 +20,7 @@ function FrameSettings() {
     <Shell active="settings" crumbs={["settings"]} pipeActive="" wide
       pipeStates={Object.fromEntries((typeof PIPELINE !== 'undefined' ? PIPELINE : []).map(p => [p.id, "skipped"]))}
       status={[
-        { icon: "info", k: "config", v: "~/.washmachine" },
+        { icon: "info", k: "mode", v: "local WebView2" },
       ]}>
       <div className="cfg" style={{ padding: "22px 28px" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginBottom: 22 }}>
@@ -44,19 +44,19 @@ function FrameSettings() {
           <div className="card">
             <Field label="Output directory" hint="where built artifacts and session manifests are written">
               <input className="input mono"
-                     defaultValue={i.executableDirectory || "(loading…)"}
+                     value={i.executableDirectory || "(loading…)"}
                      style={{ width: "100%" }} readOnly />
             </Field>
             <div style={{ height: 12 }} />
             <Field label="Active playbook" hint="YAML catalog used to compose snippets">
               <input className="input mono"
-                     defaultValue={i.playbookPath || "(loading…)"}
+                     value={i.playbookPath || "(loading…)"}
                      style={{ width: "100%" }} readOnly />
             </Field>
             <div style={{ height: 12 }} />
             <Field label="Assets directory">
               <input className="input mono"
-                     defaultValue={i.assetsDirectory || "(loading…)"}
+                     value={i.assetsDirectory || "(loading…)"}
                      style={{ width: "100%" }} readOnly />
             </Field>
           </div>
@@ -116,7 +116,7 @@ function FrameSettings() {
                 v{i.version || "—"} · loader builder
               </div>
               <div className="sub" style={{ marginTop: 8 }}>
-                For authorized security research only. All builds are logged under <span className="mono" style={{ color: "var(--n-9)" }}>~/.washmachine/sessions</span>.
+                For authorized security research only. Build and backdoor sessions are logged under the application's <span className="mono" style={{ color: "var(--n-9)" }}>logging</span> directory.
               </div>
             </div>
           </div>
@@ -139,4 +139,3 @@ function ShortcutRow({ keys, label }) {
 }
 
 window.FrameSettings = FrameSettings;
-

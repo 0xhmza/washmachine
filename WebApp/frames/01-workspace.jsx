@@ -7,20 +7,41 @@ function FrameWorkspace() {
   const [shellcodeFile, setShellcodeFile] = useField('shellcodeFileInput');
   const [shellcodeRaw, setShellcodeRaw]   = useField('shellcodeRawInput');
   const [shellcodeUrl, setShellcodeUrl]   = useField('shellcodeUrlValue');
+  const [analysisNonce, setAnalysisNonce] = React.useState(0);
+  const hasFile = !!(shellcodeFile || '').trim();
 
   // Analysis meta
   const { useFields } = window.washState;
   const analysis = useFields(
     'analysis_size', 'analysis_sizeText', 'analysis_arch',
-    'analysis_entropy', 'analysis_sha256', 'analysis_bytesPreview'
+    'analysis_entropy', 'analysis_sha256', 'analysis_bytesPreview',
+    'analysis_running', 'analysis_error'
   );
 
   // Trigger analysis whenever the file path changes
   React.useEffect(() => {
-    if (sourceKind !== 'file' || !shellcodeFile) return;
+    let active = true;
+    if (sourceKind !== 'file' || !hasFile) {
+      window.washState.update({
+        analysis_size: null,
+        analysis_sizeText: '—',
+        analysis_arch: '—',
+        analysis_entropy: '—',
+        analysis_sha256: '—',
+        analysis_bytesPreview: '',
+        analysis_running: false,
+        analysis_error: '',
+      });
+      return () => { active = false; };
+    }
+    window.washState.update({ analysis_running: true, analysis_error: '' });
     window.wash.invoke('analyze-shellcode', { path: shellcodeFile })
       .then(r => {
-        if (!r || !r.ok) return;
+        if (!active) return;
+        if (!r || !r.ok) {
+          window.washState.update({ analysis_running: false, analysis_error: r?.message || 'Analysis failed.' });
+          return;
+        }
         window.washState.update({
           analysis_size:         r.size,
           analysis_sizeText:     r.sizeText,
@@ -28,15 +49,22 @@ function FrameWorkspace() {
           analysis_entropy:      String(r.entropy),
           analysis_sha256:       r.sha256,
           analysis_bytesPreview: r.bytesPreview || '',
+          analysis_running:      false,
+          analysis_error:        '',
         });
       })
-      .catch(() => {});
-  }, [shellcodeFile, sourceKind]);
+      .catch(e => {
+        if (active) window.washState.update({ analysis_running: false, analysis_error: e.message || 'Analysis failed.' });
+      });
+    return () => { active = false; };
+  }, [shellcodeFile, sourceKind, analysisNonce]);
 
   const statusArch = analysis.analysis_arch || '—';
   const statusSize = analysis.analysis_sizeText || '—';
   const status = [
-    { icon: "info", k: "src",  v: shellcodeFile ? (shellcodeFile.split('\\').pop() || shellcodeFile) + (statusSize !== '—' ? ' · ' + statusSize : '') : 'none' },
+    { icon: "info", k: "src",  v: sourceKind === 'file'
+      ? (hasFile ? (shellcodeFile.split('\\').pop() || shellcodeFile) + (statusSize !== '—' ? ' · ' + statusSize : '') : 'none')
+      : sourceKind },
     { icon: "info", k: "arch", v: statusArch },
   ];
 
@@ -46,13 +74,13 @@ function FrameWorkspace() {
   const sha256Short = analysis.analysis_sha256 ? analysis.analysis_sha256.slice(0, 4) + '…' + analysis.analysis_sha256.slice(-4) : '—';
 
   function handleBrowse() {
-    window.wash.invoke('browse-file', { filters: [{ name: 'Shellcode binary', patterns: ['.bin', '.raw', '.exe', '.dll', '*'] }] })
+    window.wash.invoke('browse-file', { filters: [{ name: 'Shellcode binary', patterns: ['.bin', '.raw', '.dat'] }] })
       .then(r => { if (r && r.ok && r.path) setShellcodeFile(r.path); })
       .catch(() => {});
   }
 
   function handleRecompute() {
-    if (shellcodeFile) setShellcodeFile(shellcodeFile + ''); // re-trigger useEffect
+    if (hasFile) setAnalysisNonce(n => n + 1);
   }
 
   // Hex preview lines
@@ -75,7 +103,6 @@ function FrameWorkspace() {
             { v: "file", l: "File",   icon: "file" },
             { v: "raw",  l: "Raw",    icon: "term" },
             { v: "url",  l: "URL",    icon: "globe" },
-            { v: "test", l: "Test",   icon: "beaker" },
           ]} />}
         >
           <div className="card">
@@ -90,7 +117,7 @@ function FrameWorkspace() {
                   </Field>
                   <div className="row" style={{ gap: 8 }}>
                     <button className="btn" onClick={handleBrowse}><Icon name="upload" size={12} />Browse…</button>
-                    <button className="btn ghost" onClick={handleRecompute}><Icon name="refresh" size={12} />Recompute hash</button>
+                    <button className="btn ghost" disabled={!hasFile || analysis.analysis_running} onClick={handleRecompute}><Icon name="refresh" size={12} />Recompute hash</button>
                     <div style={{ flex: 1 }} />
                     {analysis.analysis_size != null && <Chip kind="ok" dot>analysed</Chip>}
                   </div>
@@ -110,11 +137,6 @@ function FrameWorkspace() {
                       placeholder="https://your-server.com/shell.bin" />
                   </Field>
                 </>}
-                {sourceKind === 'test' && <>
-                  <div style={{ color: "var(--n-7)", fontSize: 13, padding: "8px 0" }}>
-                    Use the active playbook's generic shellcode template. No file required.
-                  </div>
-                </>}
               </div>
 
               {/* Inline analysis */}
@@ -130,7 +152,9 @@ function FrameWorkspace() {
                   </div>
                 ) : (
                   <div className="mono" style={{ fontSize: 11, color: "var(--n-6)", lineHeight: 1.85 }}>
-                    {sourceKind === 'file' ? (shellcodeFile ? 'analysing…' : 'no file selected') : 'analysis available for file mode'}
+                    {sourceKind === 'file'
+                      ? analysis.analysis_error || (analysis.analysis_running ? 'analysing…' : (hasFile ? 'waiting for analysis' : 'no file selected'))
+                      : 'analysis available for file mode'}
                   </div>
                 )}
               </div>
@@ -168,21 +192,14 @@ function PreviewPane() {
   return (
     <div className="preview">
       <div className="ptabs">
-        <div className="ptab on"><Icon name="doc" size={11} />source.cpp</div>
-        <div className="ptab"><Icon name="layers" size={11} />pipeline</div>
-        <div className="ptab"><Icon name="term" size={11} />console</div>
-        <div style={{ flex: 1 }} />
-        <div className="ptab"><Icon name="copy" size={11} /></div>
-        <div className="ptab"><Icon name="dl" size={11} /></div>
+        <div className="ptab on"><Icon name="info" size={11} />workflow</div>
       </div>
       <div className="pbody">
         <div style={{ padding: "10px 14px 4px", display: "flex", alignItems: "center", gap: 8 }}>
-          <span className="mono" style={{ fontSize: 11, color: "var(--n-7)" }}>Preview available after first build</span>
-          <div style={{ flex: 1 }} />
-          <Chip kind="acc" dot>auto-rebuild</Chip>
+          <span className="mono" style={{ fontSize: 11, color: "var(--n-7)" }}>Configure each stage, then run Dry run or Build.</span>
         </div>
         <div style={{ padding: "20px 14px", color: "var(--n-6)", fontSize: 12, fontFamily: "var(--f-mono)" }}>
-          Build the payload to see the rendered source.cpp here.
+          File analysis is calculated locally. Build output streams on the Compile and Pipeline pages.
         </div>
       </div>
     </div>
@@ -191,4 +208,3 @@ function PreviewPane() {
 
 window.FrameWorkspace = FrameWorkspace;
 window.PreviewPane = PreviewPane;
-

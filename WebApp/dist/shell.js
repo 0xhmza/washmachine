@@ -72,6 +72,10 @@ const NAV_PRIMARY = [{
   name: "Payload",
   icon: "bolt"
 }, {
+  id: "scanner",
+  name: "PE scanner",
+  icon: "search"
+}, {
   id: "backdooring",
   name: "Backdooring",
   icon: "inject"
@@ -104,6 +108,8 @@ const NAV_FOOTER = [{
 function Rail({
   active = "payload"
 }) {
+  const info = window.washState ? window.washState.useFields('app_info').app_info : null;
+  const connected = !!(info && info.version);
   return React.createElement("aside", {
     className: "rail"
   }, React.createElement("div", {
@@ -117,17 +123,6 @@ function Rail({
   }, "Washmachine"), React.createElement("div", {
     className: "sb"
   }, "Loader builder"))), React.createElement("div", {
-    className: "rail-search"
-  }, React.createElement(Icon, {
-    name: "search",
-    size: 13
-  }), React.createElement("span", {
-    style: {
-      flex: 1
-    }
-  }, "Search"), React.createElement("span", {
-    className: "kbd"
-  }, "Ctrl K")), React.createElement("div", {
     className: "rail-nav"
   }, NAV_PRIMARY.map(n => React.createElement("div", {
     key: n.id,
@@ -156,14 +151,17 @@ function Rail({
     className: "rail-status"
   }, React.createElement("span", {
     className: "rail-dot",
-    title: "all systems ready"
-  }), React.createElement("span", null, "All systems ready"), React.createElement("span", {
+    style: {
+      opacity: connected ? 1 : 0.45
+    },
+    title: connected ? "native bridge connected" : "connecting to native bridge"
+  }), React.createElement("span", null, connected ? "Local core connected" : "Connecting to local core…"), React.createElement("span", {
     style: {
       color: "var(--n-7)",
       fontFamily: "var(--f-mono)",
       fontSize: 10
     }
-  }, "v2.1.0")));
+  }, info && info.version ? `v${info.version}` : '')));
 }
 const PIPELINE = [{
   id: "src",
@@ -216,6 +214,9 @@ function Pipeline({
   runEnabled = true,
   running = false
 }) {
+  const recipeSource = window.washState.useFields('sourceKind', 'shellcodeFileInput', 'shellcodeRawInput', 'shellcodeUrlValue');
+  const hasSource = recipeSource.sourceKind === 'raw' ? !!(recipeSource.shellcodeRawInput || '').trim() : recipeSource.sourceKind === 'url' ? !!(recipeSource.shellcodeUrlValue || '').trim() : !!(recipeSource.shellcodeFileInput || '').trim();
+  const canBuild = runEnabled && hasSource;
   return React.createElement("div", {
     className: "pipe"
   }, PIPELINE.map((s, i) => {
@@ -264,7 +265,8 @@ function Pipeline({
     className: "btn"
   }, "Dry run"), React.createElement("button", {
     className: "btn primary",
-    disabled: !runEnabled
+    disabled: !canBuild,
+    title: canBuild ? 'Build current recipe' : 'Select a payload source first'
   }, React.createElement(Icon, {
     name: "play",
     size: 12,
@@ -275,9 +277,10 @@ function Pipeline({
   }, "Ctrl B")))));
 }
 function TitleBar({
-  crumbs = [],
-  session = "session_20260519_001a"
+  crumbs = []
 }) {
+  const result = window.washState ? window.washState.useFields('build_lastResult').build_lastResult : null;
+  const session = result && result.sessionId ? result.sessionId : 'no active session';
   return React.createElement("div", {
     className: "tbar"
   }, React.createElement("div", {
@@ -302,27 +305,12 @@ function TitleBar({
     style: {
       color: "var(--n-10)"
     }
-  }, session)), React.createElement("button", {
-    className: "btn ghost",
-    style: {
-      height: 28
-    }
-  }, React.createElement(Icon, {
-    name: "copy",
-    size: 13
-  })), React.createElement("button", {
-    className: "btn ghost",
-    style: {
-      height: 28
-    }
-  }, React.createElement(Icon, {
-    name: "info",
-    size: 13
-  })));
+  }, session)));
 }
 function StatusBar({
   items = []
 }) {
+  const info = window.washState ? window.washState.useFields('app_info').app_info : null;
   return React.createElement("div", {
     className: "sbar"
   }, items.map((it, i) => React.createElement("div", {
@@ -335,11 +323,7 @@ function StatusBar({
     className: "spacer"
   }), React.createElement("div", {
     className: "grp mono"
-  }, React.createElement("span", null, "cl.exe"), React.createElement("b", null, "19.39.33523")), React.createElement("div", {
-    className: "grp mono"
-  }, React.createElement("span", null, "x64")), React.createElement("div", {
-    className: "grp mono"
-  }, React.createElement("span", null, "UTC"), React.createElement("b", null, "14:22:08")));
+  }, React.createElement("span", null, "local"), React.createElement("b", null, info && info.version ? `v${info.version}` : 'connecting')));
 }
 function Shell({
   active = "payload",
@@ -349,6 +333,7 @@ function Shell({
   running = false,
   status = [],
   wide = false,
+  readOnly = false,
   children,
   modal = null
 }) {
@@ -360,7 +345,13 @@ function Shell({
     className: "main"
   }, React.createElement(TitleBar, {
     crumbs: crumbs
-  }), React.createElement(Pipeline, {
+  }), readOnly ? React.createElement("div", {
+    className: "row",
+    style: {
+      padding: '0 28px',
+      color: 'var(--n-7)'
+    }
+  }, "Read-only analysis \xB7 selected files are never executed or modified") : React.createElement(Pipeline, {
     active: pipeActive,
     states: pipeStates,
     running: running
@@ -369,6 +360,38 @@ function Shell({
   }, children), React.createElement(StatusBar, {
     items: status
   })), modal);
+}
+function NoticeHost() {
+  const [notice, setNotice] = React.useState(null);
+  React.useEffect(() => {
+    let timer;
+    const receive = ev => {
+      const next = ev.detail || null;
+      setNotice(next);
+      clearTimeout(timer);
+      timer = setTimeout(() => setNotice(null), next && next.kind === 'err' ? 9000 : 4500);
+    };
+    window.addEventListener('wash:notice', receive);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('wash:notice', receive);
+    };
+  }, []);
+  if (!notice) return null;
+  return React.createElement("div", {
+    className: 'notice ' + (notice.kind || 'err'),
+    role: "status"
+  }, React.createElement(Icon, {
+    name: notice.kind === 'ok' ? 'check' : 'alert',
+    size: 14
+  }), React.createElement("span", null, notice.message), React.createElement("button", {
+    type: "button",
+    "aria-label": "Dismiss notification",
+    onClick: () => setNotice(null)
+  }, React.createElement(Icon, {
+    name: "x",
+    size: 12
+  })));
 }
 function H3({
   children
@@ -413,21 +436,44 @@ function Chip({
   }, children);
 }
 function Toggle({
-  on
+  on,
+  onChange,
+  disabled = false
 }) {
   return React.createElement("span", {
-    className: "tog" + (on ? " on" : "")
+    className: "tog" + (on ? " on" : ""),
+    "data-wired": "true",
+    role: "switch",
+    "aria-checked": !!on,
+    "aria-disabled": disabled,
+    tabIndex: disabled ? -1 : 0,
+    onClick: e => {
+      e.stopPropagation();
+      if (!disabled && onChange) onChange(!on);
+    },
+    onKeyDown: e => {
+      if (!disabled && onChange && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        onChange(!on);
+      }
+    }
   });
 }
 function Seg({
   value,
-  options
+  options,
+  onChange
 }) {
   return React.createElement("div", {
-    className: "seg"
+    className: "seg",
+    "data-wired": "true"
   }, options.map(o => React.createElement("button", {
     key: o.v,
-    className: o.v === value ? "on" : ""
+    className: o.v === value ? "on" : "",
+    onClick: e => {
+      e.stopPropagation();
+      if (onChange) onChange(o.v);
+    }
   }, o.icon && React.createElement(Icon, {
     name: o.icon,
     size: 11
@@ -478,5 +524,6 @@ Object.assign(window, {
   Seg,
   CodeBlock,
   H3,
+  NoticeHost,
   PIPELINE
 });

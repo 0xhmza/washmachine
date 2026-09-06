@@ -168,10 +168,7 @@ public sealed partial class WebShellWindow : Window
                     "Washmachine", "WebView2");
                 Directory.CreateDirectory(userData);
 
-                var envOptions = new CoreWebView2EnvironmentOptions
-                {
-                    AdditionalBrowserArguments = "--disable-features=msSmartScreenProtection",
-                };
+                var envOptions = new CoreWebView2EnvironmentOptions();
                 env = await CoreWebView2Environment.CreateWithOptionsAsync(null, userData, envOptions);
             }
 
@@ -195,7 +192,7 @@ public sealed partial class WebShellWindow : Window
             core.SetVirtualHostNameToFolderMapping(
                 "washmachine.local",
                 webAppPath,
-                CoreWebView2HostResourceAccessKind.Allow);
+                CoreWebView2HostResourceAccessKind.DenyCors);
 
             core.NavigationStarting += (_, e2) =>
             {

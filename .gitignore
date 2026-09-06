@@ -56,16 +56,13 @@ Output/sessions/
 # build.ps1 run logs
 Logs/
 
-# Test artifacts
+# Local test artifacts and specimen collection (not application source)
 test_results.json
-messagebox.bin
-!testing assets/binary/shellcodes/messagebox.bin
+/Testing/binary/
 testing assets/
 Backdooring/
 SuperMega-main/
 
-# Build output
-Output/
 last status.txt
 
 # AI assistant sessions
@@ -86,3 +83,16 @@ Tools/msys64/
 Assets/llvm-passes/*/build/
 Assets/llvm-passes/*/pass.dll
 Assets/llvm-passes/pass-runner.exe
+
+# Frontend development dependencies (keep package-lock.json)
+**/node_modules/
+WebApp/coverage/
+
+# Python caches from locally downloaded helper tools
+__pycache__/
+*.py[cod]
+
+# Private local environment variants
+.env.*
+!.env.example
+!.env.sample

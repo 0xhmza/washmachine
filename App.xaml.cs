@@ -4,10 +4,15 @@ using Washmachine.Views;
 
 namespace Washmachine;
 
+public enum AppExperience
+{
+    Web,
+    Cli,
+    WinUi,
+}
+
 public partial class App : Application
 {
-    // Maps legacy Dracula-named keys to their native WinUI system resource equivalents.
-    // This keeps view code working if any callers still reference Dracula names.
     private static readonly IReadOnlyDictionary<string, string> DraculaAliases =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -30,15 +35,6 @@ public partial class App : Application
 
     internal static Window? ActiveWindow { get; private set; }
     internal static StartupOutcome? StartupOutcome { get; private set; }
-
-    /// <summary>
-    /// Pre-warming task for the WebView2 environment. Started in
-    /// <see cref="OnLaunched"/> so the Chromium browser process spawns in
-    /// parallel with the (visible) startup provisioning. By the time the user
-    /// finishes downloading requirements, the environment is hot and the
-    /// web shell paints almost immediately. Result is awaited by
-    /// <see cref="Views.WebShellWindow"/>.
-    /// </summary>
     internal static Task<Microsoft.Web.WebView2.Core.CoreWebView2Environment?>? WebView2EnvPrewarm { get; private set; }
 
     internal static SolidColorBrush ThemeBrush(string key)
@@ -47,12 +43,8 @@ public partial class App : Application
             key = alias;
         try
         {
-            if (Current?.Resources is ResourceDictionary resources)
-            {
-                var val = resources[key];
-                if (val is SolidColorBrush brush)
-                    return brush;
-            }
+            if (Current?.Resources is ResourceDictionary resources && resources[key] is SolidColorBrush brush)
+                return brush;
         }
         catch { }
         return new SolidColorBrush(Microsoft.UI.Colors.Transparent);
@@ -73,16 +65,9 @@ public partial class App : Application
     {
         try
         {
-            // Kick off WebView2 environment creation in parallel with provisioning.
-            // CoreWebView2 cold-start takes ~1-2 s on first run; doing it now means
-            // the web shell can navigate immediately once StartupWindow closes.
-            bool useWebShell = Environment.GetEnvironmentVariable("USE_WEB_SHELL") != "0";
-            if (useWebShell)
-                WebView2EnvPrewarm = PrewarmWebViewAsync();
-
-            var startup = new StartupWindow();
-            startup.Show();
-            _ = RunStartupAsync(startup);
+            var launcher = new ModeSelectionWindow(StartExperience);
+            ActiveWindow = launcher;
+            launcher.Activate();
         }
         catch (Exception ex)
         {
@@ -91,22 +76,43 @@ public partial class App : Application
         }
     }
 
+    private static void StartExperience(AppExperience experience, ModeSelectionWindow launcher)
+    {
+        if (experience == AppExperience.Cli)
+        {
+            var executable = Environment.ProcessPath
+                ?? throw new InvalidOperationException("Unable to locate the Washmachine executable.");
+            var startInfo = new System.Diagnostics.ProcessStartInfo(executable)
+            {
+                UseShellExecute = true,
+            };
+            startInfo.ArgumentList.Add("--cli-mode");
+            System.Diagnostics.Process.Start(startInfo);
+            launcher.Close();
+            Current.Exit();
+            return;
+        }
+
+        if (experience == AppExperience.Web)
+            WebView2EnvPrewarm = PrewarmWebViewAsync();
+
+        var startup = new StartupWindow();
+        startup.Show();
+        _ = RunStartupAsync(startup, launcher, experience);
+    }
+
     private static async Task<Microsoft.Web.WebView2.Core.CoreWebView2Environment?> PrewarmWebViewAsync()
     {
         try
         {
-            var userData = System.IO.Path.Combine(
+            var userData = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Washmachine", "WebView2");
-            System.IO.Directory.CreateDirectory(userData);
-
-            var envOptions = new Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions
-            {
-                AdditionalBrowserArguments = "--disable-features=msSmartScreenProtection",
-            };
-
-            return await Microsoft.Web.WebView2.Core.CoreWebView2Environment
-                .CreateWithOptionsAsync(null, userData, envOptions);
+            Directory.CreateDirectory(userData);
+            return await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateWithOptionsAsync(
+                null,
+                userData,
+                new Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions());
         }
         catch (Exception ex)
         {
@@ -115,25 +121,20 @@ public partial class App : Application
         }
     }
 
-    private static async Task RunStartupAsync(StartupWindow startup)
+    private static async Task RunStartupAsync(
+        StartupWindow startup,
+        ModeSelectionWindow launcher,
+        AppExperience experience)
     {
         try
         {
             StartupOutcome = await startup.RunAsync();
-
-            // Open the main window BEFORE closing the startup window — otherwise
-            // the last-window-closed heuristic begins app shutdown and the new
-            // window gets activated into a dying process.
-            //
-            // Primary shell is now the WebView2-hosted web app (VS Code-style).
-            // The legacy XAML MainWindow is kept reachable via Settings ▸ "Use
-            // classic UI" for now — set USE_WEB_SHELL=0 to fall back.
-            bool useWebShell = Environment.GetEnvironmentVariable("USE_WEB_SHELL") != "0";
-            ActiveWindow = useWebShell
-                ? (Window)new WebShellWindow()
+            ActiveWindow = experience == AppExperience.Web
+                ? new WebShellWindow()
                 : new MainWindow();
             ActiveWindow.Activate();
             startup.Close();
+            launcher.Close();
         }
         catch (Exception ex)
         {
@@ -147,14 +148,8 @@ public partial class App : Application
     {
         try
         {
-            var errWindow = new Microsoft.UI.Xaml.Window();
+            var errWindow = new Window { Title = "Washmachine – Error" };
             var panel = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 12 };
-            var content = new Microsoft.UI.Xaml.Controls.Border
-            {
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(20),
-                Child = panel
-            };
             panel.Children.Add(new Microsoft.UI.Xaml.Controls.TextBlock
             {
                 Text = "Something went wrong",
@@ -167,15 +162,14 @@ public partial class App : Application
                 TextWrapping = TextWrapping.Wrap,
                 IsTextSelectionEnabled = true,
             });
-            panel.Children.Add(new Microsoft.UI.Xaml.Controls.TextBlock
+            errWindow.Content = new Microsoft.UI.Xaml.Controls.Border
             {
-                Text = "Please report this issue on GitHub.",
-                FontSize = 12
-            });
-            errWindow.Content = content;
-            errWindow.Title = "Washmachine – Error";
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(20),
+                Child = panel,
+            };
             errWindow.Activate();
         }
-        catch { /* last resort */ }
+        catch { }
     }
 }

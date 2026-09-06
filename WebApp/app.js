@@ -1,7 +1,6 @@
 // Washmachine — web shell entry
-// Router + rail interactivity + native bridge + global click delegate that
-// makes the design's static mockup components feel alive (toggles, selections,
-// browse buttons, preview tabs, segmented controls).
+// Router, native bridge, and the small global delegate used for shell-level
+// navigation and Build / Dry run / Stop actions.
 //
 // Runs after shell.js + frames have populated `window.*`.
 
@@ -18,13 +17,31 @@
   const _pending = new Map();
   let _seq = 0;
 
+  function notify(message, kind) {
+    if (!message) return;
+    window.dispatchEvent(new CustomEvent('wash:notice', {
+      detail: { message: String(message), kind: kind || 'err' },
+    }));
+  }
+
   function invoke(method, args) {
     return new Promise((resolve, reject) => {
       if (!window.chrome || !window.chrome.webview) {
         return reject(new Error('Native bridge unavailable (running outside WebView2 host)'));
       }
       const id = ++_seq;
-      _pending.set(id, { resolve, reject });
+      const timeoutMs = method === 'build'
+        ? 30 * 60 * 1000
+        : method === 'browse-file' || method === 'browse-folder'
+          ? 10 * 60 * 1000
+          : 60 * 1000;
+      const timer = setTimeout(() => {
+        if (!_pending.delete(id)) return;
+        const error = new Error(`${method} timed out waiting for the native host.`);
+        notify(error.message, 'err');
+        reject(error);
+      }, timeoutMs);
+      _pending.set(id, { resolve, reject, timer });
       window.chrome.webview.postMessage(JSON.stringify({ id, method, args: args || {} }));
     });
   }
@@ -36,9 +53,13 @@
       catch { return; }
 
       if (msg.id && _pending.has(msg.id)) {
-        const { resolve, reject } = _pending.get(msg.id);
+        const { resolve, reject, timer } = _pending.get(msg.id);
         _pending.delete(msg.id);
-        if (msg.error) reject(new Error(msg.error));
+        clearTimeout(timer);
+        if (msg.error) {
+          notify(msg.error, 'err');
+          reject(new Error(msg.error));
+        }
         else resolve(msg.result);
         return;
       }
@@ -49,13 +70,32 @@
     });
   }
 
-  window.wash = { invoke };
+  window.wash = { invoke, notify };
+
+  async function runRecipe(method) {
+    setRoute('compile');
+    try {
+      const result = await invoke(method, window.washState ? window.washState.getRecipe() : {});
+      if (result && result.ok === false) {
+        const details = Array.isArray(result.errors) && result.errors.length
+          ? result.errors.join(' ')
+          : (result.message || result.error || `${method} failed.`);
+        notify(details, 'err');
+      } else if (method === 'dry-run' && result && result.ok) {
+        notify('Recipe validation passed.', 'ok');
+      }
+      return result;
+    } catch {
+      return null;
+    }
+  }
 
   /* ═════════════════════════════ Routing ═════════════════════════════
      Map of rail item id → frame component. Frame names match window globals. */
 
   const ROUTES = {
     payload:     () => window.FrameWorkspace,
+    scanner:     () => window.FramePeScanner,
     backdooring: () => window.FrameBackdoor,
     packing:     () => window.FramePacking,
     finalize:    () => window.FrameFinalize,
@@ -68,8 +108,6 @@
   const SUBROUTES = {
     encode:   () => window.FrameEncode,
     template: () => window.FrameTemplate,
-    startup:  () => window.FrameStartup,
-    wizard:   () => window.FrameWebWizard,
   };
 
   let _route = 'payload';
@@ -88,9 +126,7 @@
   }
 
   /* ═════════════════════════════ Click delegate ═════════════════════════════
-     A single capture-phase listener on document.body handles all the
-     interactivity the static mockup frames lack. Cheap and survives React
-     re-renders without us needing to monkey-patch every component. */
+     Shell-level navigation and run actions survive React frame re-renders. */
 
   document.addEventListener('click', handleGlobalClick, true);
 
@@ -103,7 +139,7 @@
       // Map by visible label text
       const label = textOf(railItem).toLowerCase();
       const id = ({
-        'payload': 'payload', 'backdooring': 'backdooring', 'packing': 'packing',
+        'payload': 'payload', 'pe scanner': 'scanner', 'backdooring': 'backdooring', 'packing': 'packing',
         'finalize': 'finalize', 'compile': 'compile',
         'pipeline': 'pipeline', 'history': 'history', 'settings': 'settings',
       })[label];
@@ -119,7 +155,7 @@
         const name = (nameEl.textContent || '').trim().toLowerCase();
         const mapping = {
           'source':   'payload',
-          'sgn':      'payload',
+          'sgn':      'encode',
           'encode':   'encode',
           'template': 'template',
           'compile':  'compile',
@@ -137,91 +173,11 @@
     if (btn) {
       const txt = textOf(btn).toLowerCase();
       // Build / Stop / Dry run
-      if (txt.includes('build')   && !btn.disabled) { ev.stopPropagation(); invoke('build', window.washState ? window.washState.getRecipe() : {}).catch(noop); return; }
+      if (txt.includes('build')   && !btn.disabled) { ev.stopPropagation(); runRecipe('build'); return; }
       if (txt.includes('stop'))                     { ev.stopPropagation(); invoke('stop', {}).catch(noop); return; }
-      if (txt === 'dry run' || txt.startsWith('dry')) { ev.stopPropagation(); invoke('dry-run', window.washState ? window.washState.getRecipe() : {}).catch(noop); return; }
-      // Browse → opens file picker, writes result to the nearest preceding text input
-      if (txt.startsWith('browse')) {
-        ev.stopPropagation();
-        const card = btn.closest('.card, .modal-bd, .cfg, .pemap, .row, .field');
-        const tx = findNearestTextInput(btn, card);
-        const ext = guessExtensionFilter(tx);
-        invoke('browse-file', { filters: ext ? [{ name: ext.name, patterns: ext.patterns }] : [] })
-          .then(res => {
-            if (res && res.ok && res.path && tx) {
-              setReactInputValue(tx, res.path);
-            }
-          })
-          .catch(err => console.error('browse-file:', err));
-        return;
-      }
-      // Re-detect / Reload / Refresh
-      if (txt.includes('re-detect') || txt.includes('reload') || txt.includes('refresh') || txt.includes('recompute')) {
-        ev.stopPropagation();
-        flashButton(btn);
-        return;
-      }
-      // Open in editor / Reveal etc — just flash for now
-      if (txt.includes('open') || txt.includes('reveal') || txt.includes('copy') || txt.includes('save')) {
-        ev.stopPropagation();
-        flashButton(btn);
-        return;
-      }
+      if (txt === 'dry run' || txt.startsWith('dry')) { ev.stopPropagation(); runRecipe('dry-run'); return; }
     }
 
-    // 4) Toggle switches → flip .on state
-    const tog = climb(t, '.tog');
-    if (tog) {
-      ev.stopPropagation();
-      tog.classList.toggle('on');
-      return;
-    }
-
-    // 5) List rows (templates, snippets, methods, encoder/envelope etc.)
-    //    Find row + its group; clear sibling selection; mark this row.
-    const row = climb(t, '.list-item, .pe-row');
-    if (row) {
-      const list = row.closest('.list, .pemap, .card');
-      if (list) {
-        list.querySelectorAll('.list-item.sel, .pe-row.tgt').forEach(el => {
-          if (el !== row) {
-            el.classList.remove('sel');
-            el.classList.remove('tgt');
-            // also reset the radio dot if any
-            const dot = el.querySelector('div[style*="border-radius"]');
-          }
-        });
-      }
-      row.classList.add(row.classList.contains('pe-row') ? 'tgt' : 'sel');
-      ev.stopPropagation();
-      return;
-    }
-
-    // 6) Segmented control buttons inside .seg
-    const segBtn = climb(t, '.seg > button');
-    if (segBtn) {
-      const seg = segBtn.parentElement;
-      seg.querySelectorAll('button.on').forEach(b => b.classList.remove('on'));
-      segBtn.classList.add('on');
-      ev.stopPropagation();
-      return;
-    }
-
-    // 7) Preview tabs (.ptab)
-    const ptab = climb(t, '.ptab');
-    if (ptab) {
-      const bar = ptab.parentElement;
-      bar.querySelectorAll('.ptab.on').forEach(b => b.classList.remove('on'));
-      ptab.classList.add('on');
-      ev.stopPropagation();
-      return;
-    }
-
-    // 8) Modal close (X button at top of modal)
-    if (t.closest('.modal-hd .btn.ghost') && t.closest('svg')) {
-      // future: dismiss modal
-      return;
-    }
   }
 
   function climb(el, selector) {
@@ -238,54 +194,6 @@
 
   function noop() {}
 
-  function flashButton(btn) {
-    btn.style.transition = 'background 120ms ease';
-    const orig = btn.style.background;
-    btn.style.background = 'var(--n-3)';
-    setTimeout(() => { btn.style.background = orig; }, 180);
-  }
-
-  function findNearestTextInput(start, scope) {
-    // Walk previous siblings + parents within scope looking for an .input or input element
-    let cur = start;
-    while (cur && cur !== document.body) {
-      // 1) Look in previous siblings
-      let sib = cur.previousElementSibling;
-      while (sib) {
-        const inp = sib.matches && (sib.matches('input.input') || sib.matches('input')) ? sib : sib.querySelector && sib.querySelector('input.input, input.mono, input');
-        if (inp) return inp;
-        sib = sib.previousElementSibling;
-      }
-      // 2) Check parent's earlier descendants
-      if (cur.parentElement === scope) break;
-      cur = cur.parentElement;
-    }
-    return scope ? scope.querySelector('input.input, input.mono, input') : null;
-  }
-
-  function guessExtensionFilter(input) {
-    if (!input) return null;
-    const ph = (input.placeholder || '').toLowerCase();
-    const val = (input.value || '').toLowerCase();
-    if (ph.includes('.bin') || val.endsWith('.bin')) return { name: 'Shellcode binary', patterns: ['.bin'] };
-    if (ph.includes('.exe') || val.endsWith('.exe')) return { name: 'Executable', patterns: ['.exe'] };
-    if (ph.includes('.dll') || val.endsWith('.dll')) return { name: 'Dynamic library', patterns: ['.dll'] };
-    if (ph.includes('yaml') || val.endsWith('.yaml')) return { name: 'YAML', patterns: ['.yaml', '.yml'] };
-    return null;
-  }
-
-  // React preserves input values via its own state machine. To update a value
-  // and trigger any onChange, we have to call the native setter then dispatch
-  // an 'input' event. (Standard React-controlled-input workaround.)
-  function setReactInputValue(input, value) {
-    const proto = Object.getPrototypeOf(input);
-    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-    if (setter) setter.call(input, value);
-    else input.value = value;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  }
-
   /* ═════════════════════════════ Keyboard shortcuts ═════════════════════════════ */
 
   window.addEventListener('keydown', (ev) => {
@@ -294,11 +202,10 @@
 
     if (ev.ctrlKey && ev.key.toLowerCase() === 'b') {
       ev.preventDefault();
-      invoke('build', window.washState ? window.washState.getRecipe() : {}).catch(noop);
-    } else if (ev.ctrlKey && ev.key.toLowerCase() === 'k') {
-      ev.preventDefault();
-      // future: command palette
+      if (_route === 'scanner') return;
+      runRecipe('build');
     } else if (ev.key === 'Escape' && !inForm) {
+      if (_route === 'scanner') return;
       invoke('stop', {}).catch(noop);
     }
   });
@@ -307,14 +214,18 @@
 
   function App() {
     const [route, setLocalRoute] = React.useState(_route);
-    React.useEffect(() => onRoute(setLocalRoute), []);
+    React.useEffect(() => {
+      const unsubscribe = onRoute(setLocalRoute);
+      setLocalRoute(_route);
+      return unsubscribe;
+    }, []);
 
     const Frame =
       (ROUTES[route] && ROUTES[route]()) ||
       (SUBROUTES[route] && SUBROUTES[route]()) ||
       window.FrameWorkspace;
 
-    return e(Frame, null);
+    return e(React.Fragment, null, e(Frame, null), e(window.NoticeHost));
   }
 
   /* ═════════════════════════════ Bootstrap ═════════════════════════════ */
@@ -348,5 +259,6 @@
     setRoute,
     getRoute: () => _route,
     invoke: window.wash.invoke,
+    notify,
   };
 })();

@@ -2,16 +2,24 @@
 
 function FrameCompile() {
   const { useField, useFields } = window.washState;
-  const [compilerIdx, setCompilerIdx] = useField('compilerCombo');
   const [backend, setBackend] = useField('compilationBackend');
-  const meta = useFields('catalog_compilers', 'build_running', 'build_log', 'build_lastResult');
+  const [llvmPasses, setLlvmPasses] = useField('llvmObfuscationPasses');
+  const meta = useFields('catalog_compilers', 'catalog_llvmPasses', 'build_running', 'build_log', 'build_lastResult');
 
   const compilers   = meta.catalog_compilers || [];
   const running     = !!meta.build_running;
   const logLines    = meta.build_log || [];
   const lastResult  = meta.build_lastResult || null;
 
-  const selComp = compilers.find(c => String(c.index) === String(compilerIdx)) || compilers[0];
+  const selComp = compilers[0];
+  const passes = meta.catalog_llvmPasses || [];
+  const selectedPasses = llvmPasses || [];
+
+  function togglePass(id) {
+    setLlvmPasses(selectedPasses.includes(id)
+      ? selectedPasses.filter(x => x !== id)
+      : [...selectedPasses, id]);
+  }
 
   const status = [
     { icon: "info", k: "compiler", v: selComp ? selComp.name : 'none' },
@@ -35,10 +43,9 @@ function FrameCompile() {
               <div style={{ color: "var(--n-6)", fontSize: 12 }}>Detecting compilers…</div>
             ) : (
               <div className="row" style={{ gap: 16, alignItems: "stretch" }}>
-                {compilers.map(c => (
+                {compilers.map((c, index) => (
                   <CompCard key={c.index} name={c.name} sub={c.version || ''} path={c.path || ''}
-                    selected={String(compilerIdx) === String(c.index) || (!compilerIdx && c === compilers[0])}
-                    onClick={() => setCompilerIdx(String(c.index))} />
+                    selected={index === 0} />
                 ))}
               </div>
             )}
@@ -50,6 +57,21 @@ function FrameCompile() {
                   options={[{ v: "Deterministic", l: "Deterministic" }, { v: "LlvmObfuscated", l: "LLVM Obfuscated" }]} />
               </Field>
             </div>
+            {backend === 'LlvmObfuscated' && (
+              <div style={{ marginTop: 16 }}>
+                <Field label="LLVM passes" hint="Only registered passes exposed by the core registry are shown.">
+                  <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                    {passes.map(p => (
+                      <button key={p.id} className={'btn' + (selectedPasses.includes(p.id) ? ' primary' : '')}
+                        disabled={!p.available}
+                        title={p.available ? p.description : 'Pass runner metadata is unavailable'}
+                        onClick={() => togglePass(p.id)}>{p.name}</button>
+                    ))}
+                    {passes.length === 0 && <span className="sub">No LLVM passes registered.</span>}
+                  </div>
+                </Field>
+              </div>
+            )}
           </div>
         </Sec>
 
@@ -79,16 +101,16 @@ function FrameCompile() {
   );
 }
 
-function CompCard({ name, sub, path, selected, onClick }) {
+function CompCard({ name, sub, path, selected }) {
   return (
-    <div onClick={onClick} style={{
-      flex: 1, padding: 14, borderRadius: 10, cursor: "pointer",
+    <div style={{
+      flex: 1, padding: 14, borderRadius: 10,
       border: "1px solid " + (selected ? "var(--acc-line)" : "var(--n-4)"),
       background: selected ? "var(--acc-bg)" : "var(--n-1)",
     }}>
       <div className="row" style={{ justifyContent: "space-between" }}>
         <div className="h2">{name}</div>
-        {selected && <Chip kind="acc" dot>active</Chip>}
+        {selected && <Chip kind="acc" dot>auto-selected</Chip>}
       </div>
       {sub && <div className="mono" style={{ fontSize: 11, color: "var(--n-8)", marginTop: 4 }}>{sub}</div>}
       {path && <div className="mono" style={{ fontSize: 10, color: "var(--n-6)", marginTop: 8, wordBreak: "break-all" }}>{path}</div>}
@@ -110,7 +132,6 @@ function BuildLogPreview({ logLines, running, lastResult }) {
           {running && <span className="pulse" style={{ width: 6, height: 6, background: "var(--acc)", borderRadius: "50%", marginLeft: 4, display: "inline-block" }} />}
         </div>
         <div style={{ flex: 1 }} />
-        <div className="ptab"><Icon name="dl" size={11} /></div>
       </div>
       <div className="pbody" style={{ background: "var(--n-0)" }} ref={logRef}>
         <div className="mono" style={{ fontSize: 11, lineHeight: 1.7, padding: "14px 16px", color: "var(--n-8)" }}>
@@ -146,4 +167,3 @@ function LogLine({ msg }) {
 }
 
 window.FrameCompile = FrameCompile;
-

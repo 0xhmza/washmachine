@@ -1,4 +1,36 @@
 function FrameEncode() {
+  const {
+    useField,
+    useFields
+  } = window.washState;
+  const [sgnEnabled, setSgnEnabled] = useField('shikataGaNaiEnabledCheckBox');
+  const [sgnCount, setSgnCount] = useField('shikataGaNaiEncodeCountInput');
+  const [sgnMax, setSgnMax] = useField('shikataGaNaiMaxBytesInput');
+  const [sgnPlace, setSgnPlace] = useField('shikataGaNaiPlacement');
+  const [encoderIdx, setEncoderIdx] = useField('encoderCombo');
+  const [envelopeIdx, setEnvelopeIdx] = useField('envelopeCombo');
+  const meta = useFields('catalog_encoders', 'catalog_envelopes');
+  const encoders = meta.catalog_encoders || [];
+  const envelopes = meta.catalog_envelopes || [];
+  function reloadCatalog() {
+    if (window.washState) window.washState.loadCatalogs();
+  }
+  const sgnOn = sgnEnabled === 'True';
+  const selEnc = encoders.find(e => String(e.index) === String(encoderIdx));
+  const selEnv = envelopes.find(e => String(e.index) === String(envelopeIdx));
+  const status = [{
+    icon: "info",
+    k: "encoder",
+    v: selEnc ? selEnc.name : encoderIdx || 'none'
+  }, {
+    icon: "info",
+    k: "envelope",
+    v: selEnv ? selEnv.name : envelopeIdx || 'none'
+  }, {
+    icon: "info",
+    k: "sgn",
+    v: sgnOn ? `${sgnCount} passes · ${sgnPlace}` : 'off'
+  }];
   return React.createElement(Shell, {
     active: "payload",
     crumbs: ["Payload", "Encoding"],
@@ -8,19 +40,7 @@ function FrameEncode() {
       sgn: "done",
       enc: "active"
     },
-    status: [{
-      icon: "info",
-      k: "encoder",
-      v: "XOR · 4-byte"
-    }, {
-      icon: "info",
-      k: "envelope",
-      v: "Base64"
-    }, {
-      icon: "info",
-      k: "sgn",
-      v: "2 passes · pre"
-    }]
+    status: status
   }, React.createElement("div", {
     className: "cfg"
   }, React.createElement("div", {
@@ -41,14 +61,16 @@ function FrameEncode() {
       style: {
         gap: 8
       }
-    }, React.createElement(Chip, {
-      kind: "acc",
-      dot: true
-    }, "provisioned"), React.createElement(Toggle, {
-      on: true
+    }, React.createElement(Toggle, {
+      on: sgnOn,
+      onChange: v => setSgnEnabled(v ? 'True' : 'False')
     }))
   }, React.createElement("div", {
-    className: "card"
+    className: "card",
+    style: {
+      opacity: sgnOn ? 1 : 0.55,
+      pointerEvents: sgnOn ? 'auto' : 'none'
+    }
   }, React.createElement("div", {
     className: "row",
     style: {
@@ -59,7 +81,8 @@ function FrameEncode() {
     hint: "Each pass adds a decoder stub."
   }, React.createElement("input", {
     className: "input mono",
-    defaultValue: "2",
+    value: sgnCount,
+    onChange: e => setSgnCount(e.target.value),
     style: {
       width: 100
     }
@@ -68,14 +91,16 @@ function FrameEncode() {
     hint: "Obfuscation budget per pass."
   }, React.createElement("input", {
     className: "input mono",
-    defaultValue: "64",
+    value: sgnMax,
+    onChange: e => setSgnMax(e.target.value),
     style: {
       width: 100
     }
   })), React.createElement(Field, {
     label: "Placement"
   }, React.createElement(Seg, {
-    value: "pre",
+    value: sgnPlace,
+    onChange: setSgnPlace,
     options: [{
       v: "pre",
       l: "Pre-Bin2Shell"
@@ -87,56 +112,11 @@ function FrameEncode() {
     style: {
       flex: 1
     }
-  })), React.createElement("div", {
-    className: "div"
-  }), React.createElement("div", {
-    className: "row",
-    style: {
-      gap: 12
-    }
-  }, React.createElement("div", {
-    style: {
-      flex: 1
-    }
-  }, React.createElement(H3, null, "Effect"), React.createElement("div", {
-    className: "row",
-    style: {
-      gap: 14,
-      marginTop: 8
-    }
-  }, React.createElement("div", {
-    className: "mono",
-    style: {
-      fontSize: 11,
-      color: "var(--n-8)"
-    }
-  }, "327 B ", React.createElement("span", {
-    className: "o"
-  }, "\u2192"), " ", React.createElement("span", {
-    style: {
-      color: "var(--n-10)"
-    }
-  }, "~512 B")), React.createElement("div", {
-    className: "mono",
-    style: {
-      fontSize: 11,
-      color: "var(--n-8)"
-    }
-  }, "entropy 7.42 ", React.createElement("span", {
-    className: "o"
-  }, "\u2192"), " ", React.createElement("span", {
-    style: {
-      color: "var(--ok)"
-    }
-  }, "7.96")))), React.createElement("button", {
-    className: "btn ghost"
-  }, React.createElement(Icon, {
-    name: "info",
-    size: 12
-  }), "SGN reference")))), React.createElement(Sec, {
+  })))), React.createElement(Sec, {
     title: "Bin2Shell",
     action: React.createElement("button", {
-      className: "btn ghost"
+      className: "btn ghost",
+      onClick: reloadCatalog
     }, React.createElement(Icon, {
       name: "refresh",
       size: 12
@@ -169,38 +149,22 @@ function FrameEncode() {
       fontSize: 10,
       color: "var(--n-7)"
     }
-  }, "algos.yaml")), React.createElement("div", {
+  }, "algos.yaml")), encoders.length === 0 ? React.createElement("div", {
+    style: {
+      color: "var(--n-6)",
+      fontSize: 12,
+      padding: "8px 0"
+    }
+  }, "Provisioning Bin2Shell\u2026 or catalog unavailable.") : React.createElement("div", {
     className: "list"
-  }, React.createElement(EncRow, {
-    name: "None",
-    id: "0",
-    desc: "Pass-through bytes"
-  }), React.createElement(EncRow, {
-    name: "XOR",
-    id: "1",
-    desc: "4-byte rolling key",
-    selected: true
-  }), React.createElement(EncRow, {
-    name: "RC4",
-    id: "2",
-    desc: "Stream cipher \xB7 128-bit"
-  }), React.createElement(EncRow, {
-    name: "AES-128-CBC",
-    id: "3",
-    desc: "Block cipher \xB7 16B key + IV"
-  }), React.createElement(EncRow, {
-    name: "ChaCha20",
-    id: "4",
-    desc: "Stream \xB7 256-bit key"
-  })), React.createElement("div", {
-    className: "div"
-  }), React.createElement(Field, {
-    label: "Key",
-    hint: "hex \xB7 empty = autogen"
-  }, React.createElement("input", {
-    className: "input mono",
-    defaultValue: "9f a2 4c d7"
-  }))), React.createElement("div", {
+  }, encoders.map(enc => React.createElement(EncRow, {
+    key: enc.index,
+    name: enc.name,
+    id: String(enc.index),
+    desc: enc.description,
+    selected: String(encoderIdx) === String(enc.index),
+    onClick: () => setEncoderIdx(String(enc.index))
+  })))), React.createElement("div", {
     style: {
       padding: 18
     }
@@ -216,75 +180,36 @@ function FrameEncode() {
       fontSize: 10,
       color: "var(--n-7)"
     }
-  }, "algos.yaml")), React.createElement("div", {
+  }, "algos.yaml")), envelopes.length === 0 ? React.createElement("div", {
+    style: {
+      color: "var(--n-6)",
+      fontSize: 12,
+      padding: "8px 0"
+    }
+  }, "Catalog unavailable.") : React.createElement("div", {
     className: "list"
-  }, React.createElement(EncRow, {
-    name: "None",
-    id: "0",
-    desc: "Raw byte array"
-  }), React.createElement(EncRow, {
-    name: "Base64",
-    id: "1",
-    desc: "Standard alphabet",
-    selected: true
-  }), React.createElement(EncRow, {
-    name: "Base32",
-    id: "2",
-    desc: "Padded \xB7 A-Z 2-7"
-  }), React.createElement(EncRow, {
-    name: "Base91",
-    id: "3",
-    desc: "Higher density"
-  }), React.createElement(EncRow, {
-    name: "Hex",
-    id: "4",
-    desc: "0x.. comma-separated"
-  })))))), React.createElement(Sec, {
-    title: "Byte distribution",
-    action: React.createElement("div", {
-      className: "row",
-      style: {
-        gap: 6
-      }
-    }, React.createElement(Chip, null, "raw"), React.createElement(Chip, {
-      kind: "acc"
-    }, "encoded"))
-  }, React.createElement("div", {
-    className: "card"
-  }, React.createElement(Histogram, null), React.createElement("div", {
-    className: "row",
-    style: {
-      gap: 14,
-      marginTop: 10,
-      fontSize: 11,
-      color: "var(--n-7)"
-    }
-  }, React.createElement("span", null, "0x00"), React.createElement("span", {
-    style: {
-      flex: 1
-    }
-  }), React.createElement("span", null, "0x40"), React.createElement("span", {
-    style: {
-      flex: 1
-    }
-  }), React.createElement("span", null, "0x80"), React.createElement("span", {
-    style: {
-      flex: 1
-    }
-  }), React.createElement("span", null, "0xC0"), React.createElement("span", {
-    style: {
-      flex: 1
-    }
-  }), React.createElement("span", null, "0xFF"))))), React.createElement(EncodedPreview, null));
+  }, envelopes.map(env => React.createElement(EncRow, {
+    key: env.index,
+    name: env.name,
+    id: String(env.index),
+    desc: env.description,
+    selected: String(envelopeIdx) === String(env.index),
+    onClick: () => setEnvelopeIdx(String(env.index))
+  })))))))), React.createElement(EncodedPreview, null));
 }
 function EncRow({
   name,
   id,
   desc,
-  selected
+  selected,
+  onClick
 }) {
   return React.createElement("div", {
-    className: "list-item" + (selected ? " sel" : "")
+    className: "list-item" + (selected ? " sel" : ""),
+    onClick: onClick,
+    style: {
+      cursor: "pointer"
+    }
   }, React.createElement("div", {
     style: {
       width: 14,
@@ -292,62 +217,14 @@ function EncRow({
       borderRadius: "50%",
       border: "1px solid " + (selected ? "var(--acc)" : "var(--n-5)"),
       background: selected ? "var(--acc)" : "transparent",
-      boxShadow: selected ? "inset 0 0 0 3px var(--n-3)" : "none"
+      boxShadow: selected ? "inset 0 0 0 3px var(--n-3)" : "none",
+      flexShrink: 0
     }
   }), React.createElement("div", null, React.createElement("div", {
     className: "ttl"
   }, name), React.createElement("div", {
     className: "meta"
-  }, "id ", id, " \xB7 ", desc)));
-}
-function Histogram() {
-  const bars = Array.from({
-    length: 48
-  }, (_, i) => {
-    const raw = 0.2 + Math.abs(Math.sin(i * 0.4)) * 0.6 + (i % 7 === 0 ? 0.2 : 0);
-    const enc = 0.4 + i * 31 % 17 / 30;
-    return {
-      raw,
-      enc
-    };
-  });
-  return React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "flex-end",
-      height: 90,
-      gap: 3
-    }
-  }, bars.map((b, i) => React.createElement("div", {
-    key: i,
-    style: {
-      flex: 1,
-      height: "100%",
-      position: "relative"
-    }
-  }, React.createElement("div", {
-    style: {
-      position: "absolute",
-      bottom: 0,
-      left: 0,
-      right: 0,
-      height: `${b.raw * 100}%`,
-      background: "var(--n-5)",
-      borderRadius: "2px 2px 0 0"
-    }
-  }), React.createElement("div", {
-    style: {
-      position: "absolute",
-      bottom: 0,
-      left: 0,
-      right: 0,
-      height: `${b.enc * 100}%`,
-      background: "var(--acc)",
-      opacity: 0.85,
-      borderRadius: "2px 2px 0 0",
-      mixBlendMode: "screen"
-    }
-  }))));
+  }, "id ", id, desc ? " · " + desc : "")));
 }
 function EncodedPreview() {
   return React.createElement("div", {
@@ -359,69 +236,14 @@ function EncodedPreview() {
   }, React.createElement(Icon, {
     name: "term",
     size: 11
-  }), "encoded.b64"), React.createElement("div", {
-    className: "ptab"
-  }, React.createElement(Icon, {
-    name: "doc",
-    size: 11
-  }), "invocation"), React.createElement("div", {
-    style: {
-      flex: 1
-    }
-  }), React.createElement("div", {
-    className: "ptab"
-  }, React.createElement(Icon, {
-    name: "copy",
-    size: 11
-  }))), React.createElement("div", {
+  }), "encoding")), React.createElement("div", {
     className: "pbody ppad"
   }, React.createElement("div", {
-    className: "row",
     style: {
-      marginBottom: 10,
-      gap: 10
-    }
-  }, React.createElement(Chip, {
-    kind: "acc"
-  }, "789 B"), React.createElement(Chip, null, "+241 % vs raw"), React.createElement(Chip, {
-    kind: "ok",
-    dot: true
-  }, "printable")), React.createElement("div", {
-    className: "mono",
-    style: {
+      color: "var(--n-6)",
       fontSize: 12,
-      lineHeight: 1.7,
-      color: "var(--n-9)",
-      wordBreak: "break-all"
+      fontFamily: "var(--f-mono)"
     }
-  }, React.createElement("span", {
-    style: {
-      color: "var(--n-6)"
-    }
-  }, "// XOR(key=9fa24cd7) \u2192 Base64"), React.createElement("br", null), "/EiD5PDowAAAAEFRQVBSUVZIMdJlSItSYEiLUhhIi1IgSItyUEgPt0pKTTHJSDHA", React.createElement("br", null), "rDxhfAIsIEHByQ1BAcHi7VJBUUiLUiBLizQKSDHASIvSrAxA8MtT8MtIAcdK4u9I", React.createElement("br", null), "M8BLizR2SDHASLqAAQAAQQEAAEH/0EH/0FNQUEhB/9CDxCBoBwAAAGgEAAAAaQEA", React.createElement("br", null), "AGgFAAAAaAYAAAA1bGFKAVNQUEH/0Ej//8hI/zP/Q/8z/0OD7FBT/3RkEDU="), React.createElement("div", {
-    className: "div"
-  }), React.createElement(H3, null, "Bin2Shell invocation"), React.createElement("div", {
-    className: "mono",
-    style: {
-      marginTop: 8,
-      fontSize: 11,
-      color: "var(--n-8)",
-      lineHeight: 1.7
-    }
-  }, React.createElement("span", {
-    className: "o"
-  }, "$"), " python ", React.createElement("span", {
-    style: {
-      color: "var(--acc)"
-    }
-  }, "main.py"), "  \\", React.createElement("br", null), "    ", "-e ", React.createElement("span", {
-    style: {
-      color: "var(--n-10)"
-    }
-  }, "1"), "  ", "-x ", React.createElement("span", {
-    style: {
-      color: "var(--n-10)"
-    }
-  }, "1"), "  \\", React.createElement("br", null), "    ", "-i ./payload.bin", "  \\", React.createElement("br", null), "    ", "-o ./encoded.b64", "  \\", React.createElement("br", null), "    ", "--key 9fa24cd7")));
+  }, "The selected encoder, envelope, and optional SGN step are applied during Build.")));
 }
 window.FrameEncode = FrameEncode;

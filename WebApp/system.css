@@ -630,6 +630,62 @@ body {
 .modal-bd { padding: 22px; overflow: auto; }
 .modal-ft { padding: 14px 22px; border-top: 1px solid var(--n-4); display: flex; align-items: center; gap: 10px; }
 
+/* Native-operation feedback */
+.notice {
+  position: fixed;
+  right: 18px;
+  bottom: 34px;
+  z-index: 50;
+  max-width: min(520px, calc(100vw - 36px));
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  color: var(--n-10);
+  background: var(--n-2);
+  border: 1px solid var(--err);
+  border-radius: var(--r-3);
+  box-shadow: var(--sh-2);
+  font-size: 12px;
+}
+.notice.ok { border-color: var(--ok); }
+.notice button {
+  display: grid;
+  place-items: center;
+  padding: 2px;
+  color: var(--n-7);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+/* PE scanner */
+.scan-error, .scan-issue {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--err);
+  font-size: 12px;
+}
+.scan-issue.warn { color: var(--warn); }
+.scan-empty { padding: 28px; text-align: center; color: var(--n-7); }
+.scan-pulse { display: inline-block; width: 8px; height: 8px; margin-right: 10px; background: var(--acc); }
+.scan-summary { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 10px; margin-bottom: 22px; }
+.scan-metric { display: grid; gap: 8px; padding: 13px; }
+.scan-metric > b { color: var(--n-10); font-size: 12px; }
+.scan-metric.ok { border-color: color-mix(in oklch, var(--ok) 45%, var(--n-4)); }
+.scan-metric.warn { border-color: color-mix(in oklch, var(--warn) 45%, var(--n-4)); }
+.scan-grid { display: grid; grid-template-columns: minmax(560px, 1.5fr) minmax(300px, 1fr); gap: 18px; }
+.scan-table { padding: 0; overflow: hidden; }
+.scan-row { display: grid; grid-template-columns: 1fr 120px 90px 60px 70px; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--n-3); font-size: 11px; align-items: center; }
+.scan-head { background: var(--n-1); color: var(--n-7); font-family: var(--f-mono); font-size: 10px; text-transform: uppercase; }
+@media (max-width: 1280px) {
+  .scan-summary { grid-template-columns: repeat(3, 1fr); }
+  .scan-grid { grid-template-columns: 1fr; }
+}
+
 /* PE map */
 .pemap {
   display: flex; flex-direction: column; gap: 4px;

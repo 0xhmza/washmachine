@@ -1,96 +1,97 @@
-/* Frame — Packing (separate page in original nav) */
+/* Frame — UPX packing. Only capabilities implemented by the native pipeline are exposed. */
 
 function FramePacking() {
-  const { useField } = window.washState;
-  const [packEnabled, setPackEnabled] = useField('EnablePackingToggle');
-  const [packerCombo, setPackerCombo] = useField('PackerCombo');
+  const { useField, useFields } = window.washState;
+  const [enabled, setEnabled] = useField('EnablePackingToggle');
+  const [upxPath, setUpxPath] = useField('UpxPathInput');
+  const [compression, setCompression] = useField('UpxCompression');
+  const [stripRelocs, setStripRelocs] = useField('UpxStripRelocs');
+  const [keepBackup, setKeepBackup] = useField('UpxKeepBackup');
+  const meta = useFields('upx_info');
+  const isEnabled = enabled === 'True';
 
-  const packOn = packEnabled === 'True';
+  function browseUpx() {
+    window.wash.invoke('browse-file', { filters: [{ name: 'UPX executable', patterns: ['.exe'] }] })
+      .then(r => { if (r && r.ok && r.path) setUpxPath(r.path); })
+      .catch(() => {});
+  }
 
-  const PACKERS = [
-    { id: "None",       name: "None",        tagline: "Ship binary as-is",        sub: "No transformation. Lowest risk of post-pack breakage; largest output.", capacity: "—" },
-    { id: "UPX",        name: "UPX",         tagline: "Generic compressor",       sub: "Industry-standard. Signature-flagged by most EDR — use only if entropy is masked downstream.", capacity: "≈ 0.55× size", warn: true },
-    { id: "CustomRC4",  name: "Custom RC4",  tagline: "Stub decrypts at runtime", sub: "Stage-0 stub maps decrypted payload into RWX and jumps. Higher CPU cost on launch.", capacity: "≈ 0.92× size" },
-    { id: "Reflective", name: "Reflective",  tagline: "In-memory unpack",         sub: "No payload on disk; entire decode happens in process memory. Largest stub.", capacity: "≈ 1.05× size" },
-  ];
+  function detectUpx() {
+    window.wash.invoke('detect-upx', {})
+      .then(r => {
+        window.washState.update({ upx_info: r });
+        if (r && r.ok && r.path) setUpxPath(r.path);
+      })
+      .catch(() => {});
+  }
 
-  const selPacker = PACKERS.find(p => p.id === packerCombo) || PACKERS[0];
-  const status = [
-    { icon: "info", k: "method", v: selPacker.name },
-    { icon: "info", k: "enabled", v: packOn ? "yes" : "no" },
-  ];
-
+  const detected = !!upxPath || !!(meta.upx_info && meta.upx_info.ok);
   return (
     <Shell active="packing" crumbs={["Packing"]} pipeActive="pk"
       pipeStates={{ src: "done", sgn: "done", enc: "done", tpl: "done", cmp: "done", bd: "done", pk: "active" }}
-      status={status}>
+      status={[
+        { icon: 'info', k: 'packer', v: 'UPX' },
+        { icon: 'info', k: 'status', v: isEnabled ? (detected ? 'ready' : 'missing') : 'disabled' },
+      ]}>
       <div className="cfg">
-        <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginBottom: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 22 }}>
           <h1 className="h1">Packing</h1>
-          <span className="sub">Compress and obfuscate the compiled binary before final delivery.</span>
+          <span className="sub">Compress the final executable with the installed UPX tool.</span>
           <div style={{ flex: 1 }} />
-          <Toggle on={packOn} onChange={v => setPackEnabled(v ? 'True' : 'False')} />
-          <span style={{ fontSize: 12, color: packOn ? "var(--n-9)" : "var(--n-6)" }}>Enable</span>
+          <Toggle on={isEnabled} onChange={v => setEnabled(v ? 'True' : 'False')} />
+          <span style={{ fontSize: 12, color: isEnabled ? 'var(--n-9)' : 'var(--n-6)' }}>Enable</span>
         </div>
 
-        <div style={{ opacity: packOn ? 1 : 0.45, pointerEvents: packOn ? 'auto' : 'none' }}>
-          <Sec title="Method">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-              {PACKERS.map(p => (
-                <PackTile key={p.id} {...p}
-                  selected={packerCombo === p.id || (!packerCombo && p.id === 'None')}
-                  onClick={() => setPackerCombo(p.id)} />
-              ))}
+        <div style={{ opacity: isEnabled ? 1 : 0.45, pointerEvents: isEnabled ? 'auto' : 'none' }}>
+          <Sec title="UPX executable" action={<Chip kind={detected ? 'ok' : 'warn'} dot>{detected ? 'available' : 'not found'}</Chip>}>
+            <div className="card">
+              <Field label="upx.exe path" hint="Detected from Tools, Program Files, LocalAppData, or PATH.">
+                <input className="input mono" value={upxPath || ''}
+                  onChange={e => setUpxPath(e.target.value)} placeholder="C:\\Tools\\upx.exe" />
+              </Field>
+              <div className="row" style={{ gap: 8, marginTop: 10 }}>
+                <button className="btn" onClick={browseUpx}><Icon name="upload" size={12} />Browse…</button>
+                <button className="btn ghost" onClick={detectUpx}><Icon name="refresh" size={12} />Re-detect</button>
+              </div>
+            </div>
+          </Sec>
+
+          <Sec title="Compression">
+            <div className="card">
+              <Field label="Level">
+                <Seg value={compression || 'best'} onChange={setCompression} options={[
+                  { v: 'default', l: 'Default' },
+                  { v: 'best', l: 'Best' },
+                  { v: 'ultra', l: 'Ultra brute' },
+                ]} />
+              </Field>
+              <div className="row" style={{ gap: 12, marginTop: 16, flexWrap: 'wrap' }}>
+                <PackOption label="Strip relocations" on={stripRelocs === 'True'} onChange={v => setStripRelocs(v ? 'True' : 'False')} />
+                <PackOption label="Keep .bak backup" on={keepBackup === 'True'} onChange={v => setKeepBackup(v ? 'True' : 'False')} />
+                <Chip>overlay preserved</Chip>
+              </div>
             </div>
           </Sec>
         </div>
       </div>
 
-      <PackingPreview />
+      <div className="preview">
+        <div className="ptabs"><div className="ptab on"><Icon name="pkg" size={11} />UPX</div></div>
+        <div className="pbody ppad mono" style={{ color: 'var(--n-7)', fontSize: 12 }}>
+          {isEnabled
+            ? detected ? `Will pack the final artifact with ${upxPath}.` : 'Select upx.exe before building.'
+            : 'Packing is disabled.'}
+        </div>
+      </div>
     </Shell>
   );
 }
 
-function PackTile({ name, tagline, sub, capacity, selected, warn, onClick }) {
-  return (
-    <div onClick={onClick} style={{
-      padding: 16, borderRadius: 10, cursor: "pointer",
-      border: "1px solid " + (selected ? "var(--acc-line)" : "var(--n-4)"),
-      background: selected ? "var(--acc-bg)" : "var(--n-2)",
-    }}>
-      <div className="row" style={{ justifyContent: "space-between", marginBottom: 6 }}>
-        <div>
-          <div className="h2" style={{ fontSize: 14 }}>{name}</div>
-          <div style={{ fontSize: 11, color: "var(--n-7)", marginTop: 2 }}>{tagline}</div>
-        </div>
-        {selected && <Chip kind="acc" dot>selected</Chip>}
-        {warn && !selected && <Chip kind="warn">flagged</Chip>}
-      </div>
-      <div style={{ fontSize: 12, color: "var(--n-8)", lineHeight: 1.5, marginTop: 10 }}>{sub}</div>
-      <div className="div" />
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <span className="h3">Size factor</span>
-        <span className="mono" style={{ fontSize: 12, color: selected ? "var(--acc)" : "var(--n-8)" }}>{capacity}</span>
-      </div>
-    </div>
-  );
-}
-
-function PackingPreview() {
-  return (
-    <div className="preview">
-      <div className="ptabs">
-        <div className="ptab on"><Icon name="layers" size={11} />info</div>
-        <div style={{ flex: 1 }} />
-      </div>
-      <div className="pbody ppad">
-        <div style={{ color: "var(--n-6)", fontSize: 12, fontFamily: "var(--f-mono)" }}>
-          Packing result appears here after a successful build.
-        </div>
-      </div>
-    </div>
-  );
+function PackOption({ label, on, onChange }) {
+  return <div className="row" style={{ gap: 8, cursor: 'pointer' }} onClick={() => onChange(!on)}>
+    <Toggle on={on} onChange={onChange} />
+    <span style={{ fontSize: 12 }}>{label}</span>
+  </div>;
 }
 
 window.FramePacking = FramePacking;
-

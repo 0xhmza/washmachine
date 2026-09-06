@@ -49,15 +49,7 @@ public static class UsageFormatter
 {
     public static int GetConsoleWidth()
     {
-        try
-        {
-            int width = Console.WindowWidth;
-            return width > 40 ? width : 100;
-        }
-        catch
-        {
-            return 100;
-        }
+        return TerminalLayout.Width();
     }
 
     /// <summary>Print a section header with an underline rule.</summary>
@@ -65,7 +57,7 @@ public static class UsageFormatter
     {
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[bold {UiColors.Header}]{Markup.Escape(title.ToUpperInvariant())}[/]");
-        AnsiConsole.MarkupLine($"[{UiColors.Rule}]{new string('─', title.Length + 2)}[/]");
+        AnsiConsole.MarkupLine($"[{UiColors.Rule}]{new string('─', Math.Min(title.Length + 2, Math.Max(0, GetConsoleWidth() - 1)))}[/]");
         AnsiConsole.WriteLine();
     }
 
@@ -99,8 +91,7 @@ public static class UsageFormatter
                 int flagWidth = group.Options.Max(o => o.Flag.Length);
                 foreach (var opt in group.Options)
                 {
-                    string flag = opt.Flag.PadRight(flagWidth);
-                    AnsiConsole.MarkupLine($"  [{UiColors.Accent}]{Markup.Escape(flag)}[/]   [{UiColors.Value}]{Markup.Escape(opt.Description)}[/]");
+                    PrintPair(opt.Flag, opt.Description, UiColors.Accent, UiColors.Value, flagWidth);
 
                     var extras = new List<string>();
                     if (!string.IsNullOrWhiteSpace(opt.AcceptedValues))
@@ -108,7 +99,7 @@ public static class UsageFormatter
                     if (!string.IsNullOrWhiteSpace(opt.Default))
                         extras.Add($"Default: {opt.Default}");
                     if (extras.Count > 0)
-                        AnsiConsole.MarkupLine($"  {new string(' ', flagWidth)}   [{UiColors.Muted}]{Markup.Escape(string.Join("  ·  ", extras))}[/]");
+                        AnsiConsole.MarkupLine($"    [{UiColors.Muted}]{Markup.Escape(string.Join("  ·  ", extras))}[/]");
                 }
             }
         }
@@ -129,8 +120,7 @@ public static class UsageFormatter
                 int labelWidth = section.Notes.Max(n => n.Label.Length);
                 foreach (var note in section.Notes)
                 {
-                    string label = note.Label.PadRight(labelWidth);
-                    AnsiConsole.MarkupLine($"  [{UiColors.Label}]{Markup.Escape(label)}[/]   [{UiColors.Value}]{Markup.Escape(note.Description)}[/]");
+                    PrintPair(note.Label, note.Description, UiColors.Label, UiColors.Value, labelWidth);
                 }
             }
 
@@ -164,8 +154,7 @@ public static class UsageFormatter
             int labelWidth = usage.Related.Max(r => r.Label.Length);
             foreach (var rel in usage.Related)
             {
-                string label = rel.Label.PadRight(labelWidth);
-                AnsiConsole.MarkupLine($"  [{UiColors.Accent}]{Markup.Escape(label)}[/]   [{UiColors.Value}]{Markup.Escape(rel.Description)}[/]");
+                PrintPair(rel.Label, rel.Description, UiColors.Accent, UiColors.Value, labelWidth);
             }
         }
 
@@ -174,8 +163,22 @@ public static class UsageFormatter
 
     private static void PrintKv(string label, string value, string valueColor)
     {
-        const int labelWidth = 8; // "Best for" = 8
-        string paddedLabel = label.PadRight(labelWidth);
-        AnsiConsole.MarkupLine($"  [{UiColors.Label}]{Markup.Escape(paddedLabel)}[/]   [{valueColor}]{Markup.Escape(value)}[/]");
+        PrintPair(label, value, UiColors.Label, valueColor, 8);
+    }
+
+    private static void PrintPair(string label, string value, string labelColor, string valueColor, int preferredWidth)
+    {
+        int width = GetConsoleWidth();
+        int labelWidth = Math.Min(preferredWidth, Math.Max(1, width / 3));
+        if (width - labelWidth - 5 < 24 || label.GetCellWidth() > labelWidth)
+        {
+            AnsiConsole.MarkupLine($"  [{labelColor}]{Markup.Escape(label)}[/]");
+            AnsiConsole.MarkupLine($"    [{valueColor}]{Markup.Escape(value)}[/]");
+        }
+        else
+        {
+            string padding = new(' ', labelWidth - label.GetCellWidth());
+            AnsiConsole.MarkupLine($"  [{labelColor}]{Markup.Escape(label)}{padding}[/]   [{valueColor}]{Markup.Escape(value)}[/]");
+        }
     }
 }

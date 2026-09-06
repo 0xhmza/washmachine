@@ -140,13 +140,11 @@ function EncodedPreview() {
   return (
     <div className="preview">
       <div className="ptabs">
-        <div className="ptab on"><Icon name="term" size={11} />encoded.b64</div>
-        <div style={{ flex: 1 }} />
-        <div className="ptab"><Icon name="copy" size={11} /></div>
+        <div className="ptab on"><Icon name="term" size={11} />encoding</div>
       </div>
       <div className="pbody ppad">
         <div style={{ color: "var(--n-6)", fontSize: 12, fontFamily: "var(--f-mono)" }}>
-          Encoded output appears here after a build.
+          The selected encoder, envelope, and optional SGN step are applied during Build.
         </div>
       </div>
     </div>
@@ -154,4 +152,3 @@ function EncodedPreview() {
 }
 
 window.FrameEncode = FrameEncode;
-

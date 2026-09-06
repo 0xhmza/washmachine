@@ -1,4 +1,36 @@
 function FrameFinalize() {
+  const {
+    useField
+  } = window.washState;
+  const [finalizeEnabled, setFinalizeEnabled] = useField('EnableFinalizeToggle');
+  const [donorPath, setDonorPath] = useField('DonorPathInput');
+  const [cloneIcon, setCloneIcon] = useField('CloneIcon');
+  const [cloneVer, setCloneVer] = useField('CloneVersionInfo');
+  const [cloneRsrc, setCloneRsrc] = useField('CloneRsrc');
+  const [nopPad, setNopPad] = useField('NopPaddingInput');
+  const finalizeOn = finalizeEnabled === 'True';
+  const nopBytes = parseInt(nopPad) || 0;
+  const nopLabel = nopBytes >= 1024 * 1024 ? `= ${(nopBytes / (1024 * 1024)).toFixed(1)} MiB` : nopBytes >= 1024 ? `= ${(nopBytes / 1024).toFixed(1)} KiB` : nopBytes > 0 ? `= ${nopBytes} B` : '';
+  function browseDonor() {
+    window.wash.invoke('browse-file', {
+      filters: [{
+        name: 'Executables',
+        patterns: ['.exe', '.dll']
+      }]
+    }).then(r => {
+      if (r && r.ok && r.path) setDonorPath(r.path);
+    }).catch(() => {});
+  }
+  const donorName = donorPath ? donorPath.split('\\').pop() : 'none';
+  const status = [{
+    icon: "info",
+    k: "donor",
+    v: donorName
+  }, {
+    icon: "info",
+    k: "padding",
+    v: nopLabel || 'none'
+  }];
   return React.createElement(Shell, {
     active: "finalize",
     crumbs: ["Finalize"],
@@ -13,15 +45,7 @@ function FrameFinalize() {
       pk: "done",
       fn: "active"
     },
-    status: [{
-      icon: "info",
-      k: "donor",
-      v: "OneDrive.exe"
-    }, {
-      icon: "info",
-      k: "padding",
-      v: "1.0 MiB NOP"
-    }]
+    status: status
   }, React.createElement("div", {
     className: "cfg"
   }, React.createElement("div", {
@@ -35,11 +59,25 @@ function FrameFinalize() {
     className: "h1"
   }, "Finalize output"), React.createElement("span", {
     className: "sub"
-  }, "Clone metadata from a benign donor and adjust the file shape.")), React.createElement(Sec, {
-    title: "Donor metadata",
-    action: React.createElement(Chip, {
-      kind: "acc"
-    }, "authenticode unsigned")
+  }, "Clone supported PE resources and append NOP overlay padding."), React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }), React.createElement(Toggle, {
+    on: finalizeOn,
+    onChange: v => setFinalizeEnabled(v ? 'True' : 'False')
+  }), React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: finalizeOn ? "var(--n-9)" : "var(--n-6)"
+    }
+  }, "Enable")), React.createElement("div", {
+    style: {
+      opacity: finalizeOn ? 1 : 0.45,
+      pointerEvents: finalizeOn ? 'auto' : 'none'
+    }
+  }, React.createElement(Sec, {
+    title: "Donor metadata"
   }, React.createElement("div", {
     className: "card"
   }, React.createElement("div", {
@@ -54,60 +92,54 @@ function FrameFinalize() {
     }
   }, React.createElement(Field, {
     label: "Donor executable",
-    hint: "Used as source for icon, resources, and version metadata."
+    hint: "Source for icon, resources, and version metadata."
   }, React.createElement("input", {
     className: "input mono",
-    defaultValue: "C:\\Users\\hmza\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe"
-  })), React.createElement("div", {
+    value: donorPath,
+    onChange: e => setDonorPath(e.target.value),
+    placeholder: "C:\\Windows\\System32\\OneDrive.exe"
+  })), React.createElement("button", {
+    className: "btn",
+    style: {
+      marginTop: 10
+    },
+    onClick: browseDonor
+  }, React.createElement(Icon, {
+    name: "upload",
+    size: 12
+  }), "Browse\u2026"), React.createElement("div", {
     className: "row",
     style: {
-      marginTop: 12,
+      marginTop: 14,
       gap: 12,
       flexWrap: "wrap"
     }
   }, React.createElement(CloneToggle, {
     label: "Icon",
-    on: true
+    on: cloneIcon === 'True',
+    onChange: v => setCloneIcon(v ? 'True' : 'False')
   }), React.createElement(CloneToggle, {
     label: "Version info",
-    on: true
+    on: cloneVer === 'True',
+    onChange: v => setCloneVer(v ? 'True' : 'False')
   }), React.createElement(CloneToggle, {
-    label: "Manifest",
-    on: true
-  }), React.createElement(CloneToggle, {
-    label: ".rsrc tree",
-    on: true
-  }), React.createElement(CloneToggle, {
-    label: "Authenticode signature"
-  }), React.createElement(CloneToggle, {
-    label: "Original file name"
+    label: "Other resources",
+    on: cloneRsrc === 'True',
+    onChange: v => setCloneRsrc(v ? 'True' : 'False')
   }))), React.createElement("div", {
     style: {
-      width: 240,
+      width: 220,
       borderLeft: "1px solid var(--n-4)",
       paddingLeft: 18
     }
-  }, React.createElement(H3, null, "Preview \xB7 version info"), React.createElement("div", {
+  }, React.createElement(H3, null, "Donor"), React.createElement("div", {
     className: "mono",
     style: {
       fontSize: 11,
-      color: "var(--n-8)",
-      marginTop: 10,
-      lineHeight: 1.85
+      color: donorPath ? "var(--n-9)" : "var(--n-6)",
+      marginTop: 10
     }
-  }, "CompanyName       ", React.createElement("span", {
-    style: {
-      color: "var(--n-10)"
-    }
-  }, "Microsoft Corporation"), "\n", "ProductName       ", React.createElement("span", {
-    style: {
-      color: "var(--n-10)"
-    }
-  }, "Microsoft OneDrive"), "\n", "FileVersion       ", React.createElement("span", {
-    style: {
-      color: "var(--n-10)"
-    }
-  }, "24.176.0901.0002"), "\n", "Copyright         \xA9 Microsoft", "\n", "OriginalFilename  OneDrive.exe"))))), React.createElement(Sec, {
+  }, donorPath ? donorPath.split('\\').pop() : 'No donor selected'))))), React.createElement(Sec, {
     title: "File shaping"
   }, React.createElement("div", {
     className: "card"
@@ -117,17 +149,18 @@ function FrameFinalize() {
       gap: 16
     }
   }, React.createElement(Field, {
-    label: "NOP padding (bytes)",
-    hint: "Append zero-effect bytes to alter hash & shape."
+    label: "NOP overlay padding (bytes)",
+    hint: "Append 0x90 bytes after the PE image."
   }, React.createElement("div", {
     className: "input-wrap"
   }, React.createElement("input", {
     className: "input mono",
-    defaultValue: "1048576",
+    value: nopPad,
+    onChange: e => setNopPad(e.target.value),
     style: {
       width: 220
     }
-  }), React.createElement("span", {
+  }), nopLabel && React.createElement("span", {
     style: {
       position: "absolute",
       right: 10,
@@ -136,100 +169,14 @@ function FrameFinalize() {
       color: "var(--n-7)",
       fontSize: 11
     }
-  }, "= 1.0 MiB"))), React.createElement(Field, {
-    label: "Pattern"
-  }, React.createElement(Seg, {
-    value: "nop",
-    options: [{
-      v: "nop",
-      l: "0x90"
-    }, {
-      v: "zero",
-      l: "0x00"
-    }, {
-      v: "rand",
-      l: "Random"
-    }]
-  })), React.createElement(Field, {
-    label: "Append location"
-  }, React.createElement(Seg, {
-    value: "overlay",
-    options: [{
-      v: "overlay",
-      l: "Overlay"
-    }, {
-      v: "section",
-      l: "New section"
-    }]
-  }))), React.createElement("div", {
-    className: "div"
-  }), React.createElement("div", null, React.createElement(H3, null, "Result"), React.createElement("div", {
-    className: "row",
-    style: {
-      marginTop: 10,
-      gap: 24
-    }
-  }, React.createElement(Stat, {
-    k: "size",
-    v: "2.21 MB",
-    subk: "was",
-    subv: "1.21 MB"
-  }), React.createElement(Stat, {
-    k: "sha256",
-    v: "9c4f\u20262e10",
-    subk: "was",
-    subv: "4f7b\u2026a9d2"
-  }), React.createElement(Stat, {
-    k: "entropy",
-    v: "6.21",
-    subk: "was",
-    subv: "7.42",
-    sublabel: "dropped \u2014 good",
-    ok: true
-  }), React.createElement(Stat, {
-    k: "age stamp",
-    v: "2024-08-12",
-    subk: "from",
-    subv: "OneDrive.exe"
-  }))))), React.createElement(Sec, {
-    title: "Packing",
-    action: React.createElement(Chip, null, "configured on Packing screen")
-  }, React.createElement("div", {
-    className: "card flat row",
-    style: {
-      gap: 12
-    }
-  }, React.createElement("div", {
-    style: {
-      width: 36,
-      height: 36,
-      borderRadius: 8,
-      background: "var(--n-2)",
-      border: "1px solid var(--n-4)",
-      display: "grid",
-      placeItems: "center"
-    }
-  }, React.createElement(Icon, {
-    name: "pkg",
-    size: 16
-  })), React.createElement("div", {
-    style: {
-      flex: 1
-    }
-  }, React.createElement("div", {
-    className: "h2"
-  }, "Packing pass"), React.createElement("div", {
-    className: "sub"
-  }, "None \u2014 ship binary as-is.")), React.createElement("button", {
-    className: "btn ghost"
-  }, "Configure ", React.createElement(Icon, {
-    name: "chev",
-    size: 12
-  }))))), React.createElement(FinalizePreview, null));
+  }, nopLabel)))))))), React.createElement(FinalizePreview, {
+    donorName: donorName
+  }));
 }
 function CloneToggle({
   label,
-  on
+  on,
+  onChange
 }) {
   return React.createElement("div", {
     className: "row",
@@ -238,10 +185,13 @@ function CloneToggle({
       padding: "6px 10px",
       borderRadius: 6,
       background: on ? "var(--acc-bg)" : "var(--n-1)",
-      border: "1px solid " + (on ? "var(--acc-line)" : "var(--n-4)")
-    }
+      border: "1px solid " + (on ? "var(--acc-line)" : "var(--n-4)"),
+      cursor: "pointer"
+    },
+    onClick: () => onChange(!on)
   }, React.createElement(Toggle, {
-    on: !!on
+    on: !!on,
+    onChange: onChange
   }), React.createElement("span", {
     style: {
       fontSize: 12,
@@ -249,79 +199,18 @@ function CloneToggle({
     }
   }, label));
 }
-function Stat({
-  k,
-  v,
-  subk,
-  subv,
-  sublabel,
-  ok
+function FinalizePreview({
+  donorName
 }) {
-  return React.createElement("div", null, React.createElement("div", {
-    className: "h3",
-    style: {
-      marginBottom: 4
+  const meta = window.washState.useFields('build_lastResult');
+  const lastResult = meta.build_lastResult;
+  function revealOutput() {
+    if (lastResult && lastResult.outputPath) {
+      window.wash.invoke('reveal-file', {
+        path: lastResult.outputPath
+      }).catch(() => {});
     }
-  }, k), React.createElement("div", {
-    className: "mono",
-    style: {
-      fontSize: 18,
-      color: "var(--n-10)",
-      fontWeight: 500,
-      letterSpacing: -0.01
-    }
-  }, v), React.createElement("div", {
-    className: "mono",
-    style: {
-      fontSize: 10,
-      color: "var(--n-7)",
-      marginTop: 3
-    }
-  }, subk, " ", React.createElement("span", {
-    style: {
-      color: "var(--n-8)"
-    }
-  }, subv), " ", sublabel && React.createElement("span", {
-    style: {
-      color: ok ? "var(--ok)" : "var(--n-7)"
-    }
-  }, "\xB7 ", sublabel)));
-}
-function PackCard({
-  name,
-  sub,
-  selected,
-  warn
-}) {
-  return React.createElement("div", {
-    style: {
-      flex: 1,
-      padding: 12,
-      borderRadius: 8,
-      border: "1px solid " + (selected ? "var(--acc-line)" : "var(--n-4)"),
-      background: selected ? "var(--acc-bg)" : "var(--n-1)"
-    }
-  }, React.createElement("div", {
-    className: "row",
-    style: {
-      justifyContent: "space-between"
-    }
-  }, React.createElement("div", {
-    className: "h2",
-    style: {
-      fontSize: 13
-    }
-  }, name), warn && React.createElement(Chip, {
-    kind: "warn"
-  }, "flagged")), React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: "var(--n-7)",
-      marginTop: 4
-    }
-  }, sub));
-}
-function FinalizePreview() {
+  }
   return React.createElement("div", {
     className: "preview"
   }, React.createElement("div", {
@@ -332,215 +221,52 @@ function FinalizePreview() {
     name: "layers",
     size: 11
   }), "artifact"), React.createElement("div", {
-    className: "ptab"
-  }, React.createElement(Icon, {
-    name: "bug",
-    size: 11
-  }), "before/after"), React.createElement("div", {
-    className: "ptab"
-  }, React.createElement(Icon, {
-    name: "doc",
-    size: 11
-  }), "manifest")), React.createElement("div", {
-    className: "pbody ppad"
-  }, React.createElement("div", {
-    style: {
-      display: "grid",
-      gap: 16
-    }
-  }, React.createElement("div", {
-    className: "card flat",
-    style: {
-      padding: 14
-    }
-  }, React.createElement(H3, null, "Surface \xB7 file explorer"), React.createElement("div", {
-    className: "row",
-    style: {
-      marginTop: 12,
-      gap: 12
-    }
-  }, React.createElement("div", {
-    style: {
-      width: 48,
-      height: 48,
-      borderRadius: 6,
-      background: "var(--n-2)",
-      border: "1px solid var(--n-4)",
-      display: "grid",
-      placeItems: "center",
-      color: "var(--acc)",
-      fontSize: 22,
-      fontWeight: 700
-    }
-  }, "\u2601"), React.createElement("div", {
     style: {
       flex: 1
     }
+  })), React.createElement("div", {
+    className: "pbody ppad"
+  }, lastResult && lastResult.ok ? React.createElement("div", {
+    style: {
+      display: "grid",
+      gap: 14
+    }
   }, React.createElement("div", {
-    className: "mono",
-    style: {
-      fontSize: 12,
-      color: "var(--n-10)"
-    }
-  }, "20260519-4f7ba9d2.exe"), React.createElement("div", {
-    className: "mono",
-    style: {
-      fontSize: 11,
-      color: "var(--n-7)",
-      marginTop: 2
-    }
-  }, "Microsoft OneDrive \xB7 2.21 MB")), React.createElement(Chip, {
-    kind: "ok",
-    dot: true
-  }, "icon cloned"))), React.createElement("div", {
     className: "card flat",
     style: {
       padding: 14
     }
-  }, React.createElement(H3, null, "Output manifest"), React.createElement("div", {
+  }, React.createElement(H3, null, "Output"), React.createElement("div", {
     className: "mono",
     style: {
-      fontSize: 11,
-      color: "var(--n-8)",
-      marginTop: 10,
-      lineHeight: 1.85
+      fontSize: 12,
+      color: "var(--n-10)",
+      marginTop: 8
     }
-  }, React.createElement("span", {
-    style: {
-      color: "var(--n-7)"
-    }
-  }, "session"), "      ", React.createElement("span", {
-    style: {
-      color: "var(--n-10)"
-    }
-  }, "session_20260519_001a"), "\n", React.createElement("span", {
-    style: {
-      color: "var(--n-7)"
-    }
-  }, "source"), "       ", React.createElement("span", {
-    style: {
-      color: "var(--n-10)"
-    }
-  }, "calc_x64.bin"), "\n", React.createElement("span", {
-    style: {
-      color: "var(--n-7)"
-    }
-  }, "template"), "     full-loader", "\n", React.createElement("span", {
-    style: {
-      color: "var(--n-7)"
-    }
-  }, "encoder"), "      XOR + Base64 (key=9fa24cd7)", "\n", React.createElement("span", {
-    style: {
-      color: "var(--n-7)"
-    }
-  }, "snippets"), "     5 selected", "\n", React.createElement("span", {
-    style: {
-      color: "var(--n-7)"
-    }
-  }, "backdoor"), "     putty.exe \xB7 code-cave @ 0x004f3a18", "\n", React.createElement("span", {
-    style: {
-      color: "var(--n-7)"
-    }
-  }, "donor"), "        OneDrive.exe", "\n", React.createElement("span", {
-    style: {
-      color: "var(--n-7)"
-    }
-  }, "output"), "       ", React.createElement("span", {
-    style: {
-      color: "var(--acc)"
-    }
-  }, "out/20260519-4f7ba9d2.exe"), "\n", React.createElement("span", {
-    style: {
-      color: "var(--n-7)"
-    }
-  }, "sha256"), "       9c4f8d2a1bce7e10\u2026", "\n", React.createElement("span", {
-    style: {
-      color: "var(--n-7)"
-    }
-  }, "size"), "         2.21 MB"), React.createElement("div", {
+  }, lastResult.outputPath || '(path unavailable)'), React.createElement("div", {
     className: "row",
     style: {
-      marginTop: 14,
+      marginTop: 12,
       gap: 8
     }
   }, React.createElement("button", {
-    className: "btn primary"
+    className: "btn primary",
+    onClick: revealOutput
   }, React.createElement(Icon, {
     name: "dl",
     size: 12
   }), "Reveal in Explorer"), React.createElement("button", {
-    className: "btn"
+    className: "btn",
+    onClick: () => navigator.clipboard && navigator.clipboard.writeText(lastResult.outputPath || '')
   }, React.createElement(Icon, {
     name: "copy",
     size: 12
-  }), "Copy hash"), React.createElement("button", {
-    className: "btn ghost"
-  }, React.createElement(Icon, {
-    name: "upload",
-    size: 12
-  }), "Save preset"))), React.createElement("div", {
-    className: "card flat",
+  }), "Copy path")))) : React.createElement("div", {
     style: {
-      padding: 14
-    }
-  }, React.createElement(H3, null, "Recommended next"), React.createElement("div", {
-    className: "col",
-    style: {
-      marginTop: 10,
-      gap: 8
-    }
-  }, React.createElement(NextRow, {
-    icon: "beaker",
-    label: "Test in detonation lab",
-    sub: "run against your VM matrix"
-  }), React.createElement(NextRow, {
-    icon: "history",
-    label: "Save as preset",
-    sub: "re-run this exact composition"
-  }))))));
-}
-function NextRow({
-  icon,
-  label,
-  sub
-}) {
-  return React.createElement("div", {
-    className: "row",
-    style: {
-      padding: "8px 0",
-      borderTop: "1px solid var(--n-3)",
-      gap: 10
-    }
-  }, React.createElement("div", {
-    style: {
-      width: 28,
-      height: 28,
-      borderRadius: 6,
-      background: "var(--n-2)",
-      border: "1px solid var(--n-4)",
-      display: "grid",
-      placeItems: "center"
-    }
-  }, React.createElement(Icon, {
-    name: icon,
-    size: 13
-  })), React.createElement("div", {
-    style: {
-      flex: 1
-    }
-  }, React.createElement("div", {
-    style: {
+      color: "var(--n-6)",
       fontSize: 12,
-      color: "var(--n-9)"
+      fontFamily: "var(--f-mono)"
     }
-  }, label), React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: "var(--n-7)"
-    }
-  }, sub)), React.createElement(Icon, {
-    name: "chev",
-    size: 12
-  }));
+  }, "Output details appear here after a successful build.")));
 }
 window.FrameFinalize = FrameFinalize;

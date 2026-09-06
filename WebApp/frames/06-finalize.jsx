@@ -2,14 +2,13 @@
 
 function FrameFinalize() {
   const { useField } = window.washState;
+  const [finalizeEnabled, setFinalizeEnabled] = useField('EnableFinalizeToggle');
   const [donorPath, setDonorPath] = useField('DonorPathInput');
   const [cloneIcon, setCloneIcon] = useField('CloneIcon');
   const [cloneVer, setCloneVer]   = useField('CloneVersionInfo');
-  const [cloneManifest, setCloneManifest] = useField('CloneManifest');
   const [cloneRsrc, setCloneRsrc] = useField('CloneRsrc');
   const [nopPad, setNopPad] = useField('NopPaddingInput');
-  const [nopPattern, setNopPattern] = useField('NopPattern');
-  const [appendLoc, setAppendLoc] = useField('AppendLocation');
+  const finalizeOn = finalizeEnabled === 'True';
 
   const nopBytes = parseInt(nopPad) || 0;
   const nopLabel = nopBytes >= 1024 * 1024
@@ -37,9 +36,13 @@ function FrameFinalize() {
       <div className="cfg">
         <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginBottom: 22 }}>
           <h1 className="h1">Finalize output</h1>
-          <span className="sub">Clone metadata from a benign donor and adjust the file shape.</span>
+          <span className="sub">Clone supported PE resources and append NOP overlay padding.</span>
+          <div style={{ flex: 1 }} />
+          <Toggle on={finalizeOn} onChange={v => setFinalizeEnabled(v ? 'True' : 'False')} />
+          <span style={{ fontSize: 12, color: finalizeOn ? "var(--n-9)" : "var(--n-6)" }}>Enable</span>
         </div>
 
+        <div style={{ opacity: finalizeOn ? 1 : 0.45, pointerEvents: finalizeOn ? 'auto' : 'none' }}>
         <Sec title="Donor metadata">
           <div className="card">
             <div className="row" style={{ gap: 16, alignItems: "stretch" }}>
@@ -53,8 +56,7 @@ function FrameFinalize() {
                 <div className="row" style={{ marginTop: 14, gap: 12, flexWrap: "wrap" }}>
                   <CloneToggle label="Icon"             on={cloneIcon === 'True'}    onChange={v => setCloneIcon(v ? 'True' : 'False')} />
                   <CloneToggle label="Version info"     on={cloneVer === 'True'}     onChange={v => setCloneVer(v ? 'True' : 'False')} />
-                  <CloneToggle label="Manifest"         on={cloneManifest === 'True'} onChange={v => setCloneManifest(v ? 'True' : 'False')} />
-                  <CloneToggle label=".rsrc tree"       on={cloneRsrc === 'True'}    onChange={v => setCloneRsrc(v ? 'True' : 'False')} />
+                  <CloneToggle label="Other resources"  on={cloneRsrc === 'True'}    onChange={v => setCloneRsrc(v ? 'True' : 'False')} />
                 </div>
               </div>
               <div style={{ width: 220, borderLeft: "1px solid var(--n-4)", paddingLeft: 18 }}>
@@ -70,7 +72,7 @@ function FrameFinalize() {
         <Sec title="File shaping">
           <div className="card">
             <div className="row" style={{ gap: 16 }}>
-              <Field label="NOP padding (bytes)" hint="Append zero-effect bytes to alter hash &amp; shape.">
+              <Field label="NOP overlay padding (bytes)" hint="Append 0x90 bytes after the PE image.">
                 <div className="input-wrap">
                   <input className="input mono" value={nopPad}
                     onChange={e => setNopPad(e.target.value)}
@@ -78,17 +80,10 @@ function FrameFinalize() {
                   {nopLabel && <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "var(--n-7)", fontSize: 11 }}>{nopLabel}</span>}
                 </div>
               </Field>
-              <Field label="Pattern">
-                <Seg value={nopPattern || 'nop'} onChange={setNopPattern}
-                  options={[{ v: "nop", l: "0x90" }, { v: "zero", l: "0x00" }, { v: "rand", l: "Random" }]} />
-              </Field>
-              <Field label="Append location">
-                <Seg value={appendLoc || 'overlay'} onChange={setAppendLoc}
-                  options={[{ v: "overlay", l: "Overlay" }, { v: "section", l: "New section" }]} />
-              </Field>
             </div>
           </div>
         </Sec>
+        </div>
       </div>
 
       <FinalizePreview donorName={donorName} />
@@ -104,7 +99,7 @@ function CloneToggle({ label, on, onChange }) {
       border: "1px solid " + (on ? "var(--acc-line)" : "var(--n-4)"),
       cursor: "pointer",
     }} onClick={() => onChange(!on)}>
-      <Toggle on={!!on} />
+      <Toggle on={!!on} onChange={onChange} />
       <span style={{ fontSize: 12, color: on ? "var(--n-10)" : "var(--n-8)" }}>{label}</span>
     </div>
   );
@@ -151,4 +146,3 @@ function FinalizePreview({ donorName }) {
 }
 
 window.FrameFinalize = FrameFinalize;
-
