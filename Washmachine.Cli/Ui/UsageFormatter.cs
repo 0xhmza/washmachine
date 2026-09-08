@@ -41,144 +41,87 @@ public record CommandUsage(
     UsageNote[]? Related = null,
     string? HeaderTitle = null);
 
-/// <summary>
-/// Flat, box-free help renderer. Sections are separated by bold headers and
-/// a thin rule — no panels, no borders.
-/// </summary>
+/// <summary>Shared help presentation; existing models and entry points remain compatible.</summary>
 public static class UsageFormatter
 {
-    public static int GetConsoleWidth()
+    internal static IAnsiConsole PlainConsole(TextWriter output)
     {
-        return TerminalLayout.Width();
+        var console = AnsiConsole.Create(new AnsiConsoleSettings
+        {
+            Ansi = AnsiSupport.No,
+            ColorSystem = ColorSystemSupport.NoColors,
+            Interactive = InteractionSupport.No,
+            Out = new AnsiConsoleOutput(output)
+        });
+        console.Profile.Width = ReferenceEquals(output, Console.Out) && !Console.IsOutputRedirected
+            ? TerminalLayout.Width() : 80;
+        return console;
     }
 
-    /// <summary>Print a section header with an underline rule.</summary>
-    public static void PrintSectionHeader(string title)
+    public static int GetConsoleWidth() => TerminalLayout.Width();
+    public static void PrintSectionHeader(string title) => new HelpWriter(AnsiConsole.Console).Heading(title);
+    public static void Print(CommandUsage usage) => Print(usage, AnsiConsole.Console);
+
+    /// <summary>Injectable output for tests and hosts, without global state changes.</summary>
+    public static void Print(CommandUsage usage, IAnsiConsole console)
     {
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[bold {UiColors.Header}]{Markup.Escape(title.ToUpperInvariant())}[/]");
-        AnsiConsole.MarkupLine($"[{UiColors.Rule}]{new string('─', Math.Min(title.Length + 2, Math.Max(0, GetConsoleWidth() - 1)))}[/]");
-        AnsiConsole.WriteLine();
-    }
+        ArgumentNullException.ThrowIfNull(usage);
+        ArgumentNullException.ThrowIfNull(console);
+        var writer = new HelpWriter(console);
+        writer.Heading(usage.HeaderTitle ?? $"{usage.Name} command");
+        writer.Paragraph(usage.Summary, UiColors.Value);
+        writer.Heading("Usage");
+        writer.Paragraph(usage.Syntax, UiColors.Accent);
+        if (!string.IsNullOrWhiteSpace(usage.Description)) writer.Pair("Details", usage.Description);
+        if (!string.IsNullOrWhiteSpace(usage.WhenToUse)) writer.Pair("Best for", usage.WhenToUse);
+        if (!string.IsNullOrWhiteSpace(usage.Output)) writer.Pair("Output", usage.Output);
 
-    public static void Print(CommandUsage usage)
-    {
-        PrintSectionHeader(usage.HeaderTitle ?? $"{usage.Name} command");
-
-        // Overview fields
-        PrintKv("Summary", usage.Summary, UiColors.Value);
-        PrintKv("Usage",   usage.Syntax,  UiColors.Accent);
-        if (!string.IsNullOrWhiteSpace(usage.Description))
-            PrintKv("Details",  usage.Description!, UiColors.Value);
-        if (!string.IsNullOrWhiteSpace(usage.WhenToUse))
-            PrintKv("Best for", usage.WhenToUse!,   UiColors.Value);
-        if (!string.IsNullOrWhiteSpace(usage.Output))
-            PrintKv("Output",   usage.Output!,       UiColors.Value);
-
-        // Option groups
-        foreach (var group in usage.OptionGroups ?? Array.Empty<UsageOptionGroup>())
+        foreach (var group in usage.OptionGroups ?? [])
         {
-            PrintSectionHeader(group.Title);
-
-            if (!string.IsNullOrWhiteSpace(group.Description))
+            writer.Heading(group.Title);
+            if (!string.IsNullOrWhiteSpace(group.Description)) writer.Paragraph(group.Description, UiColors.Value);
+            int labelWidth = group.Options.Select(o => HelpWriter.Sanitize(o.Flag).GetCellWidth()).DefaultIfEmpty(0).Max();
+            foreach (var option in group.Options)
             {
-                AnsiConsole.MarkupLine($"  [{UiColors.Value}]{Markup.Escape(group.Description)}[/]");
-                AnsiConsole.WriteLine();
-            }
-
-            if (group.Options.Length > 0)
-            {
-                int flagWidth = group.Options.Max(o => o.Flag.Length);
-                foreach (var opt in group.Options)
-                {
-                    PrintPair(opt.Flag, opt.Description, UiColors.Accent, UiColors.Value, flagWidth);
-
-                    var extras = new List<string>();
-                    if (!string.IsNullOrWhiteSpace(opt.AcceptedValues))
-                        extras.Add($"Values: {opt.AcceptedValues}");
-                    if (!string.IsNullOrWhiteSpace(opt.Default))
-                        extras.Add($"Default: {opt.Default}");
-                    if (extras.Count > 0)
-                        AnsiConsole.MarkupLine($"    [{UiColors.Muted}]{Markup.Escape(string.Join("  ·  ", extras))}[/]");
-                }
+                writer.Pair(option.Flag, option.Description, labelWidth);
+                if (!string.IsNullOrWhiteSpace(option.AcceptedValues)) writer.Paragraph($"Values: {option.AcceptedValues}", UiColors.Muted, 4);
+                if (!string.IsNullOrWhiteSpace(option.Default)) writer.Paragraph($"Default: {option.Default}", UiColors.Muted, 4);
             }
         }
-
-        // Generic sections
-        foreach (var section in usage.Sections ?? Array.Empty<UsageSection>())
+        foreach (var section in usage.Sections ?? [])
         {
-            PrintSectionHeader(section.Title);
-
-            if (!string.IsNullOrWhiteSpace(section.Description))
-            {
-                AnsiConsole.MarkupLine($"  [{UiColors.Value}]{Markup.Escape(section.Description)}[/]");
-                AnsiConsole.WriteLine();
-            }
-
-            if (section.Notes is { Length: > 0 })
-            {
-                int labelWidth = section.Notes.Max(n => n.Label.Length);
-                foreach (var note in section.Notes)
-                {
-                    PrintPair(note.Label, note.Description, UiColors.Label, UiColors.Value, labelWidth);
-                }
-            }
-
-            if (section.Bullets is { Length: > 0 })
-            {
-                foreach (var bullet in section.Bullets)
-                    AnsiConsole.MarkupLine($"  [{UiColors.Value}]· {Markup.Escape(bullet)}[/]");
-            }
+            writer.Heading(section.Title);
+            if (!string.IsNullOrWhiteSpace(section.Description)) writer.Paragraph(section.Description, UiColors.Value);
+            foreach (var note in section.Notes ?? []) writer.Pair(note.Label, note.Description);
+            foreach (var bullet in section.Bullets ?? []) writer.Paragraph($"- {bullet}", UiColors.Value);
         }
-
-        // Examples
         if (usage.Examples is { Length: > 0 })
         {
-            PrintSectionHeader("Examples");
-            bool first = true;
-            foreach (var ex in usage.Examples)
+            writer.Heading("Examples");
+            foreach (var example in usage.Examples)
             {
-                if (!first) AnsiConsole.WriteLine();
-                AnsiConsole.MarkupLine($"  [{UiColors.Label}]{Markup.Escape(ex.Description)}[/]");
-                if (ex.Shell != "Any shell")
-                    AnsiConsole.MarkupLine($"  [{UiColors.Muted}]({Markup.Escape(ex.Shell)})[/]");
-                AnsiConsole.MarkupLine($"  [{UiColors.Accent}]>[/] [{UiColors.Value}]{Markup.Escape(ex.Command)}[/]");
-                first = false;
+                writer.Paragraph(example.Description, UiColors.Label);
+                if (example.Shell != "Any shell") writer.Paragraph($"({example.Shell})", UiColors.Muted);
+                writer.Paragraph(example.Command, UiColors.Accent, 4);
+                writer.Blank();
             }
         }
-
-        // Related commands
         if (usage.Related is { Length: > 0 })
         {
-            PrintSectionHeader("Related commands");
-            int labelWidth = usage.Related.Max(r => r.Label.Length);
-            foreach (var rel in usage.Related)
-            {
-                PrintPair(rel.Label, rel.Description, UiColors.Accent, UiColors.Value, labelWidth);
-            }
+            writer.Heading("Related commands");
+            foreach (var related in usage.Related) writer.Pair(related.Label, related.Description);
         }
-
-        AnsiConsole.WriteLine();
+        writer.Blank();
     }
 
-    private static void PrintKv(string label, string value, string valueColor)
-    {
-        PrintPair(label, value, UiColors.Label, valueColor, 8);
-    }
+    public static void PrintFields(string title, IEnumerable<UsageNote> fields) =>
+        PrintFields(title, fields, AnsiConsole.Console);
 
-    private static void PrintPair(string label, string value, string labelColor, string valueColor, int preferredWidth)
+    public static void PrintFields(string title, IEnumerable<UsageNote> fields, IAnsiConsole console)
     {
-        int width = GetConsoleWidth();
-        int labelWidth = Math.Min(preferredWidth, Math.Max(1, width / 3));
-        if (width - labelWidth - 5 < 24 || label.GetCellWidth() > labelWidth)
-        {
-            AnsiConsole.MarkupLine($"  [{labelColor}]{Markup.Escape(label)}[/]");
-            AnsiConsole.MarkupLine($"    [{valueColor}]{Markup.Escape(value)}[/]");
-        }
-        else
-        {
-            string padding = new(' ', labelWidth - label.GetCellWidth());
-            AnsiConsole.MarkupLine($"  [{labelColor}]{Markup.Escape(label)}{padding}[/]   [{valueColor}]{Markup.Escape(value)}[/]");
-        }
+        var writer = new HelpWriter(console);
+        writer.Heading(title);
+        foreach (var field in fields) writer.Pair(field.Label, field.Description);
+        writer.Blank();
     }
 }

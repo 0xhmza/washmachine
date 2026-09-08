@@ -236,24 +236,19 @@ public static partial class Program
     /// </summary>
     private static void PrintOptionHelpDetail(SessionOptionSpec spec, string currentValue)
     {
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"  [bold {UiColors.Header}]{Markup.Escape(spec.Name)}[/] [{UiColors.Muted}]—[/] [{UiColors.Value}]{Markup.Escape(spec.Description)}[/]");
-
-        string requiredText = spec.Required ? "yes" : "no";
-        string defaultText = string.IsNullOrWhiteSpace(spec.DefaultValue) ? "(none)" : spec.DefaultValue!;
-        AnsiConsole.MarkupLine(
-            $"  [{UiColors.Label}]Required:[/] [{(spec.Required ? UiColors.Error : UiColors.Muted)}]{requiredText}[/]   " +
-            $"[{UiColors.Label}]Default:[/] [{UiColors.Value}]{Markup.Escape(defaultText)}[/]   " +
-            $"[{UiColors.Label}]Current:[/] [{UiColors.Value}]{Markup.Escape(currentValue)}[/]");
-        AnsiConsole.MarkupLine($"  [{UiColors.Label}]Details:[/]    [{UiColors.Value}]{Markup.Escape(spec.Details)}[/]");
-        AnsiConsole.MarkupLine($"  [{UiColors.Label}]Expected:[/]   [{UiColors.Value}]{Markup.Escape(spec.Expected)}[/]");
-        AnsiConsole.MarkupLine($"  [{UiColors.Label}]Example:[/]    [{UiColors.Accent}]set {Markup.Escape(spec.Name)} {Markup.Escape(spec.Example)}[/]");
-
-        if (!string.IsNullOrWhiteSpace(spec.WhenToChange))
-            AnsiConsole.MarkupLine($"  [{UiColors.Label}]When to change:[/] [{UiColors.Value}]{Markup.Escape(spec.WhenToChange!)}[/]");
-        if (!string.IsNullOrWhiteSpace(spec.DependsOn))
-            AnsiConsole.MarkupLine($"  [{UiColors.Label}]Depends on:[/]     [{UiColors.Value}]{Markup.Escape(spec.DependsOn!)}[/]");
-        AnsiConsole.WriteLine();
+        var fields = new List<UsageNote>
+        {
+            new("Summary", spec.Description),
+            new("Required", spec.Required ? "yes" : "no"),
+            new("Default", string.IsNullOrWhiteSpace(spec.DefaultValue) ? "(none)" : spec.DefaultValue),
+            new("Current", currentValue),
+            new("Details", spec.Details),
+            new("Expected", spec.Expected),
+            new("Example", $"set {spec.Name} {spec.Example}")
+        };
+        if (!string.IsNullOrWhiteSpace(spec.WhenToChange)) fields.Add(new("When to change", spec.WhenToChange));
+        if (!string.IsNullOrWhiteSpace(spec.DependsOn)) fields.Add(new("Depends on", spec.DependsOn));
+        UsageFormatter.PrintFields(spec.Name, fields);
     }
 
     private static string NormalizeSessionOptionName(string value)

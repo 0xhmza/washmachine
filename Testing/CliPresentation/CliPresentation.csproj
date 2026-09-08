@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputPath>$(MSBuildThisFileDirectory)bin\$(Configuration)\</OutputPath>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Presentation sources only; no application or payload services. -->
+    <Compile Include="..\..\Washmachine.Cli\Ui\UsageFormatter.cs" Link="UsageFormatter.cs" />
+    <Compile Include="..\..\Washmachine.Cli\Ui\HelpWriter.cs" Link="HelpWriter.cs" />
+    <Compile Include="..\..\Washmachine.Cli\Ui\TerminalLayout.cs" Link="TerminalLayout.cs" />
+    <Compile Include="..\..\Washmachine.Cli\Ui\UiColors.cs" Link="UiColors.cs" />
+    <Compile Include="..\..\Washmachine.Cli\Ui\ColorSchemes.cs" Link="ColorSchemes.cs" />
+    <Compile Include="..\..\Washmachine.Cli\AnalysisCommand.cs" Link="AnalysisCommand.cs" />
+    <Compile Include="..\..\Washmachine.Cli\AnalysisSession.cs" Link="AnalysisSession.cs" />
+    <Compile Include="..\..\Washmachine.Core\Services\PeAnalyzerService.cs" Link="PeAnalyzerService.cs" />
+    <Compile Include="..\..\Washmachine.Core\Models\PeAnalysisModels.cs" Link="PeAnalysisModels.cs" />
+    <Compile Include="..\..\Washmachine.Core\Logging\IAppLogger.cs" Link="IAppLogger.cs" />
+    <PackageReference Include="Spectre.Console" Version="0.49.1" />
+  </ItemGroup>
+</Project>
