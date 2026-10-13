@@ -12,7 +12,7 @@ using CatalogProgram = Washmachine.Cli.Program;
 internal static class ConPtyResizeTests
 {
     private sealed record Report(int Id, int WindowWidth, int ProfileWidth, int HelperWidth,
-        bool Redirected, string Help, string Choices, string Options, string Error);
+        bool Redirected, string Help, string Choices, string Options, string Common, string Input, string Error);
 
     public static async Task RunChildAsync(string reportPath, CommandUsage usage)
     {
@@ -30,9 +30,9 @@ internal static class ConPtyResizeTests
         Console.SetOut(tee);
         var console = AnsiConsole.Console; // Use default native width detection, never set Profile.Width.
         int id = 0;
-        while (await Console.In.ReadLineAsync() is { } command && command != "quit")
+        while (TerminalInput.ReadLine("", interactive: false) is { } command && command != "quit")
         {
-            string help = "", choices = "", options = "", error = "";
+            string help = "", choices = "", options = "", common = "", error = "";
             try
             {
                 tee.Text.Clear();
@@ -46,13 +46,19 @@ internal static class ConPtyResizeTests
                 CatalogProgram.RenderSessionOptionCatalog("Options",
                     [new(7, "display-value", new string('z', 120), true, "Literal [brackets]", "first | second")], "End of options.");
                 options = HelpWriter.Sanitize(tee.Text.ToString());
+                tee.Text.Clear();
+                CliConsole.Write(new Table().Title("Details").AddColumn("Name").AddColumn("Value").AddRow("alpha", new string('y', 120)));
+                CliConsole.Write(new Panel(new string('v', 120)).Header("Notice"));
+                CliConsole.StatusLine(StatusKind.Warning, "A status message that wraps.");
+                common = HelpWriter.Sanitize(tee.Text.ToString());
             }
             catch (Exception ex) { error = ex.ToString(); }
             var report = new Report(++id, Console.WindowWidth, console.Profile.Width,
-                TerminalLayout.Width(), Console.IsOutputRedirected, help, choices, options, error);
+                TerminalLayout.Width(), Console.IsOutputRedirected, help, choices, options, common, command, error);
             File.WriteAllText(reportPath + ".tmp", JsonSerializer.Serialize(report));
             File.Move(reportPath + ".tmp", reportPath, overwrite: true);
         }
+        await Task.CompletedTask;
     }
 
     public static async Task VerifyAsync()
@@ -109,10 +115,11 @@ internal static class ConPtyResizeTests
                 if (report.Error != "") throw new InvalidOperationException(report.Error);
                 if (report.Redirected || report.WindowWidth != width || report.ProfileWidth != width || report.HelperWidth != width)
                     throw new InvalidOperationException($"Native width detection failed: {JsonSerializer.Serialize(report)}");
-                foreach (string text in new[] { report.Help, report.Choices, report.Options })
+                foreach (string text in new[] { report.Help, report.Choices, report.Options, report.Common })
                     if (text.Split('\n').Any(line => line.GetCellWidth() > Math.Max(1, width - 1)))
                         throw new InvalidOperationException($"Rendered line exceeds native width {width}: {text}");
-                if (report.Choices.Count(c => c == 'x') != 120 || report.Options.Count(c => c == 'z') != 120)
+                if (report.Choices.Count(c => c == 'x') != 120 || report.Options.Count(c => c == 'z') != 120
+                    || report.Common.Count(c => c == 'y') != 120 || report.Common.Count(c => c == 'v') != 120 || report.Input != "render")
                     throw new InvalidOperationException($"Resize lost choice/option data at width {width}.");
                 string layout = report.Options.Contains("# Name") ? "table" : "labeled rows";
                 Console.WriteLine($"PASS native width {width}: Console, Spectre and helper agree; help/choices/options fit; data preserved ({layout}).");

@@ -41,6 +41,21 @@ if (args is ["--probe-catalog"])
     CatalogProgram.RenderSessionChoiceCatalog("Choices", [new("alpha", "First choice"), new("beta", "Second choice")], "End of choices.");
     return;
 }
+if (args is ["--probe-common-ui"])
+{
+    CliConsole.Write(new Table().Title("[bold]Details[/]").AddColumn("Name").AddColumn("Description")
+        .AddRow("alpha", "First choice").AddRow("beta", "Second choice"));
+    CliConsole.MarkupLine("[bold]Literal [[brackets]][/]");
+    CliConsole.MarkupLine("[unterminated");
+    var logger = new CliLogger();
+    logger.Info("Information"); logger.Warn("Warning"); logger.Ok("Success"); logger.Error("Failure");
+    logger.SuppressOutput = true;
+    logger.Info("MUST_NOT_APPEAR");
+    CliConsole.Status().Start("Working", _ => { });
+    CliConsole.Progress().Start(context => { var task = context.AddTask("Progress"); task.Value = 100; });
+    CliConsole.Clear(); // No-op for redirected output.
+    return;
+}
 if (args.Length > 0 && args[0] == "--probe-analysis")
 {
     Environment.ExitCode = await AnalysisCommand.RunAsync(args[1..], Console.Out, Console.Error);
@@ -185,7 +200,7 @@ AnalysisCommand.WriteSummary(hostileSummary, new Washmachine.Models.PeAnalysisRe
     FileName = "before\x1b]0;title\aafter\u202E\r\nnext",
     PeType = "PE\x1b[31m32\x1b[0m", Architecture = "x86"
 }, details: false);
-Check(hostileSummary.ToString().StartsWith("PE analysis: beforeafter next"), "Read-only metadata cannot introduce extra lines, titles or bidi overrides");
+Check(hostileSummary.ToString().Contains("beforeafter next"), "Read-only metadata cannot introduce extra lines, titles or bidi overrides");
 Check(!hostileSummary.ToString().Contains('\x1b') && !hostileSummary.ToString().Contains("title"), "Read-only metadata strips full terminal sequences");
 var longText = string.Join(' ', Enumerable.Repeat("word[with]brackets 文件", 1000));
 var longLines = HelpWriter.Wrap(longText, 40, 2).ToArray();
@@ -265,6 +280,61 @@ catch (ArgumentException)
 {
     Check(malformedCatalog.Output.ToString() == "", "Malformed rows fail before partial output");
 }
+foreach (int width in new[] { 12, 24, 40, 80, 120, 200 })
+{
+    var legacy = Capture(width);
+    var table = new Table().Title("[bold]Details[/]")
+        .AddColumn(new TableColumn("Name").Footer("TOTAL"))
+        .AddColumn("Description")
+        .AddRow("alpha [[literal]]", new string('x', 120));
+    CliConsole.Write(table, legacy.Console);
+    string output = legacy.Output.ToString();
+    Check(output.Count(c => c == 'x') == 120 && Compact(output).Contains("alpha[literal]"), "Legacy table conversion retains data and literal brackets");
+    Check(Compact(output).Contains("TOTAL"), "Legacy table footers are retained");
+    Check(output.Split('\n').All(line => line.TrimEnd('\r').GetCellWidth() <= Math.Max(1, width - 1)), $"Legacy tables use responsive layout at {width}");
+    var notice = Capture(width);
+    var panel = new Panel(new string('v', 120)).Header("Notice");
+    panel.Width = 30;
+    CliConsole.Write(panel, notice.Console);
+    Check(notice.Output.ToString().Count(c => c == 'v') == 120 && notice.Output.ToString().Contains("NOTICE"), "Notices retain headings and body without decorative frames");
+    Check(panel.Header!.Text == "Notice" && panel.Width == 30, "Notice rendering does not mutate the caller's object");
+    Check(notice.Output.ToString().Split('\n').All(line => line.TrimEnd('\r').GetCellWidth() <= Math.Max(1, width - 1)), "Notices fit narrow output");
+    var state = Capture(width);
+    foreach (var kind in Enum.GetValues<StatusKind>()) CliConsole.StatusLine(kind, "A literal [message] " + new string('z', 120), state.Console);
+    Check(state.Output.ToString().Count(c => c == 'z') == 120 * Enum.GetValues<StatusKind>().Length, "Status wrapping retains data for all levels");
+    Check(state.Output.ToString().Split('\n').All(line => line.TrimEnd('\r').GetCellWidth() <= Math.Max(1, width - 1)), "Status messages fit narrow terminals");
+}
+var startup = Capture(40);
+var loading = new LoadingScreen(startup.Console);
+loading.AddStep("one", "First step"); loading.Render(); loading.Render();
+loading.Update("one", StepState.Running, "Working");
+loading.Update("one", StepState.Running, "Working");
+loading.Update("one", StepState.Ok, "Complete"); loading.Finish();
+string startupOutput = startup.Output.ToString();
+Check(startupOutput.Contains("pending:") && startupOutput.Contains("working:") && startupOutput.Contains("ok:"), "Startup status has explicit semantic labels");
+Check(startupOutput.Split("working:").Length == 2 && startupOutput.Split("STARTING UP").Length == 2, "Startup output does not repaint or duplicate unchanged updates");
+Check(!startupOutput.Contains('\x1b') && startupOutput.Split('\n').All(line => line.TrimEnd('\r').GetCellWidth() <= 39), "Startup output preserves scrollback and fits the width");
+var singlePrompt = new SelectionPrompt<string>().PageSize(4).AddChoices("alpha", "beta");
+var converter = singlePrompt.Converter;
+Check(ReferenceEquals(CliConsole.ConfigurePrompt(singlePrompt), singlePrompt) && singlePrompt.PageSize == 10, "Choice prompts share paging while retaining their object");
+Check(singlePrompt.Converter == converter && singlePrompt.MoreChoicesText!.Contains("Up/Down"), "Choice conversion is unchanged and navigation hints are consistent");
+var multiplePrompt = new MultiSelectionPrompt<string>().PageSize(5).AddChoices("alpha", "beta");
+bool required = multiplePrompt.Required;
+CliConsole.ConfigurePrompt(multiplePrompt);
+Check(multiplePrompt.PageSize == 10 && multiplePrompt.Required == required && multiplePrompt.InstructionsText!.Contains("Space"), "Multiple-choice presentation is consistent without changing selection requirements");
+var summaryTable = Capture(40);
+CliConsole.Write(new Table().HideHeaders().AddColumn("").AddColumn("").AddRow("File", "CaseSensitiveName.dll"), summaryTable.Console);
+Check(summaryTable.Output.ToString().Contains("CaseSensitiveName.dll") && summaryTable.Output.ToString().Contains("File"), "Hidden-header summaries use the common field layout without changing case");
+foreach (int width in new[] { 1, 2, 12, 40, 80 })
+{
+    var inputPrompt = Capture(width);
+    string line = new string('x', 4096) + " 文件 e\u0301 [literal]";
+    Check(TerminalInput.ReadLine("[cyan]washmachine tool >[/] ", new StringReader(line + "\n"), inputPrompt.Console, true) == line, "Native input preserves complete text without clipping");
+    Check(!inputPrompt.Output.ToString().Contains('\x1b') && inputPrompt.Output.ToString().GetCellWidth() <= Math.Max(1, width - 1), "Native prompts fit narrow terminals and respect plain output");
+}
+var batchInput = Capture(80);
+Check(TerminalInput.ReadLine("prompt", new StringReader("alpha\n"), batchInput.Console, false) == "alpha" && batchInput.Output.ToString() == "", "Batch input does not print prompts");
+Check(TerminalInput.ReadLine("prompt", new StringReader(""), batchInput.Console, false) == null, "Native input retains EOF behavior");
 
 foreach (var scenario in new[] { "pipe", "no-color", "dumb", "ci-forced-color" })
 {
@@ -276,6 +346,10 @@ foreach (var scenario in new[] { "pipe", "no-color", "dumb", "ci-forced-color" }
     var catalogProbe = await RunProbe(["--probe-catalog"], scenario);
     Check(catalogProbe.ExitCode == 0 && catalogProbe.Error == "" && !catalogProbe.Output.Contains('\x1b'), $"{scenario} catalogs honor plain output policy");
     Check(catalogProbe.Output.Contains("alpha") && catalogProbe.Output.Contains("beta") && catalogProbe.Output.Contains("End of choices."), $"{scenario} catalogs retain their entries and footer");
+    var commonProbe = await RunProbe(["--probe-common-ui"], scenario);
+    Check(commonProbe.ExitCode == 0 && !commonProbe.Output.Contains('\x1b') && !commonProbe.Error.Contains('\x1b'), $"{scenario} tables, status and progress output stay plain");
+    Check(commonProbe.Output.Contains("info:") && commonProbe.Output.Contains("warning:") && commonProbe.Output.Contains("ok:") && commonProbe.Error.Contains("error: Failure"), "CLI log levels share labels and errors go to stderr");
+    Check(!commonProbe.Output.Contains("MUST_NOT_APPEAR") && commonProbe.Output.Contains("[unterminated"), "Suppressed logs remain suppressed and malformed markup stays readable");
 }
 var errorProbe = await RunProbe(["--probe-analysis", "--unknown"], "pipe");
 Check(errorProbe.ExitCode == 2 && errorProbe.Output == "" && errorProbe.Error.Contains("error:"), "Actual invalid-command process preserves stderr and exit code");

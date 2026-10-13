@@ -1,3 +1,5 @@
+using ConsoleLogger = Washmachine.Cli.Ui.CliLogger;
+using AnsiConsole = Washmachine.Cli.Ui.CliConsole;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;

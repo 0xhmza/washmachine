@@ -1,3 +1,5 @@
+using ConsoleLogger = Washmachine.Cli.Ui.CliLogger;
+using AnsiConsole = Washmachine.Cli.Ui.CliConsole;
 using System.Globalization;
 using Spectre.Console;
 using Washmachine.Cli.Ui;
@@ -1237,8 +1239,9 @@ public static partial class Program
             return;
 
         WriteStatus(StatusPrefix.Failure, $"Missing required {operationName} option(s):");
-        foreach (var spec in validation.MissingRequired)
-            Console.WriteLine($"  {spec.Name,-20} {spec.Description}");
+        UsageFormatter.PrintFields("Missing options",
+            validation.MissingRequired.Select(spec => new UsageNote(spec.Name, spec.Description)),
+            UsageFormatter.DefaultConsole(Console.Error));
     }
 
     private static IEnumerable<string> GetStripSessionCompletionMatches(string[] argTokens, int currentArgIndex, string currentPrefix)

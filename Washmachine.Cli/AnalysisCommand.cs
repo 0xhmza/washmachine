@@ -117,34 +117,37 @@ internal static class AnalysisCommand
 
     internal static void WriteSummary(TextWriter output, PeAnalysisResult result, bool details)
     {
-        output.WriteLine($"PE analysis: {Safe(result.FileName)}");
-        output.WriteLine($"  Type       {Safe(result.PeType)} / {Safe(result.Architecture)}{(result.IsDotNet ? " / .NET" : "")}");
-        output.WriteLine($"  Size       {result.FileSize.ToString(CultureInfo.InvariantCulture)} bytes");
-        output.WriteLine($"  SHA-256    {result.FileHash}");
-        output.WriteLine($"  Entry      0x{result.OptionalHeader.AddressOfEntryPoint:x8}");
-        output.WriteLine($"  Sections   {result.Sections.Count}");
-        output.WriteLine($"  Imports    {result.TotalImports} functions / {result.Imports.Count} libraries");
-        output.WriteLine($"  Exports    {result.TotalExports}");
-        output.WriteLine($"  Entropy    {result.OverallEntropy.ToString("F2", CultureInfo.InvariantCulture)} / 8.00");
-        output.WriteLine($"  Protections {Safe(string.Join(", ", result.Security.EnabledProtections))}");
-        output.WriteLine("Read-only inspection. Protection flags and signature presence are not a trust verdict.");
+        var console = Ui.UsageFormatter.PlainConsole(output);
+        Ui.UsageFormatter.PrintFields("PE analysis", [
+            new("File", Safe(result.FileName)),
+            new("Type", $"{Safe(result.PeType)} / {Safe(result.Architecture)}{(result.IsDotNet ? " / .NET" : "")}"),
+            new("Size", $"{result.FileSize.ToString(CultureInfo.InvariantCulture)} bytes"),
+            new("SHA-256", result.FileHash),
+            new("Entry", $"0x{result.OptionalHeader.AddressOfEntryPoint:x8}"),
+            new("Sections", result.Sections.Count.ToString(CultureInfo.InvariantCulture)),
+            new("Imports", $"{result.TotalImports} functions / {result.Imports.Count} libraries"),
+            new("Exports", result.TotalExports.ToString(CultureInfo.InvariantCulture)),
+            new("Entropy", $"{result.OverallEntropy.ToString("F2", CultureInfo.InvariantCulture)} / 8.00"),
+            new("Protections", Safe(string.Join(", ", result.Security.EnabledProtections)))
+        ], console);
+        var writer = new Ui.HelpWriter(console);
+        writer.Paragraph("Read-only inspection. Protection flags and signature presence are not a trust verdict.", Ui.UiColors.Muted);
         if (!details)
         {
-            output.WriteLine("Use --details for inventories, or --json for automation.");
+            writer.Paragraph("Use --details for inventories, or --json for automation.", Ui.UiColors.Muted);
             return;
         }
-        output.WriteLine();
-        output.WriteLine("Sections (RVA / raw bytes / permissions / entropy):");
-        foreach (var section in result.Sections)
-            output.WriteLine($"  {Safe(section.Name),-10} 0x{section.VirtualAddress:x8} / {section.RawSize} / {section.PermissionsString} / {section.Entropy.ToString("F2", CultureInfo.InvariantCulture)}");
-        output.WriteLine();
-        output.WriteLine("Imports:");
-        if (result.Imports.Count == 0) output.WriteLine("  None found.");
-        foreach (var library in result.Imports)
-        {
-            output.WriteLine($"  {Safe(library.Name)} ({library.Functions.Count})");
-            foreach (var function in library.Functions) output.WriteLine($"    {Safe(function.Name)}");
-        }
+        Ui.CatalogWriter.Write("Sections", ["Name", "RVA", "Raw bytes", "Permissions", "Entropy"],
+            result.Sections.Select(section => (IReadOnlyList<string>)new[]
+            {
+                Safe(section.Name), $"0x{section.VirtualAddress:x8}", section.RawSize.ToString(CultureInfo.InvariantCulture),
+                section.PermissionsString, section.Entropy.ToString("F2", CultureInfo.InvariantCulture)
+            }), console: console);
+        Ui.CatalogWriter.Write("Imports", ["Library", "Function"],
+            result.Imports.SelectMany(library => library.Functions.Count == 0
+                ? new[] { (IReadOnlyList<string>)new[] { Safe(library.Name), "(none)" } }
+                : library.Functions.Select(function => (IReadOnlyList<string>)new[] { Safe(library.Name), Safe(function.Name) })),
+            console: console);
     }
 
     // PE metadata and paths are untrusted; never let them inject terminal controls.

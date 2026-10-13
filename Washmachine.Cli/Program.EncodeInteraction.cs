@@ -1,3 +1,5 @@
+using ConsoleLogger = Washmachine.Cli.Ui.CliLogger;
+using AnsiConsole = Washmachine.Cli.Ui.CliConsole;
 namespace Washmachine.Cli;
 
 using System.Globalization;
@@ -758,8 +760,9 @@ public static partial class Program
             return;
 
         WriteStatus(StatusPrefix.Failure, "Missing required parameter(s):");
-        foreach (var spec in validation.MissingRequired)
-            Console.WriteLine($"  {spec.Name,-20} {spec.Description}");
+        UsageFormatter.PrintFields("Missing parameters",
+            validation.MissingRequired.Select(spec => new UsageNote(spec.Name, spec.Description)),
+            UsageFormatter.DefaultConsole(Console.Error));
     }
 
     private static EncodeParseOutcome ParseEncodeOneLiner(EncodeSessionContext context, string[] args)
@@ -2898,169 +2901,18 @@ public static partial class Program
             .Select(w => w.Length == 0 ? w : char.ToUpperInvariant(w[0]) + w[1..].ToLowerInvariant()));
     }
 
-    private static int GetInteractiveConsoleWidth()
-    {
-        try
-        {
-            if (Console.WindowWidth > 0)
-                return Console.WindowWidth;
-        }
-        catch
-        {
-        }
-
-        try
-        {
-            if (Console.BufferWidth > 0)
-                return Console.BufferWidth;
-        }
-        catch
-        {
-        }
-
-        return 80;
-    }
-
     private static bool CanEnterInteractiveShell()
         => !Console.IsInputRedirected && !Console.IsOutputRedirected;
 
-    private static bool SupportsUnicodeTables()
-    {
-        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NO_COLOR")))
-            return false;
-
-        try
+    private static void WriteStatus(StatusPrefix prefix, string message) =>
+        CliConsole.StatusLine(prefix switch
         {
-            return Console.OutputEncoding.CodePage == Encoding.UTF8.CodePage;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static int[] AllocateColumnWidths(int totalWidth, int[] minimums, int[] weights)
-    {
-        var widths = minimums.ToArray();
-        int remaining = Math.Max(0, totalWidth - widths.Sum());
-        int weightTotal = Math.Max(1, weights.Sum());
-
-        for (int i = 0; i < widths.Length; i++)
-        {
-            int share = remaining * weights[i] / weightTotal;
-            widths[i] += share;
-        }
-
-        int assigned = widths.Sum();
-        int index = 0;
-        while (assigned < totalWidth)
-        {
-            widths[index % widths.Length]++;
-            assigned++;
-            index++;
-        }
-
-        return widths;
-    }
-
-    private static string BuildBorderLine(char left, char join, char right, char horizontal, IReadOnlyList<int> widths)
-    {
-        var sb = new StringBuilder();
-        sb.Append(left);
-        for (int i = 0; i < widths.Count; i++)
-        {
-            sb.Append(new string(horizontal, widths[i]));
-            sb.Append(i == widths.Count - 1 ? right : join);
-        }
-        return sb.ToString();
-    }
-
-    private static string BuildRow(char vertical, IReadOnlyList<int> widths, IReadOnlyList<string> values)
-    {
-        var sb = new StringBuilder();
-        sb.Append(vertical);
-        for (int i = 0; i < widths.Count; i++)
-        {
-            string value = i < values.Count ? values[i] : string.Empty;
-            sb.Append(value.PadRight(widths[i]));
-            sb.Append(vertical);
-        }
-        return sb.ToString();
-    }
-
-    private static List<string> WrapCell(string text, int width)
-    {
-        return WrapText(text, width)
-            .Select(line => line.Length > width ? line[..width] : line)
-            .ToList();
-    }
-
-    private static List<string> WrapText(string text, int width)
-    {
-        if (width <= 1)
-            return [text];
-
-        var lines = new List<string>();
-        foreach (var rawLine in text.Replace("\r", string.Empty).Split('\n'))
-        {
-            var remaining = rawLine;
-            while (remaining.Length > width)
-            {
-                int split = remaining.LastIndexOf(' ', width);
-                if (split <= 0)
-                    split = width;
-
-                lines.Add(remaining[..split].TrimEnd());
-                remaining = remaining[split..].TrimStart();
-            }
-
-            lines.Add(remaining);
-        }
-
-        if (lines.Count == 0)
-            lines.Add(string.Empty);
-        return lines;
-    }
-
-    private static string TruncateWithEllipsis(string value, int width, string ellipsis)
-    {
-        if (value.Length <= width)
-            return value;
-        if (width <= ellipsis.Length)
-            return value[..width];
-        return value[..(width - ellipsis.Length)] + ellipsis;
-    }
-
-    private static void WriteStatus(StatusPrefix prefix, string message)
-    {
-        string marker = prefix switch
-        {
-            StatusPrefix.Success => "[+]",
-            StatusPrefix.Failure => "[-]",
-            StatusPrefix.Info => "[*]",
-            StatusPrefix.Warning => "[!]",
-            StatusPrefix.Prompt => "[?]",
-            _ => "[?]",
-        };
-
-        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NO_COLOR")) || Console.IsOutputRedirected)
-        {
-            Console.WriteLine($"{marker} {message}");
-            return;
-        }
-
-        string color = prefix switch
-        {
-            StatusPrefix.Success => "green",
-            StatusPrefix.Failure => "red",
-            StatusPrefix.Info => "cyan1",
-            StatusPrefix.Warning => "yellow",
-            StatusPrefix.Prompt => "white bold",
-            _ => "white",
-        };
-
-        AnsiConsole.MarkupLine($"[{color}]{Markup.Escape(marker)}[/] {Markup.Escape(message)}");
-    }
+            StatusPrefix.Success => StatusKind.Success,
+            StatusPrefix.Failure => StatusKind.Error,
+            StatusPrefix.Warning => StatusKind.Warning,
+            StatusPrefix.Prompt => StatusKind.Prompt,
+            _ => StatusKind.Info
+        }, message);
 
     private sealed record EncodeOptionSpec(
         string Name,
@@ -3205,21 +3057,4 @@ public static partial class Program
         Prompt,
     }
 
-    private readonly record struct TableBorderStyle(
-        char TopLeft,
-        char TopJoin,
-        char TopRight,
-        char LeftJoin,
-        char Cross,
-        char RightJoin,
-        char BottomLeft,
-        char BottomJoin,
-        char BottomRight,
-        char Horizontal,
-        char Vertical,
-        string Ellipsis)
-    {
-        public static TableBorderStyle Unicode => new('╔', '╦', '╗', '╠', '╬', '╣', '╚', '╩', '╝', '═', '║', "…");
-        public static TableBorderStyle Ascii => new('+', '+', '+', '+', '+', '+', '+', '+', '+', '-', '|', "...");
-    }
 }

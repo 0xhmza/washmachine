@@ -4,6 +4,34 @@ This pass standardizes the shared help layer, not command execution or payload /
 evasion workflows. Existing command names, option models, parser implementations,
 and GUI connector code were not changed.
 
+The CLI-owned presentation now goes through `CliConsole` in the main shell,
+command listings, tool sessions, diagnostics and startup screens. Legacy Spectre
+tables are adapted to the same responsive catalog/field layouts, including their
+titles, captions and footers. Notices use ordinary headings and wrapped text.
+Raw JSON serialization and backend/child-tool output retain their own formats.
+
+Logs and status messages use explicit `info:`, `ok:`, `warning:`, `error:`,
+`input:`, `pending:` and `working:` labels. CLI logger errors use stderr; ordinary
+messages use stdout. Quiet/verbose logger settings remain supported. Plain-stream
+rules also apply to progress/status rendering and explicit clearing is skipped
+when output is redirected or the terminal is `dumb`.
+
+Startup status is forward-only. It prints changed states once rather than
+clearing the terminal and repainting every step. The welcome text no longer
+reads the playbook merely to compute counts that were not displayed.
+
+Selection prompts share a ten-row page size, highlight style and navigation
+hints. Existing choices, converters, selection requirements and handlers are
+preserved. `NO_COLOR` disables color without disabling cursor support needed by
+interactive selection prompts.
+
+The command shells now use terminal-native line editing through `TerminalInput`.
+The custom Tab-completion/history editor and its cursor-repainting logic were
+removed to reduce complexity. This is an intentional UX change: custom in-app
+history and completion are no longer available. Batch input still prints no
+prompts, EOF retains its meaning, and the returned logical input is not clipped
+or truncated. Command parsing and execution are unchanged.
+
 ## Shared presentation
 
 `UsageFormatter` now delegates text layout to `HelpWriter`. Command help, session
@@ -100,6 +128,16 @@ IDs, secondary rows, required-label overrides, literal brackets, empty lists,
 dynamic widths between renders, styled/plain output, one-pass row enumeration,
 and rejection of malformed rows before writing partial output. They do not load
 or run the operational session implementations.
+Checks also cover legacy table conversion (including hidden-header summaries
+and footers), notices, status labels, logger stream separation and suppression,
+startup update deduplication, prompt configuration, malformed markup fallback,
+and complete/EOF/batch input. They do not execute tool handlers.
+
+Compilation of the CLI sources also passed in Debug and Release with zero
+warnings/errors. The local check used a temporary MSBuild filter to exclude
+pre-existing untracked `*.sync-conflict-*` source copies; those copies were not
+modified or deleted. Release compilation used the framework-dependent target
+without a runtime identifier. Publishing and operational startup were not run.
 
 ### Native Windows resizing
 
@@ -108,7 +146,10 @@ real Windows ConPTY session. It resizes that session through
 `120 → 40 → 80 → 20 → 160 → 2 → 80` columns without restarting the child.
 At each size it checks that `Console.WindowWidth`, Spectre's profile width, and
 the shared terminal helper agree; help and both list layouts fit the width;
-and long option/choice values are retained. No `Profile.Width` overrides are
+and long option/choice values are retained. It also checks legacy tables,
+notices and status messages through `CliConsole`, and reads synthetic input
+through `TerminalInput`. The sequence passed with normal output and `NO_COLOR`.
+No `Profile.Width` overrides are
 used in this native test. Output is drained independently to avoid pipe
 deadlocks, and the test child explicitly binds to its attached console devices
 because the verification launcher itself has redirected streams.
@@ -149,7 +190,8 @@ dispatcher files are unchanged.
 The checks run on Windows .NET 8 with both simulated console capabilities and
 a real ConPTY resize sequence.
 They do not establish support for Linux/macOS application execution, actual
-legacy terminal hosts, graphical drag-resizing, or the existing editor's key bindings.
+legacy terminal hosts or graphical drag-resizing. The removed custom editor's
+key bindings are intentionally outside the new terminal-native input contract.
 List layout is tested with synthetic data and simulated/native terminal widths rather
 than a live operational session. Operational session workflows and startup
 provisioning are outside this presentation/read-only pass.

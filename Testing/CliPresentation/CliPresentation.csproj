@@ -15,6 +15,10 @@
     <Compile Include="..\..\Washmachine.Cli\Ui\CatalogWriter.cs" Link="CatalogWriter.cs" />
     <Compile Include="..\..\Washmachine.Cli\Ui\TableFactory.cs" Link="TableFactory.cs" />
     <Compile Include="..\..\Washmachine.Cli\Ui\Banner.cs" Link="Banner.cs" />
+    <Compile Include="..\..\Washmachine.Cli\Ui\CliConsole.cs" Link="CliConsole.cs" />
+    <Compile Include="..\..\Washmachine.Cli\Ui\CliLogger.cs" Link="CliLogger.cs" />
+    <Compile Include="..\..\Washmachine.Cli\Ui\LoadingScreen.cs" Link="LoadingScreen.cs" />
+    <Compile Include="..\..\Washmachine.Cli\Ui\TerminalInput.cs" Link="TerminalInput.cs" />
     <Compile Include="..\..\Washmachine.Cli\Program.CatalogUi.cs" Link="Program.CatalogUi.cs" />
     <Compile Include="..\..\Washmachine.Cli\AnalysisCommand.cs" Link="AnalysisCommand.cs" />
     <Compile Include="..\..\Washmachine.Cli\AnalysisSession.cs" Link="AnalysisSession.cs" />

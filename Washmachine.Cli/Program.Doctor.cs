@@ -1,3 +1,5 @@
+using ConsoleLogger = Washmachine.Cli.Ui.CliLogger;
+using AnsiConsole = Washmachine.Cli.Ui.CliConsole;
 using Spectre.Console;
 using Washmachine.Cli.Ui;
 using Washmachine.Logging;

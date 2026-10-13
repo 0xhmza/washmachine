@@ -1,3 +1,5 @@
+using ConsoleLogger = Washmachine.Cli.Ui.CliLogger;
+using AnsiConsole = Washmachine.Cli.Ui.CliConsole;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -14,7 +16,6 @@ namespace Washmachine.Cli;
 public static partial class Program
 {
     private static readonly JsonSerializerOptions JsonPrint = new() { WriteIndented = false };
-    private static readonly Dictionary<string, List<string>> InputHistory = new(StringComparer.OrdinalIgnoreCase);
     private static readonly string[] RootReplCommands =
     {
         "encode", "analyze", "backdoor", "strip", "show", "provision", "test", "scan", "doctor", "help",
@@ -118,10 +119,12 @@ public static partial class Program
     {
         // NO_COLOR (https://no-color.org) — strip all ANSI styling so plain-text
         // consumers (CI, log files, accessibility tools) receive clean output.
-        if (Console.IsOutputRedirected || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NO_COLOR")))
+        if (Console.IsOutputRedirected || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("NO_COLOR")))
         {
             AnsiConsole.Profile.Capabilities.ColorSystem = ColorSystem.NoColors;
-            AnsiConsole.Profile.Capabilities.Ansi = false;
+            // NO_COLOR disables color, while cursor control remains available
+            // for interactive keyboard prompts. A redirected stream stays plain.
+            if (Console.IsOutputRedirected) AnsiConsole.Profile.Capabilities.Ansi = false;
             return;   // do not apply a color scheme on top of a no-color profile
         }
 
@@ -344,302 +347,7 @@ public static partial class Program
     }
 
     private static string? ReadLineWithEditor(string promptMarkup, string historyScope, string? fixedCommand = null)
-    {
-        if (Console.IsInputRedirected || Console.IsOutputRedirected)
-            return Console.ReadLine();
-
-        void WriteEditorPrompt()
-        {
-            int available = TerminalLayout.Width();
-            if (available <= 3) Console.Write(available > 1 ? ">" : "");
-            else if (Markup.Remove(promptMarkup).Length >= available - 2) Console.Write("> ");
-            else AnsiConsole.Markup(promptMarkup);
-        }
-
-        int originLeft, originTop, lastWidth, lastHeight;
-        try
-        {
-            WriteEditorPrompt();
-            originLeft = Console.CursorLeft;
-            originTop = Console.CursorTop;
-            lastWidth = Math.Min(TerminalLayout.Width(), Console.BufferWidth);
-            lastHeight = Console.BufferHeight;
-        }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentOutOfRangeException)
-        {
-            return Console.ReadLine();
-        }
-        bool reanchor = false;
-        int cursorIndex = 0;
-        var buffer = new StringBuilder();
-        var history = GetHistoryBucket(historyScope);
-        int historyIndex = history.Count;
-        string draft = string.Empty;
-
-        void ReplaceBuffer(string value)
-        {
-            buffer.Clear();
-            buffer.Append(value);
-            cursorIndex = buffer.Length;
-        }
-
-        void Render(bool force = false)
-        {
-            try
-            {
-                // Drain pasted/type-ahead input before repainting, rather than
-                // clearing the screen once per character in a long paste.
-                if (!force && Console.KeyAvailable) return;
-                int width = Math.Max(1, Math.Min(TerminalLayout.Width(), Console.BufferWidth));
-                int bufferHeight = Math.Max(Console.BufferHeight, 1);
-                if (reanchor || width != lastWidth || bufferHeight != lastHeight)
-                {
-                    // Reflow invalidates old coordinates. Start a fresh prompt,
-                    // preserving scrollback and the complete logical input.
-                    Console.WriteLine();
-                    WriteEditorPrompt();
-                    originLeft = Console.CursorLeft;
-                    originTop = Console.CursorTop;
-                    lastWidth = width;
-                    lastHeight = bufferHeight;
-                    reanchor = false;
-                }
-                originTop = Math.Clamp(originTop, 0, bufferHeight - 1);
-                originLeft = Math.Clamp(originLeft, 0, width - 1);
-                int columns = Math.Max(0, width - originLeft - 1);
-                var view = TerminalLayout.View(buffer.ToString(), cursorIndex, columns);
-                Console.SetCursorPosition(originLeft, originTop);
-                Console.Write(new string(' ', columns));
-                Console.SetCursorPosition(originLeft, originTop);
-                Console.Write(view.Text);
-                Console.SetCursorPosition(originLeft + view.CursorColumn, originTop);
-            }
-            catch (Exception ex) when (ex is ArgumentOutOfRangeException or IOException or InvalidOperationException)
-            {
-                // A resize can race any read/write. Retry from fresh coordinates
-                // on the next key rather than dispatching incomplete input.
-                reanchor = true;
-            }
-        }
-
-        void ShowCompletionChoices(IReadOnlyList<string> matches)
-        {
-            try
-            {
-                AnsiConsole.WriteLine();
-                foreach (var chunk in matches.Chunk(6))
-                    AnsiConsole.MarkupLine($"[dim]  {string.Join("  ", chunk.Select(Markup.Escape))}[/]");
-
-                WriteEditorPrompt();
-                originLeft = Console.CursorLeft;
-                originTop = Console.CursorTop;
-                Render(force: true);
-            }
-            catch (Exception ex) when (ex is ArgumentOutOfRangeException or IOException or InvalidOperationException)
-            {
-                reanchor = true;
-            }
-        }
-
-        while (true)
-        {
-            ConsoleKeyInfo key;
-            try
-            {
-                key = Console.ReadKey(intercept: true);
-            }
-            catch (Exception ex) when (ex is InvalidOperationException or IOException)
-            {
-                return null;
-            }
-
-            switch (key.Key)
-            {
-                case ConsoleKey.Enter:
-                {
-                    cursorIndex = buffer.Length;
-                    Render(force: true);
-                    Console.WriteLine();
-                    var line = buffer.ToString();
-                    AddHistoryEntry(historyScope, line);
-                    return line;
-                }
-                case ConsoleKey.LeftArrow:
-                    if (cursorIndex > 0)
-                    {
-                        cursorIndex--;
-                        Render();
-                    }
-                    break;
-                case ConsoleKey.RightArrow:
-                    if (cursorIndex < buffer.Length)
-                    {
-                        cursorIndex++;
-                        Render();
-                    }
-                    break;
-                case ConsoleKey.Home:
-                    if (cursorIndex != 0)
-                    {
-                        cursorIndex = 0;
-                        Render();
-                    }
-                    break;
-                case ConsoleKey.End:
-                    if (cursorIndex != buffer.Length)
-                    {
-                        cursorIndex = buffer.Length;
-                        Render();
-                    }
-                    break;
-                case ConsoleKey.Backspace:
-                    if (cursorIndex > 0)
-                    {
-                        buffer.Remove(cursorIndex - 1, 1);
-                        cursorIndex--;
-                        historyIndex = history.Count;
-                        Render();
-                    }
-                    break;
-                case ConsoleKey.Delete:
-                    if (cursorIndex < buffer.Length)
-                    {
-                        buffer.Remove(cursorIndex, 1);
-                        historyIndex = history.Count;
-                        Render();
-                    }
-                    break;
-                case ConsoleKey.UpArrow:
-                    if (history.Count > 0)
-                    {
-                        if (historyIndex == history.Count)
-                            draft = buffer.ToString();
-
-                        if (historyIndex > 0)
-                        {
-                            historyIndex--;
-                            ReplaceBuffer(history[historyIndex]);
-                            Render();
-                        }
-                    }
-                    break;
-                case ConsoleKey.DownArrow:
-                    if (history.Count > 0)
-                    {
-                        if (historyIndex < history.Count - 1)
-                        {
-                            historyIndex++;
-                            ReplaceBuffer(history[historyIndex]);
-                            Render();
-                        }
-                        else if (historyIndex == history.Count - 1)
-                        {
-                            historyIndex = history.Count;
-                            ReplaceBuffer(draft);
-                            Render();
-                        }
-                    }
-                    break;
-                case ConsoleKey.Tab:
-                {
-                    var matches = GetCompletionMatches(fixedCommand, buffer.ToString(), cursorIndex, out int replaceStart, out int replaceEnd, out string currentPrefix);
-                    if (matches.Count == 0)
-                        break;
-
-                    if (matches.Count == 1)
-                    {
-                        buffer.Remove(replaceStart, replaceEnd - replaceStart);
-                        buffer.Insert(replaceStart, matches[0]);
-                        cursorIndex = replaceStart + matches[0].Length;
-                        historyIndex = history.Count;
-                        Render();
-                        break;
-                    }
-
-                    var commonPrefix = GetCommonPrefix(matches);
-                    if (!string.IsNullOrEmpty(commonPrefix) && commonPrefix.Length > currentPrefix.Length)
-                    {
-                        buffer.Remove(replaceStart, replaceEnd - replaceStart);
-                        buffer.Insert(replaceStart, commonPrefix);
-                        cursorIndex = replaceStart + commonPrefix.Length;
-                        historyIndex = history.Count;
-                        Render();
-                        break;
-                    }
-
-                    ShowCompletionChoices(matches);
-                    break;
-                }
-                default:
-                    if (key.Modifiers.HasFlag(ConsoleModifiers.Control) && key.Key == ConsoleKey.D && buffer.Length == 0)
-                    {
-                        Console.WriteLine();
-                        return null;
-                    }
-                    else if (key.Modifiers.HasFlag(ConsoleModifiers.Control) && key.Key == ConsoleKey.U)
-                    {
-                        ReplaceBuffer(string.Empty);
-                        historyIndex = history.Count;
-                        Render();
-                    }
-                    else if (key.Modifiers.HasFlag(ConsoleModifiers.Control) && key.Key == ConsoleKey.K)
-                    {
-                        buffer.Remove(cursorIndex, buffer.Length - cursorIndex);
-                        historyIndex = history.Count;
-                        Render();
-                    }
-                    else if (key.Modifiers.HasFlag(ConsoleModifiers.Control) && key.Key == ConsoleKey.A)
-                    {
-                        if (cursorIndex != 0)
-                        {
-                            cursorIndex = 0;
-                            Render();
-                        }
-                    }
-                    else if (key.Modifiers.HasFlag(ConsoleModifiers.Control) && key.Key == ConsoleKey.E)
-                    {
-                        if (cursorIndex != buffer.Length)
-                        {
-                            cursorIndex = buffer.Length;
-                            Render();
-                        }
-                    }
-                    else if (!char.IsControl(key.KeyChar))
-                    {
-                        buffer.Insert(cursorIndex, key.KeyChar);
-                        cursorIndex++;
-                        historyIndex = history.Count;
-                        Render();
-                    }
-                    break;
-            }
-        }
-    }
-
-    private static List<string> GetHistoryBucket(string historyScope)
-    {
-        if (!InputHistory.TryGetValue(historyScope, out var bucket))
-        {
-            bucket = new List<string>();
-            InputHistory[historyScope] = bucket;
-        }
-
-        return bucket;
-    }
-
-    private static void AddHistoryEntry(string historyScope, string line)
-    {
-        if (string.IsNullOrWhiteSpace(line))
-            return;
-
-        var bucket = GetHistoryBucket(historyScope);
-        if (bucket.Count == 0 || !string.Equals(bucket[^1], line, StringComparison.Ordinal))
-            bucket.Add(line);
-
-        const int maxHistoryEntries = 200;
-        if (bucket.Count > maxHistoryEntries)
-            bucket.RemoveAt(0);
-    }
+        => TerminalInput.ReadLine(promptMarkup);
 
     private static IReadOnlyList<string> GetCompletionMatches(string? fixedCommand, string line, int cursorIndex, out int replaceStart, out int replaceEnd, out string currentPrefix)
     {
@@ -779,30 +487,7 @@ public static partial class Program
     //  Banner
     // ═══════════════════════════════════════════════════════════════════════
 
-    private static void ShowBanner()
-    {
-        int? templateCount = null;
-        int? sectionCount = null;
-        int? snippetCount = null;
-        try
-        {
-            var paths = new AppPaths();
-            var snippetService = new PlaybookService(paths);
-            var sections = snippetService.GetAllSections();
-            sectionCount = sections.Count;
-            snippetCount = sections.Sum(s => s.Items.Count);
-            templateCount = snippetService.GetTemplates().Count;
-        }
-        catch { /* catalog not available yet */ }
-
-        string? compilerStatus = null;
-        if (_startupResult?.CompilerKind != null)
-            compilerStatus = $"compiler: [{UiColors.Success}]{_startupResult.CompilerKind}[/]";
-        else if (_startupResult != null)
-            compilerStatus = $"compiler: [{UiColors.Error}]missing[/]";
-
-        Banner.Render(templateCount, sectionCount, snippetCount, compilerStatus);
-    }
+    private static void ShowBanner() => Banner.Render();
 
     private static int RunSchemeCommand(string[] args)
     {
@@ -817,22 +502,14 @@ public static partial class Program
                 .AddColumn(new TableColumn($"[{s.Accent}]Key[/]"))
                 .AddColumn(new TableColumn($"[{s.Accent}]Name[/]"))
                 .AddColumn(new TableColumn($"[{s.Accent}]Author[/]"))
-                .AddColumn(new TableColumn($"[{s.Accent}]Swatch[/]"));
+                .AddColumn(new TableColumn($"[{s.Accent}]Active[/]"));
 
             foreach (var name in ColorSchemes.Names)
             {
                 var sc = ColorSchemes.All[name];
                 bool active = string.Equals(name, UiColors.ActiveScheme.Name, StringComparison.OrdinalIgnoreCase)
                             || ReferenceEquals(sc, UiColors.ActiveScheme);
-                string key = active ? $"[bold {s.Success}]▶ {name}[/]" : $"[{s.Value}]{name}[/]";
-                string swatch =
-                    $"[{sc.BannerPrimary}]██[/]" +
-                    $"[{sc.BannerSecondary}]██[/]" +
-                    $"[{sc.BannerTertiary}]██[/]" +
-                    $"[{sc.Success}]██[/]" +
-                    $"[{sc.Warning}]██[/]" +
-                    $"[{sc.Error}]██[/]";
-                table.AddRow(key, $"[{s.Value}]{Markup.Escape(sc.Name)}[/]", $"[{s.Muted}]{Markup.Escape(sc.Author)}[/]", swatch);
+                table.AddRow(Markup.Escape(name), Markup.Escape(sc.Name), Markup.Escape(sc.Author), active ? "Yes" : "No");
             }
             AnsiConsole.Write(table);
             AnsiConsole.MarkupLine($"  [{s.Muted}]Use[/] [{s.Accent}]scheme <key>[/] [{s.Muted}]to switch.[/]");
@@ -847,8 +524,7 @@ public static partial class Program
         }
 
         var now = UiColors.ActiveScheme;
-        AnsiConsole.MarkupLine($"[{now.Success}]✓ Scheme set to[/] [{now.Accent}]{Markup.Escape(now.Name)}[/] [{now.Muted}]({Markup.Escape(now.Author)})[/]");
-        ShowBanner();
+        CliConsole.StatusLine(StatusKind.Success, $"Color scheme: {now.Name} ({now.Author}).");
         return 0;
     }
 

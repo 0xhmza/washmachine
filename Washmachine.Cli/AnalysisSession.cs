@@ -9,15 +9,18 @@ internal static class AnalysisSession
 {
     public static async Task<int> RunAsync(TextReader input, TextWriter output, TextWriter error)
     {
-        output.WriteLine("Washmachine | read-only PE analysis");
-        output.WriteLine("Paste a file path to inspect it. Commands: help, details, json, quit.");
-        output.WriteLine("No downloads, compiler checks, or file execution. Blank input exits.");
+        var console = Ui.UsageFormatter.PlainConsole(output);
+        var errors = Ui.UsageFormatter.PlainConsole(error);
+        var writer = new Ui.HelpWriter(console);
+        writer.Heading("Analysis session");
+        writer.Paragraph("Enter a file path. Commands: help, details, json, quit.", Ui.UiColors.Value);
+        writer.Paragraph("Read-only inspection. Blank input or EOF exits.", Ui.UiColors.Muted);
         PeAnalysisResult? current = null;
 
         while (true)
         {
             output.WriteLine();
-            output.Write("pe> ");
+            output.Write("washmachine analyze > ");
             await output.FlushAsync();
             var line = await input.ReadLineAsync();
             if (string.IsNullOrWhiteSpace(line) || line.Trim().Equals("quit", StringComparison.OrdinalIgnoreCase)
@@ -40,29 +43,29 @@ internal static class AnalysisSession
             bool repeat = mode is "details" or "json";
             if (repeat && current == null)
             {
-                error.WriteLine("No file selected yet. Paste a file path first.");
+                Ui.CliConsole.StatusLine(Ui.StatusKind.Error, "No file selected yet. Paste a file path first.", errors);
                 continue;
             }
             if (repeat)
             {
                 if (mode == "json") output.WriteLine(JsonSerializer.Serialize(current));
                 else AnalysisCommand.WriteSummary(output, current!, details: true);
-                output.WriteLine("Cached result; paste the file path again to rescan.");
+                Ui.CliConsole.StatusLine(Ui.StatusKind.Info, "Cached result; paste the file path again to rescan.", console);
                 continue;
             }
             // '--' prevents a pasted path from being interpreted as CLI options.
             var args = new[] { "--", line };
-            output.WriteLine("Scanning (read-only)...");
+            Ui.CliConsole.StatusLine(Ui.StatusKind.Working, "Scanning (read-only)...", console);
             await output.FlushAsync();
             var started = Stopwatch.GetTimestamp();
             var code = await AnalysisCommand.RunAsync(args, output, error, result => current = result);
             if (code == 0)
             {
-                output.WriteLine($"Complete in {Stopwatch.GetElapsedTime(started).TotalSeconds:F2}s. File unchanged.");
+                Ui.CliConsole.StatusLine(Ui.StatusKind.Success, $"Complete in {Stopwatch.GetElapsedTime(started).TotalSeconds:F2}s. File unchanged.", console);
             }
             else
             {
-                error.WriteLine("Scan failed. Correct the path and try again; your previous selection is unchanged.");
+                Ui.CliConsole.StatusLine(Ui.StatusKind.Error, "Scan failed. Correct the path and try again; your previous selection is unchanged.", errors);
             }
         }
     }

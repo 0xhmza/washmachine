@@ -1,3 +1,4 @@
+using AnsiConsole = Washmachine.Cli.Ui.CliConsole;
 namespace Washmachine.Cli.Ui;
 
 using Spectre.Console;
@@ -102,7 +103,7 @@ public static class StartupChecks
         }
 
         // Clear the transient loader and hand control back to the caller.
-        try { AnsiConsole.Clear(); } catch { /* non-interactive */ }
+        // Keep startup status in scrollback; only an explicit clear command clears it.
 
         return new StartupResult(
             Ready: !string.IsNullOrEmpty(compilerPath),
@@ -237,122 +238,6 @@ public static class StartupChecks
     // ─────────────────────────────────────────────────────────────
     // Live "requirements loading" screen implementation.
     // ─────────────────────────────────────────────────────────────
-
-    private enum StepState { Pending, Running, Ok, Warning, Error }
-
-    private sealed class LoadingStep
-    {
-        public string Id = "";
-        public string Label = "";
-        public StepState State = StepState.Pending;
-        public string Detail = "";
-    }
-
-    private sealed class LoadingScreen
-    {
-        private readonly List<LoadingStep> _steps = new();
-        private readonly object _gate = new();
-        private bool _finalFrame;
-        private int _frame;
-
-        public void AddStep(string id, string label)
-        {
-            _steps.Add(new LoadingStep { Id = id, Label = label });
-        }
-
-        public void Update(string id, StepState state, string detail)
-        {
-            lock (_gate)
-            {
-                var step = _steps.FirstOrDefault(s => s.Id == id);
-                if (step == null) return;
-                step.State = state;
-                step.Detail = detail;
-            }
-            Render();
-        }
-
-        public void Render()
-        {
-            lock (_gate)
-            {
-                try
-                {
-                    AnsiConsole.Clear();
-                }
-                catch { /* redirected */ }
-
-                AnsiConsole.WriteLine();
-                var s = UiColors.ActiveScheme;
-
-                var grid = new Grid()
-                    .AddColumn(new GridColumn().NoWrap().Width(3))
-                    .AddColumn(new GridColumn());
-
-                foreach (var step in _steps)
-                {
-                    var icon = StateIcon(step.State, _frame);
-                    var color = StateColor(step.State);
-                    var label = Markup.Escape(step.Label);
-                    var detail = string.IsNullOrWhiteSpace(step.Detail)
-                        ? ""
-                        : $"  [{s.Muted}]{Markup.Escape(step.Detail)}[/]";
-
-                    grid.AddRow(
-                        $"[{color}]{icon}[/]",
-                        $"[{s.Value}]{label}[/]{detail}");
-                }
-
-                var panel = new Panel(grid)
-                    .Header($"[bold {s.Header}] Washmachine · starting up [/]")
-                    .Border(BoxBorder.Rounded)
-                    .BorderColor(UiColors.BoxBorderColor)
-                    .Padding(2, 1);
-
-                AnsiConsole.Write(panel);
-
-                if (!_finalFrame)
-                {
-                    AnsiConsole.MarkupLine(
-                        $"  [{s.Muted}]This takes a moment the first time — downloads cache under Tools/.[/]");
-                }
-
-                _frame++;
-            }
-        }
-
-        public void Finish()
-        {
-            lock (_gate)
-            {
-                _finalFrame = true;
-            }
-        }
-
-        private static string StateIcon(StepState state, int frame) => state switch
-        {
-            StepState.Pending => "·",
-            StepState.Running => "◐◓◑◒"[frame % 4].ToString(),
-            StepState.Ok      => "✓",
-            StepState.Warning => "!",
-            StepState.Error   => "✗",
-            _                 => " "
-        };
-
-        private static string StateColor(StepState state)
-        {
-            var sch = UiColors.ActiveScheme;
-            return state switch
-            {
-                StepState.Pending => sch.Muted,
-                StepState.Running => sch.Accent,
-                StepState.Ok      => sch.Success,
-                StepState.Warning => sch.Warning,
-                StepState.Error   => sch.Error,
-                _                 => sch.Value
-            };
-        }
-    }
 
     private sealed class LoadingScreenProgressReporter : IProgressReporter
     {
