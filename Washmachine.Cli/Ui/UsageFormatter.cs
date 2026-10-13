@@ -53,6 +53,9 @@ public static class UsageFormatter
             Interactive = InteractionSupport.No,
             Out = new AnsiConsoleOutput(output)
         });
+        // Spectre 0.49's CI enrichment can enable ANSI despite AnsiSupport.No.
+        // Reassert the explicit plain-stream policy, including bold/reset codes.
+        console.Profile.Capabilities.Ansi = false;
         console.Profile.Width = ReferenceEquals(output, Console.Out) && !Console.IsOutputRedirected
             ? TerminalLayout.Width() : 80;
         return console;
@@ -61,7 +64,7 @@ public static class UsageFormatter
     public static int GetConsoleWidth() => TerminalLayout.Width();
     // A pipe remains plain even if a CI host advertises ANSI support. Honor
     // user opt-out without mutating Spectre's global console or injected hosts.
-    private static IAnsiConsole DefaultConsole() => Console.IsOutputRedirected
+    internal static IAnsiConsole DefaultConsole() => Console.IsOutputRedirected
         || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("NO_COLOR"))
         || string.Equals(Environment.GetEnvironmentVariable("TERM"), "dumb", StringComparison.OrdinalIgnoreCase)
         ? PlainConsole(Console.Out) : AnsiConsole.Console;

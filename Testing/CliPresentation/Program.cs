@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Spectre.Console;
 using Washmachine.Cli;
 using Washmachine.Cli.Ui;
+using CatalogProgram = Washmachine.Cli.Program;
 
 int checks = 0;
 void Check(bool condition, string description)
@@ -23,6 +24,11 @@ var usage = new CommandUsage("inspect", "Read a local file without modifying it.
 if (args is ["--probe-help"])
 {
     UsageFormatter.Print(usage);
+    return;
+}
+if (args is ["--probe-catalog"])
+{
+    CatalogProgram.RenderSessionChoiceCatalog("Choices", [new("alpha", "First choice"), new("beta", "Second choice")], "End of choices.");
     return;
 }
 if (args.Length > 0 && args[0] == "--probe-analysis")
@@ -176,6 +182,80 @@ var longLines = HelpWriter.Wrap(longText, 40, 2).ToArray();
 Check(longLines.All(line => line.GetCellWidth() <= 39), "Large help data stays within cell width");
 Check(Compact(string.Join('\n', longLines)) == Compact(longText), "Large help data is retained without truncation");
 
+var sampleChoices = new CatalogProgram.SessionValueChoice[]
+{
+    new("alpha [literal]", "Description with café, 文件 and e\u0301."),
+    new(new string('x', 120), "Second line\nwith a newline and extra information.")
+};
+var sampleOptions = new CatalogProgram.SessionOptionRow[]
+{
+    new(7, "option-" + new string('=', 120) + "-tail", "C:\\two  spaces\\" + new string('z', 120), true,
+        "A full description with [literal] text.", "first | second"),
+    new(99, "additional-detail", "[sample]", false, "Subrow keeps a blank ID.",
+        RequiredOverrideLabel: "Optional", RequiredOverrideColor: "invalid-color", IsSubRow: true)
+};
+foreach (int width in new[] { 1, 2, 12, 24, 40, 60, 80, 100, 120, 200 })
+{
+    var choices = Capture(width);
+    CatalogProgram.RenderSessionChoiceCatalog("Choices [literal]", sampleChoices, "Choose a name.", console: choices.Console);
+    string choiceOutput = choices.Output.ToString();
+    Check(!choiceOutput.Contains('\x1b'), "Plain choices have no terminal commands");
+    Check(choiceOutput.Count(c => c == 'x') == 121, $"All choice-name characters survive wrapping at width {width}");
+    Check(Compact(choiceOutput).Contains("[literal]"), "Choice brackets are literal");
+    Check(choiceOutput.Split('\n').All(line => line.TrimEnd('\r').GetCellWidth() <= Math.Max(1, width - 1)), $"Choice rows fit width {width}");
+    var options = Capture(width);
+    CatalogProgram.RenderSessionOptionCatalog("Options", sampleOptions, "Values are display data.", options.Console);
+    string optionOutput = options.Output.ToString();
+    Check(optionOutput.Count(c => c == 'z') == 120, "Current values are not truncated");
+    Check(optionOutput.Count(c => c == '=') == 120, "Option names are not truncated");
+    Check(Compact(optionOutput).Contains("7") && !Compact(optionOutput).Contains("99"), "Supplied IDs and blank subrow IDs remain stable");
+    Check(Compact(optionOutput).Contains("Optional") && Compact(optionOutput).Contains("[sample]"), "Override labels and literal values remain visible");
+    Check(optionOutput.Split('\n').All(line => line.TrimEnd('\r').GetCellWidth() <= Math.Max(1, width - 1)), $"Option rows fit width {width}");
+    var banner = Capture(width);
+    Banner.Render(banner.Console);
+    Check(Compact(banner.Output.ToString()).Contains("Washmachinev1.0.0"), "Welcome text is retained in narrow terminals");
+    Check(banner.Output.ToString().Split('\n').All(line => line.TrimEnd('\r').GetCellWidth() <= Math.Max(1, width - 1)), "Welcome text fits without fixed-width art");
+    if (width == 80 && args.Contains("--preview")) Console.WriteLine(choiceOutput + optionOutput);
+}
+var emptyChoices = Capture(80);
+CatalogProgram.RenderSessionChoiceCatalog("Empty choices", [], "Footer stays visible.", console: emptyChoices.Console);
+Check(emptyChoices.Output.ToString().Contains("No entries found.") && emptyChoices.Output.ToString().Contains("Footer stays visible."), "Empty lists use the same message and retain their footer");
+var literalTable = Capture(80);
+literalTable.Console.Write(TableFactory.Create("[literal]\x1b]0;title\a", "[name]").AddRow(new Text("[value]")));
+Check(literalTable.Output.ToString().Contains("[literal]") && literalTable.Output.ToString().Contains("[name]") && literalTable.Output.ToString().Contains("[value]"), "Table titles, headings and text cells remain literal");
+Check(!literalTable.Output.ToString().Contains("title") && !literalTable.Output.ToString().Contains('\x1b'), "Table title terminal sequences are stripped");
+var changingCatalog = Capture(120);
+foreach (int width in new[] { 120, 24, 80, 2, 200 })
+{
+    changingCatalog.Console.Profile.Width = width;
+    int before = changingCatalog.Output.GetStringBuilder().Length;
+    CatalogProgram.RenderSessionOptionCatalog("Options", sampleOptions, "Footer", changingCatalog.Console);
+    string segment = changingCatalog.Output.ToString()[before..];
+    Check(segment.Count(c => c == 'z') == 120 && segment.Count(c => c == '=') == 120, "Resized catalogs retain all field data");
+    Check(segment.Split('\n').All(line => line.TrimEnd('\r').GetCellWidth() <= Math.Max(1, width - 1)), "Catalog layout follows the current width");
+}
+var styledChoices = Capture(80, ansi: true);
+CatalogProgram.RenderSessionChoiceCatalog("Choices", sampleChoices, console: styledChoices.Console);
+Check(styledChoices.Output.ToString().Contains("\x1b["), "Interactive list headings can be styled");
+Check(styledChoices.Output.ToString().Count(c => c == 'x') == 121, "Styled lists preserve the same data as plain lists");
+int enumerations = 0;
+IEnumerable<IReadOnlyList<string>> SinglePassRows()
+{
+    Check(++enumerations == 1, "Catalog row sources are enumerated once");
+    yield return new[] { "alpha", "First choice" };
+}
+CatalogWriter.Write("Single pass", ["Name", "Description"], SinglePassRows(), console: Capture(80).Console);
+var malformedCatalog = Capture(80);
+try
+{
+    CatalogWriter.Write("Malformed", ["Name", "Description"], [new[] { "one cell" }], console: malformedCatalog.Console);
+    Check(false, "Malformed rows must be rejected");
+}
+catch (ArgumentException)
+{
+    Check(malformedCatalog.Output.ToString() == "", "Malformed rows fail before partial output");
+}
+
 foreach (var scenario in new[] { "pipe", "no-color", "dumb", "ci-forced-color" })
 {
     var probe = await RunProbe(["--probe-help"], scenario);
@@ -183,6 +263,9 @@ foreach (var scenario in new[] { "pipe", "no-color", "dumb", "ci-forced-color" }
     Check(probe.Output.Contains("INSPECT COMMAND") && probe.Output.Contains("--json"), $"{scenario} retains help content");
     Check(!probe.Output.Contains('\x1b'), $"{scenario} stdout contains no terminal commands");
     Check(probe.Output.Split('\n').All(line => line.TrimEnd('\r').GetCellWidth() <= 79), $"{scenario} uses predictable pipe width");
+    var catalogProbe = await RunProbe(["--probe-catalog"], scenario);
+    Check(catalogProbe.ExitCode == 0 && catalogProbe.Error == "" && !catalogProbe.Output.Contains('\x1b'), $"{scenario} catalogs honor plain output policy");
+    Check(catalogProbe.Output.Contains("alpha") && catalogProbe.Output.Contains("beta") && catalogProbe.Output.Contains("End of choices."), $"{scenario} catalogs retain their entries and footer");
 }
 var errorProbe = await RunProbe(["--probe-analysis", "--unknown"], "pipe");
 Check(errorProbe.ExitCode == 2 && errorProbe.Output == "" && errorProbe.Error.Contains("error:"), "Actual invalid-command process preserves stderr and exit code");

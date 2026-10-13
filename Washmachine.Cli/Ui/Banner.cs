@@ -12,10 +12,13 @@ public static class Banner
 
     // Retain the public signature for all existing callers.
     public static void Render(int? templateCount = null, int? sectionCount = null,
-        int? snippetCount = null, string? compilerStatus = null)
+        int? snippetCount = null, string? compilerStatus = null) => Render(UsageFormatter.DefaultConsole());
+
+    internal static void Render(IAnsiConsole console)
     {
-        AnsiConsole.MarkupLine($"[bold {UiColors.Header}]Washmachine[/] [{UiColors.Muted}]v{AppVersion}[/]");
-        AnsiConsole.MarkupLine($"[{UiColors.Muted}]Type help for commands; exit to close.[/]");
-        AnsiConsole.WriteLine();
+        var writer = new HelpWriter(console);
+        writer.Paragraph($"Washmachine v{AppVersion}", UiColors.Header, 0);
+        writer.Paragraph("Type help for commands; exit to close.", UiColors.Muted, 0);
+        writer.Blank();
     }
 }

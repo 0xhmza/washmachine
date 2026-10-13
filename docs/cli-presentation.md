@@ -44,6 +44,26 @@ Input viewport geometry works with graphemes and snaps a cursor inside a
 surrogate/combining sequence to the start of that sequence. This helper does not
 change the command editor's logical cursor movement or key bindings.
 
+## Consistent list presentation
+
+Option lists and value-choice lists now share `CatalogWriter`. Wide terminals
+show a compact table without decorative boxes. Narrow terminals show labeled
+fields using the same help renderer. Values wrap instead of being replaced by
+ellipses, and rows use literal text rather than interpreting data as markup.
+Titles, headings, footers, IDs, and required labels follow one presentation
+contract. Empty lists use the same message and keep their footer visible.
+
+`Program.CatalogUi.cs` contains presentation adapters only. It preserves the
+IDs, order, values, descriptions and override labels provided by existing
+callers, including blank IDs for secondary rows. Per-tool color overrides are
+no longer used; explicit semantic labels carry the meaning. Parsing, option
+resolution, state transitions, command vocabulary and execution remain outside
+this interface refactor.
+
+The welcome text uses the same output policy and wrapping as help and lists.
+Plain output also explicitly disables ANSI capabilities after console creation:
+in Spectre.Console 0.49, CI enrichment can otherwise re-enable formatting.
+
 ## Missing source recovery
 
 This checkout referenced `TerminalLayout`, `AnalysisCommand`, and `AnalysisSession`
@@ -73,6 +93,12 @@ spaces, complete terminal sequences, malformed color/Unicode values, large help
 texts, and basic/256/true-color capability profiles. Real subprocess probes test
 stdout redirection, `NO_COLOR`, `TERM=dumb`, CI color detection, JSON error output,
 and process exit codes. They launch only the isolated verification executable.
+The isolated project also links the actual list presentation adapters. Synthetic
+data tests exercise narrow and wide layouts, large field values, stable supplied
+IDs, secondary rows, required-label overrides, literal brackets, empty lists,
+dynamic widths between renders, styled/plain output, one-pass row enumeration,
+and rejection of malformed rows before writing partial output. They do not load
+or run the operational session implementations.
 
 ## Research and design choices
 
@@ -101,6 +127,7 @@ The app was not launched or published during verification. GUI connectors and
 dispatcher files are unchanged.
 The current checks run on Windows .NET 8 and simulate console capabilities.
 They do not establish support for Linux/macOS application execution, actual
-legacy terminal hosts, live drag-resizing, interactive catalog tables, or the
-existing editor's key bindings. Operational session workflows and startup
+legacy terminal hosts, live drag-resizing, or the existing editor's key bindings.
+List layout is tested with synthetic data and simulated console widths rather
+than a live operational session. Operational session workflows and startup
 provisioning are outside this presentation/read-only pass.
