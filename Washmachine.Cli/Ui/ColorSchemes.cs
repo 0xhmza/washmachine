@@ -2,7 +2,7 @@ namespace Washmachine.Cli.Ui;
 
 /// <summary>
 /// Semantic color tokens used across the CLI chrome.
-/// All fields are hex triplets (e.g. <c>#ac4142</c>) so they plug straight
+/// Fields use terminal color names or hex triplets so they plug straight
 /// into Spectre.Console markup such as <c>[#ac4142]text[/]</c>.
 /// </summary>
 public sealed record ColorScheme(
@@ -28,18 +28,26 @@ public sealed record ColorScheme(
     string Tagline);
 
 /// <summary>
-/// Catalog of built-in CLI color schemes. The default scheme is Dracula, with
-/// several additional dark themes still available through the <c>scheme</c>
-/// command for users who want a different terminal palette.
+/// The default uses terminal-native colors without assuming a dark background.
+/// Existing explicit themes remain available for saved preferences.
 /// </summary>
 public static class ColorSchemes
 {
-    public const string DefaultSchemeName = "dracula";
+    public const string DefaultSchemeName = "terminal";
 
     public static readonly IReadOnlyDictionary<string, ColorScheme> All =
         new Dictionary<string, ColorScheme>(StringComparer.OrdinalIgnoreCase)
         {
             [DefaultSchemeName] = new ColorScheme(
+                Name: "Terminal", Author: "Terminal palette",
+                Background: "default", Foreground: "default",
+                BannerPrimary: "cyan", BannerSecondary: "cyan", BannerTertiary: "cyan",
+                Accent: "cyan", Header: "cyan", Value: "default", Muted: "default",
+                Label: "default", Rule: "default", BoxBorder: "default",
+                Success: "green", Warning: "yellow", Error: "red", Hex: "default",
+                Link: "cyan", Tagline: "default"),
+
+            ["dracula"] = new ColorScheme(
                 Name:            "Dracula",
                 Author:          "Dracula Theme",
                 Background:      "#282A36",
@@ -268,6 +276,6 @@ public static class ColorSchemes
         return All[DefaultSchemeName];
     }
 
-    public static IReadOnlyList<string> Names =>
-        All.Keys.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList();
+    public static IReadOnlyList<string> Names { get; } =
+        Array.AsReadOnly(All.Keys.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray());
 }

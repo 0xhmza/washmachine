@@ -59,8 +59,15 @@ public static class UsageFormatter
     }
 
     public static int GetConsoleWidth() => TerminalLayout.Width();
-    public static void PrintSectionHeader(string title) => new HelpWriter(AnsiConsole.Console).Heading(title);
-    public static void Print(CommandUsage usage) => Print(usage, AnsiConsole.Console);
+    // A pipe remains plain even if a CI host advertises ANSI support. Honor
+    // user opt-out without mutating Spectre's global console or injected hosts.
+    private static IAnsiConsole DefaultConsole() => Console.IsOutputRedirected
+        || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("NO_COLOR"))
+        || string.Equals(Environment.GetEnvironmentVariable("TERM"), "dumb", StringComparison.OrdinalIgnoreCase)
+        ? PlainConsole(Console.Out) : AnsiConsole.Console;
+
+    public static void PrintSectionHeader(string title) => new HelpWriter(DefaultConsole()).Heading(title);
+    public static void Print(CommandUsage usage) => Print(usage, DefaultConsole());
 
     /// <summary>Injectable output for tests and hosts, without global state changes.</summary>
     public static void Print(CommandUsage usage, IAnsiConsole console)
@@ -98,12 +105,14 @@ public static class UsageFormatter
         if (usage.Examples is { Length: > 0 })
         {
             writer.Heading("Examples");
+            bool first = true;
             foreach (var example in usage.Examples)
             {
+                if (!first) writer.Blank();
+                first = false;
                 writer.Paragraph(example.Description, UiColors.Label);
                 if (example.Shell != "Any shell") writer.Paragraph($"({example.Shell})", UiColors.Muted);
                 writer.Paragraph(example.Command, UiColors.Accent, 4);
-                writer.Blank();
             }
         }
         if (usage.Related is { Length: > 0 })
@@ -115,7 +124,7 @@ public static class UsageFormatter
     }
 
     public static void PrintFields(string title, IEnumerable<UsageNote> fields) =>
-        PrintFields(title, fields, AnsiConsole.Console);
+        PrintFields(title, fields, DefaultConsole());
 
     public static void PrintFields(string title, IEnumerable<UsageNote> fields, IAnsiConsole console)
     {

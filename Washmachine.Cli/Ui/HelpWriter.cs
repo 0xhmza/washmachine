@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text;
-using System.Text.RegularExpressions;
 using Spectre.Console;
 
 namespace Washmachine.Cli.Ui;
@@ -19,10 +18,11 @@ internal sealed class HelpWriter(IAnsiConsole console)
 
     public void Paragraph(string text, string color, int indent = 2)
     {
+        var style = new Style(foreground: UiColors.ParseHex(color));
         foreach (var line in Wrap(text, Width, indent))
         {
             // Never interpret user-provided brackets or terminal sequences.
-            console.Write(new Text(line, new Style(foreground: UiColors.ParseHex(color))));
+            console.Write(new Text(line, style));
             console.WriteLine();
         }
     }
@@ -31,28 +31,43 @@ internal sealed class HelpWriter(IAnsiConsole console)
     {
         label = Sanitize(label);
         value = Sanitize(value);
-        int labelWidth = Math.Min(preferredWidth, Math.Max(1, Width / 3));
-        if (Width - labelWidth - 5 < 28 || label.Contains('\n') || label.GetCellWidth() > labelWidth)
+        int width = Width;
+        int labelWidth = Math.Clamp(preferredWidth, 1, Math.Max(1, width / 3));
+        if (width - labelWidth - 5 < 28 || label.Contains('\n') || label.GetCellWidth() > labelWidth)
         {
             Paragraph(label, UiColors.Label);
             Paragraph(value, UiColors.Value, 4);
             return;
         }
         string prefix = "  " + label.PadRight(label.Length + labelWidth - label.GetCellWidth()) + "   ";
-        var lines = Wrap(value, Width - labelWidth - 5, 0).ToArray();
-        for (int i = 0; i < lines.Length; i++)
+        string continuation = new(' ', labelWidth + 5);
+        bool first = true;
+        foreach (string line in Wrap(value, width - labelWidth - 5, 0))
         {
-            string left = i == 0 ? prefix : new string(' ', labelWidth + 5);
-            console.Write(new Text(left + lines[i]));
+            console.Write(new Text((first ? prefix : continuation) + line));
             console.WriteLine();
+            first = false;
         }
     }
 
     internal static string Sanitize(string text)
     {
         var safe = new StringBuilder(text.Length);
-        foreach (var rune in text.EnumerateRunes())
+        for (int i = 0; i < text.Length;)
         {
+            if (text[i] is '\x1b' or '\u009b' or '\u009d' or '\u0090' or '\u0098' or '\u009e' or '\u009f')
+            {
+                i = SkipEscape(text, i);
+                continue;
+            }
+            if (text[i] == '\r')
+            {
+                safe.Append('\n');
+                i += i + 1 < text.Length && text[i + 1] == '\n' ? 2 : 1;
+                continue;
+            }
+            if (!Rune.TryGetRuneAt(text, i, out var rune)) rune = Rune.ReplacementChar;
+            i += rune.Utf16SequenceLength;
             if (rune.Value == '\n') safe.Append('\n');
             else if (rune.Value == '\t') safe.Append(' ');
             else if (Rune.IsControl(rune) || rune.Value is 0x061C or 0x200E or 0x200F
@@ -60,6 +75,38 @@ internal sealed class HelpWriter(IAnsiConsole console)
             else safe.Append(rune.ToString());
         }
         return safe.ToString();
+    }
+
+    // Discard complete terminal commands, including their parameters. Merely
+    // removing ESC leaves titles, hyperlink targets and CSI parameters visible.
+    private static int SkipEscape(string text, int start)
+    {
+        char kind = text[start];
+        int i = start + 1;
+        if (kind == '\x1b')
+        {
+            if (i == text.Length) return i;
+            kind = text[i++];
+        }
+        if (kind is '[' or '\u009b')
+        {
+            while (i < text.Length)
+                if (text[i++] is >= '\x40' and <= '\x7e') break;
+        }
+        else if (kind is ']' or 'P' or 'X' or '^' or '_' or '\u009d' or '\u0090' or '\u0098' or '\u009e' or '\u009f')
+        {
+            while (i < text.Length)
+            {
+                if (text[i++] is '\a' or '\u009c') break;
+                if (text[i - 1] == '\x1b' && i < text.Length && text[i] == '\\') { i++; break; }
+            }
+        }
+        else if (kind is >= '\x20' and <= '\x2f')
+        {
+            while (i < text.Length && text[i] is >= '\x20' and <= '\x2f') i++;
+            if (i < text.Length) i++;
+        }
+        return i;
     }
 
     internal static IEnumerable<string> Wrap(string text, int width, int indent)
@@ -73,23 +120,35 @@ internal sealed class HelpWriter(IAnsiConsole console)
             var line = new StringBuilder();
             int used = 0;
             string separator = "";
-            foreach (Match word in Regex.Matches(paragraph, @"\s+|\S+"))
+            for (int start = 0; start < paragraph.Length;)
             {
-                if (string.IsNullOrWhiteSpace(word.Value))
+                int end = start + 1;
+                bool whitespace = char.IsWhiteSpace(paragraph[start]);
+                while (end < paragraph.Length && char.IsWhiteSpace(paragraph[end]) == whitespace) end++;
+                string word = paragraph[start..end];
+                start = end;
+                if (whitespace)
                 {
-                    separator = word.Value;
+                    separator = word;
                     continue;
                 }
-                int wordWidth = word.Value.GetCellWidth();
-                if (used > 0 && used + separator.Length + wordWidth > capacity)
+                int wordWidth = word.GetCellWidth();
+                int separatorWidth = separator.GetCellWidth();
+                if (used > 0 && used + separatorWidth + wordWidth > capacity)
                 {
                     yield return prefix + line;
                     line.Clear();
                     used = 0;
                 }
-                if (used > 0) { line.Append(separator); used += separator.Length; }
+                if (used > 0) { line.Append(separator); used += separatorWidth; }
                 separator = "";
-                var elements = StringInfo.GetTextElementEnumerator(word.Value);
+                if (used + wordWidth <= capacity)
+                {
+                    line.Append(word);
+                    used += wordWidth;
+                    continue;
+                }
+                var elements = StringInfo.GetTextElementEnumerator(word);
                 while (elements.MoveNext())
                 {
                     string element = elements.GetTextElement();

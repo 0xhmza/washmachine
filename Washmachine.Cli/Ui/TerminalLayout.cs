@@ -1,4 +1,5 @@
 using System.Text;
+using System.Globalization;
 using Spectre.Console;
 
 namespace Washmachine.Cli.Ui;
@@ -8,6 +9,7 @@ internal static class TerminalLayout
 {
     public static int Width()
     {
+        if (Console.IsOutputRedirected) return 80;
         try { return Console.WindowWidth > 0 ? Console.WindowWidth : 80; }
         catch (IOException) { return 80; }
         catch (InvalidOperationException) { return 80; }
@@ -19,16 +21,21 @@ internal static class TerminalLayout
     {
         if (columns <= 0) return new("", 0);
         cursor = Math.Clamp(cursor, 0, input.Length);
-        var cells = new List<(string Text, int Start, int Width)>();
-        int offset = 0;
-        foreach (var rune in input.EnumerateRunes())
+        var cells = new List<(string Text, int Width)>();
+        int cursorCell = 0;
+        var elements = StringInfo.GetTextElementEnumerator(input);
+        while (elements.MoveNext())
         {
-            string text = Rune.IsControl(rune) ? "?" : rune.ToString();
+            string element = elements.GetTextElement();
+            int offset = elements.ElementIndex;
+            string text = element.EnumerateRunes().Any(rune => Rune.IsControl(rune)
+                || rune.Value is 0x061C or 0x200E or 0x200F or >= 0x202A and <= 0x202E
+                or >= 0x2066 and <= 0x2069) ? "?" : element;
             int width = Math.Max(0, text.GetCellWidth());
-            cells.Add((text, offset, width));
-            offset += rune.Utf16SequenceLength;
+            if (width > columns) { text = "?"; width = 1; }
+            cells.Add((text, width));
+            if (offset + element.Length <= cursor) cursorCell += width;
         }
-        int cursorCell = cells.TakeWhile(c => c.Start < cursor).Sum(c => c.Width);
         int first = 0;
         while (cursorCell >= columns && first < cells.Count)
             cursorCell -= cells[first++].Width;

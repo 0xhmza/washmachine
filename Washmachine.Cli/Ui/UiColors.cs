@@ -6,7 +6,7 @@ using Spectre.Console;
 /// <summary>
 /// Semantic color tokens resolved against the currently-active
 /// <see cref="ColorScheme"/>. All tokens return Spectre.Console-markup
-/// hex strings (e.g. <c>#ac4142</c>) so callers stay unchanged.
+/// color strings, including terminal-native names and optional hex colors.
 /// </summary>
 public static class UiColors
 {
@@ -57,12 +57,22 @@ public static class UiColors
 
     public static Color ParseHex(string hex)
     {
-        var s = hex.TrimStart('#');
-        if (s.Length != 6)
-            return Color.White;
-        var r = byte.Parse(s.AsSpan(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-        var g = byte.Parse(s.AsSpan(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-        var b = byte.Parse(s.AsSpan(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+        // Preserve the existing API for callers while supporting terminal-native
+        // colors. Invalid customization should never crash presentation.
+        switch (hex.Trim().ToLowerInvariant())
+        {
+            case "default": return Color.Default;
+            case "cyan": return Color.Aqua;
+            case "green": return Color.Green;
+            case "yellow": return Color.Yellow;
+            case "red": return Color.Red;
+        }
+        var s = hex.Trim().TrimStart('#');
+        if (s.Length != 6
+            || !byte.TryParse(s.AsSpan(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var r)
+            || !byte.TryParse(s.AsSpan(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var g)
+            || !byte.TryParse(s.AsSpan(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b))
+            return Color.Default;
         return new Color(r, g, b);
     }
 }

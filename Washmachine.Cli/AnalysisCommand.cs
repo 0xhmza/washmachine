@@ -148,7 +148,7 @@ internal static class AnalysisCommand
     }
 
     // PE metadata and paths are untrusted; never let them inject terminal controls.
-    private static string Safe(string? value) => new((value ?? "").Select(c => char.IsControl(c) ? ' ' : c).ToArray());
+    private static string Safe(string? value) => Ui.HelpWriter.Sanitize(value ?? "").Replace('\n', ' ');
 
     private sealed class QuietLogger : IAppLogger
     {
