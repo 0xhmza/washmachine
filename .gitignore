@@ -96,3 +96,6 @@ __pycache__/
 .env.*
 !.env.example
 !.env.sample
+
+# Generated local knowledge graph and extraction caches
+/graphify-out/

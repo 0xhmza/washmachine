@@ -1,0 +1,15 @@
+# Project source only; .gitignore rules also apply.
+*.sync-conflict-*
+Tools/
+.llvm-sdk-cache/
+.design-reference-v2/
+.codex/
+AGENTS.md
+graphify-out/
+WebApp/wwwroot/
+WebApp/package-lock.json
+WebApp/vendor/
+# Local test specimens and packaging artwork do not describe application structure.
+Testing/binary/
+Assets/*.png
+Icon/

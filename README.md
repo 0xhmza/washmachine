@@ -16,6 +16,7 @@ It comes with three interfaces over the same core:
 
 Local development: [project map](docs/README.md), [web UI build and tests](WebApp/README.md),
 and [operability verification and limitations](docs/verification.md).
+For local codebase exploration, see [the Graphify knowledge graph](docs/graphify.md).
 Repository layout, retained local data, and cleanup recovery are documented in
 [repository cleanup](docs/repository-cleanup.md).
 
