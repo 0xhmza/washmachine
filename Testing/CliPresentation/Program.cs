@@ -21,6 +21,16 @@ var usage = new CommandUsage("inspect", "Read a local file without modifying it.
 
 // Subprocess probes exercise real stdout/stderr and environment detection;
 // they never load the application, provision tools, or run payload workflows.
+if (args is ["--verify-resize"])
+{
+    await ConPtyResizeTests.VerifyAsync();
+    return;
+}
+if (args is ["--resize-child", var reportPath])
+{
+    await ConPtyResizeTests.RunChildAsync(reportPath, usage);
+    return;
+}
 if (args is ["--probe-help"])
 {
     UsageFormatter.Print(usage);

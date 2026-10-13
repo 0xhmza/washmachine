@@ -77,6 +77,7 @@ argument parsing, result schema, and scan implementation were not redesigned.
 ```powershell
 dotnet run --project Testing/CliPresentation/CliPresentation.csproj
 dotnet run --project Testing/CliPresentation/CliPresentation.csproj -c Release
+dotnet run --project Testing/CliPresentation/CliPresentation.csproj -- --verify-resize
 ```
 
 Add `-- --preview` to print a synthetic 80-column help page. The project links only
@@ -99,6 +100,26 @@ IDs, secondary rows, required-label overrides, literal brackets, empty lists,
 dynamic widths between renders, styled/plain output, one-pass row enumeration,
 and rejection of malformed rows before writing partial output. They do not load
 or run the operational session implementations.
+
+### Native Windows resizing
+
+`--verify-resize` starts only the synthetic presentation test executable in a
+real Windows ConPTY session. It resizes that session through
+`120 → 40 → 80 → 20 → 160 → 2 → 80` columns without restarting the child.
+At each size it checks that `Console.WindowWidth`, Spectre's profile width, and
+the shared terminal helper agree; help and both list layouts fit the width;
+and long option/choice values are retained. No `Profile.Width` overrides are
+used in this native test. Output is drained independently to avoid pipe
+deadlocks, and the test child explicitly binds to its attached console devices
+because the verification launcher itself has redirected streams.
+
+The native sequence passed in Debug and Release on Windows 11. Results are
+written to the selected configuration's `bin/<configuration>/resize-results.json`.
+This verifies native width detection and new renders after resizing. It does
+not verify graphical mouse-drag resizing, a particular terminal's reflow of old
+scrollback, or a resize occurring in the middle of an individual output write.
+The renderer remains forward-only and does not redraw historical output.
+See [Microsoft's ConPTY resizing API](https://learn.microsoft.com/en-us/windows/console/resizepseudoconsole).
 
 ## Research and design choices
 
@@ -125,9 +146,10 @@ analysis sources. A subsequent GUI build-error repair restored the missing
 zero warnings and zero errors. No build-script change was needed for those errors.
 The app was not launched or published during verification. GUI connectors and
 dispatcher files are unchanged.
-The current checks run on Windows .NET 8 and simulate console capabilities.
+The checks run on Windows .NET 8 with both simulated console capabilities and
+a real ConPTY resize sequence.
 They do not establish support for Linux/macOS application execution, actual
-legacy terminal hosts, live drag-resizing, or the existing editor's key bindings.
-List layout is tested with synthetic data and simulated console widths rather
+legacy terminal hosts, graphical drag-resizing, or the existing editor's key bindings.
+List layout is tested with synthetic data and simulated/native terminal widths rather
 than a live operational session. Operational session workflows and startup
 provisioning are outside this presentation/read-only pass.
