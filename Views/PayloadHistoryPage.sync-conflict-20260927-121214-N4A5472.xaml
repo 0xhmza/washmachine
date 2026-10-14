@@ -1,0 +1,418 @@
+<Page x:Class="Washmachine.Views.PayloadHistoryPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      mc:Ignorable="d"
+      NavigationCacheMode="Enabled">
+
+    <Grid Background="Transparent">
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Padding="0,32,0,0">
+            <StackPanel Margin="{StaticResource PageMargin}"
+                        Orientation="Vertical"
+                        Width="{StaticResource ContentMaxWidth}"
+                        HorizontalAlignment="Center"
+                        Spacing="16">
+
+                <!-- Page header -->
+                <StackPanel Margin="0,0,0,4">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <FontIcon Glyph="&#xE80F;" FontSize="11" Margin="0,2,4,0" VerticalAlignment="Center"
+                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock Text="Pipeline" Margin="2,0,0,0" FontSize="12"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text=" › " Margin="0,0,5,0" FontSize="12"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="Payload History" FontSize="12" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel Margin="0,20,0,0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <FontIcon Glyph="&#xE81C;" FontSize="30" Margin="0,2,12,0" />
+                        <StackPanel>
+                            <TextBlock Text="Payload History" Style="{StaticResource PageTitleText}" />
+                            <TextBlock Text="All web payload generations with encoding and delivery details."
+                                       Style="{StaticResource PageSubtitleText}"
+                                       Margin="0,4,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Toolbar -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="StatusText"
+                               Style="{StaticResource SectionSubtitleText}"
+                               VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Content="Refresh" Click="Refresh_Click"
+                            MinWidth="90" Margin="0,0,6,0" />
+                    <Button x:Name="DeleteButton" Grid.Column="2"
+                            Content="Delete" Click="Delete_Click"
+                            MinWidth="80" Margin="0,0,6,0" IsEnabled="False" />
+                    <Button x:Name="ClearButton" Grid.Column="3"
+                            Content="Clear All" Click="Clear_Click"
+                            MinWidth="90" />
+                </Grid>
+
+                <!-- Empty state card -->
+                <Border x:Name="EmptyStateBorder"
+                        Style="{StaticResource CardBorder}"
+                        Padding="32,48"
+                        Visibility="Collapsed">
+                    <StackPanel HorizontalAlignment="Center" Spacing="10">
+                        <FontIcon Glyph="&#xE81C;" FontSize="40"
+                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                  HorizontalAlignment="Center" />
+                        <TextBlock Text="No history yet"
+                                   FontSize="16" FontWeight="SemiBold"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="Generated payloads will appear here once you run a web-mode build."
+                                   Style="{StaticResource SectionSubtitleText}"
+                                   HorizontalAlignment="Center"
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <!-- History list -->
+                <ListView x:Name="HistoryList"
+                          SelectionMode="Single"
+                          SelectionChanged="HistoryList_SelectionChanged"
+                          Visibility="Collapsed">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0,0,0,6" />
+                            <Setter Property="CornerRadius" Value="8" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Border CornerRadius="8"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1">
+                                <Grid MinHeight="74">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="64" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Date badge -->
+                                    <Border Grid.Column="0" CornerRadius="6,0,0,6"
+                                            Background="{ThemeResource AccentFillColorDefaultBrush}">
+                                        <StackPanel VerticalAlignment="Center"
+                                                    HorizontalAlignment="Center"
+                                                    Spacing="0">
+                                            <TextBlock Text="{Binding DayText}"
+                                                       FontSize="22" FontWeight="Bold"
+                                                       Foreground="White"
+                                                       HorizontalAlignment="Center" />
+                                            <TextBlock Text="{Binding MonthText}"
+                                                       FontSize="10" Foreground="White"
+                                                       HorizontalAlignment="Center"
+                                                       Opacity="0.85" />
+                                            <TextBlock Text="{Binding TimeText}"
+                                                       FontSize="10" Foreground="White"
+                                                       HorizontalAlignment="Center"
+                                                       Opacity="0.65"
+                                                       Margin="0,3,0,0" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Entry info -->
+                                    <StackPanel Grid.Column="1"
+                                                Margin="14,10,14,10"
+                                                Spacing="4"
+                                                VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding DisplaySourceName}"
+                                                   FontWeight="SemiBold" FontSize="13"
+                                                   TextWrapping="NoWrap"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding PayloadUrl}"
+                                                   FontSize="12"
+                                                   FontFamily="Cascadia Mono, Consolas, Courier New"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   TextWrapping="NoWrap"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,2,0,0">
+                                            <!-- Encoder badge -->
+                                            <Border CornerRadius="4" Padding="6,2"
+                                                    Background="#22BD93F9">
+                                                <TextBlock Text="{Binding EncoderTag}"
+                                                           FontSize="11" Foreground="#BD93F9" />
+                                            </Border>
+                                            <!-- Envelope badge -->
+                                            <Border CornerRadius="4" Padding="6,2"
+                                                    Background="{StaticResource DraculaCyanSoftBrush}">
+                                                <TextBlock Text="{Binding EnvelopeTag}"
+                                                           FontSize="11"
+                                                           Foreground="{StaticResource DraculaCyanBrush}" />
+                                            </Border>
+                                            <!-- Web helper badge -->
+                                            <Border CornerRadius="4" Padding="6,2"
+                                                    Background="{StaticResource DraculaGreenSoftBrush}">
+                                                <TextBlock Text="{Binding WebHelperTag}"
+                                                           FontSize="11"
+                                                           Foreground="{StaticResource DraculaGreenBrush}" />
+                                            </Border>
+                                            <!-- File size -->
+                                            <TextBlock Text="{Binding SourceSizeDisplay}"
+                                                       FontSize="11"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <!-- No-selection hint (when list has entries but nothing selected) -->
+                <TextBlock x:Name="NoSelectionText"
+                           Text="← Select an entry above to view its details."
+                           Style="{StaticResource SectionSubtitleText}"
+                           Visibility="Collapsed" />
+
+                <!-- Entry details (shown when an entry is selected) -->
+                <StackPanel x:Name="DetailsHost" Spacing="10" Visibility="Collapsed">
+
+                    <!-- Metadata card -->
+                    <Border Style="{StaticResource CardBorder}">
+                        <StackPanel Margin="18,16" Spacing="0">
+                            <TextBlock Text="Details" Style="{StaticResource SectionTitleText}"
+                                       Margin="0,0,0,14" />
+
+                            <!-- Generated at -->
+                            <Grid Margin="0,4,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Generated" Style="{StaticResource SectionSubtitleText}" VerticalAlignment="Center" />
+                                <TextBlock x:Name="GeneratedAtValue" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Border Style="{StaticResource SectionDivider}" Margin="0,8,0,8" />
+
+                            <!-- Payload URL -->
+                            <Grid Margin="0,4,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Payload URL" Style="{StaticResource SectionSubtitleText}" VerticalAlignment="Center" />
+                                <TextBlock x:Name="PayloadUrlValue" Grid.Column="1"
+                                           TextWrapping="Wrap" VerticalAlignment="Center"
+                                           FontFamily="Cascadia Mono, Consolas, Courier New"
+                                           FontSize="12" />
+                                <Button Grid.Column="2" Click="CopyUrl_Click"
+                                        Width="32" Height="32" Padding="0" Margin="10,0,0,0"
+                                        ToolTipService.ToolTip="Copy URL">
+                                    <FontIcon Glyph="&#xE8C8;" FontSize="13" />
+                                </Button>
+                            </Grid>
+
+                            <!-- Source file -->
+                            <Grid Margin="0,4,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Source file" Style="{StaticResource SectionSubtitleText}" VerticalAlignment="Center" />
+                                <TextBlock x:Name="SourcePathValue" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" />
+                            </Grid>
+
+                            <!-- Source size -->
+                            <Grid Margin="0,4,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Source size" Style="{StaticResource SectionSubtitleText}" VerticalAlignment="Center" />
+                                <TextBlock x:Name="SourceSizeValue" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" />
+                            </Grid>
+
+                            <!-- Source hash -->
+                            <Grid Margin="0,4,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Source SHA-256" Style="{StaticResource SectionSubtitleText}" VerticalAlignment="Center" />
+                                <TextBlock x:Name="SourceHashValue" Grid.Column="1"
+                                           TextWrapping="Wrap" VerticalAlignment="Center"
+                                           FontFamily="Cascadia Mono, Consolas, Courier New"
+                                           FontSize="11" />
+                                <Button Grid.Column="2" Click="CopyHash_Click"
+                                        Width="32" Height="32" Padding="0" Margin="10,0,0,0"
+                                        ToolTipService.ToolTip="Copy hash">
+                                    <FontIcon Glyph="&#xE8C8;" FontSize="13" />
+                                </Button>
+                            </Grid>
+
+                            <Border Style="{StaticResource SectionDivider}" Margin="0,8,0,8" />
+
+                            <!-- Encoder -->
+                            <Grid Margin="0,4,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Encoder" Style="{StaticResource SectionSubtitleText}" VerticalAlignment="Center" />
+                                <TextBlock x:Name="EncoderValue" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" />
+                            </Grid>
+
+                            <!-- Envelope -->
+                            <Grid Margin="0,4,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Envelope" Style="{StaticResource SectionSubtitleText}" VerticalAlignment="Center" />
+                                <TextBlock x:Name="EnvelopeValue" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" />
+                            </Grid>
+
+                            <!-- Web helper -->
+                            <Grid Margin="0,4,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Web helper" Style="{StaticResource SectionSubtitleText}" VerticalAlignment="Center" />
+                                <TextBlock x:Name="WebHelperValue" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Border Style="{StaticResource SectionDivider}" Margin="0,8,0,8" />
+
+                            <!-- Payload length -->
+                            <Grid Margin="0,4,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Payload length" Style="{StaticResource SectionSubtitleText}" VerticalAlignment="Center" />
+                                <TextBlock x:Name="PayloadBytesValue" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" />
+                            </Grid>
+
+                            <!-- Payload checksum -->
+                            <Grid Margin="0,4,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Payload checksum" Style="{StaticResource SectionSubtitleText}" VerticalAlignment="Center" />
+                                <TextBlock x:Name="PayloadChecksumValue" Grid.Column="1"
+                                           TextWrapping="Wrap" VerticalAlignment="Center"
+                                           FontFamily="Cascadia Mono, Consolas, Courier New"
+                                           FontSize="11" />
+                                <Button Grid.Column="2" Click="CopyChecksum_Click"
+                                        Width="32" Height="32" Padding="0" Margin="10,0,0,0"
+                                        ToolTipService.ToolTip="Copy checksum">
+                                    <FontIcon Glyph="&#xE8C8;" FontSize="13" />
+                                </Button>
+                            </Grid>
+
+                            <Border Style="{StaticResource SectionDivider}" Margin="0,8,0,8" />
+
+                            <!-- History file -->
+                            <Grid Margin="0,4,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="History file" Style="{StaticResource SectionSubtitleText}" VerticalAlignment="Center" />
+                                <TextBlock x:Name="HistoryPathValue" Grid.Column="1"
+                                           TextWrapping="Wrap" VerticalAlignment="Center"
+                                           FontSize="11"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Bin2Shell command line -->
+                    <Expander IsExpanded="False"
+                              HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Stretch">
+                        <Expander.Header>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE756;" FontSize="15" VerticalAlignment="Center" />
+                                <TextBlock Text="Bin2Shell command line"
+                                           Style="{StaticResource SectionTitleText}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Expander.Header>
+                        <StackPanel Spacing="8" Margin="0,8,0,4">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="The command used to invoke Bin2Shell for this build."
+                                           Style="{StaticResource SectionSubtitleText}"
+                                           VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="Copy" Click="CopyCommandLine_Click"
+                                        Margin="8,0,0,0" />
+                            </Grid>
+                            <TextBox x:Name="CommandLineTextBox"
+                                     FontFamily="Cascadia Mono, Consolas, Courier New"
+                                     IsReadOnly="True"
+                                     TextWrapping="Wrap"
+                                     AcceptsReturn="True"
+                                     MinHeight="54" />
+                        </StackPanel>
+                    </Expander>
+
+                    <!-- Encoded payload text -->
+                    <Expander IsExpanded="False"
+                              HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Stretch">
+                        <Expander.Header>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE9D5;" FontSize="15" VerticalAlignment="Center" />
+                                <TextBlock Text="Encoded payload text"
+                                           Style="{StaticResource SectionTitleText}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Expander.Header>
+                        <StackPanel Spacing="8" Margin="0,8,0,4">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="The encoded payload text served at the payload URL."
+                                           Style="{StaticResource SectionSubtitleText}"
+                                           VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="Copy" Click="CopyPayload_Click"
+                                        Margin="8,0,0,0" />
+                            </Grid>
+                            <TextBox x:Name="PayloadTextBox"
+                                     FontFamily="Cascadia Mono, Consolas, Courier New"
+                                     IsReadOnly="True"
+                                     TextWrapping="Wrap"
+                                     AcceptsReturn="True"
+                                     MinHeight="80"
+                                     MaxHeight="280" />
+                        </StackPanel>
+                    </Expander>
+
+                </StackPanel>
+
+                <Border Margin="0,0,0,20" />
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>
+

@@ -1,0 +1,192 @@
+<Page x:Class="Washmachine.Views.PackingPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      mc:Ignorable="d"
+      NavigationCacheMode="Required">
+
+    <Grid Background="Transparent">
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Padding="0,32,0,0">
+            <StackPanel Margin="{StaticResource PageMargin}"
+                        Orientation="Vertical"
+                        Width="{StaticResource ContentMaxWidth}"
+                        HorizontalAlignment="Center">
+
+                <!-- Page header -->
+                <StackPanel Margin="0,0,0,16">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <FontIcon Glyph="&#xE80F;" FontSize="11" Margin="0,2,4,0" VerticalAlignment="Center"
+                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock Text="Pipeline" Margin="2,0,0,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text=" › " Margin="0,0,5,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="Packing" FontSize="12" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Margin="0,20,0,20" Orientation="Horizontal" VerticalAlignment="Center">
+                        <FontIcon Glyph="&#xE7B8;" FontSize="30" Margin="0,2,12,0" />
+                        <StackPanel>
+                            <TextBlock Text="Packing Configuration" Style="{StaticResource PageTitleText}" />
+                            <TextBlock Text="Configure packing and compression for the final executable."
+                                       Style="{StaticResource PageSubtitleText}"
+                                       Margin="0,4,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+
+
+                <StackPanel Spacing="16">
+
+                    <!-- Enable Packing Toggle -->
+                    <Border Style="{StaticResource CardBorder}">
+                        <Grid Padding="20,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="3*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="4,0,16,0">
+                                <TextBlock Text="Enable Packing" Style="{StaticResource SectionTitleText}" />
+                                <TextBlock Text="Pack the output executable using UPX compression."
+                                           Style="{StaticResource SectionSubtitleText}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,4,0,0" />
+                            </StackPanel>
+                            <ToggleSwitch x:Name="EnablePackingToggle"
+                                          Grid.Column="1"
+                                          IsOn="False"
+                                          Toggled="EnablePackingToggle_Toggled"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          MinWidth="0" Margin="8,0,8,0" Header="" />
+                        </Grid>
+                    </Border>
+
+                    <!-- All config sections - greyed out when packing is disabled -->
+                    <StackPanel x:Name="PackingConfigPanel" Opacity="0.4" IsHitTestVisible="False">
+
+                    <!-- UPX Configuration -->
+                    <Expander x:Name="UpxConfigExpander" 
+                              HorizontalAlignment="Stretch" 
+                              HorizontalContentAlignment="Stretch">
+                        <Expander.Header>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Glyph="&#xE74C;" Margin="0,0,12,0" />
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="UPX Settings" FontWeight="SemiBold" />
+                                    <TextBlock Text="Configure UPX packer options"
+                                               Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                </StackPanel>
+                            </Grid>
+                        </Expander.Header>
+                        <StackPanel Spacing="16" Padding="12">
+                            <!-- UPX Path -->
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="UPX Location" Style="{StaticResource SectionSubtitleText}" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="UpxPathText" 
+                                             PlaceholderText="Path to upx.exe" 
+                                             Grid.Column="0" />
+                                    <Button Content="Browse" 
+                                            Grid.Column="1" 
+                                            Margin="8,0,0,0" 
+                                            Click="BrowseUpx_Click" />
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <FontIcon x:Name="UpxStatusIcon" Glyph="&#xE9CE;" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock x:Name="UpxStatusText" 
+                                               Text="UPX not detected" 
+                                               Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <!-- Compression Level -->
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Compression Level" Style="{StaticResource SectionSubtitleText}" />
+                                <ComboBox x:Name="CompressionLevelCombo" SelectedIndex="2" Width="200">
+                                    <ComboBoxItem Content="Fast (--best)" />
+                                    <ComboBoxItem Content="Normal (default)" />
+                                    <ComboBoxItem Content="Best (--ultra-brute)" />
+                                </ComboBox>
+                                <TextBlock Text="Higher compression = smaller file but slower packing"
+                                           Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+
+                            <!-- UPX Options -->
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Options" Style="{StaticResource SectionSubtitleText}" />
+                                <CheckBox x:Name="StripRelocCheck" Content="Strip relocations (--strip-relocs)" IsChecked="False" />
+                                <CheckBox x:Name="OverlayCheck" Content="Preserve overlay data (--overlay=copy)" IsChecked="True" />
+                                <CheckBox x:Name="BackupCheck" Content="Keep backup (.bak)" IsChecked="False" />
+                            </StackPanel>
+
+                            <!-- Download UPX -->
+                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    CornerRadius="4"
+                                    Padding="12"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="UPX Not Found?" FontWeight="SemiBold" />
+                                        <TextBlock Text="Download a portable version from GitHub."
+                                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                    <Button x:Name="DownloadUpxButton" 
+                                            Content="Download UPX" 
+                                            Grid.Column="1"
+                                            Click="DownloadUpx_Click" />
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Expander>
+                    
+                     <Border Margin="10,10,10,0"/>
+
+                        <!-- Navigation to Next -->
+                    <Border Style="{StaticResource CardBorder}" Margin="0,8,0,0">
+                        <Button HorizontalAlignment="Stretch" 
+                                HorizontalContentAlignment="Stretch"
+                                Padding="16"
+                                Click="GoToCompilePage_Click">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Glyph="&#xE768;" Grid.Column="0" Margin="0,0,12,0" Foreground="{ThemeResource AccentFillColorDefaultBrush}" />
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Next: Finalize" FontWeight="SemiBold" />
+                                    <TextBlock Text="Configure post-compilation output settings"
+                                               Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                </StackPanel>
+                                <FontIcon Glyph="&#xE76C;" Grid.Column="2" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </Grid>
+                        </Button>
+                    </Border>
+
+                    </StackPanel> <!-- End PackingConfigPanel -->
+
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

