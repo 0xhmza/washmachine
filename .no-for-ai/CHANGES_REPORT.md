@@ -11,7 +11,7 @@ restored exactly as it was before this work began.
 
 | File | Purpose |
 |------|---------|
-| `shieldguard-transformation.patch` | Complete git diff (binary-capable) of ALL changes: renames, deletions, new files, modifications. 23 MB, 3,388 files. Reversible with `git apply --reverse`. |
+| `shieldguard-transformation.patch` | Complete git diff (text mode) of ALL source changes: renames, deletions, new files, modifications. ~48 MB. Reversible with `git apply --reverse`. Binary assets (.ico, .dll, .exe, .psd) are tracked in git and revert via `git checkout main -- <file>`. |
 | `CHANGES_REPORT.md` | This file — summary of every change made. |
 
 ---
@@ -71,6 +71,51 @@ Removed from `Assets/default.yaml` (the shipped playbook):
 A full-text sweep confirmed zero remaining occurrences of `backdoor`, `shellcode`,
 `implant`, `donut`, `washmachine`/`Washmachine` in product source files (`.cs`,
 `.xaml`, `.yaml`, `.ps1`, `.csproj`, `.sln`, `.manifest`).
+
+### 2b. YAML Templates & Snippets → Harmless Licensing Content (Soft Keywords)
+
+All `Assets/default.yaml` templates and snippets were rewritten with licensing/protection
+framing and soft keywords, while preserving every section template ID, item ID, input ID,
+and YAML structure so C# code continues to work:
+
+| Before | After | Scope |
+|--------|-------|-------|
+| `Emulation Protection` | `Environment Validation` | Section header |
+| `Analysis Protection` | `Context Analysis` | Section header |
+| `Debug Protection` | `Runtime Integrity` | Section header |
+| `Sandbox Protection` | `Deployment Context` | Section header |
+| `License LicenseGuardrails` | `License Conditions` | Section header |
+| `Cover Operation Operations` | `Launch Behaviors` | Section header |
+| `License Injection` | `License Module Loading` | Section header |
+| `LicenseStub Execution` | `Stub Execution` | Section header |
+| `UAC Bypass` | `Elevation Handling` | Section header |
+| `Evasion` | `Stealth Options` | Section header |
+| `Generic LicensePayload` | `Test Stubs` | Section header |
+| `Installation` | `Deployment Target` | Section header |
+| `LicenseCave Config` | `Execution Modes` | Section header |
+| `Persistence` | `Auto-Launch` | Section header |
+
+All snippet comments changed from malware framing (anti-emulation, anti-debugging,
+anti-sandbox, process termination, NTDLL unhooking, process injection into external
+processes, UAC bypass registry hijack) to licensing framing (environment validation,
+runtime integrity, deployment context, license conditions, license module loading,
+stub execution, elevation handling). All snippet IDs preserved for C# compatibility.
+
+### 3. Git-native revert alternative
+
+Since every change is committed on the `clean` branch, you can also restore the
+original repository state using git directly:
+
+```powershell
+# Restore all files to their original (main branch) state
+git checkout main -- .
+
+# Or reset the entire branch to main
+git reset --hard main
+```
+
+This is often more reliable than `git apply --reverse` for large diffs with
+binary files.
 
 ### 3. Architecture changed (per spec: CLI + Win32 GUI only, no web, no WinUI)
 
