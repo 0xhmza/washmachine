@@ -1,6 +1,6 @@
-﻿<#
+<#
 .SYNOPSIS
-    Washmachine build orchestrator. Build / publish / installer / LLVM passes / clean.
+    ShieldGuard build orchestrator. Build / publish / installer / LLVM passes / clean.
 
 .DESCRIPTION
     Single entry point for every developer workflow. Run with no arguments to get
@@ -9,7 +9,7 @@
     Actions:
         build       Restore + build all three projects (Release).
         run         Build, then launch the GUI.
-        publish     Stage a redistributable payload at Output\Release-Bundle\payload.
+        publish     Stage a redistributable licensepayload at Output\Release-Bundle\licensepayload.
         installer   Publish + build the WiX MSI at Output\Release-Bundle.
         passes      Compile every Assets\llvm-passes\<id>\pass.dll plugin.
                     Auto-discovers an LLVM SDK; prompts (or exits) when absent.
@@ -33,10 +33,10 @@
     For the passes action: wipe each pass's build\ folder before cmake.
 
 .PARAMETER SkipProvision
-    For publish/installer: don't run washmachine.exe --cli-mode provision (Bin2Shell).
+    For publish/installer: don't run shieldguard.exe --cli-mode provision (Bin2Shell).
 
 .PARAMETER Version
-    Override the MSI product version (defaults to <Version> from washmachine.csproj).
+    Override the MSI product version (defaults to <Version> from shieldguard.csproj).
 
 .PARAMETER NonInteractive
     Disable any prompts. Missing prerequisites cause an immediate non-zero exit
@@ -77,10 +77,10 @@ Set-StrictMode -Version Latest
 # ── Constants ─────────────────────────────────────────────────────────────
 $Script:Root        = $PSScriptRoot
 $Script:Config      = 'Release'
-$Script:Solution    = Join-Path $Script:Root 'washmachine.sln'
+$Script:Solution    = Join-Path $Script:Root 'shieldguard.sln'
 $Script:OutputDir   = Join-Path $Script:Root 'Output'
 $Script:BundleDir   = Join-Path $Script:OutputDir 'Release-Bundle'
-$Script:StageDir    = Join-Path $Script:BundleDir 'payload'
+$Script:StageDir    = Join-Path $Script:BundleDir 'licensepayload'
 $Script:LogDir      = Join-Path $Script:Root 'Logs\build'
 $Script:PassesRoot  = Join-Path $Script:Root 'Assets\llvm-passes'
 $Script:ToolsLlvm   = Join-Path $Script:Root 'Tools\LLVM'
@@ -133,14 +133,14 @@ function Assert-Tool {
 
 function Assert-NoRunningWorkspaceInstances {
     $rootPrefix = [IO.Path]::GetFullPath($Script:Root).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
-    foreach ($proc in @(Get-Process -Name 'washmachine*' -ErrorAction SilentlyContinue)) {
+    foreach ($proc in @(Get-Process -Name 'shieldguard*' -ErrorAction SilentlyContinue)) {
         try { $processPath = $proc.Path }
         catch { throw "Cannot inspect process $($proc.Id). Close it before cleaning; no process was stopped." }
         if (-not $processPath) {
             throw "Cannot inspect process $($proc.Id). Close it before cleaning; no process was stopped."
         }
         if ([IO.Path]::GetFullPath($processPath).StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Washmachine is running from this workspace (PID $($proc.Id)). Close it before cleaning; no process was stopped."
+            throw "ShieldGuard is running from this workspace (PID $($proc.Id)). Close it before cleaning; no process was stopped."
         }
     }
 }
@@ -264,7 +264,7 @@ function Repair-LlvmExports {
 # ── Version resolution ────────────────────────────────────────────────────
 function Resolve-ProductVersion {
     if ($Version) { return $Version }
-    $csproj = Get-Content (Join-Path $Script:Root 'washmachine.csproj') -Raw
+    $csproj = Get-Content (Join-Path $Script:Root 'shieldguard.csproj') -Raw
     if ($csproj -match '<Version>([^<]+)</Version>') { return $Matches[1] }
     return '1.0.0'
 }
@@ -280,10 +280,10 @@ function Invoke-Clean {
     $targets = @(
         (Join-Path $Script:Root 'bin'),
         (Join-Path $Script:Root 'obj'),
-        (Join-Path $Script:Root 'Washmachine.Core\bin'),
-        (Join-Path $Script:Root 'Washmachine.Core\obj'),
-        (Join-Path $Script:Root 'Washmachine.Cli\bin'),
-        (Join-Path $Script:Root 'Washmachine.Cli\obj'),
+        (Join-Path $Script:Root 'ShieldGuard.Core\bin'),
+        (Join-Path $Script:Root 'ShieldGuard.Core\obj'),
+        (Join-Path $Script:Root 'ShieldGuard.Cli\bin'),
+        (Join-Path $Script:Root 'ShieldGuard.Cli\obj'),
         $Script:OutputDir
     )
     # Validate the entire list before deleting anything. Deletion failures are
@@ -307,24 +307,24 @@ function Invoke-Build {
     # Build each project in dependency order. Each `dotnet build` invocation
     # restores its own per-project assets — a solution-level restore can't satisfy
     # the GUI's net8.0-windows10.x/win-x64 target without an explicit RID. The CLI
-    # additionally needs -r win-x64 because Washmachine.Cli.csproj sets
+    # additionally needs -r win-x64 because ShieldGuard.Cli.csproj sets
     # RuntimeIdentifier conditionally on Release.
-    Invoke-External "dotnet build Washmachine.Core ($Script:Config)" {
-        dotnet build (Join-Path $Script:Root 'Washmachine.Core\Washmachine.Core.csproj') -c $Script:Config --nologo 2>&1 |
+    Invoke-External "dotnet build ShieldGuard.Core ($Script:Config)" {
+        dotnet build (Join-Path $Script:Root 'ShieldGuard.Core\ShieldGuard.Core.csproj') -c $Script:Config --nologo 2>&1 |
             Tee-Object -Append -FilePath $Script:LogFile | Out-Host
     }
-    Invoke-External "dotnet build washmachine (GUI, $Script:Config)" {
-        dotnet build (Join-Path $Script:Root 'washmachine.csproj') -c $Script:Config --nologo 2>&1 |
+    Invoke-External "dotnet build shieldguard (GUI, $Script:Config)" {
+        dotnet build (Join-Path $Script:Root 'shieldguard.csproj') -c $Script:Config --nologo 2>&1 |
             Tee-Object -Append -FilePath $Script:LogFile | Out-Host
     }
-    Invoke-External "dotnet build Washmachine.Cli ($Script:Config, win-x64)" {
-        dotnet build (Join-Path $Script:Root 'Washmachine.Cli\Washmachine.Cli.csproj') `
+    Invoke-External "dotnet build ShieldGuard.Cli ($Script:Config, win-x64)" {
+        dotnet build (Join-Path $Script:Root 'ShieldGuard.Cli\ShieldGuard.Cli.csproj') `
             -c $Script:Config -r win-x64 --self-contained false --nologo 2>&1 |
             Tee-Object -Append -FilePath $Script:LogFile | Out-Host
     }
 
-    $gui = Join-Path $Script:OutputDir "$Script:Config\washmachine.exe"
-    $cli = Join-Path $Script:OutputDir "$Script:Config\washmachine-cli.exe"
+    $gui = Join-Path $Script:OutputDir "$Script:Config\shieldguard.exe"
+    $cli = Join-Path $Script:OutputDir "$Script:Config\shieldguard-cli.exe"
     Ok "Build succeeded."
     if (Test-Path $gui) { Ok "  GUI : $gui" }
     if (Test-Path $cli) { Ok "  CLI : $cli" }
@@ -349,8 +349,8 @@ function Invoke-Publish {
     $ver = Resolve-ProductVersion
     Note "Product version: $ver"
 
-    Invoke-External "dotnet publish washmachine (GUI)" {
-        dotnet publish (Join-Path $Script:Root 'washmachine.csproj') -c $Script:Config --nologo 2>&1 |
+    Invoke-External "dotnet publish shieldguard (GUI)" {
+        dotnet publish (Join-Path $Script:Root 'shieldguard.csproj') -c $Script:Config --nologo 2>&1 |
             Tee-Object -Append -FilePath $Script:LogFile | Out-Host
     }
     $guiPub = Join-Path $Script:OutputDir "$Script:Config\publish"
@@ -359,14 +359,14 @@ function Invoke-Publish {
     # The product has one entry executable. Run provisioning through the
     # published managed assembly so the WinExe console-subsystem behavior does
     # not detach this build script from its output.
-    $appDll = Join-Path $guiPub 'washmachine.dll'
+    $appDll = Join-Path $guiPub 'shieldguard.dll'
     if (-not $SkipProvision -and (Test-Path $appDll)) {
         Section "Provision Bin2Shell"
         & dotnet $appDll --cli-mode provision 2>&1 | Tee-Object -Append -FilePath $Script:LogFile | Out-Host
         if ($LASTEXITCODE -ne 0) { Warn "Provision failed (exit $LASTEXITCODE); installer ships without Bin2Shell." }
     }
 
-    Section "Stage payload"
+    Section "Stage licensepayload"
     Step "Target: $Script:StageDir"
     if (Test-Path $Script:StageDir) { Remove-Item -Recurse -Force $Script:StageDir }
     New-Item -ItemType Directory -Force $Script:StageDir | Out-Null
@@ -394,14 +394,14 @@ function Invoke-Installer {
     Invoke-External "dotnet tool restore (wix)" {
         dotnet tool restore 2>&1 | Tee-Object -Append -FilePath $Script:LogFile | Out-Host
     }
-    $msi = Join-Path $Script:BundleDir "Washmachine-Setup-$($pub.Version).msi"
+    $msi = Join-Path $Script:BundleDir "ShieldGuard-Setup-$($pub.Version).msi"
     Invoke-External "dotnet wix build -> $msi" {
         dotnet wix build `
             -arch x64 `
-            -d WashmachineVersion=$($pub.Version) `
-            -bindpath "payload=$($pub.Stage)" `
+            -d ShieldGuardVersion=$($pub.Version) `
+            -bindpath "licensepayload=$($pub.Stage)" `
             -o $msi `
-            (Join-Path $Script:Root 'installer\Washmachine.wxs') 2>&1 |
+            (Join-Path $Script:Root 'installer\ShieldGuard.wxs') 2>&1 |
             Tee-Object -Append -FilePath $Script:LogFile | Out-Host
     }
     Ok "MSI: $msi"
@@ -441,13 +441,13 @@ function Invoke-All {
 function Show-Menu {
     Write-Log ""
     Write-Log "================================================" 'Cyan'
-    Write-Log "  Washmachine builder" 'Cyan'
+    Write-Log "  ShieldGuard builder" 'Cyan'
     Write-Log "================================================" 'Cyan'
     Write-Log @'
 
   1   build       compile Release artifacts
   2   run         build, then launch the GUI
-  3   publish     stage a redistributable payload
+  3   publish     stage a redistributable licensepayload
   4   installer   publish + build MSI
   5   passes      compile LLVM obfuscation plugins
   6   all         clean -> build -> passes -> installer

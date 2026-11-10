@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    End-to-end test of the Washmachine LLVM obfuscation passes.
+    End-to-end test of the ShieldGuard LLVM obfuscation passes.
 
 .DESCRIPTION
     1. Compiles a sample C++ program twice with no passes — confirms the
@@ -49,7 +49,7 @@ if (-not (Test-Path $clang)) {
 }
 
 Write-Host ""
-Write-Host "=== Washmachine LLVM Pass Test ===" -ForegroundColor Cyan
+Write-Host "=== ShieldGuard LLVM Pass Test ===" -ForegroundColor Cyan
 Write-Host "clang++ : $clang" -ForegroundColor Gray
 
 $work = Join-Path ([System.IO.Path]::GetTempPath()) "wm-pass-test-$([guid]::NewGuid().ToString('N').Substring(0,8))"
@@ -81,7 +81,7 @@ static uint32_t crunch(uint32_t a, uint32_t b) {
 }
 
 int main() {
-    const char* greeting = "washmachine-llvm-pass-self-test";
+    const char* greeting = "shieldguard-llvm-pass-self-test";
     uint32_t r = 0;
     for (uint32_t i = 1; i <= 1000; ++i) {
         r = crunch(r ^ i, i * 7u + 3u);

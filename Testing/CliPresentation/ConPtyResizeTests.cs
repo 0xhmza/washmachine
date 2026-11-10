@@ -5,8 +5,8 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
 using Spectre.Console;
-using Washmachine.Cli.Ui;
-using CatalogProgram = Washmachine.Cli.Program;
+using ShieldGuard.Cli.Ui;
+using CatalogProgram = ShieldGuard.Cli.Program;
 
 /// <summary>Real, headless Windows terminal resizing; no shell or application workflows.</summary>
 internal static class ConPtyResizeTests

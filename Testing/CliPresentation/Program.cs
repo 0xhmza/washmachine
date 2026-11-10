@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using Spectre.Console;
-using Washmachine.Cli;
-using Washmachine.Cli.Ui;
-using CatalogProgram = Washmachine.Cli.Program;
+using ShieldGuard.Cli;
+using ShieldGuard.Cli.Ui;
+using CatalogProgram = ShieldGuard.Cli.Program;
 
 int checks = 0;
 void Check(bool condition, string description)
@@ -20,7 +20,7 @@ var usage = new CommandUsage("inspect", "Read a local file without modifying it.
     Related: [new("help", "Display available commands.")]);
 
 // Subprocess probes exercise real stdout/stderr and environment detection;
-// they never load the application, provision tools, or run payload workflows.
+// they never load the application, provision tools, or run licensepayload workflows.
 if (args is ["--verify-resize"])
 {
     await ConPtyResizeTests.VerifyAsync();
@@ -111,8 +111,8 @@ Check(HelpWriter.Sanitize("before\x1b]0;window title\aafter") == "beforeafter", 
 Check(HelpWriter.Sanitize("before\x1b]8;;https://example.com\x1b\\label\x1b]8;;\x1b\\after") == "beforelabelafter", "OSC hyperlinks leave only visible text");
 Check(HelpWriter.Sanitize("before\u009b2Jafter") == "beforeafter", "C1 CSI sequences are removed");
 Check(HelpWriter.Sanitize("before\x1b[12;") == "before", "Incomplete escape sequences are safely discarded");
-Check(HelpWriter.Sanitize("before\x1bPignored\x1b\\after") == "beforeafter", "DCS payload is removed");
-Check(HelpWriter.Sanitize("before\u009dignored\u009cafter") == "beforeafter", "C1 OSC payload is removed");
+Check(HelpWriter.Sanitize("before\x1bPignored\x1b\\after") == "beforeafter", "DCS licensepayload is removed");
+Check(HelpWriter.Sanitize("before\u009dignored\u009cafter") == "beforeafter", "C1 OSC licensepayload is removed");
 Check(HelpWriter.Sanitize("x\ud800y") == "x\ufffdy", "Malformed Unicode has a predictable replacement");
 foreach (int width in new[] { 8, 12, 20 })
 {
@@ -195,7 +195,7 @@ var sessionOutput = new StringWriter();
 Check(await AnalysisSession.RunAsync(new StringReader("help\nquit\n"), sessionOutput, new StringWriter()) == 0, "Session help exits normally");
 Check(sessionOutput.ToString().Contains("ANALYSIS SESSION"), "Session uses shared heading");
 var hostileSummary = new StringWriter();
-AnalysisCommand.WriteSummary(hostileSummary, new Washmachine.Models.PeAnalysisResult
+AnalysisCommand.WriteSummary(hostileSummary, new ShieldGuard.Models.PeAnalysisResult
 {
     FileName = "before\x1b]0;title\aafter\u202E\r\nnext",
     PeType = "PE\x1b[31m32\x1b[0m", Architecture = "x86"
@@ -238,7 +238,7 @@ foreach (int width in new[] { 1, 2, 12, 24, 40, 60, 80, 100, 120, 200 })
     Check(optionOutput.Split('\n').All(line => line.TrimEnd('\r').GetCellWidth() <= Math.Max(1, width - 1)), $"Option rows fit width {width}");
     var banner = Capture(width);
     Banner.Render(banner.Console);
-    Check(Compact(banner.Output.ToString()).Contains("Washmachinev1.0.0"), "Welcome text is retained in narrow terminals");
+    Check(Compact(banner.Output.ToString()).Contains("ShieldGuardv1.0.0"), "Welcome text is retained in narrow terminals");
     Check(banner.Output.ToString().Split('\n').All(line => line.TrimEnd('\r').GetCellWidth() <= Math.Max(1, width - 1)), "Welcome text fits without fixed-width art");
     if (width == 80 && args.Contains("--preview")) Console.WriteLine(choiceOutput + optionOutput);
 }
@@ -329,7 +329,7 @@ foreach (int width in new[] { 1, 2, 12, 40, 80 })
 {
     var inputPrompt = Capture(width);
     string line = new string('x', 4096) + " 文件 e\u0301 [literal]";
-    Check(TerminalInput.ReadLine("[cyan]washmachine tool >[/] ", new StringReader(line + "\n"), inputPrompt.Console, true) == line, "Native input preserves complete text without clipping");
+    Check(TerminalInput.ReadLine("[cyan]shieldguard tool >[/] ", new StringReader(line + "\n"), inputPrompt.Console, true) == line, "Native input preserves complete text without clipping");
     Check(!inputPrompt.Output.ToString().Contains('\x1b') && inputPrompt.Output.ToString().GetCellWidth() <= Math.Max(1, width - 1), "Native prompts fit narrow terminals and respect plain output");
 }
 var batchInput = Capture(80);
@@ -366,7 +366,7 @@ using (var missingJson = System.Text.Json.JsonDocument.Parse(missingOutput.ToStr
     Check(missingJson.RootElement.GetProperty("error").GetProperty("code").GetString() == "file_not_found" && missingError.ToString() == "", "Missing-file JSON is clean and typed");
 Check(await AnalysisSession.RunAsync(new StringReader(""), new StringWriter(), new StringWriter()) == 0, "Read-only session EOF exits without retry loops");
 stopwatch.Stop();
-System.Console.WriteLine($"{checks} presentation/read-only checks passed in {stopwatch.ElapsedMilliseconds} ms. No payload operations executed.");
+System.Console.WriteLine($"{checks} presentation/read-only checks passed in {stopwatch.ElapsedMilliseconds} ms. No licensepayload operations executed.");
 
 static async Task<(int ExitCode, string Output, string Error)> RunProbe(string[] arguments, string scenario)
 {

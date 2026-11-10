@@ -1,6 +1,6 @@
 # CLI presentation contract
 
-This pass standardizes the shared help layer, not command execution or payload /
+This pass standardizes the shared help layer, not command execution or licensepayload /
 evasion workflows. Existing command names, option models, parser implementations,
 and GUI connector code were not changed.
 
@@ -111,7 +111,7 @@ dotnet run --project Testing/CliPresentation/CliPresentation.csproj -- --verify-
 Add `-- --preview` to print a synthetic 80-column help page. The project links only
 presentation and read-only analysis sources, with the existing Spectre.Console
 0.49.1 dependency. It does not reference the application projects, provision tools,
-or generate/execute payloads. Dependency auditing remains enabled.
+or generate/execute licensepayloads. Dependency auditing remains enabled.
 
 Assertions cover widths 1–200, shrinking/growing width sequences, Unicode,
 literal markup, control characters, long values, deterministic output, plain and
@@ -183,7 +183,7 @@ The initial presentation tests compiled only shared presentation and read-only
 analysis sources. A subsequent GUI build-error repair restored the missing
 `Views/ModeSelectionWindow.cs`, `Logging/DiagnosticsLogger.cs`, and
 `Services/PeScanEndpoint.cs` from local commit `996ddcd`. After that restoration,
-`dotnet build washmachine.csproj -c Release --no-restore --nologo` succeeded with
+`dotnet build shieldguard.csproj -c Release --no-restore --nologo` succeeded with
 zero warnings and zero errors. No build-script change was needed for those errors.
 The app was not launched or published during verification. GUI connectors and
 dispatcher files are unchanged.

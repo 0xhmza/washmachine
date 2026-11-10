@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
-    Runs the washmachine end-to-end test harness against messagebox.bin and a
-    synthetic big payload (~4 MB) with multiple parameter combinations.
+    Runs the shieldguard end-to-end test harness against messagebox.bin and a
+    synthetic big licensepayload (~4 MB) with multiple parameter combinations.
 
 .DESCRIPTION
     Three test groups are produced:
@@ -10,26 +10,26 @@
          Walks every encoder x envelope pair plus a URL-fetch variant served
          by a local Python HTTP server.
 
-      B. Phase-1 encoding sweep against big_payload.bin (~4 MB synthetic
+      B. Phase-1 encoding sweep against big_licensepayload.bin (~4 MB synthetic
          NOP-sled + ret). Validates that the compile + encode + execute path
          survives large inputs.
 
-      C. Phase-2 template+snippet coverage and Phase-3 multi-shellcode runs
+      C. Phase-2 template+snippet coverage and Phase-3 multi-licensestub runs
          using messagebox.bin as the canonical input.
 
     Each invocation of the test harness writes its own test_results.json
     next to the CLI; this script aggregates and prints a final summary.
 
-.PARAMETER ShellcodeFile
+.PARAMETER LicenseStubFile
     Path to the messagebox.bin used for Phase 1/2. Defaults to
-    Testing\binary\shellcodes\messagebox.bin in the repo.
+    Testing\binary\licensestubs\messagebox.bin in the repo.
 
-.PARAMETER BigPayloadFile
+.PARAMETER BigLicensePayloadFile
     Path to a >= 3 MB .bin file used for the large-input encoding sweep.
     If the file does not exist the script synthesises one (NOP sled + ret).
 
-.PARAMETER BigPayloadSizeMB
-    Size of the synthesised big payload. Default: 4 MB.
+.PARAMETER BigLicensePayloadSizeMB
+    Size of the synthesised big licensepayload. Default: 4 MB.
 
 .PARAMETER Phase
     Which group to run: "small", "big", "matrix", "all" (default).
@@ -40,12 +40,12 @@
 .EXAMPLE
     .\Testing\run_tests.ps1
     .\Testing\run_tests.ps1 -Phase small
-    .\Testing\run_tests.ps1 -Phase big -BigPayloadSizeMB 8
+    .\Testing\run_tests.ps1 -Phase big -BigLicensePayloadSizeMB 8
 #>
 param(
-    [string]$ShellcodeFile,
-    [string]$BigPayloadFile,
-    [int]$BigPayloadSizeMB = 4,
+    [string]$LicenseStubFile,
+    [string]$BigLicensePayloadFile,
+    [int]$BigLicensePayloadSizeMB = 4,
     [ValidateSet("small", "big", "matrix", "all")]
     [string]$Phase = "all",
     [int]$Port = 18923
@@ -57,13 +57,13 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $repoRoot  = Split-Path -Parent $scriptDir
 $cliOutDir = Join-Path $repoRoot "Output\Debug"
-$exePath   = Join-Path $cliOutDir "washmachine-cli.exe"
+$exePath   = Join-Path $cliOutDir "shieldguard-cli.exe"
 
 if (-not (Test-Path $exePath)) {
     Write-Host "Building CLI project..." -ForegroundColor Yellow
     Push-Location $repoRoot
     try {
-        dotnet build (Join-Path $repoRoot "Washmachine.Cli\Washmachine.Cli.csproj") -c Debug 2>&1 | Out-Null
+        dotnet build (Join-Path $repoRoot "ShieldGuard.Cli\ShieldGuard.Cli.csproj") -c Debug 2>&1 | Out-Null
     } finally {
         Pop-Location
     }
@@ -74,53 +74,53 @@ if (-not (Test-Path $exePath)) {
 }
 
 # ── Resolve / create test inputs ──────────────────────────────────────────────
-if (-not $ShellcodeFile) {
+if (-not $LicenseStubFile) {
     $candidates = @(
-        (Join-Path $repoRoot "Testing\binary\shellcodes\messagebox.bin"),
+        (Join-Path $repoRoot "Testing\binary\licensestubs\messagebox.bin"),
         (Join-Path $cliOutDir "messagebox.bin"),
         (Join-Path $repoRoot "messagebox.bin")
     )
     foreach ($c in $candidates) {
-        if (Test-Path $c) { $ShellcodeFile = $c; break }
+        if (Test-Path $c) { $LicenseStubFile = $c; break }
     }
 }
-if (-not (Test-Path $ShellcodeFile)) {
-    Write-Error "messagebox.bin not found. Pass -ShellcodeFile <path>."
+if (-not (Test-Path $LicenseStubFile)) {
+    Write-Error "messagebox.bin not found. Pass -LicenseStubFile <path>."
     exit 1
 }
 
-if (-not $BigPayloadFile) {
-    $BigPayloadFile = Join-Path $cliOutDir "big_payload.bin"
+if (-not $BigLicensePayloadFile) {
+    $BigLicensePayloadFile = Join-Path $cliOutDir "big_licensepayload.bin"
 }
-if (-not (Test-Path $BigPayloadFile)) {
-    $targetSize = $BigPayloadSizeMB * 1MB
-    Write-Host "Synthesising big payload ($BigPayloadSizeMB MB NOP-sled + ret) at $BigPayloadFile" -ForegroundColor Yellow
-    $parent = Split-Path -Parent $BigPayloadFile
+if (-not (Test-Path $BigLicensePayloadFile)) {
+    $targetSize = $BigLicensePayloadSizeMB * 1MB
+    Write-Host "Synthesising big licensepayload ($BigLicensePayloadSizeMB MB NOP-sled + ret) at $BigLicensePayloadFile" -ForegroundColor Yellow
+    $parent = Split-Path -Parent $BigLicensePayloadFile
     if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
     $bytes = New-Object byte[] $targetSize
     for ($i = 0; $i -lt $bytes.Length; $i++) { $bytes[$i] = 0x90 }
     $bytes[$bytes.Length - 1] = 0xC3   # ret
-    [System.IO.File]::WriteAllBytes($BigPayloadFile, $bytes)
+    [System.IO.File]::WriteAllBytes($BigLicensePayloadFile, $bytes)
 }
 
-$bigSize = (Get-Item $BigPayloadFile).Length
-Write-Host "Small payload: $ShellcodeFile ($((Get-Item $ShellcodeFile).Length) B)"
-Write-Host "Big payload:   $BigPayloadFile ($([math]::Round($bigSize / 1MB, 2)) MB)"
+$bigSize = (Get-Item $BigLicensePayloadFile).Length
+Write-Host "Small licensepayload: $LicenseStubFile ($((Get-Item $LicenseStubFile).Length) B)"
+Write-Host "Big licensepayload:   $BigLicensePayloadFile ($([math]::Round($bigSize / 1MB, 2)) MB)"
 if ($bigSize -lt 3MB) {
-    Write-Warning "Big payload is < 3 MB; -BigPayloadSizeMB defaults to 4 - re-run with -BigPayloadSizeMB 4 (or larger)."
+    Write-Warning "Big licensepayload is < 3 MB; -BigLicensePayloadSizeMB defaults to 4 - re-run with -BigLicensePayloadSizeMB 4 (or larger)."
 }
 
 # Test harness expects the input to be reachable from the CLI working dir.
 # Copy both files into the CLI output dir under stable names.
 $smallLocal = Join-Path $cliOutDir "messagebox.bin"
-$bigLocal   = Join-Path $cliOutDir "big_payload.bin"
-Copy-Item -Force $ShellcodeFile  $smallLocal
-Copy-Item -Force $BigPayloadFile $bigLocal
+$bigLocal   = Join-Path $cliOutDir "big_licensepayload.bin"
+Copy-Item -Force $LicenseStubFile  $smallLocal
+Copy-Item -Force $BigLicensePayloadFile $bigLocal
 
 # ── Optional Python HTTP server for URL-source tests ──────────────────────────
 $pyServer  = $null
-$payloadUrl = ""
-function Start-PayloadServer {
+$licensepayloadUrl = ""
+function Start-LicensePayloadServer {
     param([string]$RootDir, [int]$ListenPort)
     Write-Host "Starting Python HTTP server on :$ListenPort ($RootDir)..." -ForegroundColor Yellow
     return Start-Process python `
@@ -138,7 +138,7 @@ function Invoke-Harness {
     Write-Host ""
     Write-Host "─────────────────────────────────────────────────────────"
     Write-Host "  [$Label]" -ForegroundColor Cyan
-    Write-Host "  cmd: washmachine-cli.exe $($TestArgs -join ' ')"
+    Write-Host "  cmd: shieldguard-cli.exe $($TestArgs -join ' ')"
     Write-Host "─────────────────────────────────────────────────────────"
     & $exePath @TestArgs
     $code = $LASTEXITCODE
@@ -162,16 +162,16 @@ function Invoke-Harness {
 }
 
 try {
-    # ── Group A: small payload, all encoder/envelope combos ───────────────────
+    # ── Group A: small licensepayload, all encoder/envelope combos ───────────────────
     if ($Phase -in @("small", "all")) {
-        $pyServer = Start-PayloadServer -RootDir $cliOutDir -ListenPort $Port
+        $pyServer = Start-LicensePayloadServer -RootDir $cliOutDir -ListenPort $Port
         Start-Sleep -Seconds 1
-        $payloadUrl = "http://localhost:$Port/messagebox.bin"
+        $licensepayloadUrl = "http://localhost:$Port/messagebox.bin"
 
         Invoke-Harness -Label "A.small-encoding-matrix" -TestArgs @(
             "test", "--phase", "1",
-            "--shellcode", $smallLocal,
-            "--url", $payloadUrl
+            "--licensestub", $smallLocal,
+            "--url", $licensepayloadUrl
         ) | Out-Null
 
         if ($pyServer -and -not $pyServer.HasExited) {
@@ -180,24 +180,24 @@ try {
         }
     }
 
-    # ── Group B: big payload, all encoder/envelope combos (file source only) ──
+    # ── Group B: big licensepayload, all encoder/envelope combos (file source only) ──
     if ($Phase -in @("big", "all")) {
         Invoke-Harness -Label "B.big-encoding-matrix" -TestArgs @(
             "test", "--phase", "1",
-            "--shellcode", $bigLocal
+            "--licensestub", $bigLocal
         ) | Out-Null
     }
 
-    # ── Group C: template + multi-shellcode matrix (smaller, slower runs) ─────
+    # ── Group C: template + multi-licensestub matrix (smaller, slower runs) ─────
     if ($Phase -in @("matrix", "all")) {
         Invoke-Harness -Label "C.template-and-snippet-matrix" -TestArgs @(
             "test", "--phase", "2",
-            "--shellcode", $smallLocal
+            "--licensestub", $smallLocal
         ) | Out-Null
 
-        Invoke-Harness -Label "C.multi-shellcode" -TestArgs @(
+        Invoke-Harness -Label "C.multi-licensestub" -TestArgs @(
             "test", "--phase", "3",
-            "--test-assets", (Join-Path $repoRoot "Testing\binary\shellcodes")
+            "--test-assets", (Join-Path $repoRoot "Testing\binary\licensestubs")
         ) | Out-Null
     }
 }

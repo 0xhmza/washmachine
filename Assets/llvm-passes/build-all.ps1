@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Build all four Washmachine LLVM obfuscation pass plug-ins.
+    Build all four ShieldGuard LLVM obfuscation pass plug-ins.
 
 .DESCRIPTION
     Compiles bogus-control-flow, control-flow-flattening, instruction-substitution,

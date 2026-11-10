@@ -1,4 +1,4 @@
-namespace Washmachine.Logging;
+namespace ShieldGuard.Logging;
 
 /// <summary>
 /// GUI logger that routes to System.Diagnostics.Debug (visible only in debugger).

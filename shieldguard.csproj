@@ -1,0 +1,106 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- When building via dotnet CLI, MSBuildExtensionsPath does not include AppxPackage tools.
+       Override the path to point at the installed Visual Studio MSBuild directory. -->
+  <PropertyGroup>
+    <_VsAppxPackagePath>$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\AppxPackage\</_VsAppxPackagePath>
+    <AppxMSBuildToolsPath Condition="'$(AppxMSBuildToolsPath)' == '' And !Exists('$(_VsAppxPackagePath)Microsoft.Build.Packaging.Pri.Tasks.dll')">C:\Program Files\Microsoft Visual Studio\18\Insiders\MSBuild\Microsoft\VisualStudio\v18.0\AppxPackage\</AppxMSBuildToolsPath>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <DefaultItemExcludes>$(DefaultItemExcludes);ShieldGuard.Core\**;ShieldGuard.Cli\**;Output\**;Testing\**;Icon\**;WebApp\**;prototypes\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RootNamespace>ShieldGuard</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <SignAssembly>False</SignAssembly>
+    <GeneratePackageOnBuild>False</GeneratePackageOnBuild>
+    <ProduceReferenceAssembly>False</ProduceReferenceAssembly>
+
+    <!-- Product metadata -->
+    <AssemblyName>shieldguard</AssemblyName>
+    <Product>ShieldGuard</Product>
+    <Description>Software protection and licensing toolkit</Description>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <NeutralLanguage>en</NeutralLanguage>
+    <ApplicationIcon>Icon\shieldguard.ico</ApplicationIcon>
+
+    <!-- Strip dev-machine paths from the binary (deterministic builds) -->
+    <Deterministic>true</Deterministic>
+    <PathMap>$(MSBuildProjectDirectory)=.</PathMap>
+    <ContinuousIntegrationBuild Condition="'$(CI)'=='true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <DebugType>portable</DebugType>
+    <WarningLevel>6</WarningLevel>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <WarningLevel>6</WarningLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Optimize>true</Optimize>
+
+    <!-- Framework-dependent (no bundled runtime) for wide compatibility.
+         End-users need .NET 8 Desktop Runtime + Windows App SDK runtime. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishTrimmed>false</PublishTrimmed>
+    <StripSymbols>true</StripSymbols>
+    <IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
+    <PublishDir>$(BaseOutputPath)\Release\publish\</PublishDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="ShieldGuard.Core\ShieldGuard.Core.csproj" />
+    <ProjectReference Include="ShieldGuard.Cli\ShieldGuard.Cli.csproj" />
+  </ItemGroup>
+
+  <!-- Copy Assets (playbooks + C++ runtime headers + JSON schema) to publish output so AppPaths can locate them -->
+  <ItemGroup>
+    <Content Include="Assets\*.yaml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\*.yml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\runtime\*.h" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!--
+      Ship only what the runtime needs from llvm-passes/:
+        * pass.json    — LlvmPassRegistry reads id/opt_name/name from these
+        * pass-runner.exe — the monolithic tool that actually applies passes
+        * README.md / build-all.ps1 / test-passes.ps1 — kept for developers
+                          who want to rebuild from a licensepayload directory
+
+      Pruned (was ~62 MB across 4 DLLs + sources):
+        * pass.dll  — only used by standalone clang -fpass-plugin, which is
+                      ABI-broken on Windows; pass-runner statically links
+                      every pass in.
+        * pass.cpp / CMakeLists.txt — build inputs, not runtime artefacts.
+    -->
+    <Content Include="Assets\llvm-passes\*\pass.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\llvm-passes\pass-runner.exe" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Condition="Exists('Assets\llvm-passes\pass-runner.exe')" />
+    <Content Include="Assets\llvm-passes\README.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\llvm-passes\build-all.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\llvm-passes\test-passes.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Bundled LLVM tools for LlvmPipelineService -->
+  <ItemGroup>
+    <Content Include="Tools\LLVM\**\*"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest"
+             Condition="Exists('Tools\LLVM')" />
+  </ItemGroup>
+
+</Project>
